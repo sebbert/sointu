@@ -8,12 +8,6 @@
 # arguments. The number of channels (-ac) is added from the buffer. An empty
 # format stores the sample as it is.
 - name: Passthrough
-- name: WAV 16-bit
-  format: wav
-  args: [-c:a, pcm_s16le]
-- name: FLAC
-  format: flac
-  args: [-c:a, flac, -compression_level, "12"]
 - name: Opus 24k
   format: ogg
   args: [-c:a, libopus, -b:a, 24k]
@@ -26,6 +20,3 @@
 - name: Opus 96k
   format: ogg
   args: [-c:a, libopus, -b:a, 96k]
-- name: MP3 128k
-  format: mp3
-  args: [-c:a, libmp3lame, -b:a, 128k]
