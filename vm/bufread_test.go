@@ -101,3 +101,27 @@ func TestBufreadMissingBufferIsSilent(t *testing.T) {
 func TestBufreadGain(t *testing.T) {
 	checkLeft(t, renderBufread(t, sointu.ParamMap{"gain": 64}, map[int]sointu.BufferAudio{1: ramp(4, 1, 0.1)}, 60, 3), []float32{0, 0.05, 0.1})
 }
+
+func TestBufreadUntriggeredVoiceIsSilent(t *testing.T) {
+	patch := sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{
+		{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 1, "transpose": 64, "detune": 64, "gain": 128, "buffer": 1, "notetracking": 1}},
+		{Type: "out", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128}},
+	}}}
+	synth, err := vm.GoSynther{}.Synth(patch, 120)
+	if err != nil {
+		t.Fatal(err)
+	}
+	synth.(sointu.BufferSetter).SetBuffers(map[int]sointu.BufferAudio{1: ramp(8, 2, 0.1)})
+	out := make(sointu.AudioBuffer, 4)
+	synth.Render(out, 4)
+	for i, f := range out {
+		if f != [2]float32{} {
+			t.Fatalf("frame %d: got %v from a voice that was never triggered", i, f)
+		}
+	}
+	synth.Trigger(0, 60)
+	synth.Render(out, 4)
+	if out[1][0] != 0.1 {
+		t.Errorf("after triggering: got %v, want 0.1", out[1][0])
+	}
+}

@@ -92,7 +92,7 @@ func TestBufreadWasmMatchesGoSynth(t *testing.T) {
 		},
 		Score: sointu.Score{RowsPerPattern: 8, Length: 1, Tracks: []sointu.Track{
 			{NumVoices: 1, Order: sointu.Order{0}, Patterns: []sointu.Pattern{{60, 1, 1, 1, 72, 1, 55, 1}}},
-			{NumVoices: 1, Order: sointu.Order{0}, Patterns: []sointu.Pattern{{64, 1, 1, 1, 1, 1, 1, 0}}},
+			{NumVoices: 1, Order: sointu.Order{0}, Patterns: []sointu.Pattern{{1, 1, 64, 1, 1, 1, 1, 0}}}, // silent until triggered
 			{NumVoices: 1, Order: sointu.Order{0}, Patterns: []sointu.Pattern{{60, 1, 1, 1, 1, 1, 1, 1}}},
 		}},
 		Patch: sointu.Patch{

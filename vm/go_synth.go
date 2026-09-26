@@ -651,8 +651,16 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 // bufread pushes the next frame of a buffer region on the stack. The position
 // relative to the region start is kept in unit.state: the integer part in
 // state[0] (as bits) and the fraction in state[1], so that it stays accurate
-// for long buffers. Both are zeroed when a note is triggered.
+// for long buffers. Both are zeroed when a note is triggered. Voices that have
+// never been triggered (note 0) are silent.
 func (s *GoSynth) bufread(unit *unit, voice *voice, r BufferRegion, transpose, detune, gain float32, stereo bool, stack *[]float32) {
+	if voice.note == 0 {
+		if stereo {
+			*stack = append(*stack, 0)
+		}
+		*stack = append(*stack, 0)
+		return
+	}
 	buf := s.buffers[int(r.BufferID)]
 	frames := uint32(buf.Frames())
 	pos := math.Float32bits(unit.state[0])

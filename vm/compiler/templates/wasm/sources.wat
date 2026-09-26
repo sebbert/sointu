@@ -367,10 +367,18 @@
 ;;   Mono:   push the next frame of the buffer (channels mixed) on stack
 ;;   Stereo: push r l on stack
 ;;   The integer part of the position relative to the region start is in
-;;   WRK[0], the fraction in WRK[1]. Matches bufread in vm/go_synth.go.
+;;   WRK[0], the fraction in WRK[1]. Voices never triggered (note 0) are
+;;   silent. Matches bufread in vm/go_synth.go.
 ;;-------------------------------------------------------------------------------
 (func $su_op_bufread (param $stereo i32) (local $r i32) (local $ptr i32) (local $frames i32) (local $channels i32) (local $pos i32) (local $frac f32) (local $i i32) (local $next i32) (local $loopEnd i32) (local $loopLength i32) (local $semitones f32) (local $whole f32)
     (local.set $r (i32.add (i32.const {{index .Labels "su_buffer_regions"}}) (i32.mul (call $scanOperand) (i32.const 28))))
+    (if (i32.eqz (i32.load (global.get $voice))) (then
+{{- if .Stereo "bufread"}}
+        (if (local.get $stereo) (then (call $push (f32.const 0))))
+{{- end}}
+        (call $push (f32.const 0))
+        return
+    ))
     (local.set $ptr (i32.add (i32.const {{index .Labels "su_buffers"}}) (i32.load (local.get $r))))
     (local.set $frames (i32.load offset=4 (local.get $r)))
     (local.set $channels (i32.load offset=8 (local.get $r)))
