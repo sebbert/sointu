@@ -40,6 +40,9 @@ type (
 		KeyNoteMap            Keyboard[key.Name]
 		PopupAlert            *AlertsState
 		Zoom                  int
+		// textFocused is set during a frame by a focused text editor, so that
+		// key presses meant as text do not trigger key bindings, e.g. notes
+		textFocused bool
 
 		DialogState *DialogState
 
@@ -228,6 +231,7 @@ func titleFromPath(path string, unsaved bool) string {
 }
 
 func (t *Tracker) Layout(gtx layout.Context) {
+	t.textFocused = false
 	zoomFactor := ZoomFactors[t.Zoom]
 	gtx.Metric.PxPerDp *= zoomFactor
 	gtx.Metric.PxPerSp *= zoomFactor

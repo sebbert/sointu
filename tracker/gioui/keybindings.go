@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"gioui.org/io/clipboard"
 	"gioui.org/io/event"
@@ -93,6 +94,11 @@ func makeHint(hint, format, action string) string {
 func (t *Tracker) KeyEvent(e key.Event, gtx C) {
 	if e.State == key.Release {
 		t.KeyNoteMap.Release(e.Name)
+		return
+	}
+	// while typing in a text field, keys that type text are not key
+	// bindings such as notes
+	if t.textFocused && isTextKey(e) {
 		return
 	}
 	action, ok := keyBindingMap[e]
@@ -304,4 +310,13 @@ func (t *Tracker) KeyEvent(e key.Event, gtx C) {
 			t.KeyNoteMap.Press(e.Name, tracker.NoteEvent{Channel: instr, Note: n})
 		}
 	}
+}
+
+// isTextKey reports whether a key press types text: a character or space,
+// without modifiers other than shift.
+func isTextKey(e key.Event) bool {
+	if e.Modifiers&(key.ModCtrl|key.ModCommand|key.ModAlt|key.ModSuper) != 0 {
+		return false
+	}
+	return e.Name == key.NameSpace || utf8.RuneCountInString(string(e.Name)) == 1
 }

@@ -66,6 +66,11 @@ func (e *Editor) Layout(gtx C, str tracker.String, th *Theme, style *EditorStyle
 	for e.Update(gtx, str) != EditorEventNone {
 		// just consume all events if the user did not consume them
 	}
+	if gtx.Focused(&e.widgetEditor) {
+		if t, ok := gtx.Values["Tracker"].(*Tracker); ok {
+			t.textFocused = true
+		}
+	}
 	if e.widgetEditor.Text() != str.Value() {
 		e.widgetEditor.SetText(str.Value())
 		l := len(e.widgetEditor.Text())
@@ -120,7 +125,7 @@ func (e *Editor) Focus() {
 // invalid while being typed, or expensive to apply. If the value is rejected,
 // the text reverts and an alert is shown.
 type DraftEditor struct {
-	Editor
+	*Editor
 	draft  string
 	active bool
 }
@@ -143,7 +148,7 @@ func (v *draftValue) SetValue(value string) bool {
 }
 
 func NewDraftEditor(alignment text.Alignment) *DraftEditor {
-	return &DraftEditor{Editor: *NewEditor(true, true, alignment)}
+	return &DraftEditor{Editor: NewEditor(true, true, alignment)} // a pointer: the key filters refer to its address
 }
 
 func (d *DraftEditor) Layout(gtx C, str tracker.String, th *Theme, style *EditorStyle, hint string) D {
