@@ -144,9 +144,23 @@ a dynamically linked library and ran inside a VST host.
 go build -buildmode=c-shared -tags=plugin -o sointu-vsti.dll .\cmd\sointu-vsti\
 ```
 
-On other platforms than Windows, replace `-o sointu-vsti.dll` appropriately e.g.
-`-o sointu-vsti.so`; so far, the VST instrument has been built & tested on
-Windows and Linux.
+On Linux, replace `-o sointu-vsti.dll` with e.g. `-o sointu-vsti.so`.
+
+On macOS, VST hosts only load plugins packaged as `.vst` bundles. Build the
+bundle and install it with:
+
+```
+make vst            # builds out/sointu-vsti.vst
+make install-vst    # installs into ~/Library/Audio/Plug-Ins/VST
+```
+
+The macOS plugin in the release zip is not notarized by Apple, so if it was
+downloaded with a browser, macOS refuses to load it ("Not Opened"). Remove the
+quarantine flag after installing:
+
+```
+xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST/sointu-vsti.vst
+```
 
 Notice the `-tags=plugin` build tag definition. This is required by the [vst2
 library](https://github.com/pipelined/vst2); otherwise, you will get a lot of
