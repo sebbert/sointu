@@ -162,8 +162,6 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 			Layout(C, tracker.String, *Theme, *EditorStyle, string) D
 		}, s tracker.String, style *EditorStyle, hint string) layout.Widget {
 			return func(gtx C) D {
-				gtx.Constraints.Min.X = min(gtx.Dp(220), gtx.Constraints.Max.X)
-				gtx.Constraints.Max.X = gtx.Constraints.Min.X
 				return layoutField(gtx, th, func(gtx C) D { return e.Layout(gtx, s, th, style, hint) })
 			}
 		}
@@ -176,14 +174,25 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 		deletePresetBtn := ActionBtn(tr.Buffer().DeletePreset(), th, ib.deletePreset, "Delete preset", "Delete the preset; the samples using it\nkeep its encoding as their own")
 		presetLine := func(gtx C) D {
 			if tr.Buffer().IsCustom() {
-				return layoutInstrumentPropertyLine(gtx, "This sample only", newPresetBtn.Layout)
+				return layoutBufferLine(gtx, "Preset", false, func(gtx C) D {
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(Label(th, &th.InstrumentEditor.Properties.Label, "none, this sample only").Layout),
+						layout.Rigid(newPresetBtn.Layout),
+					)
+				})
 			}
 			users := tr.Buffer().PresetUsers()
-			label := "Preset"
+			shared := ""
 			if users > 1 {
-				label = fmt.Sprintf("Preset, shared by %d samples", users)
+				shared = fmt.Sprintf("shared by %d samples", users)
 			}
-			return layoutInstrumentPropertyLine(gtx, label, editor(ib.presetEditor, tr.Buffer().PresetName(), "Name"))
+			return layoutBufferLine(gtx, "Preset", true, func(gtx C) D {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Flexed(1, editor(ib.presetEditor, tr.Buffer().PresetName(), "Name")),
+					layout.Rigid(layout.Spacer{Width: 6}.Layout),
+					layout.Rigid(Label(th, &th.InstrumentEditor.Presets.Results.UserDir, shared).Layout),
+				)
+			})
 		}
 		presetBtns := func(gtx C) D {
 			if tr.Buffer().IsCustom() {
@@ -197,25 +206,25 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 		}
 		lines := []layout.Widget{
 			func(gtx C) D {
-				return layoutInstrumentPropertyLine(gtx, "Name", editor(ib.nameEditor, tr.Buffer().Name(), "Name"))
+				return layoutBufferLine(gtx, "Name", true, editor(ib.nameEditor, tr.Buffer().Name(), "Name"))
 			},
 			func(gtx C) D {
-				return layoutInstrumentPropertyLine(gtx, "Channels", func(gtx C) D {
+				return layoutBufferLine(gtx, "Channels", false, func(gtx C) D {
 					return channels.Layout(gtx, IntMenuChild(tr.Buffer().Channels(), icons.NavigationCheck))
 				})
 			},
 			nil,
 			func(gtx C) D {
-				return layoutInstrumentPropertyLine(gtx, "Encoding", func(gtx C) D {
+				return layoutBufferLine(gtx, "Encoding", false, func(gtx C) D {
 					return preset.Layout(gtx, IntMenuChild(tr.Buffer().Preset(), icons.NavigationCheck))
 				})
 			},
 			presetLine,
 			func(gtx C) D {
-				return layoutInstrumentPropertyLine(gtx, "Format", editor(ib.formatEditor, tr.Buffer().Format(), "keep original"))
+				return layoutBufferLine(gtx, "Format", true, editor(ib.formatEditor, tr.Buffer().Format(), "keep original"))
 			},
 			func(gtx C) D {
-				return layoutInstrumentPropertyLine(gtx, "ffmpeg args", styledEditor(ib.argsEditor, tr.Buffer().Args(), &monoStyle, "e.g. -c:a libopus -b:a 32k"))
+				return layoutBufferLine(gtx, "ffmpeg args", true, styledEditor(ib.argsEditor, tr.Buffer().Args(), &monoStyle, "e.g. -c:a libopus -b:a 32k"))
 			},
 			presetBtns,
 			nil,
@@ -225,8 +234,7 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 			},
 		}
 		return ib.props.Layout(gtx, len(lines), func(gtx C, i int) D {
-			gtx.Constraints.Max.X = min(gtx.Dp(420), gtx.Constraints.Max.X)
-			gtx.Constraints.Min.X = min(gtx.Constraints.Max.X, gtx.Constraints.Min.X)
+			gtx.Constraints.Min.X = gtx.Constraints.Max.X
 			if lines[i] == nil { // divider
 				px := max(gtx.Dp(unit.Dp(1)), 1)
 				paint.FillShape(gtx.Ops, color.NRGBA{255, 255, 255, 3}, clip.Rect(image.Rect(0, 0, gtx.Constraints.Max.X, px)).Op())
@@ -267,5 +275,26 @@ func layoutField(gtx C, th *Theme, w layout.Widget) D {
 			gtx.Constraints.Min.X = gtx.Constraints.Max.X
 			return layout.Inset{Top: 4, Bottom: 4, Left: 6, Right: 6}.Layout(gtx, w)
 		}),
+	)
+}
+
+// layoutBufferLine lays out a labeled line of the buffer properties, with the
+// labels in a column. If fill is true, the content fills the rest of the
+// line; otherwise it is left aligned at its own size.
+func layoutBufferLine(gtx C, label string, fill bool, content layout.Widget) D {
+	tr := TrackerFromContext(gtx)
+	l := func(gtx C) D {
+		gtx.Constraints.Min.X = gtx.Dp(90)
+		return Label(tr.Theme, &tr.Theme.InstrumentEditor.Properties.Label, label).Layout(gtx)
+	}
+	c := layout.Rigid(content)
+	if fill {
+		c = layout.Flexed(1, content)
+	}
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+		layout.Rigid(layout.Spacer{Width: 6, Height: 36}.Layout),
+		layout.Rigid(l),
+		c,
+		layout.Rigid(layout.Spacer{Width: 6}.Layout),
 	)
 }
