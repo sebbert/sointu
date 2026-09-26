@@ -28,8 +28,8 @@ You can either:
      [releases](https://github.com/vsariola/sointu/releases).
     
 In both cases, you can then just run one of the executables (no need to install
-anything); or in the case of the VST plugins library files, copy them wherever
-you keep you VST2 plugins.
+anything); or in the case of the plugin library files, copy them wherever
+you keep your VST2 or CLAP plugins.
 
 The pre 1.0 version release tags are mostly for reference: no backwards
 compatibility will be guaranteed while upgrading to a newer version. Backwards
@@ -56,7 +56,7 @@ synthesis engine can already be fitted in 600 bytes (386, compressed), with
 another few hundred bytes for the patch and pattern data.
 
 Sointu consists of two core elements:
-- A cross-platform synth-tracker that runs as either VSTi or stand-alone
+- A cross-platform synth-tracker that runs as either a VSTi, a CLAP plugin or stand-alone
   app for composing music, written in [go](https://golang.org/). The app
   is still heavily work in progress. The app exports the projects as
   .yml files.
@@ -168,6 +168,27 @@ build errors.
 
 Add `-tags=native,plugin` to use the [x86 native virtual
 machine](#native-virtual-machine) instead of the virtual machine written in Go.
+
+### Sointu-clap
+
+The same plugin in [CLAP](https://cleveraudio.org/) format, with the same
+prerequisites as sointu-vsti. It is a `.clap` bundle on macOS and a `.clap`
+shared library elsewhere. Build and install it with:
+
+```
+make clap           # builds out/sointu-clap.clap
+make install-clap   # installs into the user CLAP directory
+```
+
+The user CLAP directory is `~/Library/Audio/Plug-Ins/CLAP` on macOS, `~/.clap`
+on Linux and `%LOCALAPPDATA%\Programs\Common\CLAP` on Windows. Set `CLAP_DIR`
+to install elsewhere, or use `make install-clap-system` for the system
+directory. As with the VST, remove the quarantine flag from a downloaded macOS
+bundle:
+
+```
+xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/CLAP/sointu-clap.clap
+```
 
 ### Sointu-compile
 
