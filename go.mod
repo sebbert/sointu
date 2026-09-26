@@ -41,4 +41,4 @@ require (
 	pipelined.dev/signal v0.10.0 // indirect
 )
 
-replace gioui.org => github.com/sebbert/gio v0.9.1-0.20260926130206-2bb7d32b2058
+replace gioui.org => ./third_party/gio
