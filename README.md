@@ -225,8 +225,19 @@ WebAssembly example:
 
 ```
 sointu-compile -arch=wasm tests/test_chords.yml
-wat2wasm test_chords.wat
+wat2wasm --enable-annotations test_chords.wat
 ```
+
+Songs can play audio samples, imported in the tracker's Buffers tab and played
+with the `bufread` unit (WebAssembly only for now). The compiler encodes each
+sample with its encoding preset using [ffmpeg](https://ffmpeg.org/), found
+through `-ffmpeg`, `$SOINTU_FFMPEG`, PATH or the usual Homebrew and MacPorts
+directories, and stores the encoded samples in `sointu.buffer` custom sections
+of the module; hence `--enable-annotations`. The page decodes them with the
+browser's `decodeAudioData` before instantiating the module, and passes the
+audio to the player through the `s.b` import; see
+[the example](examples/code/wasm/index.html). Songs without samples need
+neither.
 
 If you are looking for an easy way to compile an executable from a Sointu song
 (e.g. for a executable music compo), take a look at [NR4's Python-based
@@ -364,6 +375,17 @@ either Debug or Release and either x86 or x64 build, and hit build all.
 
 These are automatically invoked by CTest if [node](https://nodejs.org) and
 [wat2wasm](https://github.com/WebAssembly/wabt) are found in the path.
+
+The tests of songs with samples are Go tests in [vm/compiler](vm/compiler/),
+run by `go test ./vm/compiler` when node, wat2wasm and ffmpeg are found: they
+compare the WebAssembly player with the Go synth. To also play the songs in
+headless Chrome, decoding the samples in the browser like the example page
+does, set `SOINTU_TEST_BROWSER=1`. The browser renderer can also be run on any
+compiled song:
+
+```
+node tests/wasm_browser_renderer.mjs song.wasm [expected.raw] [--out got.raw]
+```
 
 New features since fork
 -----------------------

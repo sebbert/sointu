@@ -56,6 +56,20 @@
 {{- $.DataW .}}
 {{- end}}
 
+{{- if .HasOp "bufread"}}
+{{- /*
+;-------------------------------------------------------------------------------
+;    Buffer regions played by bufread units, 7 i32s each: offset of the
+;    buffer's audio from su_buffers in bytes, frames and channels of the
+;    buffer, start, loop start, loop length and flags of the region
+;-------------------------------------------------------------------------------
+*/}}
+{{- .SetDataLabel "su_buffer_regions"}}
+{{- range .Regions}}
+{{- $.DataD .Offset}}{{$.DataD .Frames}}{{$.DataD .Channels}}{{$.DataD .Start}}{{$.DataD .LoopStart}}{{$.DataD .LoopLength}}{{$.DataD .Flags}}
+{{- end}}
+{{- end}}
+
 {{- /*
 ;-------------------------------------------------------------------------------
 ; The number of transformed parameters each opcode takes
@@ -106,6 +120,11 @@
 {{- .Align}}
 {{- .SetBlockLabel "su_delaylines"}}
 {{- .Block (int (mul 262156 .Song.Patch.NumDelayLines))}}
+{{- if .HasOp "bufread"}}
+{{- .Align}}
+{{- .SetBlockLabel "su_buffers"}}
+{{- .Block .BufferBytes}}
+{{- end}}
 {{- .Align}}
 {{- .SetBlockLabel "su_outputbuffer"}}
 {{- if .Output16Bit}}
@@ -123,6 +142,12 @@
 (func $pow (import "m" "pow") (param f32) (param f32) (result f32))
 (func $log2 (import "m" "log2") (param f32) (result f32))
 (func $sin (import "m" "sin") (param f32) (result f32))
+{{- if .Buffers}}
+;; Buffer audio from the host: sample (buffer, frame, channel), with buffers
+;; numbered in the order of the sointu.buffer custom sections holding their
+;; encoded audio. The host decodes those before instantiating the module.
+(func $bufferSample (import "s" "b") (param i32 i32 i32) (result f32))
+{{- end}}
 
 ;;------------------------------------------------------------------------------
 ;; Types. Only useful to define the jump table type, which is
@@ -205,6 +230,23 @@
 
 (func $render (param)
 {{- if  .Output16Bit }} (local $channel i32) {{- end }}
+{{- if .Buffers}} (local $k i32) {{- end }}
+{{- range $i, $b := .Buffers}}
+{{- if gt (mul $b.Frames $b.Channels) 0}}
+    ;; fill buffer {{$i}} with the decoded audio from the host
+    (local.set $k (i32.const 0))
+    loop $buffer{{$i}}_loop
+        (f32.store offset={{add (index $.Labels "su_buffers") $b.Offset}}
+            (i32.shl (local.get $k) (i32.const 2))
+            (call $bufferSample (i32.const {{$i}})
+                (i32.div_u (local.get $k) (i32.const {{$b.Channels}}))
+                (i32.rem_u (local.get $k) (i32.const {{$b.Channels}}))
+            )
+        )
+        (br_if $buffer{{$i}}_loop (i32.lt_u (local.tee $k (i32.add (local.get $k) (i32.const 1))) (i32.const {{mul $b.Frames $b.Channels}})))
+    end
+{{- end}}
+{{- end}}
     loop $pattern_loop
         (global.set $row (i32.const 0))
         loop $row_loop
@@ -331,6 +373,10 @@
 
 ;; All data is collected into a byte buffer and emitted at once
 (data (i32.const 0) "{{range .Data}}\{{. | printf "%02x"}}{{end}}")
+
+{{- range .Buffers}}
+(@custom "sointu.buffer" "{{.EncodedHex}}")
+{{- end}}
 
 ;;(data (i32.const 8388610) "\52\49\46\46\b2\eb\0c\20\57\41\56\45\66\6d\74\20\12\20\20\20\03\20\02\20\44\ac\20\20\20\62\05\20\08\20\20\20\20\20\66\61\63\74\04\20\20\20\e0\3a\03\20\64\61\74\61\80\eb\0c\20")
 

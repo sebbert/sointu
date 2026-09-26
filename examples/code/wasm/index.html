@@ -6,45 +6,60 @@
 
   <body>
     <script type="module">
+      // Loads a song compiled with sointu-compile -arch=wasm and plays it.
+      // Songs that play samples (buffers) carry the encoded samples in
+      // "sointu.buffer" custom sections; they are decoded by the browser
+      // before instantiating, and handed to the player through the s.b
+      // import. Songs without samples need neither step.
+      async function render(bytes) {
+        const module = await WebAssembly.compile(bytes);
+        const decoder = new OfflineAudioContext(1, 1, 44100); // decodes at 44.1 kHz
+        const buffers = await Promise.all(
+          WebAssembly.Module.customSections(module, "sointu.buffer").map(
+            (section) => decoder.decodeAudioData(section.slice(0))
+          )
+        );
+        const { exports } = await WebAssembly.instantiate(module, {
+          m: Math,
+          s: {
+            // sample of buffer i at frame f, channel c; 0 past the end
+            b: (i, f, c) =>
+              buffers[i].getChannelData(Math.min(c, buffers[i].numberOfChannels - 1))[f] ?? 0,
+          },
+        });
+        return exports;
+      }
+
       // button to start audio context
       const button = document.createElement("button");
       button.innerHTML = "start";
       document.body.appendChild(button);
-      button.onclick = () => {
+      button.onclick = async () => {
         document.body.removeChild(button);
 
-        fetch("test_chords.wasm")
-          .then((response) => response.arrayBuffer())
-          .then((bytes) => WebAssembly.instantiate(bytes, { m: Math }))
-          .then(({ instance }) => {
-            const context = new AudioContext({ sampleRate: 44100 });
+        const bytes = await (await fetch("test_chords.wasm")).arrayBuffer();
+        const exports = await render(bytes);
+        const context = new AudioContext({ sampleRate: 44100 });
 
-            let frames = instance.exports.t.value
-              ? instance.exports.l.value / 4
-              : instance.exports.l.value / 8;
+        let frames = exports.t.value ? exports.l.value / 4 : exports.l.value / 8;
 
-            let wasmBuffer = new Float32Array(
-              instance.exports.m.buffer,
-              instance.exports.s.value,
-              frames * 2
-            );
+        let wasmBuffer = new Float32Array(exports.m.buffer, exports.s.value, frames * 2);
 
-            const buffer = context.createBuffer(2, frames, context.sampleRate);
+        const buffer = context.createBuffer(2, frames, context.sampleRate);
 
-            // convert wasm buffer to audio buffer
-            for (let channel = 0; channel < 2; channel++) {
-              const buffering = buffer.getChannelData(channel);
-              for (let i = 0; i < frames; i++) {
-                buffering[i] = wasmBuffer[i * 2 + channel];
-              }
-            }
+        // convert wasm buffer to audio buffer
+        for (let channel = 0; channel < 2; channel++) {
+          const buffering = buffer.getChannelData(channel);
+          for (let i = 0; i < frames; i++) {
+            buffering[i] = wasmBuffer[i * 2 + channel];
+          }
+        }
 
-            // connect to output and start playing
-            const src = context.createBufferSource();
-            src.buffer = buffer;
-            src.connect(context.destination);
-            src.start();
-          });
+        // connect to output and start playing
+        const src = context.createBufferSource();
+        src.buffer = buffer;
+        src.connect(context.destination);
+        src.start();
       };
     </script>
   </body>

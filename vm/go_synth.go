@@ -688,7 +688,8 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, r BufferRegion, transpose, d
 	if r.Flags&BufferRegionNoteTracking != 0 {
 		semitones += float32(voice.note) - 60
 	}
-	frac += float32(math.Exp2(float64(semitones) / 12))
+	// computed like the wasm player, which uses JavaScript's Math.pow
+	frac += float32(math.Pow(2, float64(semitones/12)))
 	whole := float32(math.Floor(float64(frac)))
 	unit.state[0] = math.Float32frombits(pos + uint32(whole))
 	unit.state[1] = frac - whole

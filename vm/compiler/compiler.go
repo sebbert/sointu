@@ -5,6 +5,7 @@ import (
 	"embed"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"text/template"
 
 	"github.com/Masterminds/sprig"
@@ -18,6 +19,30 @@ type Compiler struct {
 	Arch        string
 	Output16Bit bool
 	RowSync     bool
+	// Buffers are the encoded samples of the song's buffers, keyed by
+	// sointu.Buffer.ID, for compiling songs that play buffers (wasm only).
+	Buffers map[int]EncodedBuffer
+}
+
+// EncodedBuffer is the sample of a buffer encoded for the compiled player,
+// with the length and channels of its decoded audio.
+type EncodedBuffer struct {
+	Encoded  []byte
+	Frames   int
+	Channels int
+}
+
+// wasmBuffer is a buffer in the wasm player: its encoded sample goes in a
+// custom section, which the host decodes, and the decoded audio is stored at
+// Offset bytes from su_buffers.
+type wasmBuffer struct {
+	Offset, Frames, Channels int
+	EncodedHex               string
+}
+
+// wasmBufferRegion is an entry of the wasm player's buffer region table.
+type wasmBufferRegion struct {
+	Offset, Frames, Channels, Start, LoopStart, LoopLength, Flags uint32
 }
 
 //go:embed templates/amd64-386/* templates/wasm/*
@@ -86,8 +111,8 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 		templates = []string{"player.wat"}
 	}
 	features := vm.NecessaryFeaturesFor(song.Patch)
-	if _, ok := features.Opcode("bufread"); ok {
-		return nil, nil, fmt.Errorf(`the bufread unit cannot be compiled yet (targeted architecture was %v)`, com.Arch)
+	if _, ok := features.Opcode("bufread"); ok && com.Arch != "wasm" {
+		return nil, nil, fmt.Errorf(`the bufread unit is only supported when compiling for wasm (targeted architecture was %v)`, com.Arch)
 	}
 	if _, ok := features.Opcode("speed"); ok {
 		warnings = append(warnings, fmt.Sprintf(`song uses the speed unit, so SU_LENGTH_IN_SAMPLES, SU_BUFFER_LENGTH, and SU_SYNCBUFFER_LENGTH cannot be known without rendering the entire song. They won't be defined in the generated header file. You have to take responsibility for allocating large enough audio buffer and syncBuf.`))
@@ -124,6 +149,10 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 			populatedTemplate, extension, err = com.compile(templateName, &data)
 		} else if com.Arch == "wasm" {
 			wasmMacros := *NewWasmMacros()
+			buffers, regions, bufferBytes, err := com.wasmBuffers(song, encodedPatch)
+			if err != nil {
+				return nil, nil, err
+			}
 			data := struct {
 				CompilerMacros
 				FeatureSetMacros
@@ -135,7 +164,10 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 				PatternLength  int
 				SequenceLength int
 				Hold           int
-			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1}
+				Buffers        []wasmBuffer
+				Regions        []wasmBufferRegion
+				BufferBytes    int
+			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers, regions, bufferBytes}
 			populatedTemplate, extension, err = com.compile(templateName, &data)
 		}
 		if err != nil {
@@ -151,4 +183,41 @@ func (com *Compiler) compile(templateName string, data interface{}) (string, str
 	err := com.Template.ExecuteTemplate(result, templateName, data)
 	extension := filepath.Ext(templateName)
 	return result.String(), extension, err
+}
+
+// wasmBuffers lays out the buffers played by the patch's bufread units in the
+// wasm player's memory and builds the buffer region table. Only buffers that
+// are played are included; regions of buffers that do not exist or have no
+// sample are silent.
+func (com *Compiler) wasmBuffers(song *sointu.Song, b *vm.Bytecode) (buffers []wasmBuffer, regions []wasmBufferRegion, size int, err error) {
+	index := map[uint32]int{}
+	for _, r := range b.BufferRegions {
+		i, ok := index[r.BufferID]
+		if !ok {
+			i = -1
+			if buf, found := song.Buffers.Find(int(r.BufferID)); found && buf.Sample != nil {
+				enc, ok := com.Buffers[buf.ID]
+				if !ok {
+					return nil, nil, 0, fmt.Errorf("buffer %q has not been encoded", buf.Name)
+				}
+				if enc.Channels < 1 || enc.Channels > 2 {
+					return nil, nil, 0, fmt.Errorf("buffer %q has %d channels, expected 1 or 2", buf.Name, enc.Channels)
+				}
+				i = len(buffers)
+				var hex strings.Builder
+				for _, c := range enc.Encoded {
+					fmt.Fprintf(&hex, "\\%02x", c)
+				}
+				buffers = append(buffers, wasmBuffer{Offset: size, Frames: enc.Frames, Channels: enc.Channels, EncodedHex: hex.String()})
+				size += enc.Frames * enc.Channels * 4
+			}
+			index[r.BufferID] = i
+		}
+		region := wasmBufferRegion{Channels: 1, Start: r.Start, LoopStart: r.LoopStart, LoopLength: r.LoopLength, Flags: r.Flags}
+		if i >= 0 {
+			region.Offset, region.Frames, region.Channels = uint32(buffers[i].Offset), uint32(buffers[i].Frames), uint32(buffers[i].Channels)
+		}
+		regions = append(regions, region)
+	}
+	return buffers, regions, size, nil
 }

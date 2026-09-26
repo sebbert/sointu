@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/vsariola/sointu"
+	"github.com/vsariola/sointu/ffmpeg"
 	"github.com/vsariola/sointu/version"
 	"github.com/vsariola/sointu/vm/compiler"
 )
@@ -45,6 +46,7 @@ func main() {
 	output16bit := flag.Bool("i", false, "Compiled song should output 16-bit integers, instead of floats.")
 	targetOs := flag.String("os", runtime.GOOS, "Target OS. Defaults to current OS. Possible values: windows, darwin, linux. Anything else exits with error code. Ignored when targeting wasm.")
 	versionFlag := flag.Bool("v", false, "Print version.")
+	ffmpegPath := flag.String("ffmpeg", "", "Path of ffmpeg, for encoding the samples of songs that play buffers. By default, $"+ffmpeg.EnvVar+", PATH and common installation directories are searched.")
 	flag.Usage = printUsage
 	flag.Parse()
 	// Validate and guard against some oddly specific typos:
@@ -152,6 +154,9 @@ func main() {
 		var compiledPlayer map[string]string
 		if compile {
 			var err error
+			if comp.Buffers, err = encodeBuffers(&song, *ffmpegPath); err != nil {
+				return fmt.Errorf("encoding buffers failed: %v", err)
+			}
 			var warnings []string
 			compiledPlayer, warnings, err = comp.Song(&song)
 			if err != nil {
@@ -243,4 +248,50 @@ func main() {
 func printUsage() {
 	fmt.Fprintf(os.Stderr, "Sointu compiler. Input .yml or .json songs, outputs compiled songs (e.g. .asm and .h files).\nUsage: %s [flags] [path ...]\n", os.Args[0])
 	flag.PrintDefaults()
+}
+
+// encodeBuffers encodes the samples of the buffers played by the song's
+// bufread units with ffmpeg, printing the ffmpeg version and the sizes. It
+// returns nil if the song plays no buffers.
+func encodeBuffers(song *sointu.Song, ffmpegPath string) (map[int]compiler.EncodedBuffer, error) {
+	played := map[int]bool{}
+	for _, instr := range song.Patch {
+		for _, u := range instr.Units {
+			if u.Type == "bufread" && !u.Disabled {
+				played[u.Parameters["buffer"]] = true
+			}
+		}
+	}
+	var cache *ffmpeg.Cache
+	ret := map[int]compiler.EncodedBuffer{}
+	for _, buf := range song.Buffers {
+		if !played[buf.ID] || buf.Sample == nil {
+			continue
+		}
+		if cache == nil {
+			f, err := ffmpeg.Find(ffmpegPath)
+			if err != nil {
+				return nil, err
+			}
+			if v, err := f.Version(); err == nil {
+				fmt.Fprintf(os.Stderr, "encoding samples with %s\n", v)
+			}
+			dir, _ := ffmpeg.DefaultCacheDir()
+			cache = ffmpeg.NewCache(f, dir)
+		}
+		enc, err := song.SampleEncoding(buf.Sample)
+		if err != nil {
+			return nil, fmt.Errorf("buffer %q: %v", buf.Name, err)
+		}
+		r, err := cache.Get(buf.Sample.Data, enc, buf.Channels)
+		if err != nil {
+			return nil, fmt.Errorf("buffer %q: %v", buf.Name, err)
+		}
+		fmt.Fprintf(os.Stderr, "buffer %q: %d bytes, %d frames\n", buf.Name, len(r.Encoded), r.Audio.Frames())
+		ret[buf.ID] = compiler.EncodedBuffer{Encoded: r.Encoded, Frames: r.Audio.Frames(), Channels: buf.Channels}
+	}
+	if len(ret) == 0 {
+		return nil, nil
+	}
+	return ret, nil
 }
