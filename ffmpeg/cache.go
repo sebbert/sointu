@@ -171,3 +171,55 @@ func (c *Cache) store(key Key, r Result) {
 		write(audioPath, floatsToBytes(r.Audio.Data))
 	}
 }
+
+// PlayedBuffers returns the IDs of the buffers played by the enabled bufread
+// units of a song.
+func PlayedBuffers(song *sointu.Song) map[int]bool {
+	played := map[int]bool{}
+	for _, instr := range song.Patch {
+		for _, u := range instr.Units {
+			if u.Type == "bufread" && !u.Disabled {
+				played[u.Parameters["buffer"]] = true
+			}
+		}
+	}
+	return played
+}
+
+// SongBuffers encodes and decodes the samples of the buffers played by the
+// song, returning the results keyed by buffer ID. The function f, if not nil,
+// is called with each buffer and its result.
+func (c *Cache) SongBuffers(song *sointu.Song, f func(sointu.Buffer, Result)) (map[int]Result, error) {
+	played := PlayedBuffers(song)
+	ret := map[int]Result{}
+	for _, buf := range song.Buffers {
+		if !played[buf.ID] || buf.Sample == nil {
+			continue
+		}
+		enc, err := song.SampleEncoding(buf.Sample)
+		if err != nil {
+			return nil, fmt.Errorf("buffer %q: %v", buf.Name, err)
+		}
+		r, err := c.Get(buf.Sample.Data, enc, buf.Channels)
+		if err != nil {
+			return nil, fmt.Errorf("buffer %q: %v", buf.Name, err)
+		}
+		if f != nil {
+			f(buf, r)
+		}
+		ret[buf.ID] = r
+	}
+	return ret, nil
+}
+
+// NeedsFFmpeg reports whether playing or compiling the song needs ffmpeg, i.e.
+// whether it plays buffers with samples.
+func NeedsFFmpeg(song *sointu.Song) bool {
+	played := PlayedBuffers(song)
+	for _, buf := range song.Buffers {
+		if played[buf.ID] && buf.Sample != nil {
+			return true
+		}
+	}
+	return false
+}

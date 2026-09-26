@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/vsariola/sointu"
+	"github.com/vsariola/sointu/ffmpeg"
 	"github.com/vsariola/sointu/oto"
 	"github.com/vsariola/sointu/version"
 )
@@ -31,6 +32,7 @@ func main() {
 	pcm := flag.Bool("c", false, "Convert audio to 16-bit signed PCM when outputting.")
 	versionFlag := flag.Bool("v", false, "Print version.")
 	syntherInt := flag.Int("synth", 0, "Select the synther to use. By default, uses the first one in the list of available synthers.")
+	ffmpegPath := flag.String("ffmpeg", "", "Path of ffmpeg, for encoding and decoding the samples of songs that play buffers. By default, $"+ffmpeg.EnvVar+", PATH and common installation directories are searched.")
 	flag.Usage = printUsage
 	flag.Parse()
 	if *versionFlag {
@@ -102,7 +104,11 @@ func main() {
 				return fmt.Errorf("the song could not be parsed as .json (%v) or .yml (%v)", errJSON, errYaml)
 			}
 		}
-		buffer, err := sointu.Play(cmd.Synthers[*syntherInt], song, nil) // render the song to calculate its length
+		buffers, err := decodeBuffers(&song, *ffmpegPath)
+		if err != nil {
+			return fmt.Errorf("could not decode the samples of the song: %v", err)
+		}
+		buffer, err := sointu.PlayWithBuffers(cmd.Synthers[*syntherInt], song, buffers, nil) // render the song to calculate its length
 		if err != nil {
 			return fmt.Errorf("sointu.Play failed: %v", err)
 		}
@@ -169,4 +175,27 @@ func main() {
 func printUsage() {
 	fmt.Fprintf(os.Stderr, "Sointu command line utility for playing .asm/.json song files.\nUsage: %s [flags] [path ...]\n", os.Args[0])
 	flag.PrintDefaults()
+}
+
+// decodeBuffers encodes and decodes the samples of the buffers played by the
+// song with ffmpeg, so that they sound like in the compiled player. It
+// returns nil if the song plays no buffers.
+func decodeBuffers(song *sointu.Song, ffmpegPath string) (map[int]sointu.BufferAudio, error) {
+	if !ffmpeg.NeedsFFmpeg(song) {
+		return nil, nil
+	}
+	f, err := ffmpeg.Find(ffmpegPath)
+	if err != nil {
+		return nil, err
+	}
+	dir, _ := ffmpeg.DefaultCacheDir()
+	results, err := ffmpeg.NewCache(f, dir).SongBuffers(song, nil)
+	if err != nil {
+		return nil, err
+	}
+	ret := map[int]sointu.BufferAudio{}
+	for id, r := range results {
+		ret[id] = r.Audio
+	}
+	return ret, nil
 }
