@@ -164,3 +164,30 @@ func TestFindWithBadPath(t *testing.T) {
 		t.Errorf("expected an error")
 	}
 }
+
+func TestBuiltinPresets(t *testing.T) {
+	presets, err := ffmpeg.Presets()
+	if err != nil {
+		t.Logf("user presets: %v", err)
+	}
+	names := map[string]bool{}
+	for _, p := range presets {
+		names[p.Name] = true
+	}
+	if !names[ffmpeg.DefaultPreset] || !names["Passthrough"] {
+		t.Fatalf("missing default or passthrough preset in %v", names)
+	}
+	f := find(t)
+	in := wav(1, 4410)
+	for _, p := range presets {
+		t.Run(p.Name, func(t *testing.T) {
+			enc, err := f.Encode(in, p.Encoding(), 1)
+			if err != nil {
+				t.Fatalf("Encode failed: %v", err)
+			}
+			if _, err := f.Decode(enc, 1); err != nil {
+				t.Fatalf("Decode failed: %v", err)
+			}
+		})
+	}
+}
