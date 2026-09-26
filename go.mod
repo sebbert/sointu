@@ -40,3 +40,5 @@ require (
 	pipelined.dev/pipe v0.11.0 // indirect
 	pipelined.dev/signal v0.10.0 // indirect
 )
+
+replace gioui.org => github.com/sebbert/gio v0.9.1-0.20260926130206-2bb7d32b2058
