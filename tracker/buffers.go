@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"context"
 	"fmt"
 	"maps"
 
@@ -159,8 +160,11 @@ func (m *Model) BufferStatus(id int) BufferStatus { return m.buffers.status[id] 
 
 // runBufferWorker encodes and decodes the samples of buffers with ffmpeg,
 // replying to the model. Jobs for the same buffer that are still queued are
-// skipped in favor of the latest one.
+// skipped in favor of the latest one. Closing the worker kills a running
+// ffmpeg, so that quitting does not wait for an encoding to finish.
 func runBufferWorker(broker *Broker) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	var cache *ffmpeg.Cache
 	var findErr error
 	for {
@@ -174,13 +178,26 @@ func runBufferWorker(broker *Broker) {
 			if cache == nil && findErr == nil {
 				var f *ffmpeg.FFmpeg
 				if f, findErr = ffmpeg.Find(""); findErr == nil {
+					f.Context = ctx
 					dir, _ := ffmpeg.DefaultCacheDir()
 					cache = ffmpeg.NewCache(f, dir)
 				}
 			}
 			res := bufferResult{ID: job.ID, Key: job.Key, Err: findErr}
 			if cache != nil {
-				res.Result, res.Err = cache.Get(job.Data, job.Encoding, job.Channels)
+				done := make(chan struct{})
+				go func() {
+					res.Result, res.Err = cache.Get(job.Data, job.Encoding, job.Channels)
+					close(done)
+				}()
+				select {
+				case <-done:
+				case <-broker.CloseBufferWorker:
+					cancel() // kills ffmpeg
+					<-done
+					close(broker.FinishedBufferWorker)
+					return
+				}
 			}
 			TrySend(broker.ToModel, MsgToModel{Data: res})
 		case <-broker.CloseBufferWorker:

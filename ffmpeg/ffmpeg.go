@@ -4,6 +4,7 @@ package ffmpeg
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/vsariola/sointu"
 )
@@ -23,6 +25,9 @@ import (
 type FFmpeg struct {
 	Path      string // path of ffmpeg
 	ProbePath string // path of ffprobe
+	// Context, if not nil, kills running ffmpeg and ffprobe processes when
+	// it is done.
+	Context context.Context
 }
 
 // EnvVar is the environment variable that can be set to the path of ffmpeg.
@@ -217,7 +222,12 @@ func (f *FFmpeg) convert(data []byte, format string, args ...string) ([]byte, er
 
 func (f *FFmpeg) run(name string, args ...string) ([]byte, error) {
 	var stdout, stderr bytes.Buffer
-	cmd := exec.Command(name, args...)
+	ctx := f.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.WaitDelay = time.Second // don't wait for output of leftover child processes after a kill
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
 		msg := strings.TrimSpace(stderr.String())

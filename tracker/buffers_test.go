@@ -3,6 +3,9 @@ package tracker
 import (
 	"bytes"
 	"encoding/binary"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -386,5 +389,30 @@ func TestPreviewIsMixedIntoOutput(t *testing.T) {
 	}
 	if p.status.Previewing {
 		t.Errorf("preview should have ended")
+	}
+}
+
+func TestBufferWorkerStopsDuringEncoding(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as a fake ffmpeg")
+	}
+	dir := t.TempDir()
+	for _, name := range []string{"ffmpeg", "ffprobe"} {
+		os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\nexec sleep 30\n"), 0o755)
+	}
+	t.Setenv(ffmpeg.EnvVar, filepath.Join(dir, "ffmpeg"))
+	broker := NewBroker()
+	go runBufferWorker(broker)
+	broker.ToBufferWorker <- bufferJob{ID: 1, Data: []byte{1}, Encoding: sointu.Encoding{Format: "ogg"}, Channels: 1}
+	time.Sleep(200 * time.Millisecond) // let the fake ffmpeg start
+	start := time.Now()
+	broker.CloseBufferWorker <- struct{}{}
+	select {
+	case <-broker.FinishedBufferWorker:
+		if d := time.Since(start); d > 2*time.Second {
+			t.Errorf("stopping took %v", d)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the buffer worker did not stop while encoding")
 	}
 }
