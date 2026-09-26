@@ -241,6 +241,7 @@ uniteditor:
     cornerradius: 4
     height: 20
     inset: { top: 0, bottom: 0, left: 2, right: 2 }
+    maxlines: 1
   name:
     { textsize: 12, alignment: 2, color: *highemphasis, shadowcolor: *black }
   wirecolor: *secondarycolor

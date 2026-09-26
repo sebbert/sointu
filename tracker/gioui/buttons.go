@@ -38,6 +38,9 @@ type (
 		CornerRadius unit.Dp
 		Height       unit.Dp
 		Inset        layout.Inset
+		// MaxLines limits the number of lines of text, cutting off the rest
+		// with an ellipsis; 0 means no limit.
+		MaxLines int
 	}
 
 	IconButtonStyle struct {
@@ -207,7 +210,7 @@ func (b *Button) actualLayout(gtx C) D {
 					return b.Style.Inset.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						colMacro := op.Record(gtx.Ops)
 						paint.ColorOp{Color: b.Style.Color}.Add(gtx.Ops)
-						return widget.Label{Alignment: text.Middle}.Layout(gtx, b.Theme.Material.Shaper, b.Style.Font, b.Style.TextSize, b.Text, colMacro.Stop())
+						return widget.Label{Alignment: text.Middle, MaxLines: b.Style.MaxLines}.Layout(gtx, b.Theme.Material.Shaper, b.Style.Font, b.Style.TextSize, b.Text, colMacro.Stop())
 					})
 				})
 			},
