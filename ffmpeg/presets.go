@@ -20,7 +20,7 @@ var builtinPresets []byte
 const UserPresetsFile = "encoding-presets.yml"
 
 // DefaultPreset is the name of the preset used for new samples.
-const DefaultPreset = "Opus 64k"
+const DefaultPreset = "Opus 24k"
 
 // Presets returns the default encoding presets that songs start with: the
 // built-in presets followed by the user's presets from

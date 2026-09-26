@@ -5,18 +5,19 @@
 # replaces it.
 #
 # format is the ffmpeg output format (-f); args are the ffmpeg output
-# arguments. The number of channels (-ac) is added from the buffer. An empty
+# arguments. -fflags +bitexact and clearing the encoder tag keep ffmpeg's
+# name and version out of the file, saving about 40 bytes per sample. The number of channels (-ac) is added from the buffer. An empty
 # format stores the sample as it is.
 - name: Passthrough
 - name: Opus 24k
   format: ogg
-  args: [-c:a, libopus, -b:a, 24k]
+  args: [-c:a, libopus, -b:a, 24k, -fflags, +bitexact, "-metadata:s:a:0", encoder=]
 - name: Opus 32k
   format: ogg
-  args: [-c:a, libopus, -b:a, 32k]
+  args: [-c:a, libopus, -b:a, 32k, -fflags, +bitexact, "-metadata:s:a:0", encoder=]
 - name: Opus 64k
   format: ogg
-  args: [-c:a, libopus, -b:a, 64k]
+  args: [-c:a, libopus, -b:a, 64k, -fflags, +bitexact, "-metadata:s:a:0", encoder=]
 - name: Opus 96k
   format: ogg
-  args: [-c:a, libopus, -b:a, 96k]
+  args: [-c:a, libopus, -b:a, 96k, -fflags, +bitexact, "-metadata:s:a:0", encoder=]
