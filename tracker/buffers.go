@@ -17,6 +17,9 @@ type (
 		status map[int]BufferStatus
 		// original plays the samples without encoding, for comparison
 		original bool
+		// customFormat shows the format of the selected buffer's encoding
+		// as typed in, even if it is a common one
+		customFormat bool
 	}
 
 	// BufferStatus tells whether a buffer's audio is ready.

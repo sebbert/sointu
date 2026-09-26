@@ -56,9 +56,14 @@ func (v *bufferList) Count() int { return len(v.d.Song.Buffers) }
 func (v *bufferList) Selected() int {
 	return min(max(v.d.BufferIndex, 0), len(v.d.Song.Buffers)-1)
 }
-func (v *bufferList) Selected2() int    { return v.Selected() }
-func (v *bufferList) SetSelected(i int) { v.d.BufferIndex = i }
-func (v *bufferList) SetSelected2(int)  {}
+func (v *bufferList) Selected2() int { return v.Selected() }
+func (v *bufferList) SetSelected(i int) {
+	if i != v.d.BufferIndex {
+		v.buffers.customFormat = false
+	}
+	v.d.BufferIndex = i
+}
+func (v *bufferList) SetSelected2(int) {}
 
 // Item returns the name of buffer i and a short description of it.
 func (m *BufferModel) Item(i int) (name, info string) {
@@ -272,6 +277,7 @@ func (v *bufferPreset) SetValue(value int) bool {
 		enc, _ = v.d.Song.SampleEncoding(s)
 	}
 	defer (*BufferModel)(v).change("BufferPreset")()
+	v.buffers.customFormat = false
 	c := (*BufferModel)(v).replaceSample()
 	if value < len(v.d.Song.EncodingPresets) {
 		c.Preset, c.Encoding = v.d.Song.EncodingPresets[value].Name, nil
@@ -346,6 +352,61 @@ func (v *bufferFormat) Value() string {
 }
 func (v *bufferFormat) SetValue(value string) bool {
 	return (*BufferModel)(v).setEncoding(func(e *sointu.Encoding) { e.Format = strings.TrimSpace(value) })
+}
+
+// CommonFormats are the ffmpeg output formats offered in FormatChoice. The
+// empty format keeps the sample as it is.
+var CommonFormats = []struct{ Format, Label string }{
+	{"", "Keep original"},
+	{"ogg", "Ogg"},
+	{"webm", "WebM"},
+	{"flac", "FLAC"},
+	{"wav", "WAV"},
+	{"mp3", "MP3"},
+	{"mp4", "MP4"},
+}
+
+// FormatChoice returns an Int for choosing the format of the selected
+// buffer's encoding from CommonFormats, or, as the last value, "Custom" to
+// type it with Format.
+func (m *BufferModel) FormatChoice() Int { return MakeInt((*formatChoice)(m)) }
+
+type formatChoice BufferModel
+
+func (v *formatChoice) Value() int {
+	e := (*BufferModel)(v).editedEncoding()
+	if e == nil || v.buffers.customFormat {
+		return len(CommonFormats)
+	}
+	for i, f := range CommonFormats {
+		if f.Format == e.Format {
+			return i
+		}
+	}
+	return len(CommonFormats)
+}
+func (v *formatChoice) SetValue(value int) bool {
+	if value >= len(CommonFormats) {
+		v.buffers.customFormat = true
+		return true
+	}
+	v.buffers.customFormat = false
+	(*BufferModel)(v).setEncoding(func(e *sointu.Encoding) { e.Format = CommonFormats[value].Format })
+	return true
+}
+func (v *formatChoice) Range() RangeInclusive { return RangeInclusive{0, len(CommonFormats)} }
+func (v *formatChoice) StringOf(value int) string {
+	if value >= 0 && value < len(CommonFormats) {
+		return CommonFormats[value].Label
+	}
+	return customPreset
+}
+func (v *formatChoice) Enabled() bool { return (*BufferModel)(v).editedEncoding() != nil }
+
+// IsCustomFormat reports whether the format of the selected buffer's
+// encoding is typed in instead of chosen from CommonFormats.
+func (m *BufferModel) IsCustomFormat() bool {
+	return m.FormatChoice().Value() == len(CommonFormats)
 }
 
 // Args returns a String for the ffmpeg output arguments of the selected

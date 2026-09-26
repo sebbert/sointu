@@ -347,3 +347,27 @@ func TestSongWithoutSamplesGetsNoPresets(t *testing.T) {
 		t.Errorf("a song without samples got presets")
 	}
 }
+
+func TestFormatChoice(t *testing.T) {
+	m := newPresetTestModel(t)
+	fc := m.Buffer().FormatChoice()
+	if fc.String() != "Ogg" || m.Buffer().IsCustomFormat() {
+		t.Errorf("got %q, want Ogg", fc.String())
+	}
+	fc.SetValue(3) // FLAC
+	if got := encodingOf(t, m, 0).Format; got != "flac" {
+		t.Errorf("format is %q, want flac", got)
+	}
+	fc.SetValue(fc.Range().Max) // Custom
+	if !m.Buffer().IsCustomFormat() || encodingOf(t, m, 0).Format != "flac" {
+		t.Errorf("choosing Custom should keep the format and show the text field")
+	}
+	m.Buffer().Format().SetValue("matroska")
+	if got := encodingOf(t, m, 0).Format; got != "matroska" || fc.String() != "Custom" {
+		t.Errorf("got %q (%s), want matroska (Custom)", got, fc.String())
+	}
+	fc.SetValue(0)
+	if got := encodingOf(t, m, 0).Format; got != "" || m.Buffer().IsCustomFormat() {
+		t.Errorf("Keep original: got format %q", got)
+	}
+}

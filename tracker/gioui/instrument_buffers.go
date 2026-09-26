@@ -28,6 +28,8 @@ type (
 		channelsMenu *MenuState
 		presetBtn    *Clickable
 		presetMenu   *MenuState
+		formatBtn    *Clickable
+		formatMenu   *MenuState
 		newPreset    *Clickable
 		deletePreset *Clickable
 		presetEditor *DraftEditor
@@ -49,6 +51,8 @@ func NewInstrumentBuffers(m *tracker.Model) *InstrumentBuffers {
 		channelsMenu: new(MenuState),
 		presetBtn:    new(Clickable),
 		presetMenu:   new(MenuState),
+		formatBtn:    new(Clickable),
+		formatMenu:   new(MenuState),
 		newPreset:    new(Clickable),
 		deletePreset: new(Clickable),
 		presetEditor: NewDraftEditor(text.Start),
@@ -66,7 +70,8 @@ func (ib *InstrumentBuffers) Tags(level int, yield TagYieldFunc) bool {
 		yield(level+1, &ib.formatEditor.widgetEditor) &&
 		yield(level+1, &ib.argsEditor.widgetEditor) &&
 		ib.channelsMenu.Tags(level+1, yield) &&
-		ib.presetMenu.Tags(level+1, yield)
+		ib.presetMenu.Tags(level+1, yield) &&
+		ib.formatMenu.Tags(level+1, yield)
 }
 
 func (ib *InstrumentBuffers) update(gtx C, tr *Tracker) {
@@ -221,7 +226,21 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 			},
 			presetLine,
 			func(gtx C) D {
-				return layoutBufferLine(gtx, "Format", true, editor(ib.formatEditor, tr.Buffer().Format(), "keep original"))
+				format := MenuBtn(ib.formatMenu, ib.formatBtn, tr.Buffer().FormatChoice().String()).
+					WithBtnStyle(&th.Button.Text).WithPopupStyle(&th.Popup.ContextMenu)
+				menu := func(gtx C) D {
+					return format.Layout(gtx, IntMenuChild(tr.Buffer().FormatChoice(), icons.NavigationCheck))
+				}
+				if !tr.Buffer().IsCustomFormat() {
+					return layoutBufferLine(gtx, "Format", false, menu)
+				}
+				return layoutBufferLine(gtx, "Format", true, func(gtx C) D {
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(menu),
+						layout.Rigid(layout.Spacer{Width: 6}.Layout),
+						layout.Flexed(1, styledEditor(ib.formatEditor, tr.Buffer().Format(), &monoStyle, "ffmpeg -f format, e.g. matroska")),
+					)
+				})
 			},
 			func(gtx C) D {
 				return layoutBufferLine(gtx, "ffmpeg args", true, styledEditor(ib.argsEditor, tr.Buffer().Args(), &monoStyle, "e.g. -c:a libopus -b:a 32k"))
