@@ -140,3 +140,76 @@ func TestUndoRestoresBufferAudio(t *testing.T) {
 		t.Errorf("after undo, got %d frames, want 3", got)
 	}
 }
+
+func TestSplitJoinArgs(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want []string
+	}{
+		{"-c:a libopus -b:a 32k", []string{"-c:a", "libopus", "-b:a", "32k"}},
+		{`  -af "volume=0.5, atempo=2"  `, []string{"-af", "volume=0.5, atempo=2"}},
+		{`-metadata title='it'\''s' ""`, []string{"-metadata", "title=it's", ""}},
+		{`a\ b`, []string{"a b"}},
+		{"", nil},
+	} {
+		got, err := SplitArgs(tc.in)
+		if err != nil || !slicesEqual(got, tc.want) {
+			t.Errorf("SplitArgs(%q) = %q, %v; want %q", tc.in, got, err, tc.want)
+		}
+		back, err := SplitArgs(JoinArgs(tc.want))
+		if err != nil || !slicesEqual(back, tc.want) {
+			t.Errorf("JoinArgs(%q) = %q does not split back", tc.want, JoinArgs(tc.want))
+		}
+	}
+	if _, err := SplitArgs(`"unterminated`); err == nil {
+		t.Errorf("expected an error for an unterminated quote")
+	}
+}
+
+func TestBufreadBufferParameter(t *testing.T) {
+	broker := NewBroker()
+	m := NewModel(broker, []sointu.Synther{vm.GoSynther{}}, NullMIDIContext{}, "")
+	defer m.Close()
+	func() {
+		defer m.change("Test", SongChange, MajorChange)()
+		m.d.Song.Buffers = sointu.Buffers{{ID: 3, Name: "kick", Channels: 1}, {ID: 5, Name: "snare", Channels: 1}}
+		m.d.Song.Patch[0].Units = []sointu.Unit{{Type: "bufread", ID: 100, Parameters: sointu.ParamMap{"buffer": 5, "notetracking": 1}}}
+		m.d.UnitIndex = 0
+	}()
+	var p Parameter
+	for _, q := range m.derived.patch[0].params[0] {
+		if q.Name() == "buffer" {
+			p = q
+		}
+	}
+	if p.Type() != ChoiceParameter {
+		t.Fatalf("buffer parameter has type %v, want ChoiceParameter", p.Type())
+	}
+	if p.Value() != 2 || p.Hint().Label != "snare" {
+		t.Errorf("got value %d (%q), want 2 (snare)", p.Value(), p.Hint().Label)
+	}
+	i := p.Int()
+	names := []string{}
+	for v := i.Range().Min; v <= i.Range().Max; v++ {
+		names = append(names, i.StringOf(v))
+	}
+	if !slicesEqual(names, []string{"none", "kick", "snare"}) {
+		t.Errorf("got choices %q", names)
+	}
+	p.SetValue(1)
+	if got := m.d.Song.Patch[0].Units[0].Parameters["buffer"]; got != 3 {
+		t.Errorf("choosing kick stored buffer ID %d, want 3", got)
+	}
+	// deleting the buffer leaves the unit pointing at a missing buffer
+	m.d.BufferIndex = 0
+	m.Buffer().Delete().Do()
+	if p.Hint().Label != "missing" {
+		t.Errorf("after deleting the buffer, got %q, want missing", p.Hint().Label)
+	}
+	// loop points are hidden unless looping
+	for _, q := range m.derived.patch[0].params[0] {
+		if q.Name() == "loopstart" {
+			t.Errorf("loopstart shown although loop is off")
+		}
+	}
+}

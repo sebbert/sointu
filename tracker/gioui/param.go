@@ -28,6 +28,7 @@ type (
 		dragStartVal int
 		tipArea      TipArea
 		clickable    Clickable
+		menu         MenuState
 	}
 
 	ParamWidget struct {
@@ -142,6 +143,15 @@ func (p ParamWidget) Layout(gtx C) D {
 		case tracker.BoolParameter:
 			s := Switch(p.Parameter, p.Theme, p.State, p.Parameter.Hint().Label, p.Focus, p.Disabled)
 			return s.Layout(gtx)
+		case tracker.ChoiceParameter:
+			btn := MenuBtn(&p.State.menu, &p.State.clickable, p.Parameter.Hint().Label).
+				WithBtnStyle(&t.Theme.Button.Text).WithPopupStyle(&t.Theme.Popup.ContextMenu)
+			if p.Disabled {
+				btn.BtnStyle = &t.Theme.Button.Disabled
+			}
+			return layout.Center.Layout(gtx, func(gtx C) D {
+				return btn.Layout(gtx, IntMenuChild(p.Parameter.Int(), icons.NavigationCheck))
+			})
 		case tracker.IDParameter:
 			for p.State.clickable.Clicked(gtx) {
 				t.Params().ChooseSendSource(p.Parameter.UnitID()).Do()

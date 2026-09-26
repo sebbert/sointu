@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/vsariola/sointu"
+	"github.com/vsariola/sointu/ffmpeg"
 )
 
 // Model implements the mutable state for the tracker program GUI.
@@ -35,6 +36,7 @@ type (
 		ChangedSinceRecovery    bool
 		SendSource              int
 		InstrumentTab           InstrumentTab
+		BufferIndex             int
 		PresetSearchString      string
 		MIDIBindings            MIDIBindings
 	}
@@ -93,7 +95,8 @@ type (
 		midi       midiState
 		midiAssign midiAssigns
 
-		buffers bufferState
+		buffers         bufferState
+		encodingPresets []ffmpeg.Preset
 
 		presetData presetData
 	}
@@ -168,6 +171,7 @@ const (
 	InstrumentEditorTab InstrumentTab = iota
 	InstrumentPresetsTab
 	InstrumentCommentTab
+	InstrumentBuffersTab
 	NumInstrumentTabs
 )
 
@@ -201,6 +205,7 @@ func NewModel(broker *Broker, synthers []sointu.Synther, midiContext MIDIContext
 	m.Scope().updateBufferLength()
 	m.updateDeriveData(SongChange)
 	m.presetData.load()
+	m.loadEncodingPresets()
 	m.Preset().updateCache()
 	m.derived.searchResults = make([]string, 0, len(sointu.UnitNames))
 	m.Unit().updateDerivedUnitSearch()

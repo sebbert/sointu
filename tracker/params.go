@@ -259,11 +259,13 @@ type (
 
 	// different parameter vtables to handle different types of parameters.
 	// Casting struct{} to interface does not cause allocations.
-	namedParameter      struct{}
-	delayTimeParameter  struct{}
-	delayLinesParameter struct{}
-	gmDlsEntryParameter struct{}
-	reverbParameter     struct{}
+	namedParameter       struct{}
+	delayTimeParameter   struct{}
+	delayLinesParameter  struct{}
+	gmDlsEntryParameter  struct{}
+	reverbParameter      struct{}
+	bufferParameter      struct{}
+	bufferFrameParameter struct{ namedParameter }
 
 	ParamYieldFunc func(param Parameter) bool
 
@@ -280,6 +282,7 @@ const (
 	IntegerParameter
 	BoolParameter
 	IDParameter
+	ChoiceParameter // an Int with named values, e.g. for a dropdown; see Parameter.Int
 )
 
 // Parameter methods
@@ -357,6 +360,23 @@ func (p *Parameter) Reset() {
 	}
 	p.vtable.Reset(p)
 }
+
+// Int returns the parameter as an Int, with the value names of choice
+// parameters, e.g. for showing the choices in a menu.
+func (p Parameter) Int() Int { return MakeInt(parameterInt{p}) }
+
+type parameterInt struct{ p Parameter }
+
+func (v parameterInt) Value() int              { return v.p.Value() }
+func (v parameterInt) SetValue(value int) bool { return v.p.SetValue(value) }
+func (v parameterInt) Range() RangeInclusive   { return v.p.Range() }
+func (v parameterInt) StringOf(value int) string {
+	if s, ok := v.p.vtable.(interface{ StringOf(*Parameter, int) string }); ok {
+		return s.StringOf(&v.p, value)
+	}
+	return strconv.Itoa(value)
+}
+
 func (p *Parameter) UnitID() int {
 	if p.unit == nil {
 		return 0
@@ -687,4 +707,66 @@ func roundToSliceGrid(value int, grid []int, up bool) int {
 		}
 	}
 	return value
+}
+
+// bufferParameter vtable: the buffer played by a bufread unit. Its values are
+// 0 for no buffer and i+1 for the i-th buffer of the song; the unit stores
+// the buffer's ID.
+
+func (b *bufferParameter) Value(p *Parameter) int {
+	id := p.unit.Parameters["buffer"]
+	for i, buf := range p.m.d.Song.Buffers {
+		if buf.ID == id {
+			return i + 1
+		}
+	}
+	return 0
+}
+func (b *bufferParameter) SetValue(p *Parameter, v int) bool {
+	id := 0
+	if v > 0 && v <= len(p.m.d.Song.Buffers) {
+		id = p.m.d.Song.Buffers[v-1].ID
+	}
+	defer p.m.change("BufferParameter", PatchChange, MinorChange)()
+	p.unit.Parameters["buffer"] = id
+	return true
+}
+func (b *bufferParameter) Range(p *Parameter) RangeInclusive {
+	return RangeInclusive{Min: 0, Max: len(p.m.d.Song.Buffers)}
+}
+func (b *bufferParameter) Type(p *Parameter) ParameterType { return ChoiceParameter }
+func (b *bufferParameter) Name(p *Parameter) string        { return "buffer" }
+func (b *bufferParameter) StringOf(p *Parameter, v int) string {
+	if v > 0 && v <= len(p.m.d.Song.Buffers) {
+		name, _ := p.m.Buffer().Item(v - 1)
+		return name
+	}
+	if id := p.unit.Parameters["buffer"]; id != 0 && v == b.Value(p) {
+		return "missing"
+	}
+	return "none"
+}
+func (b *bufferParameter) Hint(p *Parameter) ParameterHint {
+	v := b.Value(p)
+	return ParameterHint{b.StringOf(p, v), v > 0}
+}
+func (b *bufferParameter) RoundToGrid(p *Parameter, val int, up bool) int { return val }
+func (b *bufferParameter) Reset(p *Parameter) {
+	defer p.m.change("ResetBufferParameter", PatchChange, MinorChange)()
+	p.unit.Parameters["buffer"] = 0
+}
+
+// bufferFrameParameter vtable: a position in frames in the buffer played by a
+// bufread unit, limited to the length of the buffer and shown in seconds.
+
+func (b *bufferFrameParameter) Range(p *Parameter) RangeInclusive {
+	frames := p.m.bufferFrames(p.unit.Parameters["buffer"])
+	return RangeInclusive{Min: 0, Max: max(frames, p.unit.Parameters[p.up.Name], 1)}
+}
+func (b *bufferFrameParameter) Hint(p *Parameter) ParameterHint {
+	v := b.Value(p)
+	return ParameterHint{fmt.Sprintf("%s (%d)", formatDuration(v), v), true}
+}
+func (b *bufferFrameParameter) RoundToGrid(p *Parameter, val int, up bool) int {
+	return roundToGrid(val, 441, up) // 10 ms
 }

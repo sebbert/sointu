@@ -15,6 +15,8 @@ type (
 		keys   map[int]ffmpeg.Key // key of the audio requested for each buffer ID
 		audio  map[int]sointu.BufferAudio
 		status map[int]BufferStatus
+		// original plays the samples without encoding, for comparison
+		original bool
 	}
 
 	// BufferStatus tells whether a buffer's audio is ready.
@@ -66,14 +68,20 @@ func (m *Model) syncBuffers() {
 			}
 			continue
 		}
-		key := ffmpeg.KeyOf(buf.Sample, buf.Channels)
+		sample := buf.Sample
+		if b.original {
+			s := *sample
+			s.Encoding = sointu.Encoding{}
+			sample = &s
+		}
+		key := ffmpeg.KeyOf(sample, buf.Channels)
 		if k, ok := b.keys[buf.ID]; ok && k == key {
 			continue
 		}
 		b.keys[buf.ID] = key
 		b.status[buf.ID] = BufferStatus{Processing: true}
 		// the old audio keeps playing until the new one is ready
-		job := bufferJob{ID: buf.ID, Key: key, Sample: buf.Sample, Channels: buf.Channels}
+		job := bufferJob{ID: buf.ID, Key: key, Sample: sample, Channels: buf.Channels}
 		if !TrySend(m.broker.ToBufferWorker, any(job)) {
 			b.status[buf.ID] = BufferStatus{Err: fmt.Errorf("buffer worker is busy")}
 		}

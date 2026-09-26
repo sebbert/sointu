@@ -129,12 +129,24 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 		if unit.Type == "send" && up.Name == "port" {
 			continue
 		}
+		if unit.Type == "bufread" && unit.Parameters["loop"] == 0 && (up.Name == "loopstart" || up.Name == "looplength") {
+			continue // loop points only matter when looping
+		}
 		q := 0
 		if up.CanModulate {
 			portIndex++
 			q = portIndex
 		}
-		ret = append(ret, Parameter{m: m, unit: unit, up: &unitType.Params[i], vtable: &namedParameter{}, port: q})
+		var vtable parameterVtable = &namedParameter{}
+		if unit.Type == "bufread" {
+			switch up.Name {
+			case "buffer":
+				vtable = &bufferParameter{}
+			case "start", "loopstart", "looplength":
+				vtable = &bufferFrameParameter{}
+			}
+		}
+		ret = append(ret, Parameter{m: m, unit: unit, up: &unitType.Params[i], vtable: vtable, port: q})
 	}
 	if unit.Type == "oscillator" && unit.Parameters["type"] == sointu.Sample {
 		ret = append(ret, Parameter{m: m, unit: unit, vtable: &gmDlsEntryParameter{}})
