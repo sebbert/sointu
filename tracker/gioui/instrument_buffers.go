@@ -156,14 +156,21 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 			WithBtnStyle(&th.Button.Text).WithPopupStyle(&th.Popup.ContextMenu)
 		preset := MenuBtn(ib.presetMenu, ib.presetBtn, tr.Buffer().Preset().String()).
 			WithBtnStyle(&th.Button.Text).WithPopupStyle(&th.Popup.ContextMenu)
+		monoStyle := th.InstrumentEditor.InstrumentComment
+		monoStyle.Font.Typeface = "Go Mono"
+		styledEditor := func(e interface {
+			Layout(C, tracker.String, *Theme, *EditorStyle, string) D
+		}, s tracker.String, style *EditorStyle, hint string) layout.Widget {
+			return func(gtx C) D {
+				gtx.Constraints.Min.X = min(gtx.Dp(220), gtx.Constraints.Max.X)
+				gtx.Constraints.Max.X = gtx.Constraints.Min.X
+				return layoutField(gtx, th, func(gtx C) D { return e.Layout(gtx, s, th, style, hint) })
+			}
+		}
 		editor := func(e interface {
 			Layout(C, tracker.String, *Theme, *EditorStyle, string) D
 		}, s tracker.String, hint string) layout.Widget {
-			return func(gtx C) D {
-				gtx.Constraints.Min.X = min(gtx.Dp(200), gtx.Constraints.Max.X)
-				gtx.Constraints.Max.X = gtx.Constraints.Min.X
-				return e.Layout(gtx, s, th, &th.InstrumentEditor.InstrumentComment, hint)
-			}
+			return styledEditor(e, s, &th.InstrumentEditor.InstrumentComment, hint)
 		}
 		newPresetBtn := ActionBtn(tr.Buffer().NewPreset(), th, ib.newPreset, "New preset", "Add a preset with this encoding\nand use it for this sample")
 		deletePresetBtn := ActionBtn(tr.Buffer().DeletePreset(), th, ib.deletePreset, "Delete preset", "Delete the preset; the samples using it\nkeep its encoding as their own")
@@ -208,7 +215,7 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 				return layoutInstrumentPropertyLine(gtx, "Format", editor(ib.formatEditor, tr.Buffer().Format(), "keep original"))
 			},
 			func(gtx C) D {
-				return layoutInstrumentPropertyLine(gtx, "ffmpeg args", editor(ib.argsEditor, tr.Buffer().Args(), "e.g. -c:a libopus -b:a 32k"))
+				return layoutInstrumentPropertyLine(gtx, "ffmpeg args", styledEditor(ib.argsEditor, tr.Buffer().Args(), &monoStyle, "e.g. -c:a libopus -b:a 32k"))
 			},
 			presetBtns,
 			nil,
@@ -243,4 +250,22 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 		return D{Size: m}
 	}
 	return Surface{Height: 3, Focus: tr.PatchPanel.TreeFocused(gtx)}.Layout(gtx, f)
+}
+
+// layoutField draws a text field: the widget on a rounded background, so that
+// it is recognizable as editable.
+func layoutField(gtx C, th *Theme, w layout.Widget) D {
+	bg := func(gtx C) D {
+		rr := gtx.Dp(4)
+		defer clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, rr).Push(gtx.Ops).Pop()
+		paint.Fill(gtx.Ops, th.InstrumentEditor.Presets.SearchBg)
+		return D{Size: gtx.Constraints.Min}
+	}
+	return layout.Stack{}.Layout(gtx,
+		layout.Expanded(bg),
+		layout.Stacked(func(gtx C) D {
+			gtx.Constraints.Min.X = gtx.Constraints.Max.X
+			return layout.Inset{Top: 4, Bottom: 4, Left: 6, Right: 6}.Layout(gtx, w)
+		}),
+	)
 }

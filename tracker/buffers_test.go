@@ -312,3 +312,38 @@ func TestNewPreset(t *testing.T) {
 		t.Errorf("editing the new preset changed the other sample's preset")
 	}
 }
+
+func TestSongWithoutPresetsGetsDefaults(t *testing.T) {
+	broker := NewBroker()
+	m := NewModel(broker, []sointu.Synther{vm.GoSynther{}}, NullMIDIContext{}, "")
+	defer m.Close()
+	m.defaultPresets = sointu.EncodingPresets{
+		{Name: "Opus", Encoding: sointu.Encoding{Format: "ogg", Args: []string{"-c:a", "libopus"}}},
+	}
+	func() {
+		defer m.change("LoadSong", SongChange, MajorChange)()
+		m.d.Song.EncodingPresets = nil
+		m.d.Song.Buffers = sointu.Buffers{
+			{ID: 1, Channels: 1, Sample: &sointu.AudioSample{Data: sointu.Blob{1}, Encoding: &sointu.Encoding{Format: "ogg", Args: []string{"-c:a", "libopus"}}}},
+			{ID: 2, Channels: 1, Sample: &sointu.AudioSample{Data: sointu.Blob{2}, Encoding: &sointu.Encoding{Format: "flac"}}},
+		}
+	}()
+	if _, ok := m.d.Song.EncodingPresets.Find("Opus"); !ok {
+		t.Fatalf("default presets not added: %+v", m.d.Song.EncodingPresets)
+	}
+	if s := m.d.Song.Buffers[0].Sample; s.Encoding != nil || s.Preset != "Opus" {
+		t.Errorf("matching encoding not linked to its preset: %+v", s)
+	}
+	if s := m.d.Song.Buffers[1].Sample; s.Encoding == nil {
+		t.Errorf("non-matching encoding should stay custom")
+	}
+}
+
+func TestSongWithoutSamplesGetsNoPresets(t *testing.T) {
+	broker := NewBroker()
+	m := NewModel(broker, []sointu.Synther{vm.GoSynther{}}, NullMIDIContext{}, "")
+	defer m.Close()
+	if len(m.d.Song.EncodingPresets) != 0 {
+		t.Errorf("a song without samples got presets")
+	}
+}

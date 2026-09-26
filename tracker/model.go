@@ -190,6 +190,7 @@ func NewModel(broker *Broker, synthers []sointu.Synther, midiContext MIDIContext
 	m.linkInstrTrack = true
 	m.d.RecoveryFilePath = recoveryFilePath
 	m.spectrum = broker.GetSpectrum()
+	m.loadEncodingPresets() // before the song is first synced
 	m.Song().reset()
 	if recoveryFilePath != "" {
 		if bytes2, err := os.ReadFile(m.d.RecoveryFilePath); err == nil {
@@ -204,7 +205,6 @@ func NewModel(broker *Broker, synthers []sointu.Synther, midiContext MIDIContext
 	m.Scope().updateBufferLength()
 	m.updateDeriveData(SongChange)
 	m.presetData.load()
-	m.loadEncodingPresets()
 	m.Preset().updateCache()
 	m.derived.searchResults = make([]string, 0, len(sointu.UnitNames))
 	m.Unit().updateDerivedUnitSearch()

@@ -54,6 +54,7 @@ type (
 // the buffer worker to process changed samples and tells the player about
 // removed ones.
 func (m *Model) syncBuffers() {
+	m.ensureEncodingPresets()
 	b := &m.buffers
 	if b.keys == nil {
 		b.keys, b.audio, b.status = map[int]ffmpeg.Key{}, map[int]sointu.BufferAudio{}, map[int]BufferStatus{}
@@ -201,4 +202,35 @@ loop:
 		TrySend(broker.ToBufferWorker, v)
 	}
 	return job
+}
+
+// ensureEncodingPresets gives a song that has samples but no encoding presets,
+// e.g. one saved before presets existed, the default presets. Samples whose
+// own encoding is exactly that of a default preset are linked to the preset.
+func (m *Model) ensureEncodingPresets() {
+	if len(m.d.Song.EncodingPresets) > 0 || len(m.defaultPresets) == 0 {
+		return
+	}
+	hasSamples := false
+	for _, buf := range m.d.Song.Buffers {
+		hasSamples = hasSamples || buf.Sample != nil
+	}
+	if !hasSamples {
+		return
+	}
+	m.d.Song.EncodingPresets = m.defaultPresets.Copy()
+	for i, buf := range m.d.Song.Buffers {
+		s := buf.Sample
+		if s == nil || s.Encoding == nil {
+			continue
+		}
+		for _, p := range m.d.Song.EncodingPresets {
+			if p.Encoding.Equal(*s.Encoding) {
+				c := *s
+				c.Preset, c.Encoding = p.Name, nil
+				m.d.Song.Buffers[i].Sample = &c
+				break
+			}
+		}
+	}
 }
