@@ -50,8 +50,8 @@ jobs:
             ldflags: -H=windowsgui
           - os: windows-latest
             asmnasm: C:\Users\runneradmin\nasm\nasm
-            output: sointu-vsti.dll
-            params: -buildmode=c-shared -tags="plugin,native" ./cmd/sointu-vsti/
+            vsti: true
+            gotags: plugin,native
           - os: windows-latest
             asmnasm: C:\Users\runneradmin\nasm\nasm
             output: sointu-play.exe
@@ -68,8 +68,8 @@ jobs:
             packages: libegl-dev libvulkan-dev libxkbcommon-x11-dev libwayland-dev libasound2-dev libx11-xcb-dev libxcursor-dev libxfixes-dev
           - os: ubuntu-latest
             asmnasm: /home/runner/nasm/nasm
-            output: sointu-vsti.so
-            params: -buildmode=c-shared -tags="plugin,native" ./cmd/sointu-vsti/
+            vsti: true
+            gotags: plugin,native
             packages: libegl-dev libvulkan-dev libxkbcommon-x11-dev libwayland-dev libasound2-dev libx11-xcb-dev libxcursor-dev libxfixes-dev
           - os: ubuntu-latest
             asmnasm: /home/runner/nasm/nasm
@@ -86,8 +86,8 @@ jobs:
             params: cmd/sointu-track/main.go
           - os: macos-latest
             asmnasm: /Users/runner/nasm/nasm
-            bundleoutput: sointu-vsti
-            bundle: true
+            vsti: true
+            gotags: plugin
           - os: macos-latest
             asmnasm: /Users/runner/nasm/nasm
             output: sointu-play
@@ -119,24 +119,27 @@ jobs:
         cmake -GNinja ..
         ninja sointu
     - name: Build binary
-      if: matrix.config.bundle != true
+      if: matrix.config.vsti != true
       run: |
         go build -ldflags "-X github.com/vsariola/sointu/version.Version=$(git describe) ${{ matrix.config.ldflags}}" -o ${{ matrix.config.output }} ${{ matrix.config.params }}
     - name: Upload binary
-      if: matrix.config.bundle != true
+      if: matrix.config.vsti != true
       uses: actions/upload-artifact@v4
       with:
         name: ${{ runner.os }}-${{ steps.short-sha.outputs.sha }}-${{ matrix.config.output }}
         path: ${{ matrix.config.output }}
-    - name: Bundle VST
-      if: matrix.config.bundle
-      run: make vst OUT=bundle
-    - name: Upload bundle
-      if: matrix.config.bundle
+    - name: Build VST
+      if: matrix.config.vsti
+      shell: bash
+      run: | # Windows runners may only have mingw32-make
+        MAKE=$(command -v make || command -v mingw32-make)
+        "$MAKE" vst OUT=vst GOTAGS=${{ matrix.config.gotags }}
+    - name: Upload VST
+      if: matrix.config.vsti
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ runner.os }}-${{ steps.short-sha.outputs.sha }}-${{ matrix.config.bundleoutput }}
-        path: bundle
+        name: ${{ runner.os }}-${{ steps.short-sha.outputs.sha }}-sointu-vsti
+        path: vst
   upload_release_asset:
     needs: [create_release, binaries]
     runs-on: ubuntu-latest
