@@ -106,8 +106,16 @@ func (b BufferAudio) Frames() int {
 }
 
 // Play plays the Song by first compiling the patch with the given Synther,
-// returning the stereo audio buffer as a result (and possible errors).
+// returning the stereo audio buffer as a result (and possible errors). Buffers
+// are silent; see PlayWithBuffers.
 func Play(synther Synther, song Song, progress func(float32)) (AudioBuffer, error) {
+	return PlayWithBuffers(synther, song, nil, progress)
+}
+
+// PlayWithBuffers is like Play, but gives the synth the audio of the song's
+// buffers, keyed by Buffer.ID. It is an error if the song has buffers with
+// samples but the synth cannot play buffers.
+func PlayWithBuffers(synther Synther, song Song, buffers map[int]BufferAudio, progress func(float32)) (AudioBuffer, error) {
 	err := song.Validate()
 	if err != nil {
 		return nil, err
@@ -117,6 +125,11 @@ func Play(synther Synther, song Song, progress func(float32)) (AudioBuffer, erro
 		return nil, fmt.Errorf("sointu.Play failed: %v", err)
 	}
 	defer synth.Close()
+	if s, ok := synth.(BufferSetter); ok {
+		s.SetBuffers(buffers)
+	} else if len(buffers) > 0 {
+		return nil, fmt.Errorf("the %v synth cannot play buffers", synther.Name())
+	}
 	curVoices := make([]int, len(song.Score.Tracks))
 	for i := range curVoices {
 		curVoices[i] = song.Score.FirstVoiceForTrack(i)

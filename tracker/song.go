@@ -308,11 +308,17 @@ func (m *exportInt16) Do() { m.dialog = ExportInt16Explorer }
 func (m *SongModel) WriteWav(w io.WriteCloser, pcm16 bool) {
 	m.dialog = NoDialog
 	song := m.d.Song.Copy()
+	buffers := (*Model)(m).BufferAudio()
+	for _, buf := range song.Buffers {
+		if buf.Sample != nil && m.buffers.status[buf.ID].Processing {
+			(*Model)(m).Alerts().Add(fmt.Sprintf("Buffer %s is still being processed and will be silent in the export", (*Model)(m).bufferName(buf.ID)), Warning)
+		}
+	}
 	go func() {
 		b := make([]byte, 32+2)
 		rand.Read(b)
 		name := fmt.Sprintf("%x", b)[2 : 32+2]
-		data, err := sointu.Play(m.curSynther, song, func(p float32) {
+		data, err := sointu.PlayWithBuffers(m.curSynther, song, buffers, func(p float32) {
 			txt := fmt.Sprintf("Exporting song: %.0f%%", p*100)
 			TrySend(m.broker.ToModel, MsgToModel{Data: Alert{Message: txt, Priority: Info, Name: name, Duration: defaultAlertDuration}})
 		}) // render the song to calculate its length

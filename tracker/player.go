@@ -17,10 +17,11 @@ type (
 	// model via the playerMessages channel. The model sendTargets messages to the
 	// player via the modelMessages channel.
 	Player struct {
-		synth   sointu.Synth // the synth used to render audio
-		song    sointu.Song  // the song being played
-		playing bool         // is the player playing the score or not
-		rowtime int          // how many samples have been played in the current row
+		synth   sointu.Synth               // the synth used to render audio
+		buffers map[int]sointu.BufferAudio // the audio of the song's buffers
+		song    sointu.Song                // the song being played
+		playing bool                       // is the player playing the score or not
+		rowtime int                        // how many samples have been played in the current row
 		voices  [vm.MAX_VOICES]voice
 		loop    Loop
 
@@ -254,6 +255,11 @@ loop:
 				p.compileOrUpdateSynth()
 			case sointu.Score:
 				p.song.Score = m
+			case BufferAudioMsg:
+				p.buffers = m.Audio
+				if s, ok := p.synth.(sointu.BufferSetter); ok {
+					s.SetBuffers(p.buffers)
+				}
 			case Loop:
 				p.loop = m
 			case IsPlayingMsg:
@@ -411,6 +417,9 @@ func (p *Player) compileOrUpdateSynth() {
 			p.destroySynth()
 			p.SendAlert("PlayerCrash", fmt.Sprintf("synther.Synth: %v", err), Error)
 			return
+		}
+		if s, ok := p.synth.(sointu.BufferSetter); ok {
+			s.SetBuffers(p.buffers)
 		}
 	}
 	voice := 0

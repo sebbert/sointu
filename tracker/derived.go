@@ -58,6 +58,9 @@ type (
 // init / update methods
 
 func (m *Model) updateDeriveData(changeType ChangeType) {
+	if changeType&BufferChange != 0 {
+		m.syncBuffers()
+	}
 	setSliceLength(&m.derived.tracks, len(m.d.Song.Score.Tracks))
 	if changeType&ScoreChange != 0 {
 		for index, track := range m.d.Song.Score.Tracks {

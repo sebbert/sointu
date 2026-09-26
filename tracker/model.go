@@ -93,6 +93,8 @@ type (
 		midi       midiState
 		midiAssign midiAssigns
 
+		buffers bufferState
+
 		presetData presetData
 	}
 
@@ -140,7 +142,8 @@ const (
 	ScoreChange
 	BPMChange
 	RowsPerBeatChange
-	SongChange ChangeType = PatchChange | ScoreChange | BPMChange | RowsPerBeatChange
+	BufferChange
+	SongChange ChangeType = PatchChange | ScoreChange | BPMChange | RowsPerBeatChange | BufferChange
 )
 
 const (
@@ -206,6 +209,7 @@ func NewModel(broker *Broker, synthers []sointu.Synther, midiContext MIDIContext
 	go runDetector(broker)
 	go runSpecAnalyzer(broker)
 	go runMIDIHandler(broker)
+	go runBufferWorker(broker)
 	return m
 }
 
@@ -213,9 +217,11 @@ func (m *Model) Close() {
 	TrySend(m.broker.CloseDetector, struct{}{})
 	TrySend(m.broker.CloseSpecAn, struct{}{})
 	TrySend(m.broker.CloseMIDIHandler, struct{}{})
+	TrySend(m.broker.CloseBufferWorker, struct{}{})
 	TimeoutReceive(m.broker.FinishedDetector, 3*time.Second)
 	TimeoutReceive(m.broker.FinishedSpecAn, 3*time.Second)
 	TimeoutReceive(m.broker.FinishedMIDIHandler, 3*time.Second)
+	TimeoutReceive(m.broker.FinishedBufferWorker, 3*time.Second)
 }
 
 // RequestQuit asks the tracker to quit, showing a dialog if there are unsaved
@@ -391,6 +397,8 @@ func (m *Model) ProcessMsg(msg MsgToModel) {
 	case *Spectrum:
 		m.broker.PutSpectrum(m.spectrum)
 		m.spectrum = e
+	case bufferResult:
+		m.handleBufferResult(e)
 	case *MIDIMessage:
 		if channel, control, value, ok := e.getControlChange(); ok {
 			m.MIDI().handleControlEvent(channel, int(control), int(value))
