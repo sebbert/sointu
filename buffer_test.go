@@ -80,7 +80,7 @@ func TestBlobJSONIsBase64(t *testing.T) {
 }
 
 func TestSongCopySharesBufferData(t *testing.T) {
-	song := sointu.Song{Buffers: sointu.Buffers{{ID: 1, Channels: 1, Sample: &sointu.AudioSample{Data: sointu.Blob{1, 2, 3}, Encoding: sointu.Encoding{Args: []string{"-b:a", "32k"}}}}}}
+	song := sointu.Song{Buffers: sointu.Buffers{{ID: 1, Channels: 1, Sample: &sointu.AudioSample{Data: sointu.Blob{1, 2, 3}, Encoding: &sointu.Encoding{Args: []string{"-b:a", "32k"}}}}}}
 	c := song.Copy()
 	c.Buffers[0].Name = "changed"
 	c.Buffers[0].Sample.FileName = "changed"

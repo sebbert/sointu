@@ -234,6 +234,13 @@ split: { bar: 10, minsize1: 180, minsize2: 180 }
 uniteditor:
   hint: { textsize: 16, color: *highemphasis, shadowcolor: *black }
   chooser: { textsize: 12, color: *white, shadowcolor: *black }
+  choice:
+    background: *transparentcolor
+    color: *primarycolor
+    textsize: 10
+    cornerradius: 4
+    height: 20
+    inset: { top: 0, bottom: 0, left: 2, right: 2 }
   name:
     { textsize: 12, alignment: 2, color: *highemphasis, shadowcolor: *black }
   wirecolor: *secondarycolor

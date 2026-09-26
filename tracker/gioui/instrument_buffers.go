@@ -1,6 +1,7 @@
 package gioui
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 
@@ -27,9 +28,12 @@ type (
 		channelsMenu *MenuState
 		presetBtn    *Clickable
 		presetMenu   *MenuState
+		newPreset    *Clickable
+		deletePreset *Clickable
+		presetEditor *DraftEditor
 		nameEditor   *Editor
-		formatEditor *Editor
-		argsEditor   *Editor
+		formatEditor *DraftEditor
+		argsEditor   *DraftEditor
 		props        *layout.List
 	}
 )
@@ -45,9 +49,12 @@ func NewInstrumentBuffers(m *tracker.Model) *InstrumentBuffers {
 		channelsMenu: new(MenuState),
 		presetBtn:    new(Clickable),
 		presetMenu:   new(MenuState),
+		newPreset:    new(Clickable),
+		deletePreset: new(Clickable),
+		presetEditor: NewDraftEditor(text.Start),
 		nameEditor:   NewEditor(true, true, text.Start),
-		formatEditor: NewEditor(true, true, text.Start),
-		argsEditor:   NewEditor(true, true, text.Start),
+		formatEditor: NewDraftEditor(text.Start),
+		argsEditor:   NewDraftEditor(text.Start),
 		props:        &layout.List{Axis: layout.Vertical},
 	}
 }
@@ -55,6 +62,7 @@ func NewInstrumentBuffers(m *tracker.Model) *InstrumentBuffers {
 func (ib *InstrumentBuffers) Tags(level int, yield TagYieldFunc) bool {
 	return yield(level, ib.list) &&
 		yield(level+1, &ib.nameEditor.widgetEditor) &&
+		yield(level+1, &ib.presetEditor.widgetEditor) &&
 		yield(level+1, &ib.formatEditor.widgetEditor) &&
 		yield(level+1, &ib.argsEditor.widgetEditor) &&
 		ib.channelsMenu.Tags(level+1, yield) &&
@@ -148,12 +156,37 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 			WithBtnStyle(&th.Button.Text).WithPopupStyle(&th.Popup.ContextMenu)
 		preset := MenuBtn(ib.presetMenu, ib.presetBtn, tr.Buffer().Preset().String()).
 			WithBtnStyle(&th.Button.Text).WithPopupStyle(&th.Popup.ContextMenu)
-		editor := func(e *Editor, s tracker.String, hint string) layout.Widget {
+		editor := func(e interface {
+			Layout(C, tracker.String, *Theme, *EditorStyle, string) D
+		}, s tracker.String, hint string) layout.Widget {
 			return func(gtx C) D {
 				gtx.Constraints.Min.X = min(gtx.Dp(200), gtx.Constraints.Max.X)
 				gtx.Constraints.Max.X = gtx.Constraints.Min.X
 				return e.Layout(gtx, s, th, &th.InstrumentEditor.InstrumentComment, hint)
 			}
+		}
+		newPresetBtn := ActionBtn(tr.Buffer().NewPreset(), th, ib.newPreset, "New preset", "Add a preset with this encoding\nand use it for this sample")
+		deletePresetBtn := ActionBtn(tr.Buffer().DeletePreset(), th, ib.deletePreset, "Delete preset", "Delete the preset; the samples using it\nkeep its encoding as their own")
+		presetLine := func(gtx C) D {
+			if tr.Buffer().IsCustom() {
+				return layoutInstrumentPropertyLine(gtx, "This sample only", newPresetBtn.Layout)
+			}
+			users := tr.Buffer().PresetUsers()
+			label := "Preset"
+			if users > 1 {
+				label = fmt.Sprintf("Preset, shared by %d samples", users)
+			}
+			return layoutInstrumentPropertyLine(gtx, label, editor(ib.presetEditor, tr.Buffer().PresetName(), "Name"))
+		}
+		presetBtns := func(gtx C) D {
+			if tr.Buffer().IsCustom() {
+				return D{}
+			}
+			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+				layout.Flexed(1, func(gtx C) D { return D{Size: gtx.Constraints.Min} }),
+				layout.Rigid(newPresetBtn.Layout),
+				layout.Rigid(deletePresetBtn.Layout),
+			)
 		}
 		lines := []layout.Widget{
 			func(gtx C) D {
@@ -170,12 +203,14 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 					return preset.Layout(gtx, IntMenuChild(tr.Buffer().Preset(), icons.NavigationCheck))
 				})
 			},
+			presetLine,
 			func(gtx C) D {
 				return layoutInstrumentPropertyLine(gtx, "Format", editor(ib.formatEditor, tr.Buffer().Format(), "keep original"))
 			},
 			func(gtx C) D {
 				return layoutInstrumentPropertyLine(gtx, "ffmpeg args", editor(ib.argsEditor, tr.Buffer().Args(), "e.g. -c:a libopus -b:a 32k"))
 			},
+			presetBtns,
 			nil,
 			func(gtx C) D {
 				return layout.UniformInset(unit.Dp(6)).Layout(gtx,

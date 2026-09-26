@@ -104,6 +104,7 @@ type Theme struct {
 	}
 	UnitEditor struct {
 		Name          LabelStyle
+		Choice        ButtonStyle
 		Chooser       LabelStyle
 		Hint          LabelStyle
 		WireColor     color.NRGBA

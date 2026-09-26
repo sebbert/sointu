@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/vsariola/sointu"
-	"github.com/vsariola/sointu/ffmpeg"
 )
 
 // Model implements the mutable state for the tracker program GUI.
@@ -95,8 +94,8 @@ type (
 		midi       midiState
 		midiAssign midiAssigns
 
-		buffers         bufferState
-		encodingPresets []ffmpeg.Preset
+		buffers        bufferState
+		defaultPresets sointu.EncodingPresets
 
 		presetData presetData
 	}

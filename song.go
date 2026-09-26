@@ -18,6 +18,9 @@ type (
 		Score       Score
 		Patch       Patch
 		Buffers     Buffers `yaml:",omitempty"`
+		// EncodingPresets are the encodings that the samples of the buffers
+		// can share.
+		EncodingPresets EncodingPresets `yaml:",omitempty"`
 	}
 
 	// Score represents the arrangement of notes in a song; just a list of
@@ -298,6 +301,7 @@ func (s *Song) Copy() Song {
 	ret.Score = s.Score.Copy()
 	ret.Patch = s.Patch.Copy()
 	ret.Buffers = s.Buffers.Copy()
+	ret.EncodingPresets = s.EncodingPresets.Copy()
 	return ret
 }
 

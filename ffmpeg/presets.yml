@@ -1,6 +1,8 @@
-# Built-in encoding presets. Users can add their own in
-# <config dir>/sointu/encoding-presets.yml in the same format; a user preset
-# with the same name as a built-in one replaces it.
+# Default encoding presets. A song gets a copy of these when its first sample
+# is imported, and keeps them as its own; samples refer to them by name.
+# Users can add their own defaults in <config dir>/sointu/encoding-presets.yml
+# in the same format; a user preset with the same name as a built-in one
+# replaces it.
 #
 # format is the ffmpeg output format (-f); args are the ffmpeg output
 # arguments. The number of channels (-ac) is added from the buffer. An empty

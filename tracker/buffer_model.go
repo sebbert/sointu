@@ -18,18 +18,17 @@ func (m *Model) Buffer() *BufferModel { return (*BufferModel)(m) }
 
 type BufferModel Model
 
-// customPreset is shown as the preset of buffers whose encoding does not
-// match any preset.
+// customPreset is the name shown for samples with their own encoding.
 const customPreset = "Custom"
 
 // AudioFileExtensions are the extensions offered when importing samples.
 var AudioFileExtensions = []string{".wav", ".flac", ".aif", ".aiff", ".mp3", ".ogg", ".opus", ".m4a", ".webm"}
 
-// loadEncodingPresets loads the encoding presets, alerting about errors in
-// the user's presets file.
+// loadEncodingPresets loads the default encoding presets that songs start
+// with, alerting about errors in the user's presets file.
 func (m *Model) loadEncodingPresets() {
 	var err error
-	m.encodingPresets, err = ffmpeg.Presets()
+	m.defaultPresets, err = ffmpeg.Presets()
 	if err != nil {
 		m.Alerts().Add(fmt.Sprintf("Encoding presets: %v", err), Warning)
 	}
@@ -118,12 +117,15 @@ func (m *BufferModel) Import(r io.ReadCloser, replace bool) {
 
 func (m *BufferModel) addImported(fileName string, data []byte, channels int, replace bool) {
 	defer m.change("ImportBuffer")()
+	if len(m.d.Song.EncodingPresets) == 0 {
+		m.d.Song.EncodingPresets = m.defaultPresets.Copy()
+	}
 	sample := &sointu.AudioSample{FileName: fileName, Data: data}
 	if buf := m.selected(); replace && buf != nil {
-		if buf.Sample != nil {
-			sample.Encoding = buf.Sample.Encoding
+		if buf.Sample != nil { // keep the encoding
+			sample.Preset, sample.Encoding = buf.Sample.Preset, buf.Sample.Encoding
 		} else {
-			sample.Encoding = m.defaultEncoding()
+			m.setDefaultEncoding(sample)
 		}
 		buf.Sample = sample
 		buf.Channels = channels
@@ -133,19 +135,22 @@ func (m *BufferModel) addImported(fileName string, data []byte, channels int, re
 	for _, buf := range m.d.Song.Buffers {
 		id = max(id, buf.ID+1)
 	}
-	sample.Encoding = m.defaultEncoding()
+	m.setDefaultEncoding(sample)
 	name := strings.TrimSuffix(fileName, filepath.Ext(fileName))
 	m.d.Song.Buffers = append(m.d.Song.Buffers, sointu.Buffer{ID: id, Name: name, Channels: channels, Sample: sample})
 	m.d.BufferIndex = len(m.d.Song.Buffers) - 1
 }
 
-func (m *BufferModel) defaultEncoding() sointu.Encoding {
-	for _, p := range m.encodingPresets {
-		if p.Name == ffmpeg.DefaultPreset {
-			return p.Encoding()
-		}
+// setDefaultEncoding makes a new sample use the default preset, or else the
+// first preset of the song, or else its own encoding.
+func (m *BufferModel) setDefaultEncoding(s *sointu.AudioSample) {
+	if _, ok := m.d.Song.EncodingPresets.Find(ffmpeg.DefaultPreset); ok {
+		s.Preset = ffmpeg.DefaultPreset
+	} else if len(m.d.Song.EncodingPresets) > 0 {
+		s.Preset = m.d.Song.EncodingPresets[0].Name
+	} else {
+		s.Encoding = &sointu.Encoding{}
 	}
-	return sointu.Encoding{}
 }
 
 // Delete returns an Action to delete the selected buffer. Units playing it
@@ -214,57 +219,128 @@ func (v *bufferChannels) StringOf(value int) string {
 	return "mono"
 }
 
-// Preset returns an Int for choosing the encoding preset of the selected
-// buffer. The last value is "Custom", shown when the encoding does not match
-// a preset.
+// selectedSample returns the sample of the selected buffer, or nil.
+func (m *BufferModel) selectedSample() *sointu.AudioSample {
+	if buf := m.selected(); buf != nil {
+		return buf.Sample
+	}
+	return nil
+}
+
+// selectedPreset returns the song's encoding preset used by the selected
+// buffer, or nil if the sample has its own encoding or there is none.
+func (m *BufferModel) selectedPreset() *sointu.EncodingPreset {
+	s := m.selectedSample()
+	if s == nil || s.Encoding != nil {
+		return nil
+	}
+	for i := range m.d.Song.EncodingPresets {
+		if m.d.Song.EncodingPresets[i].Name == s.Preset {
+			return &m.d.Song.EncodingPresets[i]
+		}
+	}
+	return nil
+}
+
+// Preset returns an Int for choosing the encoding of the selected buffer: one
+// of the song's encoding presets, or, as the last value, "Custom" for an
+// encoding of its own.
 func (m *BufferModel) Preset() Int { return MakeInt((*bufferPreset)(m)) }
 
 type bufferPreset BufferModel
 
 func (v *bufferPreset) Value() int {
-	buf := (*BufferModel)(v).selected()
-	if buf == nil || buf.Sample == nil {
-		return len(v.encodingPresets)
+	s := (*BufferModel)(v).selectedSample()
+	if s == nil || s.Encoding != nil {
+		return len(v.d.Song.EncodingPresets)
 	}
-	for i, p := range v.encodingPresets {
-		if p.Name == buf.Sample.Encoding.Preset && p.Format == buf.Sample.Encoding.Format && slicesEqual(p.Args, buf.Sample.Encoding.Args) {
+	for i, p := range v.d.Song.EncodingPresets {
+		if p.Name == s.Preset {
 			return i
 		}
 	}
-	return len(v.encodingPresets)
+	return len(v.d.Song.EncodingPresets)
 }
 func (v *bufferPreset) SetValue(value int) bool {
-	buf := (*BufferModel)(v).selected()
-	if buf == nil || buf.Sample == nil || value >= len(v.encodingPresets) {
-		return false // choosing "Custom" does nothing; edit the arguments instead
+	s := (*BufferModel)(v).selectedSample()
+	if s == nil {
+		return false
+	}
+	var enc sointu.Encoding
+	if value == len(v.d.Song.EncodingPresets) {
+		// start the custom encoding from the current one
+		enc, _ = v.d.Song.SampleEncoding(s)
 	}
 	defer (*BufferModel)(v).change("BufferPreset")()
-	s := *buf.Sample
-	s.Encoding = v.encodingPresets[value].Encoding()
-	buf.Sample = &s
+	c := (*BufferModel)(v).replaceSample()
+	if value < len(v.d.Song.EncodingPresets) {
+		c.Preset, c.Encoding = v.d.Song.EncodingPresets[value].Name, nil
+	} else {
+		e := enc.Copy()
+		c.Encoding = &e
+	}
 	return true
 }
-func (v *bufferPreset) Range() RangeInclusive { return RangeInclusive{0, len(v.encodingPresets)} }
+func (v *bufferPreset) Range() RangeInclusive {
+	return RangeInclusive{0, len(v.d.Song.EncodingPresets)}
+}
 func (v *bufferPreset) StringOf(value int) string {
-	if value >= 0 && value < len(v.encodingPresets) {
-		return v.encodingPresets[value].Name
+	if value >= 0 && value < len(v.d.Song.EncodingPresets) {
+		return v.d.Song.EncodingPresets[value].Name
+	}
+	if s := (*BufferModel)(v).selectedSample(); s != nil && s.Encoding == nil && value == v.Value() {
+		return s.Preset + " (missing)"
 	}
 	return customPreset
 }
-func (v *bufferPreset) Enabled() bool {
-	buf := (*BufferModel)(v).selected()
-	return buf != nil && buf.Sample != nil
+func (v *bufferPreset) Enabled() bool { return (*BufferModel)(v).selectedSample() != nil }
+
+// replaceSample replaces the sample of the selected buffer with a copy, to be
+// modified, and returns it; samples are shared with the undo history.
+func (m *BufferModel) replaceSample() *sointu.AudioSample {
+	buf := m.selected()
+	s := *buf.Sample
+	if s.Encoding != nil {
+		e := s.Encoding.Copy()
+		s.Encoding = &e
+	}
+	buf.Sample = &s
+	return &s
+}
+
+// IsCustom reports whether the selected buffer's sample has its own encoding
+// instead of using a preset.
+func (m *BufferModel) IsCustom() bool {
+	s := m.selectedSample()
+	return s != nil && s.Encoding != nil
+}
+
+// PresetUsers returns the number of samples using the encoding preset of the
+// selected buffer.
+func (m *BufferModel) PresetUsers() int {
+	p := m.selectedPreset()
+	if p == nil {
+		return 0
+	}
+	n := 0
+	for _, buf := range m.d.Song.Buffers {
+		if buf.Sample != nil && buf.Sample.Encoding == nil && buf.Sample.Preset == p.Name {
+			n++
+		}
+	}
+	return n
 }
 
 // Format returns a String for the ffmpeg output format of the selected
-// buffer's encoding. An empty format stores the sample as it is.
+// buffer's encoding: its own, or the preset it uses, which then changes for
+// all the samples using it. An empty format stores the sample as it is.
 func (m *BufferModel) Format() String { return MakeString((*bufferFormat)(m)) }
 
 type bufferFormat BufferModel
 
 func (v *bufferFormat) Value() string {
-	if buf := (*BufferModel)(v).selected(); buf != nil && buf.Sample != nil {
-		return buf.Sample.Encoding.Format
+	if e := (*BufferModel)(v).editedEncoding(); e != nil {
+		return e.Format
 	}
 	return ""
 }
@@ -273,14 +349,14 @@ func (v *bufferFormat) SetValue(value string) bool {
 }
 
 // Args returns a String for the ffmpeg output arguments of the selected
-// buffer's encoding, quoted like a shell command line.
+// buffer's encoding, quoted like a shell command line; see Format.
 func (m *BufferModel) Args() String { return MakeString((*bufferArgs)(m)) }
 
 type bufferArgs BufferModel
 
 func (v *bufferArgs) Value() string {
-	if buf := (*BufferModel)(v).selected(); buf != nil && buf.Sample != nil {
-		return JoinArgs(buf.Sample.Encoding.Args)
+	if e := (*BufferModel)(v).editedEncoding(); e != nil {
+		return JoinArgs(e.Args)
 	}
 	return ""
 }
@@ -292,19 +368,120 @@ func (v *bufferArgs) SetValue(value string) bool {
 	return (*BufferModel)(v).setEncoding(func(e *sointu.Encoding) { e.Args = args })
 }
 
-// setEncoding changes the encoding of the selected buffer, marking it custom.
+// editedEncoding returns the encoding that the Format and Args edit: the
+// sample's own, or its preset's.
+func (m *BufferModel) editedEncoding() *sointu.Encoding {
+	if s := m.selectedSample(); s != nil && s.Encoding != nil {
+		return s.Encoding
+	}
+	if p := m.selectedPreset(); p != nil {
+		return &p.Encoding
+	}
+	return nil
+}
+
 func (m *BufferModel) setEncoding(f func(*sointu.Encoding)) bool {
-	buf := m.selected()
-	if buf == nil || buf.Sample == nil {
+	if m.editedEncoding() == nil {
 		return false
 	}
 	defer (*Model)(m).change("BufferEncoding", BufferChange, MinorChange)()
-	s := *buf.Sample
-	s.Encoding.Args = append([]string(nil), s.Encoding.Args...)
-	f(&s.Encoding)
-	s.Encoding.Preset = customPreset
-	buf.Sample = &s
+	if m.IsCustom() {
+		f(m.replaceSample().Encoding)
+		return true
+	}
+	p := m.selectedPreset()
+	p.Encoding = p.Encoding.Copy() // presets are shared with the undo history
+	f(&p.Encoding)
 	return true
+}
+
+// PresetName returns a String for renaming the encoding preset used by the
+// selected buffer. The samples using it are updated; names must be unique and
+// not empty.
+func (m *BufferModel) PresetName() String { return MakeString((*presetName)(m)) }
+
+type presetName BufferModel
+
+func (v *presetName) Value() string {
+	if p := (*BufferModel)(v).selectedPreset(); p != nil {
+		return p.Name
+	}
+	return ""
+}
+func (v *presetName) SetValue(value string) bool {
+	p := (*BufferModel)(v).selectedPreset()
+	value = strings.TrimSpace(value)
+	if p == nil || value == "" {
+		return false
+	}
+	if _, exists := v.d.Song.EncodingPresets.Find(value); exists {
+		return false
+	}
+	defer (*BufferModel)(v).change("RenamePreset")()
+	old := p.Name
+	p.Name = value
+	for i := range v.d.Song.Buffers {
+		if s := v.d.Song.Buffers[i].Sample; s != nil && s.Preset == old {
+			c := *s
+			c.Preset = value
+			v.d.Song.Buffers[i].Sample = &c
+		}
+	}
+	return true
+}
+
+// NewPreset returns an Action to add an encoding preset with the selected
+// buffer's current encoding, and use it for the buffer.
+func (m *BufferModel) NewPreset() Action { return MakeAction((*newPreset)(m)) }
+
+type newPreset BufferModel
+
+func (v *newPreset) Enabled() bool { return (*BufferModel)(v).selectedSample() != nil }
+func (v *newPreset) Do() {
+	s := (*BufferModel)(v).selectedSample()
+	enc, _ := v.d.Song.SampleEncoding(s)
+	base := "Preset"
+	if p := (*BufferModel)(v).selectedPreset(); p != nil {
+		base = p.Name
+	}
+	name := base
+	for i := 2; ; i++ {
+		if _, exists := v.d.Song.EncodingPresets.Find(name); !exists {
+			break
+		}
+		name = fmt.Sprintf("%s %d", base, i)
+	}
+	defer (*BufferModel)(v).change("NewPreset")()
+	v.d.Song.EncodingPresets = append(v.d.Song.EncodingPresets, sointu.EncodingPreset{Name: name, Encoding: enc.Copy()})
+	c := (*BufferModel)(v).replaceSample()
+	c.Preset, c.Encoding = name, nil
+}
+
+// DeletePreset returns an Action to delete the encoding preset used by the
+// selected buffer. Samples using it get its encoding as their own.
+func (m *BufferModel) DeletePreset() Action { return MakeAction((*deletePreset)(m)) }
+
+type deletePreset BufferModel
+
+func (v *deletePreset) Enabled() bool { return (*BufferModel)(v).selectedPreset() != nil }
+func (v *deletePreset) Do() {
+	p := *(*BufferModel)(v).selectedPreset()
+	defer (*BufferModel)(v).change("DeletePreset")()
+	for i := range v.d.Song.Buffers {
+		if s := v.d.Song.Buffers[i].Sample; s != nil && s.Encoding == nil && s.Preset == p.Name {
+			c := *s
+			e := p.Encoding.Copy()
+			c.Encoding = &e
+			v.d.Song.Buffers[i].Sample = &c
+		}
+	}
+	presets := v.d.Song.EncodingPresets[:0:0]
+	for _, q := range v.d.Song.EncodingPresets {
+		if q.Name != p.Name {
+			presets = append(presets, q)
+		}
+	}
+	v.d.Song.EncodingPresets = presets
 }
 
 // Info returns a description of the selected buffer's sample: file, sizes,

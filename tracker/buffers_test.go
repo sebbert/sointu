@@ -94,7 +94,7 @@ func setBuffers(m *Model, buffers sointu.Buffers) {
 func TestBufferAudioReachesPlayer(t *testing.T) {
 	m, broker := newBufferTestModel(t)
 	samples := []int16{0, 16384, -16384, 8192}
-	sample := &sointu.AudioSample{Data: testWav(samples), Encoding: sointu.Encoding{Format: "flac", Args: []string{"-c:a", "flac"}}}
+	sample := &sointu.AudioSample{Data: testWav(samples), Encoding: &sointu.Encoding{Format: "flac", Args: []string{"-c:a", "flac"}}}
 	setBuffers(m, sointu.Buffers{{ID: 7, Channels: 1, Sample: sample}})
 	processBufferResults(t, m, broker, 7)
 	if err := m.BufferStatus(7).Err; err != nil {
@@ -120,8 +120,8 @@ func TestBufferAudioReachesPlayer(t *testing.T) {
 func TestStaleBufferResultIsIgnored(t *testing.T) {
 	m, broker := newBufferTestModel(t)
 	enc := sointu.Encoding{Format: "flac", Args: []string{"-c:a", "flac"}}
-	setBuffers(m, sointu.Buffers{{ID: 1, Channels: 1, Sample: &sointu.AudioSample{Data: testWav([]int16{100}), Encoding: enc}}})
-	setBuffers(m, sointu.Buffers{{ID: 1, Channels: 1, Sample: &sointu.AudioSample{Data: testWav([]int16{200, 300}), Encoding: enc}}})
+	setBuffers(m, sointu.Buffers{{ID: 1, Channels: 1, Sample: &sointu.AudioSample{Data: testWav([]int16{100}), Encoding: &enc}}})
+	setBuffers(m, sointu.Buffers{{ID: 1, Channels: 1, Sample: &sointu.AudioSample{Data: testWav([]int16{200, 300}), Encoding: &enc}}})
 	processBufferResults(t, m, broker, 1)
 	if got := m.BufferAudio()[1].Frames(); got != 2 {
 		t.Errorf("got %d frames, want the 2 frames of the latest sample", got)
@@ -131,7 +131,7 @@ func TestStaleBufferResultIsIgnored(t *testing.T) {
 func TestUndoRestoresBufferAudio(t *testing.T) {
 	m, broker := newBufferTestModel(t)
 	enc := sointu.Encoding{Format: "flac", Args: []string{"-c:a", "flac"}}
-	setBuffers(m, sointu.Buffers{{ID: 1, Channels: 1, Sample: &sointu.AudioSample{Data: testWav([]int16{1, 2, 3}), Encoding: enc}}})
+	setBuffers(m, sointu.Buffers{{ID: 1, Channels: 1, Sample: &sointu.AudioSample{Data: testWav([]int16{1, 2, 3}), Encoding: &enc}}})
 	processBufferResults(t, m, broker, 1)
 	setBuffers(m, nil)
 	m.History().Undo().Do()
@@ -211,5 +211,104 @@ func TestBufreadBufferParameter(t *testing.T) {
 		if q.Name() == "loopstart" {
 			t.Errorf("loopstart shown although loop is off")
 		}
+	}
+}
+
+func newPresetTestModel(t *testing.T) *Model {
+	t.Helper()
+	broker := NewBroker()
+	m := NewModel(broker, []sointu.Synther{vm.GoSynther{}}, NullMIDIContext{}, "")
+	t.Cleanup(m.Close)
+	func() {
+		defer m.change("Test", SongChange, MajorChange)()
+		m.d.Song.EncodingPresets = sointu.EncodingPresets{
+			{Name: "Opus", Encoding: sointu.Encoding{Format: "ogg", Args: []string{"-c:a", "libopus"}}},
+			{Name: "FLAC", Encoding: sointu.Encoding{Format: "flac"}},
+		}
+		m.d.Song.Buffers = sointu.Buffers{
+			{ID: 1, Channels: 1, Sample: &sointu.AudioSample{Data: sointu.Blob{1}, Preset: "Opus"}},
+			{ID: 2, Channels: 1, Sample: &sointu.AudioSample{Data: sointu.Blob{2}, Preset: "Opus"}},
+		}
+	}()
+	return m
+}
+
+func encodingOf(t *testing.T, m *Model, i int) sointu.Encoding {
+	t.Helper()
+	e, err := m.d.Song.SampleEncoding(m.d.Song.Buffers[i].Sample)
+	if err != nil {
+		t.Fatalf("SampleEncoding: %v", err)
+	}
+	return e
+}
+
+func TestEditingPresetChangesAllItsSamples(t *testing.T) {
+	m := newPresetTestModel(t)
+	if m.Buffer().PresetUsers() != 2 {
+		t.Errorf("got %d users, want 2", m.Buffer().PresetUsers())
+	}
+	m.Buffer().Args().SetValue("-c:a libopus -b:a 24k")
+	for i := range 2 {
+		if got := encodingOf(t, m, i).Args; !slicesEqual(got, []string{"-c:a", "libopus", "-b:a", "24k"}) {
+			t.Errorf("buffer %d: got args %q", i, got)
+		}
+	}
+	m.History().Undo().Do()
+	if got := encodingOf(t, m, 1).Args; len(got) != 2 {
+		t.Errorf("undo did not restore the preset: %q", got)
+	}
+}
+
+func TestCustomEncodingOverridesPreset(t *testing.T) {
+	m := newPresetTestModel(t)
+	custom := m.Buffer().Preset().Range().Max
+	m.Buffer().Preset().SetValue(custom)
+	if !m.Buffer().IsCustom() || m.Buffer().Preset().Value() != custom {
+		t.Fatalf("choosing Custom did not stick: value %d", m.Buffer().Preset().Value())
+	}
+	if got := encodingOf(t, m, 0); got.Format != "ogg" {
+		t.Errorf("custom encoding should start from the preset, got %+v", got)
+	}
+	m.Buffer().Format().SetValue("flac")
+	if encodingOf(t, m, 0).Format != "flac" || encodingOf(t, m, 1).Format != "ogg" {
+		t.Errorf("editing the custom encoding changed other samples or the preset")
+	}
+	m.Buffer().Preset().SetValue(1) // FLAC preset
+	if m.Buffer().IsCustom() || m.d.Song.Buffers[0].Sample.Preset != "FLAC" {
+		t.Errorf("choosing a preset did not drop the custom encoding")
+	}
+}
+
+func TestRenameAndDeletePreset(t *testing.T) {
+	m := newPresetTestModel(t)
+	if m.Buffer().PresetName().SetValue("FLAC") {
+		t.Errorf("renaming to an existing name should fail")
+	}
+	m.Buffer().PresetName().SetValue("Small")
+	for i := range 2 {
+		if p := m.d.Song.Buffers[i].Sample.Preset; p != "Small" {
+			t.Errorf("buffer %d still uses %q", i, p)
+		}
+	}
+	m.Buffer().DeletePreset().Do()
+	if _, ok := m.d.Song.EncodingPresets.Find("Small"); ok {
+		t.Errorf("preset not deleted")
+	}
+	for i := range 2 {
+		if !m.d.Song.Buffers[i].Sample.Encoding.Equal(sointu.Encoding{Format: "ogg", Args: []string{"-c:a", "libopus"}}) {
+			t.Errorf("buffer %d did not keep the deleted preset's encoding", i)
+		}
+	}
+}
+
+func TestNewPreset(t *testing.T) {
+	m := newPresetTestModel(t)
+	m.Buffer().NewPreset().Do()
+	if got := m.d.Song.Buffers[0].Sample.Preset; got != "Opus 2" {
+		t.Fatalf("new preset is %q, want Opus 2", got)
+	}
+	m.Buffer().Args().SetValue("-c:a libopus -b:a 96k")
+	if len(encodingOf(t, m, 1).Args) != 2 {
+		t.Errorf("editing the new preset changed the other sample's preset")
 	}
 }

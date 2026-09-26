@@ -30,7 +30,8 @@ type (
 	bufferJob struct {
 		ID       int
 		Key      ffmpeg.Key
-		Sample   *sointu.AudioSample
+		Data     []byte
+		Encoding sointu.Encoding
 		Channels int
 	}
 
@@ -68,25 +69,32 @@ func (m *Model) syncBuffers() {
 			}
 			continue
 		}
-		sample := buf.Sample
+		enc, err := m.d.Song.SampleEncoding(buf.Sample)
 		if b.original {
-			s := *sample
-			s.Encoding = sointu.Encoding{}
-			sample = &s
+			enc, err = sointu.Encoding{}, nil
 		}
-		key := ffmpeg.KeyOf(sample, buf.Channels)
+		if err != nil {
+			if b.status[buf.ID].Err == nil || b.status[buf.ID].Err.Error() != err.Error() {
+				delete(b.keys, buf.ID)
+				delete(b.audio, buf.ID)
+				b.status[buf.ID] = BufferStatus{Err: err}
+				changed = true
+			}
+			continue
+		}
+		key := ffmpeg.KeyOf(buf.Sample.Data, enc, buf.Channels)
 		if k, ok := b.keys[buf.ID]; ok && k == key {
 			continue
 		}
 		b.keys[buf.ID] = key
 		b.status[buf.ID] = BufferStatus{Processing: true}
 		// the old audio keeps playing until the new one is ready
-		job := bufferJob{ID: buf.ID, Key: key, Sample: sample, Channels: buf.Channels}
+		job := bufferJob{ID: buf.ID, Key: key, Data: buf.Sample.Data, Encoding: enc, Channels: buf.Channels}
 		if !TrySend(m.broker.ToBufferWorker, any(job)) {
 			b.status[buf.ID] = BufferStatus{Err: fmt.Errorf("buffer worker is busy")}
 		}
 	}
-	for id := range b.keys {
+	for id := range b.status {
 		if !seen[id] {
 			m.forgetBuffer(id)
 			changed = true
@@ -162,7 +170,7 @@ func runBufferWorker(broker *Broker) {
 			}
 			res := bufferResult{ID: job.ID, Key: job.Key, Err: findErr}
 			if cache != nil {
-				res.Result, res.Err = cache.Get(job.Sample, job.Channels)
+				res.Result, res.Err = cache.Get(job.Data, job.Encoding, job.Channels)
 			}
 			TrySend(broker.ToModel, MsgToModel{Data: res})
 		case <-broker.CloseBufferWorker:

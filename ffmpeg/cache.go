@@ -55,15 +55,15 @@ func DefaultCacheDir() (string, error) {
 	return filepath.Join(dir, "sointu", "buffers"), nil
 }
 
-// KeyOf returns the key of an audio sample processed with the given number of
-// channels.
-func KeyOf(s *sointu.AudioSample, channels int) Key {
+// KeyOf returns the key of sample data processed with the given encoding and
+// number of channels.
+func KeyOf(data []byte, enc sointu.Encoding, channels int) Key {
 	h := sha256.New()
-	fmt.Fprintf(h, "sointu buffer v1\x00%d\x00%s\x00%d\x00", channels, s.Encoding.Format, len(s.Encoding.Args))
-	for _, a := range s.Encoding.Args {
+	fmt.Fprintf(h, "sointu buffer v1\x00%d\x00%s\x00%d\x00", channels, enc.Format, len(enc.Args))
+	for _, a := range enc.Args {
 		fmt.Fprintf(h, "%d\x00%s", len(a), a)
 	}
-	h.Write(s.Data)
+	h.Write(data)
 	var k Key
 	h.Sum(k[:0])
 	return k
@@ -71,10 +71,10 @@ func KeyOf(s *sointu.AudioSample, channels int) Key {
 
 func (k Key) String() string { return hex.EncodeToString(k[:]) }
 
-// Get returns the result for an audio sample, processing it if it is not
-// cached yet.
-func (c *Cache) Get(s *sointu.AudioSample, channels int) (Result, error) {
-	key := KeyOf(s, channels)
+// Get returns the result for sample data processed with the given encoding
+// and number of channels, processing it if it is not cached yet.
+func (c *Cache) Get(data []byte, enc sointu.Encoding, channels int) (Result, error) {
+	key := KeyOf(data, enc, channels)
 	if r, ok := c.lookup(key); ok {
 		return r, nil
 	}
@@ -82,7 +82,7 @@ func (c *Cache) Get(s *sointu.AudioSample, channels int) (Result, error) {
 		c.remember(key, r)
 		return r, nil
 	}
-	encoded, err := c.FFmpeg.Encode(s.Data, s.Encoding, channels)
+	encoded, err := c.FFmpeg.Encode(data, enc, channels)
 	if err != nil {
 		return Result{}, fmt.Errorf("encoding: %w", err)
 	}

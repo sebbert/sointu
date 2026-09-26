@@ -1,6 +1,7 @@
 package gioui
 
 import (
+	"fmt"
 	"image/color"
 
 	"gioui.org/font"
@@ -111,4 +112,65 @@ func (e *Editor) Update(gtx C, str tracker.String) EditorEvent {
 
 func (e *Editor) Focus() {
 	e.requestFocus = true
+}
+
+// DraftEditor is a single line Editor that keeps the text being edited to
+// itself, and sets the value only when editing ends: on Enter or when the
+// editor loses focus. Escape discards the edit. This suits values that are
+// invalid while being typed, or expensive to apply. If the value is rejected,
+// the text reverts and an alert is shown.
+type DraftEditor struct {
+	Editor
+	draft  string
+	active bool
+}
+
+type draftValue struct {
+	d      *DraftEditor
+	target tracker.String
+}
+
+func (v *draftValue) Value() string {
+	if v.d.active {
+		return v.d.draft
+	}
+	return v.target.Value()
+}
+
+func (v *draftValue) SetValue(value string) bool {
+	v.d.draft, v.d.active = value, true
+	return true
+}
+
+func NewDraftEditor(alignment text.Alignment) *DraftEditor {
+	return &DraftEditor{Editor: *NewEditor(true, true, alignment)}
+}
+
+func (d *DraftEditor) Layout(gtx C, str tracker.String, th *Theme, style *EditorStyle, hint string) D {
+	s := tracker.MakeString(&draftValue{d: d, target: str})
+loop:
+	for {
+		switch d.Editor.Update(gtx, s) {
+		case EditorEventNone:
+			break loop
+		case EditorEventSubmit:
+			d.commit(gtx, str)
+		case EditorEventCancel:
+			d.active = false
+		}
+	}
+	if d.active && !gtx.Focused(&d.widgetEditor) {
+		d.commit(gtx, str)
+	}
+	return d.Editor.Layout(gtx, s, th, style, hint)
+}
+
+func (d *DraftEditor) commit(gtx C, str tracker.String) {
+	if !d.active {
+		return
+	}
+	d.active = false
+	if d.draft != str.Value() && !str.SetValue(d.draft) {
+		TrackerFromContext(gtx).Alerts().Add(fmt.Sprintf("Invalid value %q", d.draft), tracker.Warning)
+	}
 }

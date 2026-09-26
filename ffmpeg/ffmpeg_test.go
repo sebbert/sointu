@@ -135,13 +135,13 @@ func TestEncodeDecode(t *testing.T) {
 func TestCache(t *testing.T) {
 	f := find(t)
 	dir := t.TempDir()
-	s := &sointu.AudioSample{Data: wav(1, 4410), Encoding: sointu.Encoding{Format: "flac", Args: []string{"-c:a", "flac"}}}
-	r1, err := ffmpeg.NewCache(f, dir).Get(s, 1)
+	data, enc := wav(1, 4410), sointu.Encoding{Format: "flac", Args: []string{"-c:a", "flac"}}
+	r1, err := ffmpeg.NewCache(f, dir).Get(data, enc, 1)
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
 	}
 	// a new cache with a broken ffmpeg must find the result on disk
-	r2, err := ffmpeg.NewCache(&ffmpeg.FFmpeg{Path: "/nonexistent"}, dir).Get(s, 1)
+	r2, err := ffmpeg.NewCache(&ffmpeg.FFmpeg{Path: "/nonexistent"}, dir).Get(data, enc, 1)
 	if err != nil {
 		t.Fatalf("Get from disk failed: %v", err)
 	}
@@ -149,12 +149,11 @@ func TestCache(t *testing.T) {
 		t.Errorf("results from disk differ")
 	}
 	// different settings are different entries
-	if ffmpeg.KeyOf(s, 1) == ffmpeg.KeyOf(s, 2) {
+	if ffmpeg.KeyOf(data, enc, 1) == ffmpeg.KeyOf(data, enc, 2) {
 		t.Errorf("keys should depend on the number of channels")
 	}
-	s2 := *s
-	s2.Encoding.Args = []string{"-c:a", "flac", "-compression_level", "0"}
-	if ffmpeg.KeyOf(s, 1) == ffmpeg.KeyOf(&s2, 1) {
+	enc2 := sointu.Encoding{Format: "flac", Args: []string{"-c:a", "flac", "-compression_level", "0"}}
+	if ffmpeg.KeyOf(data, enc, 1) == ffmpeg.KeyOf(data, enc2, 1) {
 		t.Errorf("keys should depend on the arguments")
 	}
 }
@@ -181,7 +180,7 @@ func TestBuiltinPresets(t *testing.T) {
 	in := wav(1, 4410)
 	for _, p := range presets {
 		t.Run(p.Name, func(t *testing.T) {
-			enc, err := f.Encode(in, p.Encoding(), 1)
+			enc, err := f.Encode(in, p.Encoding, 1)
 			if err != nil {
 				t.Fatalf("Encode failed: %v", err)
 			}
