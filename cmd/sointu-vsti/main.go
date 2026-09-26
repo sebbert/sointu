@@ -3,26 +3,13 @@
 package main
 
 import (
-	"crypto/rand"
-	"encoding/hex"
-	"fmt"
-	"math"
-	"os"
-	"path/filepath"
-	"time"
-
-	"github.com/vsariola/sointu"
-	"github.com/vsariola/sointu/cmd"
-	"github.com/vsariola/sointu/tracker"
-	"github.com/vsariola/sointu/tracker/gioui"
+	"github.com/vsariola/sointu/cmd/plugin"
 	"pipelined.dev/audio/vst2"
 )
 
 type (
 	VSTIProcessContext struct {
-		events     []vst2.MIDIEvent
-		eventIndex int
-		host       vst2.Host
+		host vst2.Host
 	}
 )
 
@@ -47,28 +34,8 @@ func init() {
 		version = int32(100)
 	)
 	vst2.PluginAllocator = func(h vst2.Host) (vst2.Plugin, vst2.Dispatcher) {
-		recoveryFile := ""
-		if configDir, err := os.UserConfigDir(); err == nil {
-			randBytes := make([]byte, 16)
-			rand.Read(randBytes)
-			recoveryFile = filepath.Join(configDir, "sointu", "recovery", "sointu-vsti-recovery-"+hex.EncodeToString(randBytes)+".json")
-		}
-		broker := tracker.NewBroker()
-		model := tracker.NewModel(broker, cmd.Synthers, cmd.NewMidiContext(broker), recoveryFile)
-		player := tracker.NewPlayer(broker, cmd.Synthers[0])
-
-		t := gioui.NewTracker(model)
-		model.Play().TrackerHidden().SetValue(true)
-		// since the VST is usually working without any regard for the tracks
-		// until recording, disable the Instrument-Track linking by default
-		// because it might just confuse the user why instrument cannot be
-		// swapped/added etc.
-		model.Track().LinkInstrument().SetValue(false)
-		go t.Main()
+		p := plugin.New("sointu-vsti")
 		context := &VSTIProcessContext{host: h}
-		buf := make(sointu.AudioBuffer, 1024)
-		var totalFrames int64 = 0
-		start := time.Now()
 		return vst2.Plugin{
 				UniqueID:       [4]byte{'S', 'n', 't', 'u'},
 				Version:        version,
@@ -79,23 +46,7 @@ func init() {
 				Category:       vst2.PluginCategorySynth,
 				Flags:          vst2.PluginIsSynth,
 				ProcessFloatFunc: func(in, out vst2.FloatBuffer) {
-					if time.Since(start) > 2*time.Second { // limit the rate we query the samplerate from the host and send alerts
-						if s, ok := context.SampleRate(); ok && math.Abs(float64(s-44100.0)) > 1e-6 {
-							player.SendAlert("WrongSampleRate", fmt.Sprintf("VSTi host sample rate is %.0f Hz; Sointu supports 44100 Hz only", s), tracker.Error)
-						}
-						start = time.Now()
-					}
-					left := out.Channel(0)
-					right := out.Channel(1)
-					if len(buf) < out.Frames {
-						buf = append(buf, make(sointu.AudioBuffer, out.Frames-len(buf))...)
-					}
-					buf = buf[:out.Frames]
-					player.Process(buf, context)
-					for i := 0; i < out.Frames; i++ {
-						left[i], right[i] = buf[i][0], buf[i][1]
-					}
-					totalFrames += int64(out.Frames)
+					p.Process(out.Channel(0), out.Channel(1), context)
 				},
 			}, vst2.Dispatcher{
 				CanDoFunc: func(pcds vst2.PluginCanDoString) vst2.CanDoResponse {
@@ -109,28 +60,16 @@ func init() {
 					for i := 0; i < events.NumEvents(); i++ {
 						switch ev := events.Event(i).(type) {
 						case *vst2.MIDIEvent:
-							if (ev.Data[0] >= 0x80 && ev.Data[0] <= 0x9F) || (ev.Data[0] >= 0xB0 && ev.Data[0] <= 0xBF) {
-								player.EmitMIDIMsg(&tracker.MIDIMessage{Timestamp: int64(ev.DeltaFrames) + totalFrames, Data: ev.Data, Source: &context})
-							}
+							p.MIDI(int(ev.DeltaFrames), ev.Data)
 						}
 					}
 				},
-				CloseFunc: func() {
-					tracker.TrySend(broker.CloseGUI, struct{}{})
-					model.Close()
-					tracker.TimeoutReceive(broker.FinishedGUI, 3*time.Second)
-				},
+				CloseFunc: p.Close,
 				GetChunkFunc: func(isPreset bool) []byte {
-					retChn := make(chan []byte)
-
-					if !tracker.TrySend(broker.ToModel, tracker.MsgToModel{Data: func() { retChn <- t.History().MarshalRecovery() }}) {
-						return nil
-					}
-					ret, _ := tracker.TimeoutReceive(retChn, 5*time.Second) // ret will be nil if timeout or channel closed
-					return ret
+					return p.State()
 				},
 				SetChunkFunc: func(data []byte, isPreset bool) {
-					tracker.TrySend(broker.ToModel, tracker.MsgToModel{Data: func() { t.History().UnmarshalRecovery(data) }})
+					p.SetState(data)
 				},
 			}
 
