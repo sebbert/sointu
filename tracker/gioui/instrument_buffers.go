@@ -10,6 +10,8 @@ import (
 	"gioui.org/op/paint"
 	"gioui.org/text"
 	"gioui.org/unit"
+	"gioui.org/widget"
+	"gioui.org/widget/material"
 	"gioui.org/x/explorer"
 	"github.com/vsariola/sointu/tracker"
 	"golang.org/x/exp/shiny/materialdesign/icons"
@@ -38,6 +40,7 @@ type (
 		formatEditor *DraftEditor
 		argsEditor   *DraftEditor
 		props        *layout.List
+		info         *widget.Selectable
 	}
 )
 
@@ -62,6 +65,7 @@ func NewInstrumentBuffers(m *tracker.Model) *InstrumentBuffers {
 		formatEditor: NewDraftEditor(text.Start),
 		argsEditor:   NewDraftEditor(text.Start),
 		props:        &layout.List{Axis: layout.Vertical},
+		info:         new(widget.Selectable),
 	}
 }
 
@@ -72,6 +76,7 @@ func (ib *InstrumentBuffers) Tags(level int, yield TagYieldFunc) bool {
 		yield(level+1, &ib.formatEditor.widgetEditor) &&
 		yield(level+1, &ib.argsEditor.widgetEditor) &&
 		ib.channelsMenu.Tags(level+1, yield) &&
+		yield(level+1, ib.info) &&
 		ib.presetMenu.Tags(level+1, yield) &&
 		ib.formatMenu.Tags(level+1, yield)
 }
@@ -252,8 +257,13 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 			presetBtns,
 			nil,
 			func(gtx C) D {
-				return layout.UniformInset(unit.Dp(6)).Layout(gtx,
-					Label(th, &th.InstrumentEditor.Properties.Label, tr.Buffer().Info()).Layout)
+				// selectable, so that e.g. ffmpeg's error messages can be copied
+				style := th.InstrumentEditor.Properties.Label
+				l := material.Label(&th.Material, style.TextSize, tr.Buffer().Info())
+				l.Color, l.Font, l.State = style.Color, style.Font, ib.info
+				l.SelectionColor = th.Material.ContrastBg
+				l.SelectionColor.A = 0x60
+				return layout.UniformInset(unit.Dp(6)).Layout(gtx, l.Layout)
 			},
 		}
 		return ib.props.Layout(gtx, len(lines), func(gtx C, i int) D {
