@@ -384,6 +384,10 @@ type window struct {
 	config Config
 
 	keysDown map[key.Name]struct{}
+	// textInput is set while a text input, such as an editor, has the
+	// focus. Only then are key presses interpreted by the macOS text input
+	// system, which e.g. shows the accent menu when a key is held down.
+	textInput bool
 	// cmdKeys is for storing the current key event while
 	// waiting for a doCommandBySelector.
 	cmdKeys cmdKeys
@@ -569,7 +573,12 @@ func (w *window) EditorStateChanged(old, new editorState) {
 	}
 }
 
-func (w *window) ShowTextInput(show bool) {}
+func (w *window) ShowTextInput(show bool) {
+	w.textInput = show
+	if !show {
+		C.discardMarkedText(w.view)
+	}
+}
 
 func (w *window) SetInputHint(_ key.InputHint) {}
 
@@ -604,9 +613,11 @@ func gio_onKeys(h C.uintptr_t, event C.CFTypeRef, cstr C.CFTypeRef, ti C.double,
 	ks := key.Release
 	if keyDown {
 		ks = key.Press
-		w.cmdKeys.eventStr = str
-		w.cmdKeys.eventMods = kmods
-		C.interpretKeyEvents(w.view, event)
+		if w.textInput {
+			w.cmdKeys.eventStr = str
+			w.cmdKeys.eventMods = kmods
+			C.interpretKeyEvents(w.view, event)
+		}
 	}
 	for _, k := range str {
 		if n, ok := convertKey(k); ok {
@@ -617,7 +628,7 @@ func gio_onKeys(h C.uintptr_t, event C.CFTypeRef, cstr C.CFTypeRef, ti C.double,
 			}
 			if keyDown {
 				w.keysDown[ke.Name] = struct{}{}
-				if _, isCmd := convertCommandKey(k); isCmd || kmods.Contain(key.ModCommand) {
+				if _, isCmd := convertCommandKey(k); w.textInput && (isCmd || kmods.Contain(key.ModCommand)) {
 					// doCommandBySelector already processed the event.
 					return
 				}
