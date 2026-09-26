@@ -17,13 +17,15 @@ type (
 	// model via the playerMessages channel. The model sendTargets messages to the
 	// player via the modelMessages channel.
 	Player struct {
-		synth   sointu.Synth               // the synth used to render audio
-		buffers map[int]sointu.BufferAudio // the audio of the song's buffers
-		song    sointu.Song                // the song being played
-		playing bool                       // is the player playing the score or not
-		rowtime int                        // how many samples have been played in the current row
-		voices  [vm.MAX_VOICES]voice
-		loop    Loop
+		synth      sointu.Synth               // the synth used to render audio
+		buffers    map[int]sointu.BufferAudio // the audio of the song's buffers
+		preview    sointu.BufferAudio         // buffer audio being previewed, mixed into the output
+		previewPos int                        // next frame of the preview
+		song       sointu.Song                // the song being played
+		playing    bool                       // is the player playing the score or not
+		rowtime    int                        // how many samples have been played in the current row
+		voices     [vm.MAX_VOICES]voice
+		loop       Loop
 
 		recording Recording // the recorded MIDI events and BPM
 
@@ -48,6 +50,7 @@ type (
 		VoiceLevels [vm.MAX_VOICES]float32 // a level that can be used to visualize the volume of each voice
 		NumThreads  int
 		CPULoad     [vm.MAX_THREADS]sointu.CPULoad // current CPU load of the player, used to adjust the render rate
+		Previewing  bool                           // a buffer preview is playing
 	}
 
 	// PlayerProcessContext is the context given to the player when processing
@@ -145,6 +148,8 @@ func (p *Player) Process(buffer sointu.AudioBuffer, context PlayerProcessContext
 			clear(buffer[:rendered])
 		}
 
+		p.mixPreview(buffer[:rendered])
+
 		bufPtr := p.broker.GetAudioBuffer() // borrow a buffer from the broker
 		*bufPtr = append(*bufPtr, buffer[:rendered]...)
 		if len(*bufPtr) == 0 || !TrySend(p.broker.ToModel, MsgToModel{Data: bufPtr}) {
@@ -182,6 +187,24 @@ func (p *Player) Process(buffer sointu.AudioBuffer, context PlayerProcessContext
 }
 
 func (p *Player) EmitMIDIMsg(msg *MIDIMessage) bool { return p.midiRouter.route(p.broker, msg) }
+
+// mixPreview adds the next frames of the buffer preview to the output.
+func (p *Player) mixPreview(buffer sointu.AudioBuffer) {
+	a := p.preview
+	if a.Channels <= 0 {
+		return
+	}
+	n := min(len(buffer), a.Frames()-p.previewPos)
+	for i := 0; i < n; i++ {
+		f := (p.previewPos + i) * a.Channels
+		buffer[i][0] += a.Data[f]
+		buffer[i][1] += a.Data[f+a.Channels-1] // mono plays in both channels
+	}
+	p.previewPos += n
+	if p.previewPos >= a.Frames() {
+		p.preview, p.status.Previewing = sointu.BufferAudio{}, false
+	}
+}
 
 func (p *Player) destroySynth() {
 	if p.synth != nil {
@@ -255,6 +278,9 @@ loop:
 				p.compileOrUpdateSynth()
 			case sointu.Score:
 				p.song.Score = m
+			case PreviewMsg:
+				p.preview, p.previewPos = m.Audio, 0
+				p.status.Previewing = m.Audio.Frames() > 0
 			case BufferAudioMsg:
 				p.buffers = m.Audio
 				if s, ok := p.synth.(sointu.BufferSetter); ok {

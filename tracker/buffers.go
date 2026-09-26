@@ -46,6 +46,12 @@ type (
 		Err    error
 	}
 
+	// PreviewMsg asks the player to play buffer audio once, mixed into its
+	// output; empty audio stops the preview.
+	PreviewMsg struct {
+		Audio sointu.BufferAudio
+	}
+
 	// BufferAudioMsg is sent to the player when the audio of the buffers
 	// changes.
 	BufferAudioMsg struct {

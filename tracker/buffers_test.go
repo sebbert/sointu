@@ -371,3 +371,20 @@ func TestFormatChoice(t *testing.T) {
 		t.Errorf("Keep original: got format %q", got)
 	}
 }
+
+func TestPreviewIsMixedIntoOutput(t *testing.T) {
+	broker := NewBroker()
+	p := NewPlayer(broker, vm.GoSynther{})
+	TrySend(broker.ToPlayer, any(PreviewMsg{Audio: sointu.BufferAudio{Channels: 1, Data: []float32{0.5, 0.25, 0.125}}}))
+	out := make(sointu.AudioBuffer, 4)
+	p.Process(out, NullPlayerProcessContext{})
+	want := sointu.AudioBuffer{{0.5, 0.5}, {0.25, 0.25}, {0.125, 0.125}, {0, 0}}
+	for i := range want {
+		if out[i] != want[i] {
+			t.Fatalf("frame %d: got %v, want %v", i, out[i], want[i])
+		}
+	}
+	if p.status.Previewing {
+		t.Errorf("preview should have ended")
+	}
+}

@@ -24,6 +24,7 @@ type (
 		replaceBtn   *Clickable
 		deleteBtn    *Clickable
 		originalBtn  *Clickable
+		previewBtn   *Clickable
 		channelsBtn  *Clickable
 		channelsMenu *MenuState
 		presetBtn    *Clickable
@@ -47,6 +48,7 @@ func NewInstrumentBuffers(m *tracker.Model) *InstrumentBuffers {
 		replaceBtn:   new(Clickable),
 		deleteBtn:    new(Clickable),
 		originalBtn:  new(Clickable),
+		previewBtn:   new(Clickable),
 		channelsBtn:  new(Clickable),
 		channelsMenu: new(MenuState),
 		presetBtn:    new(Clickable),
@@ -121,12 +123,14 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 	replaceBtn := IconBtn(th, replaceStyle, ib.replaceBtn, icons.FileFolderOpen, "Replace the sample of the buffer")
 	deleteBtn := ActionIconBtn(tr.Buffer().Delete(), th, ib.deleteBtn, icons.ActionDelete, "Delete buffer")
 	originalBtn := ToggleBtn(tr.Buffer().Original(), th, ib.originalBtn, "Original", "Play the samples without encoding,\nto compare with the encoded versions")
+	previewBtn := ToggleIconBtn(tr.Buffer().Preview(), th, ib.previewBtn, icons.AVPlayArrow, icons.AVStop, "Preview the sample as encoded\n(or original, with Original on)", "Stop the preview")
 	toolbar := func(gtx C) D {
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(addBtn.Layout),
 			layout.Rigid(replaceBtn.Layout),
 			layout.Rigid(deleteBtn.Layout),
 			layout.Flexed(1, func(gtx C) D { return D{Size: gtx.Constraints.Min} }),
+			layout.Rigid(previewBtn.Layout),
 			layout.Rigid(originalBtn.Layout),
 			layout.Rigid(layout.Spacer{Width: 4}.Layout),
 		)

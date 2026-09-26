@@ -582,6 +582,27 @@ func (v *bufferOriginal) SetValue(value bool) {
 	(*Model)(v).syncBuffers()
 }
 
+// Preview returns a Bool for playing the selected buffer's audio once, as the
+// synth hears it: encoded, or original when Original is on. Setting it to
+// false stops the preview.
+func (m *BufferModel) Preview() Bool { return MakeBool((*bufferPreview)(m)) }
+
+type bufferPreview BufferModel
+
+func (v *bufferPreview) Value() bool { return v.playerStatus.Previewing }
+func (v *bufferPreview) SetValue(value bool) {
+	var audio sointu.BufferAudio
+	if buf := (*BufferModel)(v).selected(); value && buf != nil {
+		audio = v.buffers.audio[buf.ID]
+	}
+	TrySend(v.broker.ToPlayer, any(PreviewMsg{Audio: audio}))
+	v.playerStatus.Previewing = audio.Frames() > 0 // until the player reports back
+}
+func (v *bufferPreview) Enabled() bool {
+	buf := (*BufferModel)(v).selected()
+	return v.playerStatus.Previewing || (buf != nil && v.buffers.audio[buf.ID].Frames() > 0)
+}
+
 // bufferFrames returns the number of frames in the audio of the buffer with
 // the given ID, or 0 if it is not ready.
 func (m *Model) bufferFrames(id int) int { return m.buffers.audio[id].Frames() }
