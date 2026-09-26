@@ -283,7 +283,8 @@ func (m *midiIgnoreNoteOff) SetValue(val bool) {
 }
 
 // Channel returns an Int controlling the MIDI channel of the currently selected
-// instrument. 0 = automatically selected, 1-16 fixed to specific MIDI channel
+// instrument. 0 = automatically selected, 1-MAX_MIDI_CHANNELS fixed to specific
+// MIDI channel; see MIDIMessage.Port for channels above 16.
 func (m *MIDIModel) Channel() Int { return MakeInt((*midiChannel)(m)) }
 
 type midiChannel MIDIModel
@@ -304,7 +305,7 @@ func (m *midiChannel) SetValue(val int) bool {
 	m.d.Song.Patch[i].MIDI.Channel = val
 	return true
 }
-func (m *midiChannel) Range() RangeInclusive { return RangeInclusive{0, 16} }
+func (m *midiChannel) Range() RangeInclusive { return RangeInclusive{0, MAX_MIDI_CHANNELS} }
 
 type (
 	midiAssigns struct {
@@ -321,7 +322,10 @@ type (
 	}
 )
 
-const MAX_MIDI_CHANNELS = 16
+const (
+	MAX_MIDI_PORTS    = 4
+	MAX_MIDI_CHANNELS = MAX_MIDI_PORTS * 16
+)
 
 // update tries to assign MIDI channels to instruments that have MIDI channel 0
 // (automatic) in a way that minimizes the number of channels used. It also
@@ -385,31 +389,24 @@ type MIDIMessage struct {
 	Timestamp int64 // in samples (at 44100 Hz)
 	Data      [3]byte
 	Source    any // tag to identify the source of the message; any unique pointer will do
+	// Port is the index of the input the message arrived on, for plugin hosts
+	// with multiple MIDI inputs. Channels 1-16 on port p are Sointu MIDI
+	// channels p*16+1 to p*16+16.
+	Port int
 }
 
 func (m *MIDIMessage) isNoteOff() bool       { return m.Data[0]&0xF0 == 0x80 }
 func (m *MIDIMessage) isNoteOn() bool        { return m.Data[0]&0xF0 == 0x90 }
 func (m *MIDIMessage) isControlChange() bool { return m.Data[0]&0xF0 == 0xB0 }
 
-func (m *MIDIMessage) getNoteOn() (channel, note, velocity byte, ok bool) {
-	if !m.isNoteOn() {
-		return 0, 0, 0, false
-	}
-	return m.Data[0] & 0x0F, m.Data[1], m.Data[2], true
-}
+// channel returns the 0-based Sointu MIDI channel, including the port.
+func (m *MIDIMessage) channel() int { return m.Port*16 + int(m.Data[0]&0x0F) }
 
-func (m *MIDIMessage) getNoteOff() (channel, note, velocity byte, ok bool) {
-	if !m.isNoteOff() {
-		return 0, 0, 0, false
-	}
-	return m.Data[0] & 0x0F, m.Data[1], m.Data[2], true
-}
-
-func (m *MIDIMessage) getControlChange() (channel, controller, value byte, ok bool) {
+func (m *MIDIMessage) getControlChange() (channel int, controller, value byte, ok bool) {
 	if !m.isControlChange() {
 		return 0, 0, 0, false
 	}
-	return m.Data[0] & 0x0F, m.Data[1], m.Data[2], true
+	return m.channel(), m.Data[1], m.Data[2], true
 }
 
 // midiRouter encompasses all the necessary information where MIDIMessages

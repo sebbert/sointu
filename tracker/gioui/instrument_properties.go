@@ -122,7 +122,7 @@ func (ip *InstrumentProperties) layout(gtx C) D {
 			l.Alignment = text.Middle
 			return l.Layout(gtx)
 		case 10:
-			channelLine := NumUpDown(tr.MIDI().Channel(), tr.Theme, ip.midiChannel, "0 = automatic")
+			channelLine := NumUpDown(tr.MIDI().Channel(), tr.Theme, ip.midiChannel, "0 = automatic\n17-64 = channels 1-16 on\nCLAP MIDI inputs 2-4")
 			return layoutInstrumentPropertyLine(gtx, "Channel", channelLine.Layout)
 		case 11:
 			start := NumUpDown(tr.MIDI().NoteStart(), tr.Theme, ip.noteStart, "Lowest note triggering\nthis instrument")

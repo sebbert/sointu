@@ -287,7 +287,7 @@ loop:
 				p.events = append(p.events, *m)
 			case *MIDIMessage:
 				if m.Data[0] >= 0x80 && m.Data[0] <= 0x9F {
-					chn := int(m.Data[0]&0x0F) + 1
+					chn := m.channel() + 1
 					note := m.Data[1]
 					velocity := m.Data[2]
 					on := m.Data[0] >= 0x90

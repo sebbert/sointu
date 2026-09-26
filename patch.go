@@ -70,7 +70,7 @@ type (
 
 	// MIDI contains info on how MIDI events should trigger an instrument
 	MIDI struct {
-		Channel       int  `yaml:",omitempty"` // 0 means automatically assigned channel, 1-16 means MIDI channel 1-16
+		Channel       int  `yaml:",omitempty"` // 0 means automatically assigned channel, 1-16 means MIDI channel 1-16, 17-64 means channels 1-16 on MIDI inputs 2-4 (CLAP plugin only)
 		Start         int  `yaml:",omitempty"` // MIDI note number to start on, 0-127
 		End           int  `yaml:",omitempty"` // MIDI note number to end on, counted backwards from 127, done so that the default number of 0 corresponds to "full keyboard", without any splittings
 		Transpose     int  `yaml:",omitempty"` // value to be added to the MIDI note/velocity number, can be negative

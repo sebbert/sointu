@@ -393,7 +393,7 @@ func (m *Model) ProcessMsg(msg MsgToModel) {
 		m.spectrum = e
 	case *MIDIMessage:
 		if channel, control, value, ok := e.getControlChange(); ok {
-			m.MIDI().handleControlEvent(int(channel), int(control), int(value))
+			m.MIDI().handleControlEvent(channel, int(control), int(value))
 		}
 	}
 }
