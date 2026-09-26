@@ -28,6 +28,7 @@ type (
 		stack      []float32
 		state      synthState
 		delaylines []delayline
+		buffers    map[int]sointu.BufferAudio
 		cpuLoad    sointu.CPULoad
 	}
 
@@ -119,6 +120,8 @@ func (s *GoSynth) Release(voiceIndex int) {
 }
 
 func (s *GoSynth) Close() {}
+
+func (s *GoSynth) SetBuffers(buffers map[int]sointu.BufferAudio) { s.buffers = buffers }
 
 func (s *GoSynth) CPULoad(loads []sointu.CPULoad) int {
 	if len(loads) < 1 {
@@ -545,6 +548,10 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 					detuneStereo = -detuneStereo
 				}
 				unit.ports[6] = 0
+			case opBufread:
+				var index byte
+				index, operands = operands[0], operands[1:]
+				s.bufread(unit, voice, s.bytecode.BufferRegions[index], params[0], params[1], params[2], stereo, &stack)
 			case opDelay:
 				pregain2 := params[0] * params[0]
 				damp := params[3]
@@ -639,6 +646,52 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 	}
 	s.stack = stack[:0]
 	return samples, renderTime, nil
+}
+
+// bufread pushes the next frame of a buffer region on the stack. The position
+// relative to the region start is kept in unit.state: the integer part in
+// state[0] (as bits) and the fraction in state[1], so that it stays accurate
+// for long buffers. Both are zeroed when a note is triggered.
+func (s *GoSynth) bufread(unit *unit, voice *voice, r BufferRegion, transpose, detune, gain float32, stereo bool, stack *[]float32) {
+	buf := s.buffers[int(r.BufferID)]
+	frames := uint32(buf.Frames())
+	pos := math.Float32bits(unit.state[0])
+	frac := unit.state[1]
+	i := r.Start + pos
+	loopEnd := r.LoopStart + r.LoopLength
+	if r.LoopLength > 0 && i >= loopEnd {
+		i = r.LoopStart + (i-r.LoopStart)%r.LoopLength
+		pos = i - r.Start
+	}
+	next := i + 1
+	if r.LoopLength > 0 && next >= loopEnd {
+		next = r.LoopStart
+	}
+	sample := func(frame uint32, channel int) float32 {
+		if frame >= frames {
+			return 0
+		}
+		return buf.Data[int(frame)*buf.Channels+min(channel, buf.Channels-1)]
+	}
+	read := func(channel int) float32 {
+		a, b := sample(i, channel), sample(next, channel)
+		return (a + (b-a)*frac) * gain
+	}
+	if stereo {
+		*stack = append(*stack, read(1), read(0)) // the left channel is on top
+	} else if buf.Channels == 2 {
+		*stack = append(*stack, (read(0)+read(1))*0.5)
+	} else {
+		*stack = append(*stack, read(0))
+	}
+	semitones := 64*(transpose*2-1) + (detune*2 - 1)
+	if r.Flags&BufferRegionNoteTracking != 0 {
+		semitones += float32(voice.note) - 60
+	}
+	frac += float32(math.Exp2(float64(semitones) / 12))
+	whole := float32(math.Floor(float64(frac)))
+	unit.state[0] = math.Float32frombits(pos + uint32(whole))
+	unit.state[1] = frac - whole
 }
 
 func (s *synthState) rand() float32 {

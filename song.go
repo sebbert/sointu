@@ -17,6 +17,7 @@ type (
 		RowsPerBeat int
 		Score       Score
 		Patch       Patch
+		Buffers     Buffers `yaml:",omitempty"`
 	}
 
 	// Score represents the arrangement of notes in a song; just a list of
@@ -296,6 +297,7 @@ func (s *Song) Copy() Song {
 	ret := *s
 	ret.Score = s.Score.Copy()
 	ret.Patch = s.Patch.Copy()
+	ret.Buffers = s.Buffers.Copy()
 	return ret
 }
 

@@ -386,6 +386,31 @@ var UnitTypes = map[string]UnitType{
 		},
 		StackUse: stackUseSource,
 	},
+	"bufread": {
+		// bufread plays a buffer. With note tracking, note 60 plays it at its
+		// original speed; transpose and detune shift the pitch like in the
+		// oscillator. start, loopstart and looplength are in frames from the
+		// beginning of the buffer.
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "transpose", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				relvalue := v - 64
+				if relvalue%12 == 0 {
+					return strconv.Itoa(relvalue / 12), "oct"
+				}
+				return strconv.Itoa(relvalue), "st"
+			}},
+			{Name: "detune", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return formatFloat(float64(v-64) / 64), "st" }},
+			{Name: "gain", MinValue: 0, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
+			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+			{Name: "notetracking", MinValue: 0, Default: 1, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "loop", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "start", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+			{Name: "loopstart", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+			{Name: "looplength", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+		},
+		StackUse: stackUseSource,
+	},
 	"loadval": {
 		Params: []UnitParameter{
 			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},

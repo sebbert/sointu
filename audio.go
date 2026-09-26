@@ -81,7 +81,29 @@ type (
 	}
 
 	CPULoad float32
+
+	// BufferSetter is implemented by Synths that can play buffers.
+	BufferSetter interface {
+		// SetBuffers sets the audio of the buffers, keyed by Buffer.ID.
+		// Buffers without audio are silent. Called between synth.Renders; the
+		// audio is not modified afterwards, so the synth can keep it.
+		SetBuffers(buffers map[int]BufferAudio)
+	}
+
+	// BufferAudio is the audio of a buffer: interleaved frames at 44100 Hz.
+	BufferAudio struct {
+		Channels int
+		Data     []float32
+	}
 )
+
+// Frames returns the number of frames in the buffer audio.
+func (b BufferAudio) Frames() int {
+	if b.Channels <= 0 {
+		return 0
+	}
+	return len(b.Data) / b.Channels
+}
 
 // Play plays the Song by first compiling the patch with the given Synther,
 // returning the stereo audio buffer as a result (and possible errors).

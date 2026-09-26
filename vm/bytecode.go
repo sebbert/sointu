@@ -35,6 +35,11 @@ type (
 		// samples. The unit only stores the index pointing to this table.
 		SampleOffsets []SampleOffset
 
+		// BufferRegions is a table of the buffers and regions played by the
+		// bufread units. A bufread unit only stores the index pointing to this
+		// table.
+		BufferRegions []BufferRegion
+
 		// PolyphonyBitmask is a rather peculiar bitmask used by Sointu VM to store
 		// the information about which voices use which instruments: bit MAXVOICES -
 		// n - 1 corresponds to voice n. If the bit 1, the next voice uses the same
@@ -54,10 +59,25 @@ type (
 		LoopStart  uint16 // loop start offset in words, relative to Start
 		LoopLength uint16 // loop length in words
 	}
+
+	// BufferRegion is an entry in the buffer region table. Positions are in
+	// frames from the beginning of the buffer.
+	BufferRegion struct {
+		BufferID   uint32 // sointu.Buffer.ID
+		Start      uint32 // frame where playback starts
+		LoopStart  uint32
+		LoopLength uint32 // 0 means no loop
+		Flags      uint32 // see BufferRegionNoteTracking
+	}
 )
+
+// BufferRegionNoteTracking is set in BufferRegion.Flags when the pitch of the
+// bufread unit follows the note.
+const BufferRegionNoteTracking = 1
 
 type bytecodeBuilder struct {
 	sampleOffsetMap map[SampleOffset]int
+	bufferRegionMap map[BufferRegion]int
 	globalAddrs     map[int]uint16
 	globalFixups    map[int]([]int)
 	localAddrs      map[int]uint16
@@ -129,6 +149,14 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				b.op(opcode + p["stereo"])
 				b.defOperands(unit)
 				b.operand(b.delayIndices[instrIndex][unitIndex], countTrack)
+			case "bufread":
+				index := b.getBufferRegionIndex(unit)
+				if index > 255 {
+					return nil, errors.New("Patch uses over 256 different buffer regions")
+				}
+				b.op(opcode + p["stereo"])
+				b.defOperands(unit)
+				b.operand(index)
 			case "aux", "in":
 				b.op(opcode + p["stereo"])
 				b.defOperands(unit)
@@ -228,6 +256,7 @@ func newBytecodeBuilder(patch sointu.Patch, bpm int) *bytecodeBuilder {
 	c := bytecodeBuilder{
 		Bytecode:        Bytecode{PolyphonyBitmask: polyphonyBitmask, NumVoices: uint32(patch.NumVoices()), DelayTimes: delayTimesU16},
 		sampleOffsetMap: map[SampleOffset]int{},
+		bufferRegionMap: map[BufferRegion]int{},
 		globalAddrs:     map[int]uint16{},
 		globalFixups:    map[int]([]int){},
 		localAddrs:      map[int]uint16{},
@@ -323,6 +352,26 @@ func (b *bytecodeBuilder) getSampleIndex(unit sointu.Unit) int {
 		index = len(b.SampleOffsets)
 		b.sampleOffsetMap[s] = index
 		b.SampleOffsets = append(b.SampleOffsets, s)
+	}
+	return index
+}
+
+// getBufferRegionIndex returns the index of the region played by a bufread unit
+// in the buffer region table, adding it to the table if it is not there yet.
+func (b *bytecodeBuilder) getBufferRegionIndex(unit sointu.Unit) int {
+	p := unit.Parameters
+	r := BufferRegion{BufferID: uint32(p["buffer"]), Start: uint32(p["start"])}
+	if p["loop"] == 1 && p["looplength"] > 0 {
+		r.LoopStart, r.LoopLength = uint32(p["loopstart"]), uint32(p["looplength"])
+	}
+	if p["notetracking"] == 1 {
+		r.Flags |= BufferRegionNoteTracking
+	}
+	index, ok := b.bufferRegionMap[r]
+	if !ok {
+		index = len(b.BufferRegions)
+		b.bufferRegionMap[r] = index
+		b.BufferRegions = append(b.BufferRegions, r)
 	}
 	return index
 }

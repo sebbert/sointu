@@ -391,6 +391,29 @@ su_op_loadval_mono:
 {{end}}
 
 
+{{- if .HasOp "bufread"}}
+;-------------------------------------------------------------------------------
+;   BUFREAD opcode: not supported on x86 yet; outputs silence
+;-------------------------------------------------------------------------------
+;   Mono:   push 0 on stack
+;   Stereo: push 0 0 on stack
+;-------------------------------------------------------------------------------
+{{.Func "su_op_bufread" "Opcode"}}
+    lodsb                                       ; skip the buffer region index
+{{- if .StereoAndMono "bufread"}}
+    jnc     su_op_bufread_mono
+{{- end}}
+{{- if .Stereo "bufread"}}
+    fldz
+{{- end}}
+{{- if .StereoAndMono "bufread"}}
+su_op_bufread_mono:
+{{- end}}
+    fldz
+    ret
+{{end}}
+
+
 {{- if .HasOp "receive"}}
 ;-------------------------------------------------------------------------------
 ;   RECEIVE opcode
