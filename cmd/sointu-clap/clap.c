@@ -3,6 +3,7 @@
 // CLAP entry point, factory and plugin callbacks. Everything host-independent
 // is forwarded to the Go side in main.go.
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -63,19 +64,20 @@ static const clap_plugin_audio_ports_t audio_ports = {
 	.get = audio_ports_get,
 };
 
-// note-ports: one input, taking CLAP notes or MIDI
+// note-ports: several inputs, taking CLAP notes or MIDI. Channels 1-16 on
+// input n are Sointu MIDI channels (n-1)*16+1 to (n-1)*16+16.
 
 static uint32_t note_ports_count(const clap_plugin_t *plugin, bool is_input) {
-	return is_input ? 1 : 0;
+	return is_input ? sointuMIDIPorts() : 0;
 }
 
 static bool note_ports_get(const clap_plugin_t *plugin, uint32_t index, bool is_input, clap_note_port_info_t *info) {
-	if (!is_input || index != 0)
+	if (!is_input || index >= sointuMIDIPorts())
 		return false;
-	info->id = 0;
+	info->id = index;
 	info->supported_dialects = CLAP_NOTE_DIALECT_CLAP | CLAP_NOTE_DIALECT_MIDI;
 	info->preferred_dialect = CLAP_NOTE_DIALECT_MIDI;
-	strncpy(info->name, "MIDI In", sizeof(info->name));
+	snprintf(info->name, sizeof(info->name), "MIDI In %u (channels %u-%u)", index + 1, index * 16 + 1, index * 16 + 16);
 	return true;
 }
 
@@ -184,12 +186,13 @@ static void handle_event(sointu_plugin_t *p, const clap_event_header_t *hdr) {
 		// MIDI note on with velocity 0 means note off
 		if (status == 0x90 && velocity == 0)
 			velocity = 1;
-		sointuMIDI(p->handle, hdr->time, status | channel, ev->key, velocity);
+		// A wildcard port is taken to mean the first one
+		sointuMIDI(p->handle, hdr->time, ev->port_index < 0 ? 0 : ev->port_index, status | channel, ev->key, velocity);
 		break;
 	}
 	case CLAP_EVENT_MIDI: {
 		const clap_event_midi_t *ev = (const clap_event_midi_t *)hdr;
-		sointuMIDI(p->handle, hdr->time, ev->data[0], ev->data[1], ev->data[2]);
+		sointuMIDI(p->handle, hdr->time, ev->port_index, ev->data[0], ev->data[1], ev->data[2]);
 		break;
 	}
 	}

@@ -60,7 +60,7 @@ func init() {
 					for i := 0; i < events.NumEvents(); i++ {
 						switch ev := events.Event(i).(type) {
 						case *vst2.MIDIEvent:
-							p.MIDI(int(ev.DeltaFrames), ev.Data)
+							p.MIDI(int(ev.DeltaFrames), 0, ev.Data)
 						}
 					}
 				},

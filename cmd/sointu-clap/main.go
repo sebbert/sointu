@@ -18,6 +18,7 @@ import (
 	"unsafe"
 
 	"github.com/vsariola/sointu/cmd/plugin"
+	"github.com/vsariola/sointu/tracker"
 	"github.com/vsariola/sointu/version"
 )
 
@@ -36,6 +37,9 @@ func (c *processContext) SampleRate() (samplerate float64, ok bool) {
 func instance(h C.uintptr_t) *plugin.Instance {
 	return cgo.Handle(h).Value().(*plugin.Instance)
 }
+
+//export sointuMIDIPorts
+func sointuMIDIPorts() C.uint32_t { return tracker.MAX_MIDI_PORTS }
 
 //export sointuVersion
 func sointuVersion() *C.char {
@@ -58,8 +62,8 @@ func sointuClose(h C.uintptr_t) {
 }
 
 //export sointuMIDI
-func sointuMIDI(h C.uintptr_t, time C.uint32_t, d0, d1, d2 C.uint8_t) {
-	instance(h).MIDI(int(time), [3]byte{byte(d0), byte(d1), byte(d2)})
+func sointuMIDI(h C.uintptr_t, time C.uint32_t, port C.int, d0, d1, d2 C.uint8_t) {
+	instance(h).MIDI(int(time), int(port), [3]byte{byte(d0), byte(d1), byte(d2)})
 }
 
 //export sointuProcess

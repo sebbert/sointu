@@ -68,11 +68,15 @@ func New(name string) *Instance {
 	}
 }
 
-// MIDI handles a MIDI message delta frames into the next processed block. Only
-// note on/off and control change messages are used. Call before Process.
-func (i *Instance) MIDI(delta int, data [3]byte) {
+// MIDI handles a MIDI message arriving on input port delta frames into the
+// next processed block. Only note on/off and control change messages on ports
+// below tracker.MAX_MIDI_PORTS are used. Call before Process.
+func (i *Instance) MIDI(delta, port int, data [3]byte) {
+	if port < 0 || port >= tracker.MAX_MIDI_PORTS {
+		return
+	}
 	if (data[0] >= 0x80 && data[0] <= 0x9F) || (data[0] >= 0xB0 && data[0] <= 0xBF) {
-		i.player.EmitMIDIMsg(&tracker.MIDIMessage{Timestamp: int64(delta) + i.totalFrames, Data: data, Source: i})
+		i.player.EmitMIDIMsg(&tracker.MIDIMessage{Timestamp: int64(delta) + i.totalFrames, Data: data, Source: i, Port: port})
 	}
 }
 
