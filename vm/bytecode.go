@@ -95,7 +95,8 @@ const (
 	// loops. A loop of zero length does not loop.
 	BufferRegionLoop = 2
 	// BufferRegionRing is set in BufferRegion.Flags when the bufwrite unit
-	// wraps around the end of the buffer.
+	// writes continuously, wrapping around the end of the buffer, instead of
+	// once while its note is held.
 	BufferRegionRing = 4
 	// BufferRegionWrite is set in BufferRegion.Flags for bufwrite units.
 	BufferRegionWrite = 8
@@ -426,7 +427,7 @@ func (b *bytecodeBuilder) getBufferRegionIndex(unit sointu.Unit) int {
 	}
 	if unit.Type == "bufwrite" {
 		r = BufferRegion{BufferID: uint32(p["buffer"]), Flags: BufferRegionWrite}
-		if p["wrap"] == 1 {
+		if p["oneshot"] == 0 {
 			r.Flags |= BufferRegionRing
 		}
 		if p["pop"] == 0 {

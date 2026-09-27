@@ -368,9 +368,10 @@
 ;;-------------------------------------------------------------------------------
 ;;   Mono: pop l and write it
 ;;   Stereo: pop l r and write them
-;;   Writes every frame. Writers writing the same buffer in the same frame mix:
-;;   the header has the global time + 1 of the frame written last. WRK[0] is 1
-;;   once a triggered note has started a recording. Matches bufwrite in
+;;   Writes every frame, or with one shot while the note is held. Writers
+;;   writing the same buffer in the same frame mix: the header has the global
+;;   time + 1 of the frame written last. WRK[0] is 1 once the note has started
+;;   a one shot recording. Matches bufwrite in
 ;;   vm/go_synth.go.
 ;;-------------------------------------------------------------------------------
 (func $su_op_bufwrite (param $stereo i32) (local $r i32) (local $h i32) (local $l f32) (local $rt f32) (local $cap i32) (local $head i32) (local $ptr i32) (local $fb f32)
@@ -391,11 +392,12 @@
     (if (i32.eqz (local.get $cap)) (then
         return
     ))
-    (if (i32.and
-            (i32.ne (i32.load (global.get $voice)) (i32.const 0))
-            (i32.eqz (i32.load (global.get $WRK)))) (then ;; a note was triggered
-        (i32.store (global.get $WRK) (i32.const 1))
-        (if (i32.eqz (i32.and (i32.load offset=24 (local.get $r)) (i32.const 4))) (then ;; once: a new recording
+    (if (i32.eqz (i32.and (i32.load offset=24 (local.get $r)) (i32.const 4))) (then ;; one shot: while the note is held
+        (if (i32.or (i32.eqz (i32.load (global.get $voice))) (i32.eqz (i32.load offset=4 (global.get $voice)))) (then
+            return
+        ))
+        (if (i32.eqz (i32.load (global.get $WRK))) (then ;; the note started: a new recording
+            (i32.store (global.get $WRK) (i32.const 1))
             (i32.store offset=12 (local.get $h) (i32.const 0))
             (i32.store offset=16 (local.get $h) (i32.const 0))
             (i32.store offset=20 (local.get $h) (i32.const 0))

@@ -953,13 +953,12 @@ func window(unit *unit, voice *voice, length, shape float32) float32 {
 	return float32(x*x) * (3 - float32(2*x)) // no multiply-adds, like wasm
 }
 
-// bufwrite pops a frame from the stack and writes it to a writable buffer,
-// every frame, held note or not. Writers writing the same buffer in the same
-// frame, e.g. the voices of a polyphonic instrument, mix: the first one
-// writes the frame and advances the head, and the others add to the frame. In
-// once mode (without wrap), a note triggered on the voice starts a new
-// recording.
-// unit.state[0] is 1 (as bits) once the note has started a recording.
+// bufwrite pops a frame from the stack and writes it to a writable buffer:
+// every frame, wrapping around, or with one shot while the note is held, from
+// the beginning when the note starts. Writers writing the same buffer in the
+// same frame, e.g. the voices of a polyphonic instrument, mix: the first one
+// writes the frame and advances the head, and the others add to the frame.
+// unit.state[0] is 1 (as bits) once the note has started a one shot recording.
 // Matches $su_op_bufwrite in the wasm player.
 func (s *GoSynth) bufwrite(unit *unit, voice *voice, r BufferRegion, feedback float32, stereo bool, stack *[]float32) {
 	l := len(*stack)
@@ -980,9 +979,12 @@ func (s *GoSynth) bufwrite(unit *unit, voice *voice, r BufferRegion, feedback fl
 	}
 	capacity := uint32(buf.audio.Frames())
 	ring := r.Flags&BufferRegionRing != 0
-	if voice.note != 0 && math.Float32bits(unit.state[0]) == 0 {
-		unit.state[0] = math.Float32frombits(1)
-		if !ring { // a new recording
+	if !ring { // one shot: while the note is held, from the beginning
+		if voice.note == 0 || !voice.sustain {
+			return
+		}
+		if math.Float32bits(unit.state[0]) == 0 {
+			unit.state[0] = math.Float32frombits(1)
 			buf.head, buf.filled, buf.written = 0, 0, 0
 		}
 	}

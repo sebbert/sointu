@@ -38,13 +38,13 @@ func TestBufwriteWasmMatchesGoSynth(t *testing.T) {
 			{Name: "recorder", NumVoices: 1, Units: []sointu.Unit{
 				noise, envelope,
 				{Type: "mulp", Parameters: sointu.ParamMap{"stereo": 0}},
-				{Type: "bufwrite", Parameters: sointu.ParamMap{"stereo": 0, "feedback": 0, "buffer": 1, "wrap": 0, "pop": 1}},
+				{Type: "bufwrite", Parameters: sointu.ParamMap{"stereo": 0, "feedback": 0, "buffer": 1, "oneshot": 1, "pop": 1}},
 			}},
 			{Name: "ring writer", NumVoices: 1, Units: []sointu.Unit{
 				noise, envelope,
 				{Type: "mulp", Parameters: sointu.ParamMap{"stereo": 0}},
 				{Type: "push", Parameters: sointu.ParamMap{"stereo": 0}},
-				{Type: "bufwrite", Parameters: sointu.ParamMap{"stereo": 1, "feedback": 50, "buffer": 2, "wrap": 1, "pop": 0}},
+				{Type: "bufwrite", Parameters: sointu.ParamMap{"stereo": 1, "feedback": 50, "buffer": 2, "oneshot": 0, "pop": 0}},
 				{Type: "out", Parameters: sointu.ParamMap{"stereo": 1, "gain": 20}},
 			}},
 			{Name: "player", NumVoices: 1, Units: []sointu.Unit{

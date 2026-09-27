@@ -16,7 +16,7 @@ var rampUnit = sointu.Unit{Type: "envelope", Parameters: sointu.ParamMap{"stereo
 // buffer 1 with bufread.
 func newBufwriteSynth(t *testing.T, units []sointu.Unit, write, read sointu.ParamMap, buf sointu.Buffer) (sointu.Synth, map[int]sointu.BufferAudio) {
 	t.Helper()
-	w := sointu.ParamMap{"stereo": 0, "feedback": 0, "buffer": 1, "wrap": 0, "pop": 1}
+	w := sointu.ParamMap{"stereo": 0, "feedback": 0, "buffer": 1, "oneshot": 1, "pop": 1}
 	for k, v := range write {
 		w[k] = v
 	}
@@ -52,11 +52,11 @@ func checkData(t *testing.T, what string, got []float32, want ...float32) {
 	}
 }
 
-func TestBufwriteOnce(t *testing.T) {
+func TestBufwriteOneShot(t *testing.T) {
 	synth, _ := newBufwriteSynth(t, []sointu.Unit{rampUnit}, nil, nil, sointu.Buffer{ID: 1, Channels: 1, Frames: 4})
-	render(t, synth, 3) // writes without a note too: the silent envelope
-	if b := written(t, synth); b.Head != 3 || b.Filled != 3 {
-		t.Errorf("before the note: head %d, filled %d, want 3 3", b.Head, b.Filled)
+	render(t, synth, 3)
+	if b := written(t, synth); b.Head != 0 || b.Filled != 0 {
+		t.Errorf("wrote before the note: head %d, filled %d", b.Head, b.Filled)
 	}
 	synth.Trigger(0, 60) // starts a new recording
 	render(t, synth, 2)
@@ -74,18 +74,18 @@ func TestBufwriteOnce(t *testing.T) {
 	synth.Trigger(1, 60)
 	checkLeft(t, render(t, synth, 5), []float32{1.0 / 64, 2.0 / 64, 3.0 / 64, 4.0 / 64, 0})
 
-	// a new note starts a new recording, which goes on after the release
+	// a new note starts a new recording, which stops at the release
 	synth.Trigger(0, 60)
 	render(t, synth, 1)
 	synth.Release(0)
 	render(t, synth, 2)
-	if b := written(t, synth); b.Head != 3 || b.Filled != 3 {
-		t.Errorf("after the release: head %d, filled %d, want 3 3", b.Head, b.Filled)
+	if b := written(t, synth); b.Head != 1 || b.Filled != 1 {
+		t.Errorf("after the release: head %d, filled %d, want 1 1", b.Head, b.Filled)
 	}
 }
 
 func TestBufwriteRing(t *testing.T) {
-	synth, _ := newBufwriteSynth(t, []sointu.Unit{rampUnit}, sointu.ParamMap{"wrap": 1}, nil, sointu.Buffer{ID: 1, Channels: 1, Frames: 4})
+	synth, _ := newBufwriteSynth(t, []sointu.Unit{rampUnit}, sointu.ParamMap{"oneshot": 0}, nil, sointu.Buffer{ID: 1, Channels: 1, Frames: 4})
 	synth.Trigger(0, 60)
 	render(t, synth, 6)
 	b := written(t, synth)
@@ -106,7 +106,7 @@ func TestBufwriteMixesWriters(t *testing.T) {
 	// frame per sample
 	patch := sointu.Patch{{NumVoices: 2, Units: []sointu.Unit{
 		{Type: "loadnote", Parameters: sointu.ParamMap{"stereo": 0}},
-		{Type: "bufwrite", Parameters: sointu.ParamMap{"stereo": 0, "feedback": 0, "buffer": 1, "wrap": 1, "pop": 1}},
+		{Type: "bufwrite", Parameters: sointu.ParamMap{"stereo": 0, "feedback": 0, "buffer": 1, "oneshot": 0, "pop": 1}},
 	}}}
 	synth := newSynth(t, patch)
 	synth.(sointu.BufferSetter).SetBuffers(map[int]sointu.BufferAudio{1: (&sointu.Buffer{ID: 1, Channels: 1, Frames: 8}).NewAudio()})
@@ -121,20 +121,20 @@ func TestBufwriteMixesWriters(t *testing.T) {
 }
 
 func TestBufwriteWithoutNotes(t *testing.T) {
-	// e.g. an instrument used as an effect, never triggered
+	// a ring buffer, e.g. in an instrument used as an effect, never triggered
 	one := sointu.Unit{Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": 128}}
-	synth, _ := newBufwriteSynth(t, []sointu.Unit{one}, nil, nil, sointu.Buffer{ID: 1, Channels: 1, Frames: 4})
+	synth, _ := newBufwriteSynth(t, []sointu.Unit{one}, sointu.ParamMap{"oneshot": 0}, nil, sointu.Buffer{ID: 1, Channels: 1, Frames: 4})
 	render(t, synth, 6)
 	b := written(t, synth)
-	if b.Head != 4 || b.Filled != 4 {
-		t.Errorf("head %d, filled %d, want 4 4: recorded from the start until full", b.Head, b.Filled)
+	if b.Head != 2 || b.Filled != 4 {
+		t.Errorf("head %d, filled %d, want 2 4: recorded continuously", b.Head, b.Filled)
 	}
 	checkData(t, "data", b.Data, 1, 1, 1, 1)
 }
 
 func TestBufwriteFeedback(t *testing.T) {
 	one := sointu.Unit{Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": 128}}
-	synth, _ := newBufwriteSynth(t, []sointu.Unit{one}, sointu.ParamMap{"wrap": 1, "feedback": 64}, nil, sointu.Buffer{ID: 1, Channels: 1, Frames: 2})
+	synth, _ := newBufwriteSynth(t, []sointu.Unit{one}, sointu.ParamMap{"oneshot": 0, "feedback": 64}, nil, sointu.Buffer{ID: 1, Channels: 1, Frames: 2})
 	synth.Trigger(0, 60)
 	render(t, synth, 6) // each frame written 3 times: 1, 1.5, 1.75
 	checkData(t, "data", written(t, synth).Data, 1.75, 1.75)
@@ -183,7 +183,7 @@ func TestBufwriteMultithread(t *testing.T) {
 	// the writer and the reader on different threads: the reader does not see
 	// the writes, but the written buffers come from the writer's thread
 	patch := sointu.Patch{
-		{NumVoices: 1, ThreadMaskM1: 0, Units: []sointu.Unit{rampUnit, {Type: "bufwrite", Parameters: sointu.ParamMap{"stereo": 0, "feedback": 0, "buffer": 1, "wrap": 0, "pop": 1}}}},
+		{NumVoices: 1, ThreadMaskM1: 0, Units: []sointu.Unit{rampUnit, {Type: "bufwrite", Parameters: sointu.ParamMap{"stereo": 0, "feedback": 0, "buffer": 1, "oneshot": 1, "pop": 1}}}},
 		{NumVoices: 1, ThreadMaskM1: 1, Units: []sointu.Unit{
 			{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 1, "notetracking": 0}},
 			{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
@@ -206,7 +206,7 @@ func TestBufwriteWithoutPop(t *testing.T) {
 	// the signal is written and stays on the stack, for the out unit
 	patch := sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{
 		{Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": 96}},
-		{Type: "bufwrite", Parameters: sointu.ParamMap{"stereo": 0, "feedback": 0, "buffer": 1, "wrap": 1, "pop": 0}},
+		{Type: "bufwrite", Parameters: sointu.ParamMap{"stereo": 0, "feedback": 0, "buffer": 1, "oneshot": 0, "pop": 0}},
 		{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
 	}}}
 	synth := newSynth(t, patch)

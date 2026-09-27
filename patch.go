@@ -428,19 +428,20 @@ var UnitTypes = map[string]UnitType{
 		StackUse: stackUseSource,
 	},
 	"bufwrite": {
-		// bufwrite pops a signal and writes it to a buffer without a sample,
-		// every frame, whether a note is held or not; bufwrite units writing
-		// the same buffer, e.g. in the voices of an instrument, mix. Writing
-		// starts from the beginning, and again whenever a note is triggered,
-		// and stops at the end of the buffer; with wrap, it goes on from the
-		// beginning, overwriting the oldest frames, and notes do not restart
-		// it. The written frame is the old frame times feedback plus the
-		// signal. With pop 0, the signal stays on the stack.
+		// bufwrite pops a signal and writes it to a buffer without a sample.
+		// By default, it writes every frame, whether a note is held or not,
+		// wrapping around the end of the buffer and overwriting the oldest
+		// frames: a ring buffer. With oneshot, it writes only while its note
+		// is held, from the beginning of the buffer when the note starts,
+		// until the end of the buffer. bufwrite units writing the same buffer
+		// in the same frame, e.g. in the voices of an instrument, mix. The
+		// written frame is the old frame times feedback plus the signal. With
+		// pop 0, the signal stays on the stack.
 		Params: []UnitParameter{
 			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "feedback", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true},
 			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
-			{Name: "wrap", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "oneshot", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "pop", MinValue: 0, Default: 1, MaxValue: 1, CanSet: true, CanModulate: false},
 		},
 		StackUse: func(u *Unit) StackUse {
