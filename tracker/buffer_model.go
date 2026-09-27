@@ -250,15 +250,16 @@ func (m *Model) bufferFillOf(id int) (BufferFill, bool) {
 }
 
 // Playheads calls yield with the frames of the selected buffer that bufread
-// units are playing.
-func (m *BufferModel) Playheads(yield func(frame int)) {
+// units are playing, and how many frames ago the note was released (0 if it
+// is held).
+func (m *BufferModel) Playheads(yield func(frame, released int)) {
 	buf := m.selected()
 	if buf == nil {
 		return
 	}
 	for _, p := range m.playerStatus.Playheads[:m.playerStatus.NumPlayheads] {
 		if p.BufferID == buf.ID {
-			yield(p.Frame)
+			yield(p.Frame, p.Released)
 		}
 	}
 }

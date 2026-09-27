@@ -201,7 +201,7 @@ func TestBufreadPlayheads(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		synth.(sointu.BufferSetter).SetBuffers(map[int]sointu.BufferAudio{1: ramp(100, 1, 0.01)})
+		synth.(sointu.BufferSetter).SetBuffers(map[int]sointu.BufferAudio{1: ramp(100000, 1, 0.01)})
 		synth.Trigger(1, 60)
 		render(t, synth, 3)
 		synth.Trigger(2, 60)
@@ -212,8 +212,14 @@ func TestBufreadPlayheads(t *testing.T) {
 			t.Errorf("%s: got %v, want %v", synther.Name(), got, want)
 		}
 		synth.Release(1)
+		render(t, synth, 10)
+		// released notes are reported with the time since the release, for a while
+		if got := synth.(sointu.PlayheadReporter).Playheads(nil); len(got) != 2 || got[0].Released != 11 || got[1].Released != 0 {
+			t.Errorf("%s: after releasing: %v", synther.Name(), got)
+		}
+		render(t, synth, sointu.MaxPlayheadRelease)
 		if got := synth.(sointu.PlayheadReporter).Playheads(nil); len(got) != 1 {
-			t.Errorf("%s: released notes reported: %v", synther.Name(), got)
+			t.Errorf("%s: long released notes reported: %v", synther.Name(), got)
 		}
 		synth.Close()
 	}

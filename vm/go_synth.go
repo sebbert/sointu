@@ -48,13 +48,14 @@ type (
 	}
 
 	voice struct {
-		note    byte
-		sustain bool
-		spawned uint32                       // global time + 1 when a spawn unit last triggered the voice, 0 if never
-		release uint32                       // global time when to release a spawned note, 0 if never
-		length  uint32                       // length of a spawned note in frames, 0 if none
-		args    [sointu.MaxSpawnArgs]float32 // values passed by the spawn unit
-		units   [MAX_UNITS]unit
+		note     byte
+		sustain  bool
+		spawned  uint32                       // global time + 1 when a spawn unit last triggered the voice, 0 if never
+		release  uint32                       // global time when to release a spawned note, 0 if never
+		length   uint32                       // length of a spawned note in frames, 0 if none
+		released uint32                       // global time when the note was released
+		args     [sointu.MaxSpawnArgs]float32 // values passed by the spawn unit
+		units    [MAX_UNITS]unit
 	}
 
 	synthState struct {
@@ -120,7 +121,9 @@ func (s *GoSynth) Trigger(voiceIndex int, note byte) {
 }
 
 func (s *GoSynth) Release(voiceIndex int) {
-	s.state.voices[voiceIndex].sustain = false
+	if v := &s.state.voices[voiceIndex]; v.sustain {
+		v.sustain, v.released = false, s.state.globalTime
+	}
 }
 
 func (s *GoSynth) Close() {}
@@ -155,14 +158,18 @@ func (s *GoSynth) Playheads(dst []sointu.Playhead) []sointu.Playhead {
 		for v := b.FirstVoice; v < b.FirstVoice+b.NumVoices && v < len(s.state.voices); v++ {
 			voice := &s.state.voices[v]
 			u := &voice.units[b.Unit]
-			if voice.note == 0 || !voice.sustain || math.Float32bits(u.state[3]) == 0 {
+			released := 0
+			if !voice.sustain {
+				released = int(s.state.globalTime-voice.released) + 1
+			}
+			if voice.note == 0 || released > sointu.MaxPlayheadRelease || math.Float32bits(u.state[3]) == 0 {
 				continue
 			}
 			pos, base := int32(math.Float32bits(u.state[0])), math.Float32bits(u.state[2])
 			if pos < 0 || pos >= int32(capacity) {
 				continue // outside the buffer
 			}
-			dst = append(dst, sointu.Playhead{BufferID: int(r.BufferID), Frame: int((base + uint32(pos)) % capacity)})
+			dst = append(dst, sointu.Playhead{BufferID: int(r.BufferID), Frame: int((base + uint32(pos)) % capacity), Released: released})
 		}
 	}
 	return dst
@@ -838,7 +845,7 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, r BufferRegion, transpose, d
 func (s *GoSynth) spawn(unit *unit, own *voice, first, count int, flags byte, rate, transpose, length float32, stack *[]float32) {
 	for i := first; i < first+count; i++ { // release the notes that have lasted their length
 		if v := &s.state.voices[i]; v.release != 0 && s.state.globalTime >= v.release {
-			v.sustain, v.release = false, 0
+			v.sustain, v.release, v.released = false, 0, s.state.globalTime
 		}
 	}
 	held := own.note != 0 && own.sustain

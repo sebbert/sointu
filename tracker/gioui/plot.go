@@ -30,9 +30,8 @@ type (
 		hovered        bool
 		lastPressTime  time.Duration
 		lastPressPos   f32.Point
-		// Markers are x positions drawn as lines, e.g. playheads; set before
-		// Layout.
-		Markers []float32
+		// Markers are drawn as lines, e.g. playheads; set before Layout.
+		Markers []PlotMarker
 	}
 
 	PlotStyle struct {
@@ -43,6 +42,10 @@ type (
 		Ticks       LabelStyle
 		DpPerTick   unit.Dp
 	}
+
+	// PlotMarker is a line at X, drawn with the marker color, its alpha
+	// multiplied by Alpha (0-1).
+	PlotMarker struct{ X, Alpha float32 }
 
 	PlotDataFunc func(chn int, xr plotRange) (yr plotRange, ok bool)
 	PlotTickFunc func(r plotRange, num int, yield func(pos float32, label string))
@@ -94,10 +97,12 @@ func (p *Plot) Layout(gtx C, data PlotDataFunc, xticks, yticks PlotTickFunc, cur
 	})
 
 	// draw markers
-	paint.ColorOp{Color: style.MarkerColor}.Add(gtx.Ops)
 	for _, m := range p.Markers {
-		msx := plotPx(s.X).toScreen(xlim.toRelative(m))
+		msx := plotPx(s.X).toScreen(xlim.toRelative(m.X))
 		if msx >= 0 && msx < s.X {
+			c := style.MarkerColor
+			c.A = uint8(float32(c.A) * min(max(m.Alpha, 0), 1))
+			paint.ColorOp{Color: c}.Add(gtx.Ops)
 			fillRect(gtx, clip.Rect{Min: image.Pt(msx, 0), Max: image.Pt(msx+1, s.Y)})
 		}
 	}

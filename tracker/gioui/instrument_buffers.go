@@ -333,10 +333,14 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 	return Surface{Height: 3, Focus: tr.PatchPanel.TreeFocused(gtx)}.Layout(gtx, f)
 }
 
+// releasedPlayheadFade is how many frames the playheads of released notes take
+// to fade out.
+const releasedPlayheadFade = 22050
+
 // layoutWaveform draws the audio of the selected buffer, fitted to its peak.
 // Valid frames are drawn in the channel colors, the rest dimmed, the write
-// head of a writable buffer as the cursor and the playing notes of bufread
-// units as markers.
+// head of a writable buffer as the cursor and the notes of bufread units as
+// markers, released ones fading out.
 func (ib *InstrumentBuffers) layoutWaveform(gtx C) D {
 	tr := TrackerFromContext(gtx)
 	audio, head, filled := tr.Buffer().Waveform()
@@ -405,8 +409,12 @@ func (ib *InstrumentBuffers) layoutWaveform(gtx C) D {
 	ib.waveform.SetYRange(plotRange{-peak * 1.05, peak * 1.05})
 	ib.waveform.Markers = ib.waveform.Markers[:0]
 	if frames > 0 {
-		tr.Buffer().Playheads(func(frame int) {
-			ib.waveform.Markers = append(ib.waveform.Markers, float32(frame)/float32(frames))
+		tr.Buffer().Playheads(func(frame, released int) {
+			// released notes fade out, as it is not known when they fall silent
+			alpha := 1 - float32(released)/releasedPlayheadFade
+			if alpha > 0 {
+				ib.waveform.Markers = append(ib.waveform.Markers, PlotMarker{X: float32(frame) / float32(frames), Alpha: alpha})
+			}
 		})
 	}
 	cursor := float32(math.NaN())

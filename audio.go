@@ -103,13 +103,16 @@ type (
 	// PlayheadReporter is implemented by Synths that can tell where bufread
 	// units are playing.
 	PlayheadReporter interface {
-		// Playheads appends the positions of the held notes of bufread units
-		// to dst.
+		// Playheads appends the positions of the notes of bufread units to
+		// dst: held ones, and ones released less than MaxPlayheadRelease
+		// frames ago.
 		Playheads(dst []Playhead) []Playhead
 	}
 
 	// Playhead is where a bufread unit is playing: a frame of a buffer.
-	Playhead struct{ BufferID, Frame int }
+	// Released is the number of frames since the note was released, or 0 if
+	// it is held.
+	Playhead struct{ BufferID, Frame, Released int }
 
 	// BufferAudio is the audio of a buffer: interleaved frames at 44100 Hz.
 	BufferAudio struct {
@@ -371,3 +374,7 @@ func clamp(value, min, max int) int {
 	}
 	return value
 }
+
+// MaxPlayheadRelease is how long, in frames, released notes of bufread units
+// still have playheads: the synth does not know when they fall silent.
+const MaxPlayheadRelease = 44100
