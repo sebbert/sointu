@@ -265,6 +265,7 @@ type (
 	gmDlsEntryParameter  struct{}
 	reverbParameter      struct{}
 	bufferParameter      struct{}
+	spawnTargetParameter struct{}
 	bufferFrameParameter struct{ namedParameter }
 
 	ParamYieldFunc func(param Parameter) bool
@@ -754,6 +755,43 @@ func (b *bufferParameter) RoundToGrid(p *Parameter, val int, up bool) int { retu
 func (b *bufferParameter) Reset(p *Parameter) {
 	defer p.m.change("ResetBufferParameter", PatchChange, MinorChange)()
 	p.unit.Parameters["buffer"] = 0
+}
+
+// spawnTargetParameter vtable: the instrument whose voices a spawn unit
+// triggers. Its values are 0 for none and i+1 for the i-th instrument, as
+// stored in the unit.
+
+func (b *spawnTargetParameter) Value(p *Parameter) int { return p.unit.Parameters["instrument"] }
+func (b *spawnTargetParameter) SetValue(p *Parameter, v int) bool {
+	defer p.m.change("SpawnTargetParameter", PatchChange, MinorChange)()
+	p.unit.Parameters["instrument"] = v
+	return true
+}
+func (b *spawnTargetParameter) Range(p *Parameter) RangeInclusive {
+	return RangeInclusive{Min: 0, Max: max(len(p.m.d.Song.Patch), b.Value(p))}
+}
+func (b *spawnTargetParameter) Type(p *Parameter) ParameterType { return ChoiceParameter }
+func (b *spawnTargetParameter) Name(p *Parameter) string        { return "instrument" }
+func (b *spawnTargetParameter) StringOf(p *Parameter, v int) string {
+	if v <= 0 {
+		return "none"
+	}
+	if v > len(p.m.d.Song.Patch) {
+		return "missing"
+	}
+	if name := p.m.d.Song.Patch[v-1].Name; name != "" {
+		return fmt.Sprintf("%d: %s", v, name)
+	}
+	return strconv.Itoa(v)
+}
+func (b *spawnTargetParameter) Hint(p *Parameter) ParameterHint {
+	v := b.Value(p)
+	return ParameterHint{b.StringOf(p, v), v > 0 && v <= len(p.m.d.Song.Patch)}
+}
+func (b *spawnTargetParameter) RoundToGrid(p *Parameter, val int, up bool) int { return val }
+func (b *spawnTargetParameter) Reset(p *Parameter) {
+	defer p.m.change("ResetSpawnTargetParameter", PatchChange, MinorChange)()
+	p.unit.Parameters["instrument"] = 0
 }
 
 // bufferFrameParameter vtable: a position in frames in the buffer played by a

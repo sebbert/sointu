@@ -112,10 +112,12 @@ func VoiceRange[T any, S ~[]T, P sointu.NumVoicerPointer[T]](slice S, indexRange
 func (m *Model) sliceInstrumentsTracks(instruments, tracks bool, ranges ...Range) (ok bool) {
 	defer m.change("sliceInstrumentsTracks", PatchChange, MajorChange)()
 	if instruments {
+		indices, _ := VoiceSlice(m.instrumentIndices(), ranges...)
 		m.d.Song.Patch, ok = VoiceSlice(m.d.Song.Patch, ranges...)
 		if !ok {
 			goto fail
 		}
+		m.remapSpawnTargets(indices)
 	}
 	if tracks {
 		m.d.Song.Score.Tracks, ok = VoiceSlice(m.d.Song.Score.Tracks, ranges...)
@@ -161,10 +163,16 @@ func (m *Model) addVoices(voiceIndex int, p sointu.Patch, t []sointu.Track, inst
 	addedLength := max(p.NumVoices(), sointu.TotalVoices(t))
 	if instruments {
 		m.assignUnitIDsForPatch(p)
+		added := make([]instrumentIndex, len(p))
+		for i, instr := range p {
+			added[i] = instrumentIndex{Index: -1, NumVoices: instr.NumVoices}
+		}
+		indices, _, _ := VoiceInsert(m.instrumentIndices(), voiceIndex, addedLength, added...)
 		m.d.Song.Patch, instrRange, ok = VoiceInsert(m.d.Song.Patch, voiceIndex, addedLength, p...)
 		if !ok {
 			goto fail
 		}
+		m.remapSpawnTargets(indices)
 	}
 	if tracks {
 		m.d.Song.Score.Tracks, trackRange, ok = VoiceInsert(m.d.Song.Score.Tracks, voiceIndex, addedLength, t...)
@@ -177,6 +185,47 @@ fail:
 	(*Model)(m).Alerts().AddNamed("addVoices", "Adding voices prevented by Instrument-Track linking", Warning)
 	m.changeCancel = true
 	return Range{}, Range{}, false
+}
+
+// instrumentIndex follows an instrument through an operation on the patch:
+// the same operation is done on a slice of instrumentIndex, which then tells
+// where each instrument went. Index is the index of the instrument before the
+// operation, or -1 for an added instrument.
+type instrumentIndex struct{ Index, NumVoices int }
+
+func (i *instrumentIndex) GetNumVoices() int  { return i.NumVoices }
+func (i *instrumentIndex) SetNumVoices(n int) { i.NumVoices = n }
+
+func (m *Model) instrumentIndices() []instrumentIndex {
+	ret := make([]instrumentIndex, len(m.d.Song.Patch))
+	for i, instr := range m.d.Song.Patch {
+		ret[i] = instrumentIndex{Index: i, NumVoices: instr.NumVoices}
+	}
+	return ret
+}
+
+// remapSpawnTargets keeps the spawn units targeting the same instruments after
+// an operation on the patch, given the instrument indices before the
+// operation in the new order of the instruments. Spawn units targeting
+// removed instruments are left without a target. Added instruments keep
+// their spawn targets as is.
+func (m *Model) remapSpawnTargets(indices []instrumentIndex) {
+	newIndex := map[int]int{}
+	for i, idx := range indices {
+		if idx.Index >= 0 {
+			newIndex[idx.Index+1] = i + 1
+		}
+	}
+	for i, idx := range indices {
+		if idx.Index < 0 || i >= len(m.d.Song.Patch) {
+			continue
+		}
+		for _, u := range m.d.Song.Patch[i].Units {
+			if t := u.Parameters["instrument"]; u.Type == "spawn" && t > 0 {
+				u.Parameters["instrument"] = newIndex[t]
+			}
+		}
+	}
 }
 
 func (m *Model) remainingVoices(instruments, tracks bool) (ret int) {

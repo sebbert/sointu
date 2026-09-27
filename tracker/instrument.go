@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/vsariola/sointu"
 	"github.com/vsariola/sointu/vm"
@@ -70,8 +71,11 @@ func (m *splitInstrument) Do() {
 	newInstrument := defaultInstrument.Copy()
 	(*Model)(m).assignUnitIDs(newInstrument.Units)
 	newInstrument.NumVoices = end - middle
+	indices := (*Model)(m).instrumentIndices()
+	indices = slices.Insert(indices, m.d.InstrIndex+1, instrumentIndex{Index: -1})
 	m.d.Song.Patch = append(left, newInstrument)
 	m.d.Song.Patch = append(m.d.Song.Patch, right...)
+	(*Model)(m).remapSpawnTargets(indices)
 }
 
 // Item returns information about the instrument at a given index.
@@ -230,6 +234,12 @@ func (m *InstrModel) warnAboutCrossThreadSends() {
 				}
 				if instr.ThreadMaskM1 != m.d.Song.Patch[it].ThreadMaskM1 {
 					(*Alerts)(m).AddNamed("CrossThreadSend", fmt.Sprintf("Instrument %d '%s' has a send to instrument %d '%s' but they are not on the same threads, which may cause issues", i+1, instr.Name, it+1, m.d.Song.Patch[it].Name), Warning)
+					return
+				}
+			}
+			if t := unit.Parameters["instrument"] - 1; unit.Type == "spawn" && t >= 0 && t < len(m.d.Song.Patch) {
+				if instr.ThreadMaskM1 != m.d.Song.Patch[t].ThreadMaskM1 {
+					(*Alerts)(m).AddNamed("CrossThreadSend", fmt.Sprintf("Instrument %d '%s' spawns voices of instrument %d '%s' but they are not on the same threads, which may cause issues", i+1, instr.Name, t+1, m.d.Song.Patch[t].Name), Warning)
 					return
 				}
 			}

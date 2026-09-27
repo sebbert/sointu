@@ -239,6 +239,19 @@ audio to the player through the `s.b` import; see
 [the example](examples/code/wasm/index.html). Songs without samples need
 neither.
 
+`bufread` positions (`start`, `loopstart`, `looplength`) are in frames and can
+be modulated: a modulation of 1 shifts them by the length of the buffer.
+`start` is read when a note is triggered, so a `send` to it picks where each
+note starts; `fade` crossfades the end of the loop.
+
+For granular synthesis and arpeggiators, the `spawn` unit triggers notes on the
+voices of another instrument, stealing the voice spawned longest ago. In
+`rate` mode it spawns at a (modulatable) rate while its own note is held; in
+`edge` mode, whenever its input rises above zero. It can pass up to four values
+from the stack to each spawned voice, where `arg` units push them, e.g. to send
+a random position to `bufread`'s `start`. `spawn` and `arg` are WebAssembly
+only for now, like `bufread`.
+
 If you are looking for an easy way to compile an executable from a Sointu song
 (e.g. for a executable music compo), take a look at [NR4's Python-based
 tool](https://github.com/LeStahL/sointu-executable-msx) for it.
