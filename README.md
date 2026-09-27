@@ -263,10 +263,13 @@ a random position to `bufread`'s `start`.
 
 Buffers can also be recorded into while the song plays: add an empty buffer
 with the microphone button in the Buffers tab, and write to it with a
-`bufwrite` unit while its note is held. In `once` mode, each note starts a new
-recording, which stops at the end of the buffer; in `ring` mode, it writes
-continuously, overwriting the oldest audio, e.g. for granular effects on a live
-signal. `feedback` mixes in what was there before. Recordings are not stored in
+`bufwrite` unit. It writes every frame, note or not, so it also works in
+instruments used as effects; the voices of an instrument, or several units,
+writing the same buffer mix. Writing starts from the beginning, and again
+whenever a note is triggered, and stops at the end of the buffer; with `wrap`,
+it goes on from the beginning, overwriting the oldest audio, e.g. for granular
+effects on a live signal. `feedback` mixes in what was there before, and `pop`
+0 leaves the signal on the stack. Recordings are not stored in
 the song: the compiled player records them again when it plays. The tracker
 keeps them while editing, until recorded again or cleared; "Fit to recording"
 sets the length of the buffer to what was recorded.

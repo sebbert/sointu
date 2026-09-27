@@ -61,8 +61,9 @@ type wasmBufferData struct {
 	BufferBytes int
 }
 
-// wasmBufferHeaderSize is the size of wasmBufferHeader in bytes.
-const wasmBufferHeaderSize = 20
+// wasmBufferHeaderSize is the size of a buffer header in the wasm player in
+// bytes: wasmBufferHeader and the time of the frame written last.
+const wasmBufferHeaderSize = 24
 
 //go:embed templates/amd64-386/* templates/wasm/*
 var templateFS embed.FS

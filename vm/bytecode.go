@@ -95,10 +95,13 @@ const (
 	// loops. A loop of zero length does not loop.
 	BufferRegionLoop = 2
 	// BufferRegionRing is set in BufferRegion.Flags when the bufwrite unit
-	// writes in ring mode.
+	// wraps around the end of the buffer.
 	BufferRegionRing = 4
 	// BufferRegionWrite is set in BufferRegion.Flags for bufwrite units.
 	BufferRegionWrite = 8
+	// BufferRegionNoPop is set in BufferRegion.Flags for bufwrite units that
+	// leave the signal on the stack.
+	BufferRegionNoPop = 16
 )
 
 type bytecodeBuilder struct {
@@ -423,8 +426,11 @@ func (b *bytecodeBuilder) getBufferRegionIndex(unit sointu.Unit) int {
 	}
 	if unit.Type == "bufwrite" {
 		r = BufferRegion{BufferID: uint32(p["buffer"]), Flags: BufferRegionWrite}
-		if p["mode"] == sointu.BufwriteModeRing {
+		if p["wrap"] == 1 {
 			r.Flags |= BufferRegionRing
+		}
+		if p["pop"] == 0 {
+			r.Flags |= BufferRegionNoPop
 		}
 	} else if p["notetracking"] == 1 {
 		r.Flags |= BufferRegionNoteTracking

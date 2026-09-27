@@ -59,14 +59,15 @@
 {{- if or (.HasOp "bufread") (.HasOp "bufwrite")}}
 {{- /*
 ;-------------------------------------------------------------------------------
-;    Buffer headers, 5 i32s each: offset of the buffer's audio from su_buffers
-;    in bytes, capacity in frames, channels, head and filled. The valid frames
-;    are the filled frames before head.
+;    Buffer headers, 6 i32s each: offset of the buffer's audio from su_buffers
+;    in bytes, capacity in frames, channels, head, filled and the global time
+;    + 1 of the frame written last. The valid frames are the filled frames
+;    before head.
 ;-------------------------------------------------------------------------------
 */}}
 {{- .SetDataLabel "su_buffer_headers"}}
 {{- range .Headers}}
-{{- $.DataD .Offset}}{{$.DataD .Capacity}}{{$.DataD .Channels}}{{$.DataD .Head}}{{$.DataD .Filled}}
+{{- $.DataD .Offset}}{{$.DataD .Capacity}}{{$.DataD .Channels}}{{$.DataD .Head}}{{$.DataD .Filled}}{{$.DataD 0}}
 {{- end}}
 {{- /*
 ;-------------------------------------------------------------------------------

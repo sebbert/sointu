@@ -429,18 +429,27 @@ var UnitTypes = map[string]UnitType{
 	},
 	"bufwrite": {
 		// bufwrite pops a signal and writes it to a buffer without a sample,
-		// while its voice is held. In once mode, triggering a note clears the
-		// buffer and writing stops at its end; in ring mode, it writes
-		// continuously, wrapping around the end, and the oldest frames are
-		// overwritten. The written frame is the old frame times feedback plus
-		// the signal.
+		// every frame, whether a note is held or not; bufwrite units writing
+		// the same buffer, e.g. in the voices of an instrument, mix. Writing
+		// starts from the beginning, and again whenever a note is triggered,
+		// and stops at the end of the buffer; with wrap, it goes on from the
+		// beginning, overwriting the oldest frames, and notes do not restart
+		// it. The written frame is the old frame times feedback plus the
+		// signal. With pop 0, the signal stays on the stack.
 		Params: []UnitParameter{
 			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "feedback", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true},
 			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
-			{Name: "mode", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc(bufwriteModeNames[:])},
+			{Name: "wrap", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "pop", MinValue: 0, Default: 1, MaxValue: 1, CanSet: true, CanModulate: false},
 		},
-		StackUse: stackUseSink,
+		StackUse: func(u *Unit) StackUse {
+			ret := stackUseSink(u)
+			if u.Parameters["pop"] == 0 { // writes the signal and leaves it on the stack
+				ret.NumOutputs = len(ret.Inputs)
+			}
+			return ret
+		},
 	},
 	"spawn": {
 		// spawn triggers notes on the voices of another instrument, taking
@@ -575,7 +584,8 @@ func stackUseEffect(u *Unit) StackUse {
 // without them, with the values that keep those songs sounding the same. A
 // missing parameter is otherwise 0.
 var addedParameters = map[string]map[string]int{
-	"bufread": {"speed": 128}, // forwards at the normal speed
+	"bufread":  {"speed": 128}, // forwards at the normal speed
+	"bufwrite": {"pop": 1},
 }
 
 // compile errors if interface is not implemented.
@@ -651,14 +661,6 @@ const (
 )
 
 var spawnModeNames = [...]string{"rate", "edge", "sync"}
-
-// Modes of the bufwrite unit.
-const (
-	BufwriteModeOnce = iota
-	BufwriteModeRing
-)
-
-var bufwriteModeNames = [...]string{"once", "ring"}
 
 // SpawnRateHz returns the rate of a spawn unit in Hz for its rate parameter
 // (with modulation) scaled to 0-1: 8 Hz at the middle, doubling every 8 steps.

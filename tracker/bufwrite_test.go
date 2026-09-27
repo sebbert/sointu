@@ -58,7 +58,7 @@ func TestPlayerKeepsWrittenBuffers(t *testing.T) {
 	song := sointu.Song{BPM: 120, RowsPerBeat: 4, Score: sointu.Score{RowsPerPattern: 1, Length: 1}, Patch: sointu.Patch{
 		{NumVoices: 1, Units: []sointu.Unit{
 			{Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": 128}},
-			{Type: "bufwrite", Parameters: sointu.ParamMap{"stereo": 0, "feedback": 0, "buffer": 1, "mode": sointu.BufwriteModeOnce}},
+			{Type: "bufwrite", Parameters: sointu.ParamMap{"stereo": 0, "feedback": 0, "buffer": 1, "wrap": 0, "pop": 1}},
 		}},
 	}}
 	buf := sointu.Buffer{ID: 1, Channels: 1, Frames: 100}
@@ -81,18 +81,18 @@ func TestPlayerKeepsWrittenBuffers(t *testing.T) {
 		t.Errorf("after the same audio: filled %d, want 20", f.Filled)
 	}
 
-	// a new synth continues too
+	// a new synth continues from there too
 	p.destroySynth()
 	TrySend(broker.ToPlayer, any(song))
 	p.Process(out, NullPlayerProcessContext{})
-	if f := p.status.BufferFills[0]; f.Filled != 20 {
-		t.Errorf("after a new synth: filled %d, want 20", f.Filled)
+	if f := p.status.BufferFills[0]; f.Filled != 30 {
+		t.Errorf("after a new synth: filled %d, want 30", f.Filled)
 	}
 
-	// new audio, e.g. after clearing: starts empty
+	// new audio, e.g. after clearing: starts over
 	TrySend(broker.ToPlayer, any(BufferAudioMsg{Audio: map[int]sointu.BufferAudio{1: buf.NewAudio()}}))
 	p.Process(out, NullPlayerProcessContext{})
-	if f := p.status.BufferFills[0]; f.Filled != 0 {
-		t.Errorf("after new audio: filled %d, want 0", f.Filled)
+	if f := p.status.BufferFills[0]; f.Filled != 10 {
+		t.Errorf("after new audio: filled %d, want 10", f.Filled)
 	}
 }

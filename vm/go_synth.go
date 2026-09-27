@@ -133,6 +133,7 @@ func (s *GoSynth) Close() {}
 type synthBuffer struct {
 	audio        sointu.BufferAudio
 	head, filled uint32
+	written      uint32 // global time + 1 of the frame written last, for mixing writers
 }
 
 func (s *GoSynth) SetBuffers(buffers map[int]sointu.BufferAudio) {
@@ -952,35 +953,54 @@ func window(unit *unit, voice *voice, length, shape float32) float32 {
 	return float32(x*x) * (3 - float32(2*x)) // no multiply-adds, like wasm
 }
 
-// bufwrite pops a frame from the stack and writes it to a writable buffer
-// while the voice is held. unit.state[0] is 1 (as bits) once writing has
-// started after the note was triggered. Matches $su_op_bufwrite in the wasm
-// player.
+// bufwrite pops a frame from the stack and writes it to a writable buffer,
+// every frame, held note or not. Writers writing the same buffer in the same
+// frame, e.g. the voices of a polyphonic instrument, mix: the first one
+// writes the frame and advances the head, and the others add to the frame. In
+// once mode (without wrap), a note triggered on the voice starts a new
+// recording.
+// unit.state[0] is 1 (as bits) once the note has started a recording.
+// Matches $su_op_bufwrite in the wasm player.
 func (s *GoSynth) bufwrite(unit *unit, voice *voice, r BufferRegion, feedback float32, stereo bool, stack *[]float32) {
 	l := len(*stack)
 	left, right := (*stack)[l-1], (*stack)[l-1] // the left channel is on top
 	if stereo {
 		right = (*stack)[l-2]
-		*stack = (*stack)[:l-2]
-	} else {
-		*stack = (*stack)[:l-1]
+	}
+	if r.Flags&BufferRegionNoPop == 0 {
+		if stereo {
+			*stack = (*stack)[:l-2]
+		} else {
+			*stack = (*stack)[:l-1]
+		}
 	}
 	buf := s.buffers[int(r.BufferID)]
-	if voice.note == 0 || !voice.sustain || buf == nil || !buf.audio.Writable || buf.audio.Frames() == 0 {
+	if buf == nil || !buf.audio.Writable || buf.audio.Frames() == 0 {
 		return
 	}
 	capacity := uint32(buf.audio.Frames())
 	ring := r.Flags&BufferRegionRing != 0
-	if math.Float32bits(unit.state[0]) == 0 {
+	if voice.note != 0 && math.Float32bits(unit.state[0]) == 0 {
 		unit.state[0] = math.Float32frombits(1)
 		if !ring { // a new recording
-			buf.head, buf.filled = 0, 0
+			buf.head, buf.filled, buf.written = 0, 0, 0
 		}
+	}
+	a := buf.audio
+	now := s.state.globalTime + 1
+	if buf.written == now { // another writer wrote this frame already: mix
+		i := int((buf.head+capacity-1)%capacity) * a.Channels
+		if a.Channels == 2 {
+			a.Data[i] += left
+			a.Data[i+1] += right
+		} else {
+			a.Data[i] += float32((left + right) * 0.5)
+		}
+		return
 	}
 	if buf.head >= capacity {
 		return // a recording that reached the end
 	}
-	a := buf.audio
 	i := int(buf.head) * a.Channels
 	// no multiply-adds, like wasm; without feedback, the old frame is not
 	// read at all, so that e.g. a NaN in it does not stay forever
@@ -997,6 +1017,7 @@ func (s *GoSynth) bufwrite(unit *unit, voice *voice, r BufferRegion, feedback fl
 		}
 		a.Data[i] = v
 	}
+	buf.written = now
 	buf.head++
 	if ring {
 		buf.head %= capacity

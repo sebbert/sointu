@@ -152,7 +152,8 @@ su_op_spawn_done:
 
 {{- if .HasOp "bufwrite"}}
 ;-------------------------------------------------------------------------------
-;   BUFWRITE opcode: not supported on x86 yet; pops its input
+;   BUFWRITE opcode: not supported on x86 yet; pops its input (x86 refuses
+;   bufwrite units, so pop 0 does not matter)
 ;-------------------------------------------------------------------------------
 {{.Func "su_op_bufwrite" "Opcode"}}
     lodsb                                       ; skip the buffer region index
