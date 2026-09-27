@@ -130,7 +130,7 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 		templates = []string{"player.wat"}
 	}
 	features := vm.NecessaryFeaturesFor(song.Patch)
-	for _, unit := range []string{"bufread", "bufwrite", "spawn", "arg"} {
+	for _, unit := range []string{"bufread", "bufwrite", "spawn", "arg", "window"} {
 		if _, ok := features.Opcode(unit); ok && com.Arch != "wasm" {
 			return nil, nil, fmt.Errorf(`the %v unit is only supported when compiling for wasm (targeted architecture was %v)`, unit, com.Arch)
 		}

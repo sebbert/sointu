@@ -181,6 +181,9 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				b.op(opcode)
 				b.defOperands(unit)
 				b.operand(first, count, p["mode"]&1+(p["notetracking"]&1)<<1+args<<2)
+			case "window":
+				b.op(opcode)
+				b.defOperands(unit)
 			case "arg":
 				b.op(opcode)
 				b.operand(min(max(p["index"], 0), sointu.MaxSpawnArgs-1))

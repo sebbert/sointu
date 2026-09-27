@@ -51,6 +51,7 @@ type (
 		note    byte
 		sustain bool
 		spawned uint32                       // global time + 1 when a spawn unit last triggered the voice, 0 if never
+		release uint32                       // global time when to release a spawned note, 0 if never
 		args    [sointu.MaxSpawnArgs]float32 // values passed by the spawn unit
 		units   [MAX_UNITS]unit
 	}
@@ -586,7 +587,9 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 			case opSpawn:
 				first, count, flags := int(operands[0]), int(operands[1]), operands[2]
 				operands = operands[3:]
-				s.spawn(unit, voice, first, count, flags, params[0], params[1], &stack)
+				s.spawn(unit, voice, first, count, flags, params[0], params[1], params[2], &stack)
+			case opWindow:
+				stack = append(stack, window(unit, voice, params[0], params[1]))
 			case opArg:
 				stack = append(stack, voice.args[operands[0]])
 				operands = operands[1:]
@@ -788,7 +791,12 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, r BufferRegion, transpose, d
 // spawn implements the spawn unit. unit.state[0] is the time until the next
 // spawn in rate mode, in periods, and unit.state[1] the previous input in edge
 // mode. Matches $su_op_spawn in the wasm player.
-func (s *GoSynth) spawn(unit *unit, own *voice, first, count int, flags byte, rate, transpose float32, stack *[]float32) {
+func (s *GoSynth) spawn(unit *unit, own *voice, first, count int, flags byte, rate, transpose, length float32, stack *[]float32) {
+	for i := first; i < first+count; i++ { // release the notes that have lasted their length
+		if v := &s.state.voices[i]; v.release != 0 && s.state.globalTime >= v.release {
+			v.sustain, v.release = false, 0
+		}
+	}
 	held := own.note != 0 && own.sustain
 	fire := false
 	if flags&1 != 0 { // edge mode
@@ -826,7 +834,38 @@ func (s *GoSynth) spawn(unit *unit, own *voice, first, count int, flags byte, ra
 	}
 	v := &s.state.voices[target]
 	*v = voice{note: byte(math.Floor(float64(n))), sustain: true, spawned: s.state.globalTime + 1}
+	if length > 0 {
+		v.release = s.state.globalTime + uint32(max(lengthFrames(length), 1))
+	}
 	copy(v.args[:], args)
+}
+
+// lengthFrames returns the length in frames of a spawn or window unit, like
+// sointu.LengthFrames, computed like the wasm player.
+func lengthFrames(length float32) float32 {
+	return float32(math.Floor(float64(4410 * float32(math.Pow(2, float64(float32(length*16)-8))))))
+}
+
+// window implements the window unit. unit.state[0] is the number of frames
+// since the note was triggered, as bits. Matches $su_op_window in the wasm
+// player.
+func window(unit *unit, voice *voice, length, shape float32) float32 {
+	if voice.note == 0 {
+		return 0
+	}
+	age := math.Float32bits(unit.state[0])
+	unit.state[0] = math.Float32frombits(age + 1)
+	t := float32(age) / max(lengthFrames(length), 1)
+	if t >= 1 {
+		return 0
+	}
+	half := min(max(shape, 0), 1) * 0.5 // the rising and falling part, each
+	d := min(t, 1-t)
+	if d >= half {
+		return 1
+	}
+	x := d / half
+	return float32(x*x) * (3 - float32(2*x)) // no multiply-adds, like wasm
 }
 
 // bufwrite pops a frame from the stack and writes it to a writable buffer

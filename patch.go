@@ -442,7 +442,8 @@ var UnitTypes = map[string]UnitType{
 		// the given rate while its own voice is held; in edge mode, when its
 		// input rises above zero while its own voice is held. The note is
 		// transposed from the note of its own voice, or from C-4 without note
-		// tracking. It pops args values from the stack (below the input in
+		// tracking. The spawned note is released after length, unless it is
+		// 0, which holds it until the voice is taken. It pops args values from the stack (below the input in
 		// edge mode) and passes them to the spawned voice, where arg units
 		// push them. instrument is the index of the instrument plus one; 0
 		// means none.
@@ -458,6 +459,7 @@ var UnitTypes = map[string]UnitType{
 				}
 				return strconv.Itoa(relvalue), "st"
 			}},
+			{Name: "length", MinValue: 0, Default: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: spawnLengthDisplay},
 			{Name: "notetracking", MinValue: 0, Default: 1, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "args", MinValue: 0, MaxValue: MaxSpawnArgs, CanSet: true, CanModulate: false},
 			{Name: "instrument", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
@@ -477,6 +479,17 @@ var UnitTypes = map[string]UnitType{
 		// voice, or 0.
 		Params: []UnitParameter{
 			{Name: "index", MinValue: 0, MaxValue: MaxSpawnArgs - 1, CanSet: true, CanModulate: false},
+		},
+		StackUse: stackUseSource,
+	},
+	"window": {
+		// window pushes a window over the note of its voice: it rises from 0
+		// to 1 and falls back to 0 over length, and stays 0 after it. shape is
+		// how much of the window is spent rising and falling, with smoothstep
+		// curves; 0 is a rectangle. Never triggered voices push 0.
+		Params: []UnitParameter{
+			{Name: "length", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: lengthDisplay},
+			{Name: "shape", MinValue: 0, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v * 100 / 128), "%" }},
 		},
 		StackUse: stackUseSource,
 	},
@@ -592,6 +605,26 @@ var bufwriteModeNames = [...]string{"once", "ring"}
 // SpawnRateHz returns the rate of a spawn unit in Hz for its rate parameter
 // (with modulation) scaled to 0-1: 8 Hz at the middle, doubling every 8 steps.
 func SpawnRateHz(rate float64) float64 { return math.Pow(2, rate*16-5) }
+
+// LengthFrames returns the length in frames of a spawn or window unit for its
+// length parameter (with modulation) scaled to 0-1: 100 ms at the middle,
+// doubling every 8 steps.
+func LengthFrames(length float64) float64 { return math.Floor(4410 * math.Pow(2, length*16-8)) }
+
+func spawnLengthDisplay(v int) (string, string) {
+	if v == 0 {
+		return "hold", ""
+	}
+	return lengthDisplay(v)
+}
+
+func lengthDisplay(v int) (string, string) {
+	ms := max(LengthFrames(float64(v)/128), 1) / 44.1
+	if ms >= 1000 {
+		return strconv.FormatFloat(ms/1000, 'g', 3, 64), "s"
+	}
+	return strconv.FormatFloat(ms, 'g', 3, 64), "ms"
+}
 
 func arrDispFunc(arr []string) UnitParameterDisplayFunc {
 	return func(v int) (string, string) {

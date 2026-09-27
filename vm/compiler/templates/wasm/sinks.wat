@@ -213,13 +213,31 @@
 ;;   Pops the input in edge mode, then the arguments. WRK[0] is the time until
 ;;   the next spawn in rate mode, in periods, and WRK[1] the previous input in
 ;;   edge mode. At offset 8, voices have the global time + 1 when they were
-;;   last spawned, and at offset 16 the arguments. Matches spawn in
+;;   last spawned, at offset 12 the global time when to release them (0 for
+;;   never), and at offset 16 the arguments. Matches spawn in
 ;;   vm/go_synth.go.
 ;;-------------------------------------------------------------------------------
 (func $su_op_spawn (param $stereo i32) (local $first i32) (local $count i32) (local $flags i32) (local $held i32) (local $fire i32) (local $in f32) (local $n f32) (local $target i32) (local $i i32) (local $v i32)
     (local.set $first (call $scanOperand))
     (local.set $count (call $scanOperand))
     (local.set $flags (call $scanOperand))
+    ;; release the notes that have lasted their length
+    (if (local.get $count) (then
+        (local.set $i (local.get $first))
+        loop $release_loop
+            (local.set $v (i32.add (i32.const {{index .Labels "su_voices"}}) (i32.mul (local.get $i) (i32.const 4096))))
+            (if (i32.and
+                    (i32.ne (i32.load offset=12 (local.get $v)) (i32.const 0))
+                    (i32.ge_u (global.get $globaltick) (i32.load offset=12 (local.get $v)))) (then
+                (i32.store offset=4 (local.get $v) (i32.const 0))
+                (i32.store offset=12 (local.get $v) (i32.const 0))
+            ))
+            (br_if $release_loop (i32.lt_u
+                (local.tee $i (i32.add (local.get $i) (i32.const 1)))
+                (i32.add (local.get $first) (local.get $count))
+            ))
+        end
+    ))
     (local.set $held (i32.and
         (i32.ne (i32.load (global.get $voice)) (i32.const 0))
         (i32.ne (i32.load offset=4 (global.get $voice)) (i32.const 0))
@@ -279,6 +297,12 @@
         (i32.store (local.get $v) (i32.trunc_f32_s (f32.floor (f32.max (f32.min (local.get $n) (f32.const 127)) (f32.const 1)))))
         (i32.store offset=4 (local.get $v) (i32.load (local.get $v)))
         (i32.store offset=8 (local.get $v) (i32.add (global.get $globaltick) (i32.const 1)))
+        (if (f32.gt (call $input (i32.const {{.InputNumber "spawn" "length"}})) (f32.const 0)) (then
+            (i32.store offset=12 (local.get $v) (i32.add
+                (global.get $globaltick)
+                (i32.trunc_f32_u (f32.max (call $lengthFrames (call $input (i32.const {{.InputNumber "spawn" "length"}}))) (f32.const 1)))
+            ))
+        ))
         loop $args_loop
             (if (local.get $i) (then
                 (local.set $i (i32.sub (local.get $i) (i32.const 1)))

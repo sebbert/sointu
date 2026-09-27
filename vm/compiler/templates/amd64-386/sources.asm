@@ -391,6 +391,16 @@ su_op_loadval_mono:
 {{end}}
 
 
+{{- if .HasOp "window"}}
+;-------------------------------------------------------------------------------
+;   WINDOW opcode: not supported on x86 yet; pushes 0
+;-------------------------------------------------------------------------------
+{{.Func "su_op_window" "Opcode"}}
+    fldz
+    ret
+{{end}}
+
+
 {{- if .HasOp "arg"}}
 ;-------------------------------------------------------------------------------
 ;   ARG opcode: not supported on x86 yet; pushes 0

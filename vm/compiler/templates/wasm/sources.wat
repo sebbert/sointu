@@ -360,6 +360,56 @@
 {{end}}
 
 
+{{- if or (.HasOp "spawn") (.HasOp "window")}}
+;; $lengthFrames returns the length in frames of a spawn or window unit for its
+;; length parameter: 100 ms at the middle, doubling every 8 steps
+(func $lengthFrames (param $length f32) (result f32)
+    (f32.floor (f32.mul
+        (f32.const 4410)
+        (call $pow2 (f32.sub (f32.mul (local.get $length) (f32.const 16)) (f32.const 8)))
+    ))
+)
+{{end}}
+
+{{- if .HasOp "window"}}
+;;-------------------------------------------------------------------------------
+;;   WINDOW opcode: push a window over the note of the voice
+;;-------------------------------------------------------------------------------
+;;   WRK[0] is the number of frames since the note was triggered. Matches
+;;   window in vm/go_synth.go.
+;;-------------------------------------------------------------------------------
+(func $su_op_window (param $stereo i32) (local $age i32) (local $t f32) (local $half f32) (local $d f32) (local $x f32)
+    (if (i32.eqz (i32.load (global.get $voice))) (then
+        (call $push (f32.const 0))
+        return
+    ))
+    (local.set $age (i32.load (global.get $WRK)))
+    (i32.store (global.get $WRK) (i32.add (local.get $age) (i32.const 1)))
+    (local.set $t (f32.div
+        (f32.convert_i32_u (local.get $age))
+        (f32.max (call $lengthFrames (call $input (i32.const {{.InputNumber "window" "length"}}))) (f32.const 1))
+    ))
+    (if (f32.ge (local.get $t) (f32.const 1)) (then
+        (call $push (f32.const 0))
+        return
+    ))
+    (local.set $half (f32.mul
+        (f32.min (f32.max (call $input (i32.const {{.InputNumber "window" "shape"}})) (f32.const 0)) (f32.const 1))
+        (f32.const 0.5)
+    ))
+    (local.set $d (f32.min (local.get $t) (f32.sub (f32.const 1) (local.get $t))))
+    (if (f32.ge (local.get $d) (local.get $half)) (then
+        (call $push (f32.const 1))
+        return
+    ))
+    (local.set $x (f32.div (local.get $d) (local.get $half)))
+    (call $push (f32.mul
+        (f32.mul (local.get $x) (local.get $x))
+        (f32.sub (f32.const 3) (f32.mul (f32.const 2) (local.get $x)))
+    ))
+)
+{{end}}
+
 {{- if .HasOp "arg"}}
 ;;-------------------------------------------------------------------------------
 ;;   ARG opcode: push a value passed by the spawn unit that triggered the voice

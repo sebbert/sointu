@@ -188,3 +188,52 @@ func TestSpawnMultithread(t *testing.T) {
 		t.Error("splitting the patch changed the original")
 	}
 }
+
+func TestSpawnLength(t *testing.T) {
+	// the target outputs 1 while its note is held: an envelope with instant
+	// attack and release, and full sustain
+	synth := newSynth(t, sointu.Patch{
+		{NumVoices: 1, Units: []sointu.Unit{{Type: "spawn", Parameters: sointu.ParamMap{"mode": sointu.SpawnModeRate, "rate": 0, "transpose": 64, "length": 16, "args": 0, "instrument": 2}}}},
+		{NumVoices: 1, Units: []sointu.Unit{
+			{Type: "envelope", Parameters: sointu.ParamMap{"stereo": 0, "attack": 0, "decay": 0, "sustain": 128, "release": 0, "gain": 128}},
+			{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
+		}},
+	})
+	synth.Trigger(0, 60)
+	out := render(t, synth, 100)
+	// length 16 is floor(4410 * 2^(16/8 - 8)) = 68 frames
+	if out[1][0] != 1 || out[67][0] != 1 || out[70][0] != 0 {
+		t.Errorf("got %v at 1, %v at 67 and %v at 70, want 1 1 0", out[1][0], out[67][0], out[70][0])
+	}
+	if got := sointu.LengthFrames(16.0 / 128); got != 68 {
+		t.Errorf("LengthFrames: got %v, want 68", got)
+	}
+}
+
+func TestWindow(t *testing.T) {
+	synth := newSynth(t, sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{
+		{Type: "window", Parameters: sointu.ParamMap{"length": 16, "shape": 128}},
+		{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
+	}}})
+	if out := render(t, synth, 2); out[0][0] != 0 || out[1][0] != 0 {
+		t.Errorf("not silent before the note: %v", out)
+	}
+	synth.Trigger(0, 60)
+	out := render(t, synth, 80) // 68 frames long
+	if out[0][0] != 0 || out[34][0] != 1 || out[68][0] != 0 || out[79][0] != 0 {
+		t.Errorf("got %v at 0, %v at 34, %v at 68, want 0 1 0", out[0][0], out[34][0], out[68][0])
+	}
+	if d := out[10][0] - out[58][0]; d > 1e-6 || d < -1e-6 || out[10][0] <= 0 || out[10][0] >= 1 {
+		t.Errorf("not symmetric: %v at 10, %v at 58", out[10][0], out[58][0])
+	}
+	// a narrower taper
+	synth = newSynth(t, sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{
+		{Type: "window", Parameters: sointu.ParamMap{"length": 16, "shape": 32}},
+		{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
+	}}})
+	synth.Trigger(0, 60)
+	out = render(t, synth, 70)
+	if out[10][0] != 1 || out[4][0] <= 0 || out[4][0] >= 1 {
+		t.Errorf("with a quarter taper: got %v at 4, %v at 10", out[4][0], out[10][0])
+	}
+}

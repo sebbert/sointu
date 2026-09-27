@@ -34,7 +34,7 @@ func TestSpawnWasmMatchesGoSynth(t *testing.T) {
 				{Type: "send", Parameters: sointu.ParamMap{"stereo": 0, "amount": 72, "target": 10, "port": 1, "sendpop": 1}}, // random transpose
 				{Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": 96}},
 				{Type: "noise", Parameters: sointu.ParamMap{"stereo": 0, "shape": 64, "gain": 128}},
-				{ID: 10, Type: "spawn", Parameters: sointu.ParamMap{"mode": sointu.SpawnModeRate, "rate": 90, "transpose": 64, "notetracking": 1, "args": 2, "instrument": 2}},
+				{ID: 10, Type: "spawn", Parameters: sointu.ParamMap{"mode": sointu.SpawnModeRate, "rate": 90, "transpose": 64, "length": 30, "notetracking": 1, "args": 2, "instrument": 2}},
 			}},
 			{Name: "grains", NumVoices: 4, Units: []sointu.Unit{
 				// sustained, so that releasing a spawned voice would be heard
@@ -42,6 +42,8 @@ func TestSpawnWasmMatchesGoSynth(t *testing.T) {
 				// no oscillators: they drift apart slightly between Go and
 				// wasm over time
 				{Type: "arg", Parameters: sointu.ParamMap{"index": 1}},
+				{Type: "mulp", Parameters: sointu.ParamMap{"stereo": 0}},
+				{Type: "window", Parameters: sointu.ParamMap{"length": 40, "shape": 90}},
 				{Type: "mulp", Parameters: sointu.ParamMap{"stereo": 0}},
 				{Type: "arg", Parameters: sointu.ParamMap{"index": 0}},
 				{Type: "mulp", Parameters: sointu.ParamMap{"stereo": 0}},
