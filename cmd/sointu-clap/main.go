@@ -10,6 +10,8 @@ package main
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+
+void sointu_mark_dirty(uintptr_t plugin);
 */
 import "C"
 
@@ -51,8 +53,8 @@ func sointuVersion() *C.char {
 }
 
 //export sointuNew
-func sointuNew() C.uintptr_t {
-	return C.uintptr_t(cgo.NewHandle(plugin.New("sointu-clap")))
+func sointuNew(p C.uintptr_t) C.uintptr_t {
+	return C.uintptr_t(cgo.NewHandle(plugin.New("sointu-clap", func() { C.sointu_mark_dirty(p) })))
 }
 
 //export sointuClose

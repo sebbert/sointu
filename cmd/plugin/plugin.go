@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/vsariola/sointu"
@@ -28,6 +29,9 @@ type (
 		buf            sointu.AudioBuffer
 		totalFrames    int64
 		lastAlertCheck time.Time
+		// changed is true when the host has been told of changes that it has
+		// not saved yet
+		changed atomic.Bool
 	}
 
 	// Host provides information about the host during processing.
@@ -38,8 +42,10 @@ type (
 )
 
 // New creates a plugin instance and opens its tracker window. name is used to
-// name the recovery file, e.g. "sointu-vsti".
-func New(name string) *Instance {
+// name the recovery file, e.g. "sointu-vsti". The song is saved in the host's
+// project; markDirty, if not nil, tells the host that the song changed, and is
+// called from the tracker's goroutine.
+func New(name string, markDirty func()) *Instance {
 	recoveryFile := ""
 	if configDir, err := os.UserConfigDir(); err == nil {
 		randBytes := make([]byte, 16)
@@ -57,8 +63,7 @@ func New(name string) *Instance {
 	// because it might just confuse the user why instrument cannot be
 	// swapped/added etc.
 	model.Track().LinkInstrument().SetValue(false)
-	go t.Main()
-	return &Instance{
+	i := &Instance{
 		broker:         broker,
 		model:          model,
 		player:         player,
@@ -66,6 +71,13 @@ func New(name string) *Instance {
 		buf:            make(sointu.AudioBuffer, 1024),
 		lastAlertCheck: time.Now(),
 	}
+	model.SetHostSavesState(func() {
+		if markDirty != nil && !i.changed.Swap(true) {
+			markDirty()
+		}
+	})
+	go t.Main()
+	return i
 }
 
 // MIDI handles a MIDI message arriving on input port delta frames into the
@@ -110,6 +122,7 @@ func (i *Instance) Close() {
 
 // State returns the current song and settings, or nil on failure.
 func (i *Instance) State() []byte {
+	i.changed.Store(false)
 	retChn := make(chan []byte)
 	if !tracker.TrySend(i.broker.ToModel, tracker.MsgToModel{Data: func() { retChn <- i.tracker.History().MarshalRecovery() }}) {
 		return nil

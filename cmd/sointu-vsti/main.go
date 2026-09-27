@@ -34,7 +34,7 @@ func init() {
 		version = int32(100)
 	)
 	vst2.PluginAllocator = func(h vst2.Host) (vst2.Plugin, vst2.Dispatcher) {
-		p := plugin.New("sointu-vsti")
+		p := plugin.New("sointu-vsti", h.UpdateDisplay)
 		context := &VSTIProcessContext{host: h}
 		return vst2.Plugin{
 				UniqueID:       [4]byte{'S', 'n', 't', 'u'},

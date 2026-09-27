@@ -3,6 +3,7 @@
 // CLAP entry point, factory and plugin callbacks. Everything host-independent
 // is forwarded to the Go side in main.go.
 
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,7 +14,9 @@
 typedef struct {
 	clap_plugin_t plugin;
 	const clap_host_t *host;
-	uintptr_t handle; // cgo.Handle of the Go instance
+	const clap_host_state_t *host_state;
+	atomic_bool dirty; // the song changed; tell the host on the main thread
+	uintptr_t handle;  // cgo.Handle of the Go instance
 	double sample_rate;
 } sointu_plugin_t;
 
@@ -145,8 +148,18 @@ static const clap_plugin_state_t state = {
 // plugin
 
 static bool plugin_init(const clap_plugin_t *plugin) {
-	self(plugin)->handle = sointuNew();
+	sointu_plugin_t *p = self(plugin);
+	p->host_state = p->host->get_extension(p->host, CLAP_EXT_STATE);
+	p->handle = sointuNew((uintptr_t)p);
 	return true;
+}
+
+// sointu_mark_dirty tells the host that the song changed and the project has
+// unsaved changes. Called from any thread; the host is told on the main thread.
+void sointu_mark_dirty(uintptr_t plugin) {
+	sointu_plugin_t *p = (sointu_plugin_t *)plugin;
+	atomic_store(&p->dirty, true);
+	p->host->request_callback(p->host);
 }
 
 static void plugin_destroy(const clap_plugin_t *plugin) {
@@ -222,7 +235,11 @@ static const void *plugin_get_extension(const clap_plugin_t *plugin, const char 
 	return NULL;
 }
 
-static void plugin_on_main_thread(const clap_plugin_t *plugin) {}
+static void plugin_on_main_thread(const clap_plugin_t *plugin) {
+	sointu_plugin_t *p = self(plugin);
+	if (atomic_exchange(&p->dirty, false) && p->host_state != NULL)
+		p->host_state->mark_dirty(p->host);
+}
 
 // factory
 

@@ -46,6 +46,10 @@ type (
 
 		trackerHidden bool
 
+		// onChange, when set, is called after each change to the model data,
+		// e.g. to tell a plugin host that its project has unsaved changes
+		onChange func()
+
 		prevUndoKind    string
 		undoSkipCounter int
 		undoStack       []modelData
@@ -263,6 +267,17 @@ type cancelDialog Model
 
 func (m *cancelDialog) Do() { m.dialog = NoDialog }
 
+// SetHostSavesState tells the model that a plugin host, e.g. a DAW, saves the
+// song as part of its project: onChange is called after each change, and the
+// song is not shown as unsaved.
+func (m *Model) SetHostSavesState(onChange func()) { m.onChange = onChange }
+
+func (m *Model) notifyChange() {
+	if m.onChange != nil {
+		m.onChange()
+	}
+}
+
 func (m *Model) change(kind string, t ChangeType, severity ChangeSeverity) func() {
 	if m.changeLevel == 0 {
 		m.changeType = NoChange
@@ -290,6 +305,7 @@ func (m *Model) change(kind string, t ChangeType, severity ChangeSeverity) func(
 			}
 			m.d.ChangedSinceSave = true
 			m.d.ChangedSinceRecovery = true
+			m.notifyChange()
 			if m.changeType&ScoreChange != 0 {
 				m.d.Cursor.SongPos = m.d.Song.Score.Clamp(m.d.Cursor.SongPos)
 				m.d.Cursor2.SongPos = m.d.Song.Score.Clamp(m.d.Cursor2.SongPos)

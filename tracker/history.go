@@ -31,6 +31,7 @@ func (m *historyUndo) Do() {
 	m.prevUndoKind = ""
 	(*Model)(m).updateDeriveData(SongChange)
 	TrySend(m.broker.ToPlayer, any(m.d.Song.Copy()))
+	(*Model)(m).notifyChange()
 }
 
 // Redo returns an Action to redo the last undone change.
@@ -50,6 +51,7 @@ func (m *historyRedo) Do() {
 	m.prevUndoKind = ""
 	(*Model)(m).updateDeriveData(SongChange)
 	TrySend(m.broker.ToPlayer, any(m.d.Song.Copy()))
+	(*Model)(m).notifyChange()
 }
 
 // MarshalRecovery marshals the current model data to a byte slice for recovery
