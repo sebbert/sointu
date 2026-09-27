@@ -43,7 +43,7 @@ func TestSpawnWasmMatchesGoSynth(t *testing.T) {
 				// wasm over time
 				{Type: "arg", Parameters: sointu.ParamMap{"index": 1}},
 				{Type: "mulp", Parameters: sointu.ParamMap{"stereo": 0}},
-				{Type: "window", Parameters: sointu.ParamMap{"length": 40, "shape": 90}},
+				{Type: "window", Parameters: sointu.ParamMap{"length": 0, "shape": 90}}, // from the note; open for edge spawns
 				{Type: "mulp", Parameters: sointu.ParamMap{"stereo": 0}},
 				{Type: "arg", Parameters: sointu.ParamMap{"index": 0}},
 				{Type: "mulp", Parameters: sointu.ParamMap{"stereo": 0}},

@@ -52,6 +52,7 @@ type (
 		sustain bool
 		spawned uint32                       // global time + 1 when a spawn unit last triggered the voice, 0 if never
 		release uint32                       // global time when to release a spawned note, 0 if never
+		length  uint32                       // length of a spawned note in frames, 0 if none
 		args    [sointu.MaxSpawnArgs]float32 // values passed by the spawn unit
 		units   [MAX_UNITS]unit
 	}
@@ -835,7 +836,8 @@ func (s *GoSynth) spawn(unit *unit, own *voice, first, count int, flags byte, ra
 	v := &s.state.voices[target]
 	*v = voice{note: byte(math.Floor(float64(n))), sustain: true, spawned: s.state.globalTime + 1}
 	if length > 0 {
-		v.release = s.state.globalTime + uint32(max(lengthFrames(length), 1))
+		v.length = uint32(max(lengthFrames(length), 1))
+		v.release = s.state.globalTime + v.length
 	}
 	copy(v.args[:], args)
 }
@@ -855,7 +857,14 @@ func window(unit *unit, voice *voice, length, shape float32) float32 {
 	}
 	age := math.Float32bits(unit.state[0])
 	unit.state[0] = math.Float32frombits(age + 1)
-	t := float32(age) / max(lengthFrames(length), 1)
+	frames := float32(voice.length) // the length of the spawned note
+	if length > 0 {
+		frames = max(lengthFrames(length), 1)
+	}
+	if frames == 0 {
+		return 1 // a note without a length
+	}
+	t := float32(age) / frames
 	if t >= 1 {
 		return 0
 	}

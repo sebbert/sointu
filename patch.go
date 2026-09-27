@@ -484,11 +484,13 @@ var UnitTypes = map[string]UnitType{
 	},
 	"window": {
 		// window pushes a window over the note of its voice: it rises from 0
-		// to 1 and falls back to 0 over length, and stays 0 after it. shape is
-		// how much of the window is spent rising and falling, with smoothstep
-		// curves; 0 is a rectangle. Never triggered voices push 0.
+		// to 1 and falls back to 0 over length, and stays 0 after it. Length 0
+		// takes the length of the note from the spawn unit that spawned it;
+		// notes without a length get no window (1). shape is how much of the
+		// window is spent rising and falling, with smoothstep curves; 0 is a
+		// rectangle. Never triggered voices push 0.
 		Params: []UnitParameter{
-			{Name: "length", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: lengthDisplay},
+			{Name: "length", MinValue: 0, Default: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: windowLengthDisplay},
 			{Name: "shape", MinValue: 0, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v * 100 / 128), "%" }},
 		},
 		StackUse: stackUseSource,
@@ -614,6 +616,13 @@ func LengthFrames(length float64) float64 { return math.Floor(4410 * math.Pow(2,
 func spawnLengthDisplay(v int) (string, string) {
 	if v == 0 {
 		return "hold", ""
+	}
+	return lengthDisplay(v)
+}
+
+func windowLengthDisplay(v int) (string, string) {
+	if v == 0 {
+		return "note", ""
 	}
 	return lengthDisplay(v)
 }

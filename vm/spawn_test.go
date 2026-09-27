@@ -237,3 +237,29 @@ func TestWindow(t *testing.T) {
 		t.Errorf("with a quarter taper: got %v at 4, %v at 10", out[4][0], out[10][0])
 	}
 }
+
+func TestWindowTakesSpawnLength(t *testing.T) {
+	play := func(windowLength, spawnLength int) sointu.AudioBuffer {
+		synth := newSynth(t, sointu.Patch{
+			{NumVoices: 1, Units: []sointu.Unit{{Type: "spawn", Parameters: sointu.ParamMap{"mode": sointu.SpawnModeRate, "rate": 0, "transpose": 64, "length": spawnLength, "args": 0, "instrument": 2}}}},
+			{NumVoices: 1, Units: []sointu.Unit{
+				{Type: "window", Parameters: sointu.ParamMap{"length": windowLength, "shape": 128}},
+				{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
+			}},
+		})
+		synth.Trigger(0, 60)
+		return render(t, synth, 80)
+	}
+	fromNote, explicit := play(0, 16), play(16, 0)
+	for i := range fromNote {
+		if fromNote[i] != explicit[i] {
+			t.Fatalf("frame %d: window from the note %v, explicit %v", i, fromNote[i], explicit[i])
+		}
+	}
+	if out := play(0, 0); out[0][0] != 1 || out[79][0] != 1 {
+		t.Errorf("a note without a length: got %v, want an open window (1)", out[0][0])
+	}
+	if out := play(8, 16); out[34][0] == 1 {
+		t.Error("the window length did not override the note length")
+	}
+}

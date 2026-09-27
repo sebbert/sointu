@@ -214,7 +214,8 @@
 ;;   the next spawn in rate mode, in periods, and WRK[1] the previous input in
 ;;   edge mode. At offset 8, voices have the global time + 1 when they were
 ;;   last spawned, at offset 12 the global time when to release them (0 for
-;;   never), and at offset 16 the arguments. Matches spawn in
+;;   never), at offset 16 the arguments and at offset 32 the length of the
+;;   note in frames (0 for none). Matches spawn in
 ;;   vm/go_synth.go.
 ;;-------------------------------------------------------------------------------
 (func $su_op_spawn (param $stereo i32) (local $first i32) (local $count i32) (local $flags i32) (local $held i32) (local $fire i32) (local $in f32) (local $n f32) (local $target i32) (local $i i32) (local $v i32)
@@ -298,10 +299,10 @@
         (i32.store offset=4 (local.get $v) (i32.load (local.get $v)))
         (i32.store offset=8 (local.get $v) (i32.add (global.get $globaltick) (i32.const 1)))
         (if (f32.gt (call $input (i32.const {{.InputNumber "spawn" "length"}})) (f32.const 0)) (then
-            (i32.store offset=12 (local.get $v) (i32.add
-                (global.get $globaltick)
+            (i32.store offset=32 (local.get $v)
                 (i32.trunc_f32_u (f32.max (call $lengthFrames (call $input (i32.const {{.InputNumber "spawn" "length"}}))) (f32.const 1)))
-            ))
+            )
+            (i32.store offset=12 (local.get $v) (i32.add (global.get $globaltick) (i32.load offset=32 (local.get $v))))
         ))
         loop $args_loop
             (if (local.get $i) (then
