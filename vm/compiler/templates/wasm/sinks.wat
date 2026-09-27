@@ -404,14 +404,21 @@
             (i32.shl (i32.mul (local.get $head) (i32.load offset=8 (local.get $h))) (i32.const 2))
         )
     ))
+    ;; without feedback, the old frame is not read, so that e.g. a NaN in it
+    ;; does not stay forever
     (if (i32.eq (i32.load offset=8 (local.get $h)) (i32.const 2)) (then
-        (f32.store (local.get $ptr) (f32.add (f32.mul (f32.load (local.get $ptr)) (local.get $fb)) (local.get $l)))
-        (f32.store offset=4 (local.get $ptr) (f32.add (f32.mul (f32.load offset=4 (local.get $ptr)) (local.get $fb)) (local.get $rt)))
-    )(else
-        (f32.store (local.get $ptr) (f32.add
-            (f32.mul (f32.load (local.get $ptr)) (local.get $fb))
-            (f32.mul (f32.add (local.get $l) (local.get $rt)) (f32.const 0.5))
+        (if (f32.ne (local.get $fb) (f32.const 0)) (then
+            (local.set $l (f32.add (local.get $l) (f32.mul (f32.load (local.get $ptr)) (local.get $fb))))
+            (local.set $rt (f32.add (local.get $rt) (f32.mul (f32.load offset=4 (local.get $ptr)) (local.get $fb))))
         ))
+        (f32.store (local.get $ptr) (local.get $l))
+        (f32.store offset=4 (local.get $ptr) (local.get $rt))
+    )(else
+        (local.set $l (f32.mul (f32.add (local.get $l) (local.get $rt)) (f32.const 0.5)))
+        (if (f32.ne (local.get $fb) (f32.const 0)) (then
+            (local.set $l (f32.add (local.get $l) (f32.mul (f32.load (local.get $ptr)) (local.get $fb))))
+        ))
+        (f32.store (local.get $ptr) (local.get $l))
     ))
     (local.set $head (i32.add (local.get $head) (i32.const 1)))
     (if (i32.and (i32.load offset=24 (local.get $r)) (i32.const 4)) (then ;; ring

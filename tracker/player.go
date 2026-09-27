@@ -154,6 +154,7 @@ func (p *Player) Process(buffer sointu.AudioBuffer, context PlayerProcessContext
 				// for performance, we don't check for NaN of every sample, because typically NaNs propagate
 				if rendered > 0 && (isNaN(buffer[0][0]) || isNaN(buffer[0][1]) || isInf(buffer[0][0]) || isInf(buffer[0][1])) {
 					p.destroySynth()
+					p.clearWrittenBuffers() // they might have recorded the NaNs
 					p.send(Alert{Message: "Inf or NaN detected in synth output", Priority: Error, Name: "PlayerCrash", Duration: defaultAlertDuration})
 				}
 			}
@@ -236,6 +237,17 @@ func (p *Player) keepWrittenBuffers() {
 	}
 	for id, b := range w.WrittenBuffers() {
 		if old, ok := p.buffers[id]; ok && sameData(old.Data, b.Data) {
+			p.buffers[id] = b
+		}
+	}
+}
+
+// clearWrittenBuffers discards what has been written to the writable buffers.
+func (p *Player) clearWrittenBuffers() {
+	for id, b := range p.buffers {
+		if b.Writable {
+			clear(b.Data)
+			b.Head, b.Filled = 0, 0
 			p.buffers[id] = b
 		}
 	}

@@ -982,12 +982,20 @@ func (s *GoSynth) bufwrite(unit *unit, voice *voice, r BufferRegion, feedback fl
 	}
 	a := buf.audio
 	i := int(buf.head) * a.Channels
-	// no multiply-adds, like wasm
+	// no multiply-adds, like wasm; without feedback, the old frame is not
+	// read at all, so that e.g. a NaN in it does not stay forever
 	if a.Channels == 2 {
-		a.Data[i] = float32(a.Data[i]*feedback) + left
-		a.Data[i+1] = float32(a.Data[i+1]*feedback) + right
+		if feedback != 0 {
+			left += float32(a.Data[i] * feedback)
+			right += float32(a.Data[i+1] * feedback)
+		}
+		a.Data[i], a.Data[i+1] = left, right
 	} else {
-		a.Data[i] = float32(a.Data[i]*feedback) + float32((left+right)*0.5)
+		v := float32((left + right) * 0.5)
+		if feedback != 0 {
+			v += float32(a.Data[i] * feedback)
+		}
+		a.Data[i] = v
 	}
 	buf.head++
 	if ring {
