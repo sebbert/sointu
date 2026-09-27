@@ -155,10 +155,19 @@ func (o *Plot) update(gtx C) {
 	defer o.clamp()
 	s := gtx.Constraints.Max
 	for {
+		// only take the scrolling that can still zoom, so that e.g. a list
+		// containing the plot scrolls when the plot cannot zoom further
+		var scroll pointer.ScrollRange
+		if o.xScale > minXScale {
+			scroll.Min = -1e6 // zoom in
+		}
+		if o.xScale < 0 {
+			scroll.Max = 1e6 // zoom out
+		}
 		ev, ok := gtx.Event(pointer.Filter{
 			Target:  o,
 			Kinds:   pointer.Scroll | pointer.Press | pointer.Drag | pointer.Release | pointer.Cancel,
-			ScrollY: pointer.ScrollRange{Min: -1e6, Max: 1e6},
+			ScrollY: scroll,
 		})
 		if !ok {
 			break
