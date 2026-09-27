@@ -245,6 +245,22 @@ func (m *InstrModel) warnAboutCrossThreadSends() {
 			}
 		}
 	}
+	writers := map[int]int{} // buffer ID -> index of an instrument writing it
+	for i, instr := range m.d.Song.Patch {
+		for _, unit := range instr.Units {
+			if unit.Type == "bufwrite" && !unit.Disabled {
+				writers[unit.Parameters["buffer"]] = i
+			}
+		}
+	}
+	for i, instr := range m.d.Song.Patch {
+		for _, unit := range instr.Units {
+			if w, ok := writers[unit.Parameters["buffer"]]; ok && unit.Type == "bufread" && !unit.Disabled && instr.ThreadMaskM1 != m.d.Song.Patch[w].ThreadMaskM1 {
+				(*Alerts)(m).AddNamed("CrossThreadSend", fmt.Sprintf("Instrument %d '%s' reads a buffer that instrument %d '%s' writes, but they are not on the same threads, so it does not hear what is written", i+1, instr.Name, w+1, m.d.Song.Patch[w].Name), Warning)
+				return
+			}
+		}
+	}
 	(*Alerts)(m).ClearNamed("CrossThreadSend")
 }
 

@@ -3,8 +3,10 @@ package tracker
 import (
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -77,6 +79,8 @@ func (m *BufferModel) Item(i int) (name, info string) {
 	}
 	status := m.buffers.status[buf.ID]
 	switch {
+	case buf.Writable():
+		info = fmt.Sprintf("%s, recorded", formatDuration(buf.Frames))
 	case buf.Sample == nil:
 		info = "empty"
 	case status.Processing:
@@ -134,6 +138,7 @@ func (m *BufferModel) addImported(fileName string, data []byte, channels int, re
 		}
 		buf.Sample = sample
 		buf.Channels = channels
+		buf.Frames = 0 // no longer recorded into
 		return
 	}
 	id := 1
@@ -144,6 +149,99 @@ func (m *BufferModel) addImported(fileName string, data []byte, channels int, re
 	name := strings.TrimSuffix(fileName, filepath.Ext(fileName))
 	m.d.Song.Buffers = append(m.d.Song.Buffers, sointu.Buffer{ID: id, Name: name, Channels: channels, Sample: sample})
 	m.d.BufferIndex = len(m.d.Song.Buffers) - 1
+}
+
+// NewEmpty returns an Action to add an empty buffer, for bufwrite units to
+// record into.
+func (m *BufferModel) NewEmpty() Action { return MakeAction((*newEmptyBuffer)(m)) }
+
+type newEmptyBuffer BufferModel
+
+func (m *newEmptyBuffer) Do() {
+	defer (*BufferModel)(m).change("NewEmptyBuffer")()
+	id := 1
+	for _, buf := range m.d.Song.Buffers {
+		id = max(id, buf.ID+1)
+	}
+	name := fmt.Sprintf("Recording %d", id)
+	m.d.Song.Buffers = append(m.d.Song.Buffers, sointu.Buffer{ID: id, Name: name, Channels: 1, Frames: 44100})
+	m.d.BufferIndex = len(m.d.Song.Buffers) - 1
+}
+
+// IsWritable reports whether the selected buffer is written by bufwrite
+// units instead of having a sample.
+func (m *BufferModel) IsWritable() bool {
+	buf := m.selected()
+	return buf != nil && buf.Writable()
+}
+
+// Length returns a String for the length of the selected writable buffer, in
+// seconds.
+func (m *BufferModel) Length() String { return MakeString((*bufferLength)(m)) }
+
+type bufferLength BufferModel
+
+func (v *bufferLength) Value() string {
+	if buf := (*BufferModel)(v).selected(); buf != nil && buf.Writable() {
+		return strconv.FormatFloat(float64(buf.Frames)/44100, 'f', -1, 64)
+	}
+	return ""
+}
+func (v *bufferLength) SetValue(value string) bool {
+	buf := (*BufferModel)(v).selected()
+	seconds, err := strconv.ParseFloat(strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(value), "s")), 64)
+	if buf == nil || !buf.Writable() || err != nil || seconds <= 0 || seconds > 600 {
+		return false
+	}
+	defer (*BufferModel)(v).change("BufferLength")()
+	buf.Frames = max(int(math.Round(seconds*44100)), 1)
+	return true
+}
+
+// Clear returns an Action to discard what has been written to the selected
+// writable buffer.
+func (m *BufferModel) Clear() Action { return MakeAction((*clearBuffer)(m)) }
+
+type clearBuffer BufferModel
+
+func (m *clearBuffer) Enabled() bool { return (*BufferModel)(m).IsWritable() }
+func (m *clearBuffer) Do() {
+	if buf := (*BufferModel)(m).selected(); buf != nil {
+		(*Model)(m).clearBuffer(buf.ID)
+	}
+}
+
+// FitToRecording returns an Action to set the length of the selected
+// writable buffer to what has been written to it.
+func (m *BufferModel) FitToRecording() Action { return MakeAction((*fitToRecording)(m)) }
+
+type fitToRecording BufferModel
+
+func (m *fitToRecording) Enabled() bool {
+	buf := (*BufferModel)(m).selected()
+	if buf == nil || !buf.Writable() {
+		return false
+	}
+	filled, ok := (*Model)(m).bufferFill(buf.ID)
+	return ok && filled > 0 && filled != buf.Frames
+}
+func (m *fitToRecording) Do() {
+	buf := (*BufferModel)(m).selected()
+	if filled, ok := (*Model)(m).bufferFill(buf.ID); ok && filled > 0 {
+		defer (*BufferModel)(m).change("FitToRecording")()
+		buf.Frames = filled
+	}
+}
+
+// bufferFill returns how many frames of a writable buffer the player has
+// written, if it reports it.
+func (m *Model) bufferFill(id int) (int, bool) {
+	for _, f := range m.playerStatus.BufferFills {
+		if f.ID == id && id != 0 {
+			return f.Filled, true
+		}
+	}
+	return 0, false
 }
 
 // setDefaultEncoding makes a new sample use the default preset, or else the
@@ -552,6 +650,14 @@ func (m *BufferModel) Info() string {
 	if buf == nil {
 		return ""
 	}
+	if buf.Writable() {
+		filled, _ := (*Model)(m).bufferFill(buf.ID)
+		line := fmt.Sprintf("Recorded: %s of %s", formatDuration(filled), formatDuration(buf.Frames))
+		if filled >= buf.Frames {
+			line += " (full)"
+		}
+		return line + "\nWritten by bufwrite units while the song plays; kept until\nrecorded again or cleared. Not stored in the song."
+	}
 	if buf.Sample == nil {
 		return "No sample"
 	}
@@ -600,7 +706,7 @@ func (v *bufferPreview) SetValue(value bool) {
 }
 func (v *bufferPreview) Enabled() bool {
 	buf := (*BufferModel)(v).selected()
-	return v.playerStatus.Previewing || (buf != nil && v.buffers.audio[buf.ID].Frames() > 0)
+	return v.playerStatus.Previewing || (buf != nil && !buf.Writable() && v.buffers.audio[buf.ID].Frames() > 0)
 }
 
 // bufferFrames returns the number of frames in the audio of the buffer with

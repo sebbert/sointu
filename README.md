@@ -249,8 +249,19 @@ voices of another instrument, stealing the voice spawned longest ago. In
 `rate` mode it spawns at a (modulatable) rate while its own note is held; in
 `edge` mode, whenever its input rises above zero. It can pass up to four values
 from the stack to each spawned voice, where `arg` units push them, e.g. to send
-a random position to `bufread`'s `start`. `spawn` and `arg` are WebAssembly
-only for now, like `bufread`.
+a random position to `bufread`'s `start`.
+
+Buffers can also be recorded into while the song plays: add an empty buffer
+with the microphone button in the Buffers tab, and write to it with a
+`bufwrite` unit while its note is held. In `once` mode, each note starts a new
+recording, which stops at the end of the buffer; in `ring` mode, it writes
+continuously, overwriting the oldest audio, e.g. for granular effects on a live
+signal. `feedback` mixes in what was there before. Recordings are not stored in
+the song: the compiled player records them again when it plays. The tracker
+keeps them while editing, until recorded again or cleared; "Fit to recording"
+sets the length of the buffer to what was recorded.
+
+`bufread`, `bufwrite`, `spawn` and `arg` are WebAssembly only for now.
 
 If you are looking for an easy way to compile an executable from a Sointu song
 (e.g. for a executable music compo), take a look at [NR4's Python-based

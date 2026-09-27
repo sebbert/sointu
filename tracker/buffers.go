@@ -73,8 +73,21 @@ func (m *Model) syncBuffers() {
 	seen := map[int]bool{}
 	for _, buf := range m.d.Song.Buffers {
 		seen[buf.ID] = true
+		if buf.Writable() {
+			// the player writes to the audio; a new one is only made when
+			// the buffer changes size
+			delete(b.keys, buf.ID)
+			if a, ok := b.audio[buf.ID]; !ok || !a.Writable || a.Channels != buf.Channels || a.Frames() != buf.Frames {
+				b.audio[buf.ID] = buf.NewAudio()
+				b.status[buf.ID] = BufferStatus{}
+				changed = true
+			}
+			continue
+		}
 		if buf.Sample == nil {
-			if _, ok := b.keys[buf.ID]; ok {
+			_, hasKey := b.keys[buf.ID]
+			_, hasAudio := b.audio[buf.ID]
+			if hasKey || hasAudio {
 				m.forgetBuffer(buf.ID)
 				changed = true
 			}
@@ -145,8 +158,18 @@ func (m *Model) bufferName(id int) string {
 	return fmt.Sprint(id)
 }
 
+// clearBuffer gives a writable buffer new, empty audio, discarding what has
+// been written to it.
+func (m *Model) clearBuffer(id int) {
+	if buf, ok := m.d.Song.Buffers.Find(id); ok && buf.Writable() {
+		m.buffers.audio[id] = buf.NewAudio()
+		m.sendBufferAudio()
+	}
+}
+
 // sendBufferAudio sends the audio of all buffers to the player. The audio
-// data is shared, as it is never modified.
+// data is shared: the model never modifies it, and only the player writes to
+// the audio of writable buffers.
 func (m *Model) sendBufferAudio() {
 	TrySend(m.broker.ToPlayer, any(BufferAudioMsg{Audio: maps.Clone(m.buffers.audio)}))
 }

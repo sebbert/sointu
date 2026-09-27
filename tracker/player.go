@@ -19,6 +19,7 @@ type (
 	Player struct {
 		synth      sointu.Synth               // the synth used to render audio
 		buffers    map[int]sointu.BufferAudio // the audio of the song's buffers
+		writable   bool                       // some of the buffers are writable
 		preview    sointu.BufferAudio         // buffer audio being previewed, mixed into the output
 		previewPos int                        // next frame of the preview
 		song       sointu.Song                // the song being played
@@ -51,7 +52,13 @@ type (
 		NumThreads  int
 		CPULoad     [vm.MAX_THREADS]sointu.CPULoad // current CPU load of the player, used to adjust the render rate
 		Previewing  bool                           // a buffer preview is playing
+		// BufferFills tells how many frames have been written to the
+		// writable buffers, for the first MaxBufferFills of them.
+		BufferFills [MaxBufferFills]BufferFill
 	}
+
+	// BufferFill tells how many frames of a writable buffer are valid.
+	BufferFill struct{ ID, Filled int }
 
 	// PlayerProcessContext is the context given to the player when processing
 	// audio. Currently it is only used to get BPM from the VSTI host.
@@ -175,6 +182,9 @@ func (p *Player) Process(buffer sointu.AudioBuffer, context PlayerProcessContext
 		if len(buffer) == 0 {
 			if p.synth != nil {
 				p.status.NumThreads = p.synth.CPULoad(p.status.CPULoad[:])
+				if p.writable {
+					p.updateBufferFills()
+				}
 			}
 			p.send(nil)
 			return
@@ -206,8 +216,28 @@ func (p *Player) mixPreview(buffer sointu.AudioBuffer) {
 	}
 }
 
+// keepWrittenBuffers updates the writable buffers with what the synth has
+// written to them, so that the next synth continues from there.
+func (p *Player) keepWrittenBuffers() {
+	w, ok := p.synth.(sointu.BufferWriter)
+	if !ok {
+		return
+	}
+	for id, b := range w.WrittenBuffers() {
+		if old, ok := p.buffers[id]; ok && sameData(old.Data, b.Data) {
+			p.buffers[id] = b
+		}
+	}
+}
+
+// sameData reports whether a and b are the same slice.
+func sameData(a, b []float32) bool {
+	return len(a) == len(b) && (len(a) == 0 || &a[0] == &b[0])
+}
+
 func (p *Player) destroySynth() {
 	if p.synth != nil {
+		p.keepWrittenBuffers()
 		p.synth.Close()
 		p.synth = nil
 	}
@@ -282,7 +312,21 @@ loop:
 				p.preview, p.previewPos = m.Audio, 0
 				p.status.Previewing = m.Audio.Frames() > 0
 			case BufferAudioMsg:
+				p.keepWrittenBuffers()
+				for id, b := range m.Audio {
+					// continue writing to the same audio
+					if old, ok := p.buffers[id]; ok && b.Writable && sameData(old.Data, b.Data) {
+						m.Audio[id] = old
+					}
+				}
 				p.buffers = m.Audio
+				p.writable = false
+				for _, b := range p.buffers {
+					p.writable = p.writable || b.Writable
+				}
+				if !p.writable {
+					clear(p.status.BufferFills[:])
+				}
 				if s, ok := p.synth.(sointu.BufferSetter); ok {
 					s.SetBuffers(p.buffers)
 				}
@@ -458,6 +502,28 @@ func (p *Player) compileOrUpdateSynth() {
 		voice += instr.NumVoices
 	}
 	p.midiAssigns.update(p.song.Patch)
+}
+
+// MaxBufferFills is the number of writable buffers whose fill the player
+// reports.
+const MaxBufferFills = 8
+
+// updateBufferFills reports how much has been written to the writable
+// buffers.
+func (p *Player) updateBufferFills() {
+	clear(p.status.BufferFills[:])
+	w, ok := p.synth.(sointu.BufferWriter)
+	if !ok {
+		return
+	}
+	i := 0
+	for id, b := range w.WrittenBuffers() {
+		if i == MaxBufferFills {
+			break
+		}
+		p.status.BufferFills[i] = BufferFill{ID: id, Filled: b.Filled}
+		i++
+	}
 }
 
 // all sendTargets from player are always non-blocking, to ensure that the player thread cannot end up in a dead-lock

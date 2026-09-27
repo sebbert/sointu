@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/vsariola/sointu"
+	"github.com/vsariola/sointu/vm"
 )
 
 // ramp is an envelope whose level goes up by 1/64 every frame, starting at
@@ -147,4 +148,27 @@ func TestBufwriteIgnoresSampleBuffers(t *testing.T) {
 	synth.Trigger(0, 60)
 	render(t, synth, 3)
 	checkData(t, "sample", sample.Data, 0, 0.1, 0.2, 0.3)
+}
+
+func TestBufwriteMultithread(t *testing.T) {
+	// the writer and the reader on different threads: the reader does not see
+	// the writes, but the written buffers come from the writer's thread
+	patch := sointu.Patch{
+		{NumVoices: 1, ThreadMaskM1: 0, Units: []sointu.Unit{rampUnit, {Type: "bufwrite", Parameters: sointu.ParamMap{"stereo": 0, "feedback": 0, "buffer": 1, "mode": sointu.BufwriteModeOnce}}}},
+		{NumVoices: 1, ThreadMaskM1: 1, Units: []sointu.Unit{
+			{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "buffer": 1, "notetracking": 0}},
+			{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
+		}},
+	}
+	synth, err := vm.MakeMultithreadSynther(vm.GoSynther{}).Synth(patch, 120)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer synth.Close()
+	synth.(sointu.BufferSetter).SetBuffers(map[int]sointu.BufferAudio{1: (&sointu.Buffer{ID: 1, Channels: 1, Frames: 8}).NewAudio()})
+	synth.Trigger(0, 60)
+	render(t, synth, 3)
+	if b := synth.(sointu.BufferWriter).WrittenBuffers()[1]; b.Head != 3 || b.Filled != 3 {
+		t.Errorf("head %d, filled %d, want 3 3", b.Head, b.Filled)
+	}
 }

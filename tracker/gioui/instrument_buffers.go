@@ -23,6 +23,10 @@ type (
 	InstrumentBuffers struct {
 		list         *DragList
 		addBtn       *Clickable
+		newEmptyBtn  *Clickable
+		clearBtn     *Clickable
+		fitBtn       *Clickable
+		lengthEditor *DraftEditor
 		replaceBtn   *Clickable
 		deleteBtn    *Clickable
 		originalBtn  *Clickable
@@ -48,6 +52,10 @@ func NewInstrumentBuffers(m *tracker.Model) *InstrumentBuffers {
 	return &InstrumentBuffers{
 		list:         NewDragList(m.Buffer().List(), layout.Vertical),
 		addBtn:       new(Clickable),
+		newEmptyBtn:  new(Clickable),
+		clearBtn:     new(Clickable),
+		fitBtn:       new(Clickable),
+		lengthEditor: NewDraftEditor(text.Start),
 		replaceBtn:   new(Clickable),
 		deleteBtn:    new(Clickable),
 		originalBtn:  new(Clickable),
@@ -73,6 +81,7 @@ func (ib *InstrumentBuffers) Tags(level int, yield TagYieldFunc) bool {
 	return yield(level, ib.list) &&
 		yield(level+1, &ib.nameEditor.widgetEditor) &&
 		yield(level+1, &ib.presetEditor.widgetEditor) &&
+		yield(level+1, &ib.lengthEditor.widgetEditor) &&
 		yield(level+1, &ib.formatEditor.widgetEditor) &&
 		yield(level+1, &ib.argsEditor.widgetEditor) &&
 		ib.channelsMenu.Tags(level+1, yield) &&
@@ -121,6 +130,7 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 	hasSel := tr.Buffer().HasSelection()
 
 	addBtn := IconBtn(th, &th.IconButton.Enabled, ib.addBtn, icons.ContentAdd, "Import a sample as a new buffer")
+	newEmptyBtn := ActionIconBtn(tr.Buffer().NewEmpty(), th, ib.newEmptyBtn, icons.AVMic, "Add an empty buffer for bufwrite units to record into")
 	replaceStyle := &th.IconButton.Enabled
 	if !hasSel {
 		replaceStyle = &th.IconButton.Disabled
@@ -132,6 +142,7 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 	toolbar := func(gtx C) D {
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(addBtn.Layout),
+			layout.Rigid(newEmptyBtn.Layout),
 			layout.Rigid(replaceBtn.Layout),
 			layout.Rigid(deleteBtn.Layout),
 			layout.Flexed(1, func(gtx C) D { return D{Size: gtx.Constraints.Min} }),
@@ -164,7 +175,7 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 	props := func(gtx C) D {
 		if !hasSel {
 			return layout.UniformInset(unit.Dp(12)).Layout(gtx,
-				Label(th, &th.InstrumentEditor.Properties.Label, "No buffers. Import a sample with +.").Layout)
+				Label(th, &th.InstrumentEditor.Properties.Label, "No buffers. Import a sample with +, or add\nan empty buffer to record into with the microphone.").Layout)
 		}
 		channels := MenuBtn(ib.channelsMenu, ib.channelsBtn, tr.Buffer().Channels().String()).
 			WithBtnStyle(&th.Button.Text).WithPopupStyle(&th.Popup.ContextMenu)
@@ -218,7 +229,16 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 				layout.Rigid(deletePresetBtn.Layout),
 			)
 		}
-		lines := []layout.Widget{
+		info := func(gtx C) D {
+			// selectable, so that e.g. ffmpeg's error messages can be copied
+			style := th.InstrumentEditor.Properties.Label
+			l := material.Label(&th.Material, style.TextSize, tr.Buffer().Info())
+			l.Color, l.Font, l.State = style.Color, style.Font, ib.info
+			l.SelectionColor = th.Material.ContrastBg
+			l.SelectionColor.A = 0x60
+			return layout.UniformInset(unit.Dp(6)).Layout(gtx, l.Layout)
+		}
+		common := []layout.Widget{
 			func(gtx C) D {
 				return layoutBufferLine(gtx, "Name", true, editor(ib.nameEditor, tr.Buffer().Name(), "Name"))
 			},
@@ -227,44 +247,57 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 					return channels.Layout(gtx, IntMenuChild(tr.Buffer().Channels(), icons.NavigationCheck))
 				})
 			},
-			nil,
-			func(gtx C) D {
-				return layoutBufferLine(gtx, "Encoding", false, func(gtx C) D {
-					return preset.Layout(gtx, IntMenuChild(tr.Buffer().Preset(), icons.NavigationCheck))
-				})
-			},
-			presetLine,
-			func(gtx C) D {
-				format := MenuBtn(ib.formatMenu, ib.formatBtn, tr.Buffer().FormatChoice().String()).
-					WithBtnStyle(&th.Button.Text).WithPopupStyle(&th.Popup.ContextMenu)
-				menu := func(gtx C) D {
-					return format.Layout(gtx, IntMenuChild(tr.Buffer().FormatChoice(), icons.NavigationCheck))
-				}
-				if !tr.Buffer().IsCustomFormat() {
-					return layoutBufferLine(gtx, "Format", false, menu)
-				}
-				return layoutBufferLine(gtx, "Format", true, func(gtx C) D {
-					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-						layout.Rigid(menu),
-						layout.Rigid(layout.Spacer{Width: 6}.Layout),
-						layout.Flexed(1, styledEditor(ib.formatEditor, tr.Buffer().Format(), &monoStyle, "ffmpeg -f format, e.g. matroska")),
+		}
+		var lines []layout.Widget
+		if tr.Buffer().IsWritable() {
+			clearBtn := ActionBtn(tr.Buffer().Clear(), th, ib.clearBtn, "Clear", "Discard what has been recorded")
+			fitBtn := ActionBtn(tr.Buffer().FitToRecording(), th, ib.fitBtn, "Fit to recording", "Make the buffer as long as\nwhat has been recorded")
+			lines = append(common,
+				func(gtx C) D {
+					return layoutBufferLine(gtx, "Length (s)", true, editor(ib.lengthEditor, tr.Buffer().Length(), "seconds"))
+				},
+				func(gtx C) D {
+					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+						layout.Flexed(1, func(gtx C) D { return D{Size: gtx.Constraints.Min} }),
+						layout.Rigid(fitBtn.Layout),
+						layout.Rigid(clearBtn.Layout),
 					)
-				})
-			},
-			func(gtx C) D {
-				return layoutBufferLine(gtx, "ffmpeg args", true, styledEditor(ib.argsEditor, tr.Buffer().Args(), &monoStyle, "e.g. -c:a libopus -b:a 32k"))
-			},
-			presetBtns,
-			nil,
-			func(gtx C) D {
-				// selectable, so that e.g. ffmpeg's error messages can be copied
-				style := th.InstrumentEditor.Properties.Label
-				l := material.Label(&th.Material, style.TextSize, tr.Buffer().Info())
-				l.Color, l.Font, l.State = style.Color, style.Font, ib.info
-				l.SelectionColor = th.Material.ContrastBg
-				l.SelectionColor.A = 0x60
-				return layout.UniformInset(unit.Dp(6)).Layout(gtx, l.Layout)
-			},
+				},
+				nil,
+				info,
+			)
+		} else {
+			lines = append(common, nil,
+				func(gtx C) D {
+					return layoutBufferLine(gtx, "Encoding", false, func(gtx C) D {
+						return preset.Layout(gtx, IntMenuChild(tr.Buffer().Preset(), icons.NavigationCheck))
+					})
+				},
+				presetLine,
+				func(gtx C) D {
+					format := MenuBtn(ib.formatMenu, ib.formatBtn, tr.Buffer().FormatChoice().String()).
+						WithBtnStyle(&th.Button.Text).WithPopupStyle(&th.Popup.ContextMenu)
+					menu := func(gtx C) D {
+						return format.Layout(gtx, IntMenuChild(tr.Buffer().FormatChoice(), icons.NavigationCheck))
+					}
+					if !tr.Buffer().IsCustomFormat() {
+						return layoutBufferLine(gtx, "Format", false, menu)
+					}
+					return layoutBufferLine(gtx, "Format", true, func(gtx C) D {
+						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+							layout.Rigid(menu),
+							layout.Rigid(layout.Spacer{Width: 6}.Layout),
+							layout.Flexed(1, styledEditor(ib.formatEditor, tr.Buffer().Format(), &monoStyle, "ffmpeg -f format, e.g. matroska")),
+						)
+					})
+				},
+				func(gtx C) D {
+					return layoutBufferLine(gtx, "ffmpeg args", true, styledEditor(ib.argsEditor, tr.Buffer().Args(), &monoStyle, "e.g. -c:a libopus -b:a 32k"))
+				},
+				presetBtns,
+				nil,
+				info,
+			)
 		}
 		return ib.props.Layout(gtx, len(lines), func(gtx C, i int) D {
 			gtx.Constraints.Min.X = gtx.Constraints.Max.X

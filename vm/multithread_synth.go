@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"maps"
 	"math"
 	"math/bits"
 	"runtime"
@@ -74,6 +75,9 @@ func (s *MultithreadSynth) Update(patch sointu.Patch, bpm int) error {
 	patches, voiceMapping := splitPatchByCores(patch)
 	if s.voiceMapping != voiceMapping {
 		s.voiceMapping = voiceMapping
+		if s.buffers != nil {
+			maps.Copy(s.buffers, s.WrittenBuffers()) // the new synths continue writing
+		}
 		s.closeSynths()
 	}
 	for i, p := range patches {
@@ -129,12 +133,33 @@ func (s *MultithreadSynth) closeSynths() {
 
 // SetBuffers sets the buffers of the synths of each thread.
 func (s *MultithreadSynth) SetBuffers(buffers map[int]sointu.BufferAudio) {
-	s.buffers = buffers
+	s.buffers = maps.Clone(buffers)
 	for _, synth := range s.synths {
 		if b, ok := synth.(sointu.BufferSetter); ok {
 			b.SetBuffers(buffers)
 		}
 	}
+}
+
+// WrittenBuffers returns the writable buffers with what has been written to
+// them. The synth of each thread keeps its own state of the buffers, and only
+// the thread writing to a buffer changes it, so the state that differs from
+// the one set is taken.
+func (s *MultithreadSynth) WrittenBuffers() map[int]sointu.BufferAudio {
+	ret := map[int]sointu.BufferAudio{}
+	for _, synth := range s.synths {
+		w, ok := synth.(sointu.BufferWriter)
+		if !ok {
+			continue
+		}
+		for id, b := range w.WrittenBuffers() {
+			set := s.buffers[id]
+			if _, ok := ret[id]; !ok || b.Head != set.Head || b.Filled != set.Filled {
+				ret[id] = b
+			}
+		}
+	}
+	return ret
 }
 
 func (s *MultithreadSynth) Trigger(voiceIndex int, note byte) {
