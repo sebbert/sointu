@@ -130,8 +130,10 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 		templates = []string{"player.wat"}
 	}
 	features := vm.NecessaryFeaturesFor(song.Patch)
-	if _, ok := features.Opcode("bufread"); ok && com.Arch != "wasm" {
-		return nil, nil, fmt.Errorf(`the bufread unit is only supported when compiling for wasm (targeted architecture was %v)`, com.Arch)
+	for _, unit := range []string{"bufread", "spawn", "arg"} {
+		if _, ok := features.Opcode(unit); ok && com.Arch != "wasm" {
+			return nil, nil, fmt.Errorf(`the %v unit is only supported when compiling for wasm (targeted architecture was %v)`, unit, com.Arch)
+		}
 	}
 	if _, ok := features.Opcode("speed"); ok {
 		warnings = append(warnings, fmt.Sprintf(`song uses the speed unit, so SU_LENGTH_IN_SAMPLES, SU_BUFFER_LENGTH, and SU_SYNCBUFFER_LENGTH cannot be known without rendering the entire song. They won't be defined in the generated header file. You have to take responsibility for allocating large enough audio buffer and syncBuf.`))

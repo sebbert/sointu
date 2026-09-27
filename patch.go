@@ -421,6 +421,50 @@ var UnitTypes = map[string]UnitType{
 		},
 		StackUse: stackUseSource,
 	},
+	"spawn": {
+		// spawn triggers notes on the voices of another instrument, taking
+		// the voice that was spawned longest ago. In rate mode, it spawns at
+		// the given rate while its own voice is held; in edge mode, when its
+		// input rises above zero while its own voice is held. The note is
+		// transposed from the note of its own voice, or from C-4 without note
+		// tracking. It pops args values from the stack (below the input in
+		// edge mode) and passes them to the spawned voice, where arg units
+		// push them. instrument is the index of the instrument plus one; 0
+		// means none.
+		Params: []UnitParameter{
+			{Name: "mode", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc(spawnModeNames[:])},
+			{Name: "rate", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(SpawnRateHz(float64(v)/128), 'g', 3, 64), "Hz"
+			}},
+			{Name: "transpose", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				relvalue := v - 64
+				if relvalue%12 == 0 {
+					return strconv.Itoa(relvalue / 12), "oct"
+				}
+				return strconv.Itoa(relvalue), "st"
+			}},
+			{Name: "notetracking", MinValue: 0, Default: 1, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "args", MinValue: 0, MaxValue: MaxSpawnArgs, CanSet: true, CanModulate: false},
+			{Name: "instrument", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+		},
+		StackUse: func(u *Unit) StackUse {
+			n := u.Parameters["args"] + u.Parameters["mode"]
+			ret := StackUse{Inputs: make([][]int, n), Modifies: make([]bool, n)}
+			for i := range n {
+				ret.Inputs[i] = []int{0}
+				ret.Modifies[i] = true
+			}
+			return ret
+		},
+	},
+	"arg": {
+		// arg pushes a value passed by the spawn unit that triggered the
+		// voice, or 0.
+		Params: []UnitParameter{
+			{Name: "index", MinValue: 0, MaxValue: MaxSpawnArgs - 1, CanSet: true, CanModulate: false},
+		},
+		StackUse: stackUseSource,
+	},
 	"loadval": {
 		Params: []UnitParameter{
 			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
@@ -509,6 +553,22 @@ func (a *ParamMap) UnmarshalYAML(value *yaml.Node) error {
 }
 
 var channelNames = [...]string{"left", "right", "aux1 left", "aux1 right", "aux2 left", "aux2 right", "aux3 left", "aux3 right"}
+
+// MaxSpawnArgs is the maximum number of values a spawn unit passes to the
+// voices it spawns.
+const MaxSpawnArgs = 4
+
+// Modes of the spawn unit.
+const (
+	SpawnModeRate = iota
+	SpawnModeEdge
+)
+
+var spawnModeNames = [...]string{"rate", "edge"}
+
+// SpawnRateHz returns the rate of a spawn unit in Hz for its rate parameter
+// (with modulation) scaled to 0-1: 8 Hz at the middle, doubling every 8 steps.
+func SpawnRateHz(rate float64) float64 { return math.Pow(2, rate*16-5) }
 
 func arrDispFunc(arr []string) UnitParameterDisplayFunc {
 	return func(v int) (string, string) {

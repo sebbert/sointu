@@ -212,10 +212,17 @@ func splitPatchByCores(patch sointu.Patch) ([]sointu.Patch, voiceMapping) {
 	for c := range cores {
 		coreVoice := 0
 		curVoice := 0
+		coreIndex := make([]int, len(patch)) // instrument index in the core's patch + 1, 0 if not in it
+		for i, instr := range patch {
+			if (instr.ThreadMaskM1+1)&(1<<c) != 0 {
+				coreIndex[i] = len(ret[c]) + 1
+				ret[c] = append(ret[c], instr)
+			}
+		}
+		remapSpawnTargets(ret[c], coreIndex)
 		for _, instr := range patch {
 			mask := instr.ThreadMaskM1 + 1
 			if mask&(1<<c) != 0 {
-				ret[c] = append(ret[c], instr)
 				for j := 0; j < instr.NumVoices; j++ {
 					if coreVoice+j >= MAX_VOICES {
 						break
@@ -228,4 +235,28 @@ func splitPatchByCores(patch sointu.Patch) ([]sointu.Patch, voiceMapping) {
 		}
 	}
 	return ret, voicemapping
+}
+
+// remapSpawnTargets changes the targets of the spawn units in patch, which
+// are instrument indices + 1, with indexMap. The instruments with spawn units
+// are copied, so that the original patch is not changed. Spawn units whose
+// target is not in the patch spawn nothing.
+func remapSpawnTargets(patch sointu.Patch, indexMap []int) {
+	for i, instr := range patch {
+		copied := false
+		for j, u := range instr.Units {
+			if u.Type != "spawn" {
+				continue
+			}
+			if !copied {
+				patch[i] = instr.Copy()
+				copied = true
+			}
+			target := 0
+			if t := u.Parameters["instrument"] - 1; t >= 0 && t < len(indexMap) {
+				target = indexMap[t]
+			}
+			patch[i].Units[j].Parameters["instrument"] = target
+		}
+	}
 }

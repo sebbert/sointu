@@ -3,9 +3,30 @@ package compiler
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/vsariola/sointu"
 )
+
+// spawnedVoices returns which voices of the patch the enabled spawn units
+// trigger.
+func spawnedVoices(patch sointu.Patch) []bool {
+	ret := make([]bool, patch.NumVoices())
+	for _, instr := range patch {
+		for _, u := range instr.Units {
+			if u.Type != "spawn" || u.Disabled {
+				continue
+			}
+			if t := u.Parameters["instrument"] - 1; t >= 0 && t < len(patch) {
+				first := patch.FirstVoiceForInstrument(t)
+				for v := first; v < first+patch[t].NumVoices; v++ {
+					ret[v] = true
+				}
+			}
+		}
+	}
+	return ret
+}
 
 // flattenSequence returns the notes of a track in a single linear array of
 // integer notes.
@@ -144,9 +165,18 @@ func intsToBytes(array []int) ([]byte, error) {
 func ConstructPatterns(song *sointu.Song) ([][]byte, [][]byte, error) {
 	sequences := make([][]byte, len(song.Score.Tracks))
 	var patterns [][]int
+	spawned := spawnedVoices(song.Patch)
 	for i, t := range song.Score.Tracks {
-		flat := flattenSequence(t, song.Score.Length, song.Score.RowsPerPattern, true)
-		dontCares := markDontCares(flat)
+		// Holds after a release can be encoded as releases, unless spawn
+		// units trigger the voices of the track: then a release would cut
+		// off the spawned note.
+		first := song.Score.FirstVoiceForTrack(i)
+		free := !slices.Contains(spawned[min(first, len(spawned)):min(first+t.NumVoices, len(spawned))], true)
+		flat := flattenSequence(t, song.Score.Length, song.Score.RowsPerPattern, free)
+		dontCares := flat
+		if free {
+			dontCares = markDontCares(flat)
+		}
 		// TODO: we could give the user the possibility to use another length during encoding that during composing
 		chunks := splitSequence(dontCares, song.Score.RowsPerPattern)
 		var sequence []int

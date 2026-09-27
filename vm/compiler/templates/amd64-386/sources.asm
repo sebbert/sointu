@@ -391,6 +391,17 @@ su_op_loadval_mono:
 {{end}}
 
 
+{{- if .HasOp "arg"}}
+;-------------------------------------------------------------------------------
+;   ARG opcode: not supported on x86 yet; pushes 0
+;-------------------------------------------------------------------------------
+{{.Func "su_op_arg" "Opcode"}}
+    lodsb                                       ; skip the index
+    fldz
+    ret
+{{end}}
+
+
 {{- if .HasOp "bufread"}}
 ;-------------------------------------------------------------------------------
 ;   BUFREAD opcode: not supported on x86 yet; outputs silence

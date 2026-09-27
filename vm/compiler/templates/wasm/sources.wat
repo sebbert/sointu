@@ -360,6 +360,18 @@
 {{end}}
 
 
+{{- if .HasOp "arg"}}
+;;-------------------------------------------------------------------------------
+;;   ARG opcode: push a value passed by the spawn unit that triggered the voice
+;;-------------------------------------------------------------------------------
+(func $su_op_arg (param $stereo i32)
+    (call $push (f32.load offset=16 (i32.add
+        (global.get $voice)
+        (i32.shl (call $scanOperand) (i32.const 2))
+    )))
+)
+{{end}}
+
 {{- if .HasOp "bufread"}}
 ;;-------------------------------------------------------------------------------
 ;;   BUFREAD opcode: plays a region of a buffer

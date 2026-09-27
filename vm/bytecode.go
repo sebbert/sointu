@@ -164,6 +164,21 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				b.op(opcode + p["stereo"])
 				b.defOperands(unit)
 				b.operand(index)
+			case "spawn":
+				// operands: first voice and number of voices of the target
+				// instrument, and flags: bit 0 = edge mode, bit 1 = note
+				// tracking, bits 2-4 = number of arguments
+				first, count := 0, 0
+				if t := p["instrument"] - 1; t >= 0 && t < len(patch) {
+					first, count = patch.FirstVoiceForInstrument(t), patch[t].NumVoices
+				}
+				args := min(max(p["args"], 0), sointu.MaxSpawnArgs)
+				b.op(opcode)
+				b.defOperands(unit)
+				b.operand(first, count, p["mode"]&1+(p["notetracking"]&1)<<1+args<<2)
+			case "arg":
+				b.op(opcode)
+				b.operand(min(max(p["index"], 0), sointu.MaxSpawnArgs-1))
 			case "aux", "in":
 				b.op(opcode + p["stereo"])
 				b.defOperands(unit)

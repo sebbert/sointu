@@ -126,3 +126,25 @@ su_op_send_skippush:            ; there is signal s, but maybe also another: s (
     fstp    dword [{{.CX}} + {{.AX}}*4]     ; (l)
     ret
 {{end}}
+
+
+{{- if .HasOp "spawn"}}
+;-------------------------------------------------------------------------------
+;   SPAWN opcode: not supported on x86 yet; pops its inputs
+;-------------------------------------------------------------------------------
+{{.Func "su_op_spawn" "Opcode"}}
+    lodsb                                       ; skip the first voice
+    lodsb                                       ; skip the number of voices
+    lodsb                                       ; flags: bit 0 = edge mode, bits 2-4 = arguments
+    mov     ah, al
+    and     ah, 1
+    shr     al, 2
+    add     al, ah
+    jz      su_op_spawn_done
+su_op_spawn_pop:
+    fstp    st0
+    dec     al
+    jnz     su_op_spawn_pop
+su_op_spawn_done:
+    ret
+{{end}}

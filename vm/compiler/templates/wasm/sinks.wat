@@ -204,3 +204,96 @@
     (global.set $sample (i32.add (global.get $sample) (local.get $w)))
 )
 {{end}}
+
+
+{{- if .HasOp "spawn"}}
+;;-------------------------------------------------------------------------------
+;;   SPAWN opcode: triggers notes on the voices of another instrument
+;;-------------------------------------------------------------------------------
+;;   Pops the input in edge mode, then the arguments. WRK[0] is the time until
+;;   the next spawn in rate mode, in periods, and WRK[1] the previous input in
+;;   edge mode. At offset 8, voices have the global time + 1 when they were
+;;   last spawned, and at offset 16 the arguments. Matches spawn in
+;;   vm/go_synth.go.
+;;-------------------------------------------------------------------------------
+(func $su_op_spawn (param $stereo i32) (local $first i32) (local $count i32) (local $flags i32) (local $held i32) (local $fire i32) (local $in f32) (local $n f32) (local $target i32) (local $i i32) (local $v i32)
+    (local.set $first (call $scanOperand))
+    (local.set $count (call $scanOperand))
+    (local.set $flags (call $scanOperand))
+    (local.set $held (i32.and
+        (i32.ne (i32.load (global.get $voice)) (i32.const 0))
+        (i32.ne (i32.load offset=4 (global.get $voice)) (i32.const 0))
+    ))
+    (if (i32.and (local.get $flags) (i32.const 1)) (then ;; edge mode
+        (local.set $in (call $pop))
+        (local.set $fire (i32.and (local.get $held) (i32.and
+            (f32.le (f32.load offset=4 (global.get $WRK)) (f32.const 0))
+            (f32.gt (local.get $in) (f32.const 0))
+        )))
+        (f32.store offset=4 (global.get $WRK) (local.get $in))
+    )(else
+        (if (local.get $held) (then
+            (if (f32.le (f32.load (global.get $WRK)) (f32.const 0)) (then
+                (local.set $fire (i32.const 1))
+                (f32.store (global.get $WRK) (f32.add (f32.load (global.get $WRK)) (f32.const 1)))
+            ))
+            (f32.store (global.get $WRK) (f32.sub
+                (f32.load (global.get $WRK))
+                (f32.div
+                    (call $pow2 (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spawn" "rate"}})) (f32.const 16)) (f32.const 5)))
+                    (f32.const 44100)
+                )
+            ))
+        ))
+    ))
+    (local.set $i (i32.shr_u (local.get $flags) (i32.const 2))) ;; number of arguments
+    (if (i32.and (local.get $fire) (i32.ne (local.get $count) (i32.const 0))) (then
+        ;; take the voice spawned longest ago
+        (local.set $target (local.get $first))
+        (local.set $v (local.get $first))
+        loop $voice_loop
+            (if (i32.lt_u
+                    (i32.load offset={{add (index .Labels "su_voices") 8}} (i32.mul (local.get $v) (i32.const 4096)))
+                    (i32.load offset={{add (index .Labels "su_voices") 8}} (i32.mul (local.get $target) (i32.const 4096)))) (then
+                (local.set $target (local.get $v))
+            ))
+            (br_if $voice_loop (i32.lt_u
+                (local.tee $v (i32.add (local.get $v) (i32.const 1)))
+                (i32.add (local.get $first) (local.get $count))
+            ))
+        end
+        (local.set $n (select
+            (f32.convert_i32_u (i32.load (global.get $voice)))
+            (f32.const 60)
+            (i32.and (local.get $flags) (i32.const 2)) ;; note tracking
+        ))
+        (local.set $n (f32.add
+            (f32.add
+                (local.get $n)
+                (f32.mul (call $inputSigned (i32.const {{.InputNumber "spawn" "transpose"}})) (f32.const 64))
+            )
+            (f32.const 0.5)
+        ))
+        (local.set $v (i32.add (i32.const {{index .Labels "su_voices"}}) (i32.mul (local.get $target) (i32.const 4096))))
+        (memory.fill (local.get $v) (i32.const 0) (i32.const 4096))
+        (i32.store (local.get $v) (i32.trunc_f32_s (f32.floor (f32.max (f32.min (local.get $n) (f32.const 127)) (f32.const 1)))))
+        (i32.store offset=4 (local.get $v) (i32.load (local.get $v)))
+        (i32.store offset=8 (local.get $v) (i32.add (global.get $globaltick) (i32.const 1)))
+        loop $args_loop
+            (if (local.get $i) (then
+                (local.set $i (i32.sub (local.get $i) (i32.const 1)))
+                (f32.store offset=16 (i32.add (local.get $v) (i32.shl (local.get $i) (i32.const 2))) (call $pop))
+                br $args_loop
+            ))
+        end
+    )(else
+        loop $pop_loop
+            (if (local.get $i) (then
+                (local.set $i (i32.sub (local.get $i) (i32.const 1)))
+                (drop (call $pop))
+                br $pop_loop
+            ))
+        end
+    ))
+)
+{{end}}

@@ -50,6 +50,8 @@ type (
 	voice struct {
 		note    byte
 		sustain bool
+		spawned uint32                       // global time + 1 when a spawn unit last triggered the voice, 0 if never
+		args    [sointu.MaxSpawnArgs]float32 // values passed by the spawn unit
 		units   [MAX_UNITS]unit
 	}
 
@@ -560,6 +562,13 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 					detuneStereo = -detuneStereo
 				}
 				unit.ports[6] = 0
+			case opSpawn:
+				first, count, flags := int(operands[0]), int(operands[1]), operands[2]
+				operands = operands[3:]
+				s.spawn(unit, voice, first, count, flags, params[0], params[1], &stack)
+			case opArg:
+				stack = append(stack, voice.args[operands[0]])
+				operands = operands[1:]
 			case opBufread:
 				var index byte
 				index, operands = operands[0], operands[1:]
@@ -750,6 +759,50 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, r BufferRegion, transpose, d
 	unit.state[1] = frac - whole
 	unit.state[2] = math.Float32frombits(base)
 	unit.state[3] = math.Float32frombits(1)
+}
+
+// spawn implements the spawn unit. unit.state[0] is the time until the next
+// spawn in rate mode, in periods, and unit.state[1] the previous input in edge
+// mode. Matches $su_op_spawn in the wasm player.
+func (s *GoSynth) spawn(unit *unit, own *voice, first, count int, flags byte, rate, transpose float32, stack *[]float32) {
+	held := own.note != 0 && own.sustain
+	fire := false
+	if flags&1 != 0 { // edge mode
+		l := len(*stack)
+		in := (*stack)[l-1]
+		*stack = (*stack)[:l-1]
+		fire = held && unit.state[1] <= 0 && in > 0
+		unit.state[1] = in
+	} else if held {
+		if unit.state[0] <= 0 {
+			fire = true
+			unit.state[0] += 1
+		}
+		// computed like the wasm player, which uses JavaScript's Math.pow
+		unit.state[0] -= float32(math.Pow(2, float64(rate*16-5))) / 44100
+	}
+	nargs := int(flags >> 2)
+	l := len(*stack)
+	args := (*stack)[l-nargs:]
+	*stack = (*stack)[:l-nargs]
+	if !fire || count == 0 {
+		return
+	}
+	base := float32(60)
+	if flags&2 != 0 {
+		base = float32(own.note)
+	}
+	n := base + (transpose*2-1)*64 + 0.5
+	n = max(min(n, 127), 1)
+	target := first
+	for i := first + 1; i < first+count; i++ {
+		if s.state.voices[i].spawned < s.state.voices[target].spawned {
+			target = i
+		}
+	}
+	v := &s.state.voices[target]
+	*v = voice{note: byte(math.Floor(float64(n))), sustain: true, spawned: s.state.globalTime + 1}
+	copy(v.args[:], args)
 }
 
 // bufreadFrames returns a position of a bufread unit: frames shifted by the

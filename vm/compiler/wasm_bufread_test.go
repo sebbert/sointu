@@ -159,6 +159,16 @@ func TestBufreadWasmMatchesGoSynth(t *testing.T) {
 		t.Fatalf("Go synth failed: %v", err)
 	}
 
+	got := renderWasm(t, node, wat2wasm, song, encoded, runnerArgs, channels)
+	compareWasmToGo(t, want, got)
+}
+
+// renderWasm compiles a song to a wasm player and renders it with node,
+// passing the buffer files to bufreadWasmRunner. It returns the interleaved
+// stereo output.
+func renderWasm(t *testing.T, node, wat2wasm string, song sointu.Song, encoded map[int]compiler.EncodedBuffer, runnerArgs, channels []string) []float32 {
+	t.Helper()
+	dir := t.TempDir()
 	com, err := compiler.New("", "wasm", false, false)
 	if err != nil {
 		t.Fatal(err)
@@ -188,13 +198,26 @@ func TestBufreadWasmMatchesGoSynth(t *testing.T) {
 	for i := range got {
 		got[i] = math.Float32frombits(binary.LittleEndian.Uint32(raw[4*i:]))
 	}
+	return got
+}
+
+// compareWasmToGo checks that the output of the wasm player matches the Go
+// synth, and that it is not silent.
+func compareWasmToGo(t *testing.T, want sointu.AudioBuffer, got []float32) {
+	t.Helper()
 	if len(got) != 2*len(want) {
 		t.Fatalf("wasm rendered %d frames, Go %d", len(got)/2, len(want))
 	}
-	maxDiff, maxAbs := 0.0, 0.0
+	maxDiff, maxAbs, at, first := 0.0, 0.0, 0, -1
 	for i, frame := range want {
 		for c := range 2 {
-			maxDiff = max(maxDiff, math.Abs(float64(got[2*i+c]-frame[c])))
+			d := math.Abs(float64(got[2*i+c] - frame[c]))
+			if d > 1e-5 && first < 0 {
+				first = i
+			}
+			if d > maxDiff {
+				maxDiff, at = d, i
+			}
 			maxAbs = max(maxAbs, math.Abs(float64(frame[c])))
 		}
 	}
@@ -202,7 +225,7 @@ func TestBufreadWasmMatchesGoSynth(t *testing.T) {
 		t.Fatalf("the song is almost silent (peak %v); the test is not testing anything", maxAbs)
 	}
 	if maxDiff > 1e-5 {
-		t.Errorf("wasm and Go outputs differ by up to %v (peak %v)", maxDiff, maxAbs)
+		t.Errorf("wasm and Go outputs differ by up to %v at frame %d, first at frame %d (peak %v)", maxDiff, at, first, maxAbs)
 	}
 	t.Logf("peak %v, max difference %v", maxAbs, maxDiff)
 }
