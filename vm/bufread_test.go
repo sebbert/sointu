@@ -257,3 +257,10 @@ func TestBufreadEdgeFade(t *testing.T) {
 	// 4 frames of fade from each edge: 0 at the first and last frame
 	checkLeft(t, renderBufread(t, sointu.ParamMap{"edgefade": 4}, bufs, 60, 9), []float32{0, 0.25, 0.5, 0.75, 0.75, 0.5, 0.25, 0, 0})
 }
+
+func TestBufreadNegativeLoopStart(t *testing.T) {
+	bufs := map[int]sointu.BufferAudio{1: ramp(8, 1, 0.1)}
+	// loop the 3rd and 2nd last frames
+	loop := sointu.ParamMap{"loop": 1, "loopstart": -3, "looplength": 2}
+	checkLeft(t, renderBufread(t, loop, bufs, 60, 10), []float32{0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.5, 0.6, 0.5})
+}

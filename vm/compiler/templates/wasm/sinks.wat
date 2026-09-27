@@ -218,7 +218,7 @@
 ;;   note in frames (0 for none). Matches spawn in
 ;;   vm/go_synth.go.
 ;;-------------------------------------------------------------------------------
-(func $su_op_spawn (param $stereo i32) (local $first i32) (local $count i32) (local $flags i32) (local $held i32) (local $fire i32) (local $in f32) (local $n f32) (local $target i32) (local $i i32) (local $v i32)
+(func $su_op_spawn (param $stereo i32) (local $first i32) (local $count i32) (local $flags i32) (local $held i32) (local $fire i32) (local $in f32) (local $n f32) (local $target i32) (local $busy i32) (local $i i32) (local $v i32)
     (local.set $first (call $scanOperand))
     (local.set $count (call $scanOperand))
     (local.set $flags (call $scanOperand))
@@ -275,59 +275,89 @@
     ))
     (local.set $i (i32.and (i32.shr_u (local.get $flags) (i32.const 2)) (i32.const 7))) ;; number of arguments
     (if (i32.and (local.get $fire) (i32.ne (local.get $count) (i32.const 0))) (then
-        ;; take the voice spawned longest ago
-        (local.set $target (local.get $first))
+        ;; take the released voice spawned longest ago, or the held one with
+        ;; steal; -1 is none
+        (local.set $target (i32.const -1))
+        (local.set $busy (i32.const -1))
         (local.set $v (local.get $first))
         loop $voice_loop
-            (if (i32.lt_u
-                    (i32.load offset={{add (index .Labels "su_voices") 8}} (i32.mul (local.get $v) (i32.const 4096)))
-                    (i32.load offset={{add (index .Labels "su_voices") 8}} (i32.mul (local.get $target) (i32.const 4096)))) (then
-                (local.set $target (local.get $v))
+            (if (i32.eqz (i32.load offset={{add (index .Labels "su_voices") 4}} (i32.mul (local.get $v) (i32.const 4096)))) (then ;; released
+                (if (i32.lt_s (local.get $target) (i32.const 0)) (then ;; the first one (no short-circuit or in wasm)
+                    (local.set $target (local.get $v))
+                )(else
+                    (if (i32.lt_u
+                            (i32.load offset={{add (index .Labels "su_voices") 8}} (i32.mul (local.get $v) (i32.const 4096)))
+                            (i32.load offset={{add (index .Labels "su_voices") 8}} (i32.mul (local.get $target) (i32.const 4096)))) (then
+                        (local.set $target (local.get $v))
+                    ))
+                ))
+            )(else
+                (if (i32.lt_s (local.get $busy) (i32.const 0)) (then ;; the first one (no short-circuit or in wasm)
+                    (local.set $busy (local.get $v))
+                )(else
+                    (if (i32.lt_u
+                            (i32.load offset={{add (index .Labels "su_voices") 8}} (i32.mul (local.get $v) (i32.const 4096)))
+                            (i32.load offset={{add (index .Labels "su_voices") 8}} (i32.mul (local.get $busy) (i32.const 4096)))) (then
+                        (local.set $busy (local.get $v))
+                    ))
+                ))
             ))
             (br_if $voice_loop (i32.lt_u
                 (local.tee $v (i32.add (local.get $v) (i32.const 1)))
                 (i32.add (local.get $first) (local.get $count))
             ))
         end
-        (local.set $n (select
-            (f32.convert_i32_u (i32.load (global.get $voice)))
-            (f32.const 60)
-            (i32.and (local.get $flags) (i32.const 2)) ;; note tracking
+        (if (i32.and (i32.lt_s (local.get $target) (i32.const 0)) (i32.ne (i32.and (local.get $flags) (i32.const 64)) (i32.const 0))) (then
+            (local.set $target (local.get $busy)) ;; steal
         ))
-        (local.set $n (f32.add
-            (f32.add
-                (local.get $n)
-                (f32.mul (call $inputSigned (i32.const {{.InputNumber "spawn" "transpose"}})) (f32.const 64))
-            )
-            (f32.const 0.5)
-        ))
-        (local.set $v (i32.add (i32.const {{index .Labels "su_voices"}}) (i32.mul (local.get $target) (i32.const 4096))))
-        (memory.fill (local.get $v) (i32.const 0) (i32.const 4096))
-        (i32.store (local.get $v) (i32.trunc_f32_s (f32.floor (f32.max (f32.min (local.get $n) (f32.const 127)) (f32.const 1)))))
-        (i32.store offset=4 (local.get $v) (i32.load (local.get $v)))
-        (i32.store offset=8 (local.get $v) (i32.add (global.get $globaltick) (i32.const 1)))
-        (if (f32.gt (call $input (i32.const {{.InputNumber "spawn" "length"}})) (f32.const 0)) (then
-            (i32.store offset=32 (local.get $v)
-                (i32.trunc_f32_u (f32.max (call $lengthFrames (call $input (i32.const {{.InputNumber "spawn" "length"}}))) (f32.const 1)))
-            )
-            (i32.store offset=12 (local.get $v) (i32.add (global.get $globaltick) (i32.load offset=32 (local.get $v))))
-        ))
-        loop $args_loop
-            (if (local.get $i) (then
-                (local.set $i (i32.sub (local.get $i) (i32.const 1)))
-                (f32.store offset=16 (i32.add (local.get $v) (i32.shl (local.get $i) (i32.const 2))) (call $pop))
-                br $args_loop
+        (if (i32.ge_s (local.get $target) (i32.const 0)) (then
+            (local.set $n (select
+                (f32.convert_i32_u (i32.load (global.get $voice)))
+                (f32.const 60)
+                (i32.and (local.get $flags) (i32.const 2)) ;; note tracking
             ))
-        end
+            (local.set $n (f32.add
+                (f32.add
+                    (local.get $n)
+                    (f32.mul (call $inputSigned (i32.const {{.InputNumber "spawn" "transpose"}})) (f32.const 64))
+                )
+                (f32.const 0.5)
+            ))
+            (local.set $v (i32.add (i32.const {{index .Labels "su_voices"}}) (i32.mul (local.get $target) (i32.const 4096))))
+            (memory.fill (local.get $v) (i32.const 0) (i32.const 4096))
+            (i32.store (local.get $v) (i32.trunc_f32_s (f32.floor (f32.max (f32.min (local.get $n) (f32.const 127)) (f32.const 1)))))
+            (i32.store offset=4 (local.get $v) (i32.load (local.get $v)))
+            (i32.store offset=8 (local.get $v) (i32.add (global.get $globaltick) (i32.const 1)))
+            (if (f32.gt (call $input (i32.const {{.InputNumber "spawn" "length"}})) (f32.const 0)) (then
+                (i32.store offset=32 (local.get $v)
+                    (i32.trunc_f32_u (f32.max (call $lengthFrames (call $input (i32.const {{.InputNumber "spawn" "length"}}))) (f32.const 1)))
+                )
+                (i32.store offset=12 (local.get $v) (i32.add (global.get $globaltick) (i32.load offset=32 (local.get $v))))
+            ))
+            loop $args_loop
+                (if (local.get $i) (then
+                    (local.set $i (i32.sub (local.get $i) (i32.const 1)))
+                    (f32.store offset=16 (i32.add (local.get $v) (i32.shl (local.get $i) (i32.const 2))) (call $pop))
+                    br $args_loop
+                ))
+            end
+        )(else
+            (call $spawnDropArgs (local.get $i)) ;; all voices held
+        ))
     )(else
-        loop $pop_loop
-            (if (local.get $i) (then
-                (local.set $i (i32.sub (local.get $i) (i32.const 1)))
-                (drop (call $pop))
-                br $pop_loop
-            ))
-        end
+        (call $spawnDropArgs (local.get $i))
     ))
+)
+
+;; $spawnDropArgs pops n arguments of a spawn unit that does not spawn
+(func $spawnDropArgs (param $n i32)
+    loop $pop_loop
+        (if (local.get $n) (then
+            (local.set $n (i32.sub (local.get $n) (i32.const 1)))
+            (drop (call $pop))
+            br $pop_loop
+        ))
+    end
 )
 {{end}}
 

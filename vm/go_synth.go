@@ -730,9 +730,9 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 // are in frames from the oldest valid frame of the buffer at the time the note
 // was triggered. unit.state holds, as bits, the integer part of the position
 // (signed) in state[0], the fraction in state[1], the oldest valid frame at
-// the trigger in state[2], 1 in state[3] once playback has started and 1 in
-// state[4] once the position has been in the loop; all are zeroed when a note
-// is triggered. The modulations of start, loop start and loop length are in
+// the trigger in state[2], 1 in state[3] once playback has started, 1 in
+// state[4] once the position has been in the loop and the filled length at the
+// trigger in state[5]; all are zeroed when a note is triggered. The modulations of start, loop start and loop length are in
 // unit.ports[4:7]. Voices that have never been triggered (note 0) are silent.
 // Matches $su_op_bufread in the wasm player.
 func (s *GoSynth) bufread(unit *unit, voice *voice, r BufferRegion, transpose, detune, gain, speed float32, stereo bool, stack *[]float32) {
@@ -752,6 +752,7 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, r BufferRegion, transpose, d
 	inLoop := math.Float32bits(unit.state[4]) != 0
 	if math.Float32bits(unit.state[3]) == 0 {
 		base = oldest
+		unit.state[5] = math.Float32frombits(uint32(filled)) // for negative loop starts
 		start := int32(r.Start)
 		if start < 0 {
 			start += filled // from the newest frame
@@ -765,7 +766,11 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, r BufferRegion, transpose, d
 	next := pos + 1
 	var loopStart, loopLength, loopEnd, fade int32
 	if r.Flags&BufferRegionLoop != 0 {
-		loopStart = bufreadFrames(int32(r.LoopStart), unit.ports[5], filled, int32(capacity))
+		ls := int32(r.LoopStart)
+		if ls < 0 {
+			ls += int32(math.Float32bits(unit.state[5])) // from the newest frame at the trigger
+		}
+		loopStart = bufreadFrames(ls, unit.ports[5], filled, int32(capacity))
 		loopLength = bufreadFrames(int32(r.LoopLength), unit.ports[6], filled, int32(capacity))
 		loopEnd = loopStart + loopLength
 		fade = min(int32(r.Fade), loopStart, loopLength)
@@ -885,11 +890,23 @@ func (s *GoSynth) spawn(unit *unit, own *voice, first, count int, flags byte, ra
 	}
 	n := base + float32((float32(transpose*2)-1)*64) + 0.5 // no multiply-adds, like wasm
 	n = max(min(n, 127), 1)
-	target := first
-	for i := first + 1; i < first+count; i++ {
-		if s.state.voices[i].spawned < s.state.voices[target].spawned {
-			target = i
+	// the released voice spawned longest ago, or the held one with steal
+	target, busy := -1, -1
+	for i := first; i < first+count; i++ {
+		v := &s.state.voices[i]
+		if !v.sustain {
+			if target < 0 || v.spawned < s.state.voices[target].spawned {
+				target = i
+			}
+		} else if busy < 0 || v.spawned < s.state.voices[busy].spawned {
+			busy = i
 		}
+	}
+	if target < 0 {
+		if flags&64 == 0 {
+			return // all voices held
+		}
+		target = busy
 	}
 	v := &s.state.voices[target]
 	*v = voice{note: byte(math.Floor(float64(n))), sustain: true, spawned: s.state.globalTime + 1}

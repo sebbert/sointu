@@ -49,8 +49,8 @@ func TestBufwriteWasmMatchesGoSynth(t *testing.T) {
 			{Name: "player", NumVoices: 1, Units: []sointu.Unit{
 				// plays the recording while it is recorded, then loops it
 				{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 1, "notetracking": 1, "loop": 1, "loopstart": 2000, "looplength": 5000, "fade": 1000}},
-				// and backwards in the loop, at 3/4 speed
-				{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 16, "buffer": 1, "notetracking": 1, "start": 3000, "loop": 1, "loopstart": 2000, "looplength": 5000, "fade": 1000}},
+				// and backwards in a loop counted from the end, at 3/4 speed
+				{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 16, "buffer": 1, "notetracking": 1, "start": -2000, "loop": 1, "loopstart": -6000, "looplength": 5000, "fade": 1000}},
 				{Type: "addp", Parameters: sointu.ParamMap{"stereo": 0}},
 				{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
 			}},

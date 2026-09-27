@@ -398,8 +398,8 @@ var UnitTypes = map[string]UnitType{
 		// original speed; transpose and detune shift the pitch like in the
 		// oscillator, and speed multiplies the rate from -1 (backwards) to 1.
 		// start, loopstart and looplength are in frames from the oldest valid
-		// frame of the buffer; a negative start counts back from the newest
-		// one. Modulating them shifts them by the valid length of the buffer
+		// frame of the buffer; a negative start or loopstart counts back from
+		// the newest one when the note was triggered. Modulating them shifts them by the valid length of the buffer
 		// times the modulation. start is read when the note is triggered.
 		// fade is the length of the crossfade at the end of the loop, and
 		// edgefade the length of the fade out near the edges of the valid
@@ -420,7 +420,7 @@ var UnitTypes = map[string]UnitType{
 			{Name: "notetracking", MinValue: 0, Default: 1, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "loop", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "start", MinValue: math.MinInt32 + 1, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true, NoTransform: true},
-			{Name: "loopstart", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true, NoTransform: true},
+			{Name: "loopstart", MinValue: math.MinInt32 + 1, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true, NoTransform: true},
 			{Name: "looplength", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true, NoTransform: true},
 			{Name: "fade", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
 			{Name: "edgefade", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
@@ -444,7 +444,9 @@ var UnitTypes = map[string]UnitType{
 	},
 	"spawn": {
 		// spawn triggers notes on the voices of another instrument, taking
-		// the voice that was spawned longest ago. In rate mode, it spawns at
+		// the released voice that was spawned longest ago. If all the voices
+		// are held, it takes the one spawned longest ago with steal on, and
+		// skips the spawn otherwise. In rate mode, it spawns at
 		// the given rate while its own voice is held; in sync mode likewise,
 		// but with the rate in spawns per beat; in edge mode, when its input
 		// rises above zero while its own voice is held. The note is
@@ -469,6 +471,7 @@ var UnitTypes = map[string]UnitType{
 			{Name: "length", MinValue: 0, Default: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: spawnLengthDisplay},
 			{Name: "notetracking", MinValue: 0, Default: 1, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "args", MinValue: 0, MaxValue: MaxSpawnArgs, CanSet: true, CanModulate: false},
+			{Name: "steal", MinValue: 0, Default: 0, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "instrument", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
 		},
 		StackUse: func(u *Unit) StackUse {

@@ -64,7 +64,7 @@ func TestSpawnRate(t *testing.T) {
 		{Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": 128}},
 		{Type: "noise", Parameters: sointu.ParamMap{"stereo": 0, "shape": 64, "gain": 128}},
 	}
-	synth := newSynth(t, spawnPatch(pre, sointu.ParamMap{"args": 2}, 1))
+	synth := newSynth(t, spawnPatch(pre, sointu.ParamMap{"args": 2, "steal": 1}, 1))
 	out := render(t, synth, 100)
 	if out[0][0] != 0 {
 		t.Fatalf("spawned before the spawner was triggered: %v", out[0])
@@ -270,10 +270,48 @@ func TestSpawnSync(t *testing.T) {
 		{Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": 128}},
 		{Type: "noise", Parameters: sointu.ParamMap{"stereo": 0, "shape": 64, "gain": 128}},
 	}
-	synth := newSynth(t, spawnPatch(pre, sointu.ParamMap{"mode": sointu.SpawnModeSync, "rate": 64, "args": 2}, 1))
+	synth := newSynth(t, spawnPatch(pre, sointu.ParamMap{"mode": sointu.SpawnModeSync, "rate": 64, "args": 2, "steal": 1}, 1))
 	synth.Trigger(0, 60)
 	frames := spawnFrames(render(t, synth, 50000), 0)
 	if len(frames) != 3 || frames[0] != 0 || frames[1] < 22049 || frames[1] > 22051 || frames[2] < 44099 || frames[2] > 44101 {
 		t.Errorf("spawned at frames %v, want 0, 22050 and 44100", frames)
+	}
+}
+
+func TestSpawnSkipsOrStealsHeldVoices(t *testing.T) {
+	// three held voices at 2048 spawns per second: without steal, the three
+	// first spawns keep their voices; with steal, the voices keep changing
+	pre := []sointu.Unit{
+		{Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": 128}},
+		{Type: "noise", Parameters: sointu.ParamMap{"stereo": 0, "shape": 64, "gain": 128}},
+	}
+	for _, steal := range []int{0, 1} {
+		synth := newSynth(t, spawnPatch(pre, sointu.ParamMap{"args": 2, "rate": 128, "steal": steal}, 3))
+		synth.Trigger(0, 60)
+		out := render(t, synth, 400)
+		changed := len(spawnFrames(out[100:], out[99][1])) > 0
+		if changed != (steal == 1) {
+			t.Errorf("steal %d: voices changed after all were held: %v", steal, changed)
+		}
+	}
+}
+
+func TestSpawnPrefersReleasedVoices(t *testing.T) {
+	// the target outputs its note; a voice held by a track is not taken
+	// while another one is free, even though it was spawned longer ago
+	// (never)
+	synth := newSynth(t, sointu.Patch{
+		{NumVoices: 1, Units: []sointu.Unit{{Type: "spawn", Parameters: sointu.ParamMap{"mode": sointu.SpawnModeRate, "rate": 0, "transpose": 64, "steal": 1, "args": 0, "instrument": 2}}}},
+		{NumVoices: 2, Units: []sointu.Unit{
+			{Type: "loadnote", Parameters: sointu.ParamMap{"stereo": 0}},
+			{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
+		}},
+	})
+	synth.Trigger(1, 48) // the first target voice, held by a track
+	synth.Trigger(0, 60) // the spawner
+	out := render(t, synth, 2)
+	// notes 48 and 60: (48/64-1) + (60/64-1)
+	if want := float32(48.0/64-1) + float32(60.0/64-1); out[1][0] != want {
+		t.Errorf("got %v, want %v: the held voice was taken", out[1][0], want)
 	}
 }

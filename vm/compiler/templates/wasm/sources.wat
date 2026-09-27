@@ -437,8 +437,8 @@
 ;;   Positions are in frames from the oldest valid frame of the buffer when
 ;;   the note was triggered. WRK[0] is the integer part of the position
 ;;   (signed), WRK[1] the fraction, WRK[2] the oldest valid frame at the
-;;   trigger, WRK[3] 1 once playback has started and WRK[4] 1 once the position
-;;   has been in the loop. Voices never triggered (note 0) are silent. Matches
+;;   trigger, WRK[3] 1 once playback has started, WRK[4] 1 once the position
+;;   has been in the loop and WRK[5] the filled length at the trigger. Voices never triggered (note 0) are silent. Matches
 ;;   bufread in vm/go_synth.go.
 ;;-------------------------------------------------------------------------------
 (func $su_op_bufread (param $stereo i32) (local $r i32) (local $h i32) (local $cap i32) (local $filled i32) (local $pos i32) (local $frac f32) (local $base i32) (local $next i32) (local $ls i32) (local $ll i32) (local $le i32) (local $fade i32) (local $inloop i32) (local $start i32) (local $g f32) (local $rel i32) (local $semitones f32) (local $whole f32)
@@ -460,6 +460,7 @@
     (local.set $inloop (i32.load offset=16 (global.get $WRK)))
     (if (i32.eqz (i32.load offset=12 (global.get $WRK))) (then
         (local.set $base (call $bufreadOldest (local.get $h)))
+        (i32.store offset=20 (global.get $WRK) (local.get $filled)) ;; for negative loop starts
         (local.set $start (i32.load offset=4 (local.get $r)))
         (if (i32.lt_s (local.get $start) (i32.const 0)) (then ;; from the newest frame
             (local.set $start (i32.add (local.get $start) (local.get $filled)))
@@ -470,7 +471,11 @@
     ))
     (local.set $next (i32.add (local.get $pos) (i32.const 1)))
     (if (i32.and (i32.load offset=24 (local.get $r)) (i32.const 2)) (then ;; loop
-        (local.set $ls (call $bufreadFrames (i32.load offset=8 (local.get $r)) (f32.load offset={{add 32 (mul 4 (.InputNumber "bufread" "loopstart"))}} (global.get $WRK)) (local.get $filled) (local.get $cap)))
+        (local.set $ls (i32.load offset=8 (local.get $r)))
+        (if (i32.lt_s (local.get $ls) (i32.const 0)) (then ;; from the newest frame at the trigger
+            (local.set $ls (i32.add (local.get $ls) (i32.load offset=20 (global.get $WRK))))
+        ))
+        (local.set $ls (call $bufreadFrames (local.get $ls) (f32.load offset={{add 32 (mul 4 (.InputNumber "bufread" "loopstart"))}} (global.get $WRK)) (local.get $filled) (local.get $cap)))
         (local.set $ll (call $bufreadFrames (i32.load offset=12 (local.get $r)) (f32.load offset={{add 32 (mul 4 (.InputNumber "bufread" "looplength"))}} (global.get $WRK)) (local.get $filled) (local.get $cap)))
         (local.set $le (i32.add (local.get $ls) (local.get $ll)))
         (local.set $fade (call $minu (call $minu (i32.load offset=16 (local.get $r)) (local.get $ls)) (local.get $ll)))

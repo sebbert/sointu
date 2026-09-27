@@ -816,7 +816,7 @@ func (b *bufferFrameParameter) Range(p *Parameter) RangeInclusive {
 	frames := p.m.bufferFrames(p.unit.Parameters["buffer"])
 	v := p.unit.Parameters[p.up.Name]
 	r := RangeInclusive{Min: 0, Max: max(frames, v, 1)}
-	if p.up.Name == "start" { // negative counts back from the end
+	if p.up.Name == "start" || p.up.Name == "loopstart" { // negative counts back from the end
 		r.Min = min(-frames, v)
 	}
 	return r

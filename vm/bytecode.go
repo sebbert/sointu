@@ -189,7 +189,8 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 			case "spawn":
 				// operands: first voice and number of voices of the target
 				// instrument, and flags: bit 0 = edge mode, bit 1 = note
-				// tracking, bits 2-4 = number of arguments, bit 5 = sync mode
+				// tracking, bits 2-4 = number of arguments, bit 5 = sync mode,
+				// bit 6 = steal held voices
 				first, count := 0, 0
 				if t := p["instrument"] - 1; t >= 0 && t < len(patch) {
 					first, count = patch.FirstVoiceForInstrument(t), patch[t].NumVoices
@@ -197,7 +198,7 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				args := min(max(p["args"], 0), sointu.MaxSpawnArgs)
 				b.op(opcode)
 				b.defOperands(unit)
-				flags := (p["notetracking"]&1)<<1 + args<<2
+				flags := (p["notetracking"]&1)<<1 + args<<2 + (p["steal"]&1)<<6
 				switch p["mode"] {
 				case sointu.SpawnModeEdge:
 					flags |= 1
@@ -415,8 +416,9 @@ func (b *bytecodeBuilder) getSampleIndex(unit sointu.Unit) int {
 func (b *bytecodeBuilder) getBufferRegionIndex(unit sointu.Unit) int {
 	p := unit.Parameters
 	r := BufferRegion{BufferID: uint32(p["buffer"]), Start: uint32(int32(p["start"])), EdgeFade: uint32(max(p["edgefade"], 0))}
+	// loop points as int32 too; a negative loop start counts from the end
 	if p["loop"] == 1 {
-		r.LoopStart, r.LoopLength, r.Fade = uint32(p["loopstart"]), uint32(p["looplength"]), uint32(p["fade"])
+		r.LoopStart, r.LoopLength, r.Fade = uint32(int32(p["loopstart"])), uint32(p["looplength"]), uint32(p["fade"])
 		r.Flags |= BufferRegionLoop
 	}
 	if unit.Type == "bufwrite" {

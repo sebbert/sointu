@@ -242,14 +242,16 @@ neither.
 `bufread` positions (`start`, `loopstart`, `looplength`) are in frames and can
 be modulated: a modulation of 1 shifts them by the length of the buffer.
 `start` is read when a note is triggered, so a `send` to it picks where each
-note starts; a negative `start` counts back from the end, or from the write
-head of a buffer being recorded. `fade` crossfades the end of the loop, and
+note starts; a negative `start` or `loopstart` counts back from the end, or
+from the write head of a buffer being recorded, when the note starts. `fade` crossfades the end of the loop, and
 `edgefade` fades out near the edges of the valid audio, e.g. the write head.
 `speed` multiplies the playback rate from -1 (backwards) to 1, and can be
 modulated.
 
 For granular synthesis and arpeggiators, the `spawn` unit triggers notes on the
-voices of another instrument, stealing the voice spawned longest ago. In
+voices of another instrument, taking the released voice spawned longest ago;
+when all are held, it skips the spawn, or with `steal` takes the one spawned
+longest ago. In
 `rate` mode it spawns at a (modulatable) rate while its own note is held, in
 `sync` mode likewise with the rate in spawns per beat, and in `edge` mode
 whenever its input rises above zero. Its `length` releases the
