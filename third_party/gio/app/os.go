@@ -157,6 +157,11 @@ type eventLoop struct {
 	frameAck chan struct{}
 	// delivering avoids re-entrant event delivery.
 	delivering bool
+	// destroyed is set when the DestroyEvent has been delivered. The client
+	// no longer receives events then, so delivering any would block forever,
+	// e.g. a wakeup queued on the main thread just before the window was
+	// destroyed.
+	destroyed bool
 }
 
 type frameEvent struct {
@@ -298,7 +303,7 @@ func (e *eventLoop) Run(f func()) {
 
 // FlushEvents delivers pending events to the client.
 func (e *eventLoop) FlushEvents() {
-	if e.delivering {
+	if e.delivering || e.destroyed {
 		return
 	}
 	e.delivering = true
@@ -324,8 +329,11 @@ func (e *eventLoop) deliverEvent(evt event.Event) {
 			e.win.ProcessFrame(frame, e.frameAck)
 		case e.events <- evt:
 			switch evt.(type) {
-			case flushEvent, DestroyEvent:
+			case DestroyEvent:
 				// DestroyEvents are not flushed.
+				e.destroyed = true
+				return
+			case flushEvent:
 				return
 			case FrameEvent:
 				frames = e.frames
