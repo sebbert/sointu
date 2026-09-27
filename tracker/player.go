@@ -533,18 +533,18 @@ func (p *Player) compileOrUpdateSynth() {
 type HostBPMMsg int
 
 // followHostTempo makes the song follow the tempo of the host, when the host
-// has one: the player changes tempo right away, and tells the model to change
-// the song.
+// has one and its tempo changes: the player changes tempo right away, and tells
+// the model to change the song. The sync goes one way only: the song's tempo
+// can still be edited, and it stays until the host's tempo changes again.
 func (p *Player) followHostTempo(context PlayerProcessContext) {
 	bpm, ok := context.BPM()
 	if !ok || bpm <= 0 {
 		return
 	}
 	b := min(max(int(math.Round(bpm)), 1), 999)
-	if b == p.song.BPM && b == p.hostBPM {
+	if b == p.hostBPM {
 		return
 	}
-	// also when e.g. a loaded song brought another tempo
 	p.hostBPM = b
 	if b != p.song.BPM {
 		p.song.BPM = b

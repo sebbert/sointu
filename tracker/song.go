@@ -37,9 +37,6 @@ type songBpm SongModel
 
 func (v *songBpm) Value() int { return v.d.Song.BPM }
 func (v *songBpm) SetValue(value int) bool {
-	if v.hostTempo {
-		return false // the song follows the tempo of the host, e.g. a DAW
-	}
 	defer (*Model)(v).change("BPMInt", SongChange, MinorChange)()
 	v.d.Song.BPM = value
 	return true

@@ -45,9 +45,6 @@ type (
 		derived derivedModelData
 
 		trackerHidden bool
-		// hostTempo is true when the song follows the tempo of the host, e.g.
-		// a DAW
-		hostTempo bool
 
 		prevUndoKind    string
 		undoSkipCounter int
@@ -385,7 +382,6 @@ func (m *Model) ProcessMsg(msg MsgToModel) {
 		m.d.Song.BPM = int(e.BPM + 0.5)
 		m.trackerHidden = false
 	case HostBPMMsg:
-		m.hostTempo = true
 		if int(e) != m.d.Song.BPM {
 			defer m.change("HostBPM", SongChange, MinorChange)()
 			m.d.Song.BPM = int(e)

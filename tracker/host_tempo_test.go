@@ -38,19 +38,19 @@ func TestSongFollowsHostTempo(t *testing.T) {
 	if p.song.BPM != 140 || m.d.Song.BPM != 140 {
 		t.Errorf("player %d, song %d, want 140", p.song.BPM, m.d.Song.BPM)
 	}
-	if m.Song().BPM().SetValue(100) || m.d.Song.BPM != 140 {
-		t.Error("BPM can be edited while following the host")
+	// the song's tempo can be edited, and stays until the host's tempo changes
+	if !m.Song().BPM().SetValue(100) {
+		t.Fatal("BPM cannot be edited while following the host")
 	}
-
-	// a song with another tempo follows the host too
-	func() {
-		defer m.change("Test", SongChange, MajorChange)()
-		m.d.Song.BPM = 90
-	}()
 	p.processMessages(hostContext{140})
 	p.Process(out, hostContext{140})
 	sync()
-	if p.song.BPM != 140 || m.d.Song.BPM != 140 {
-		t.Errorf("after loading: player %d, song %d, want 140", p.song.BPM, m.d.Song.BPM)
+	if p.song.BPM != 100 || m.d.Song.BPM != 100 {
+		t.Errorf("after editing: player %d, song %d, want 100", p.song.BPM, m.d.Song.BPM)
+	}
+	p.Process(out, hostContext{150})
+	sync()
+	if p.song.BPM != 150 || m.d.Song.BPM != 150 {
+		t.Errorf("after host change: player %d, song %d, want 150", p.song.BPM, m.d.Song.BPM)
 	}
 }
