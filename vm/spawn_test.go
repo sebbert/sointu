@@ -263,3 +263,17 @@ func TestWindowTakesSpawnLength(t *testing.T) {
 		t.Error("the window length did not override the note length")
 	}
 }
+
+func TestSpawnSync(t *testing.T) {
+	// at 120 BPM, rate 64 spawns once per beat, i.e. every 22050 frames
+	pre := []sointu.Unit{
+		{Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": 128}},
+		{Type: "noise", Parameters: sointu.ParamMap{"stereo": 0, "shape": 64, "gain": 128}},
+	}
+	synth := newSynth(t, spawnPatch(pre, sointu.ParamMap{"mode": sointu.SpawnModeSync, "rate": 64, "args": 2}, 1))
+	synth.Trigger(0, 60)
+	frames := spawnFrames(render(t, synth, 50000), 0)
+	if len(frames) != 3 || frames[0] != 0 || frames[1] < 22049 || frames[1] > 22051 || frames[2] < 44099 || frames[2] > 44101 {
+		t.Errorf("spawned at frames %v, want 0, 22050 and 44100", frames)
+	}
+}

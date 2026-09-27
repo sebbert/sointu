@@ -211,8 +211,8 @@
 ;;   SPAWN opcode: triggers notes on the voices of another instrument
 ;;-------------------------------------------------------------------------------
 ;;   Pops the input in edge mode, then the arguments. WRK[0] is the time until
-;;   the next spawn in rate mode, in periods, and WRK[1] the previous input in
-;;   edge mode. At offset 8, voices have the global time + 1 when they were
+;;   the next spawn in rate and sync modes, in frames, and WRK[1] the previous
+;;   input in edge mode. At offset 8, voices have the global time + 1 when they were
 ;;   last spawned, at offset 12 the global time when to release them (0 for
 ;;   never), at offset 16 the arguments and at offset 32 the length of the
 ;;   note in frames (0 for none). Matches spawn in
@@ -252,20 +252,28 @@
         (f32.store offset=4 (global.get $WRK) (local.get $in))
     )(else
         (if (local.get $held) (then
+            ;; counting down whole frames is exact, so spawns do not drift
             (if (f32.le (f32.load (global.get $WRK)) (f32.const 0)) (then
                 (local.set $fire (i32.const 1))
-                (f32.store (global.get $WRK) (f32.add (f32.load (global.get $WRK)) (f32.const 1)))
+                (f32.store (global.get $WRK) (f32.add
+                    (f32.load (global.get $WRK))
+                    (f32.div
+                        (f32.const 44100)
+                        (if (result f32) (i32.and (local.get $flags) (i32.const 32)) (then ;; sync: spawns per beat
+                            (f32.mul
+                                (call $pow2 (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spawn" "rate"}})) (f32.const 16)) (f32.const 8)))
+                                (f32.div (f32.const {{.Song.BPM}}) (f32.const 60))
+                            )
+                        )(else
+                            (call $pow2 (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spawn" "rate"}})) (f32.const 16)) (f32.const 5)))
+                        ))
+                    )
+                ))
             ))
-            (f32.store (global.get $WRK) (f32.sub
-                (f32.load (global.get $WRK))
-                (f32.div
-                    (call $pow2 (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spawn" "rate"}})) (f32.const 16)) (f32.const 5)))
-                    (f32.const 44100)
-                )
-            ))
+            (f32.store (global.get $WRK) (f32.sub (f32.load (global.get $WRK)) (f32.const 1)))
         ))
     ))
-    (local.set $i (i32.shr_u (local.get $flags) (i32.const 2))) ;; number of arguments
+    (local.set $i (i32.and (i32.shr_u (local.get $flags) (i32.const 2)) (i32.const 7))) ;; number of arguments
     (if (i32.and (local.get $fire) (i32.ne (local.get $count) (i32.const 0))) (then
         ;; take the voice spawned longest ago
         (local.set $target (local.get $first))

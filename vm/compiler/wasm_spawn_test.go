@@ -27,6 +27,7 @@ func TestSpawnWasmMatchesGoSynth(t *testing.T) {
 			{NumVoices: 1, Order: sointu.Order{0}, Patterns: []sointu.Pattern{{60, 1, 1, 1, 1, 1, 0, 1}}},
 			{NumVoices: 4, Order: sointu.Order{0}, Patterns: []sointu.Pattern{{1, 1, 1, 1, 1, 1, 1, 1}}}, // spawned only
 			{NumVoices: 1, Order: sointu.Order{0}, Patterns: []sointu.Pattern{{1, 1, 72, 1, 1, 1, 1, 0}}},
+			{NumVoices: 1, Order: sointu.Order{0}, Patterns: []sointu.Pattern{{1, 1, 1, 1, 48, 1, 1, 1}}},
 		}},
 		Patch: sointu.Patch{
 			{Name: "rate spawner", NumVoices: 1, Units: []sointu.Unit{
@@ -56,6 +57,10 @@ func TestSpawnWasmMatchesGoSynth(t *testing.T) {
 				{Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": 112}},
 				{Type: "noise", Parameters: sointu.ParamMap{"stereo": 0, "shape": 64, "gain": 128}},
 				{Type: "spawn", Parameters: sointu.ParamMap{"mode": sointu.SpawnModeEdge, "rate": 64, "transpose": 60, "notetracking": 0, "args": 1, "instrument": 2}},
+			}},
+			{Name: "sync spawner", NumVoices: 1, Units: []sointu.Unit{
+				{Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": 100}},
+				{Type: "spawn", Parameters: sointu.ParamMap{"mode": sointu.SpawnModeSync, "rate": 97, "transpose": 64, "length": 20, "notetracking": 1, "args": 1, "instrument": 2}},
 			}},
 		},
 	}

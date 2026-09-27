@@ -43,6 +43,10 @@ type (
 		// state in the voices.
 		BufreadUnits []BufreadUnit
 
+		// BPM is the tempo the bytecode was made for, e.g. for spawn units
+		// in sync mode.
+		BPM int
+
 		// PolyphonyBitmask is a rather peculiar bitmask used by Sointu VM to store
 		// the information about which voices use which instruments: bit MAXVOICES -
 		// n - 1 corresponds to voice n. If the bit 1, the next voice uses the same
@@ -185,7 +189,7 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 			case "spawn":
 				// operands: first voice and number of voices of the target
 				// instrument, and flags: bit 0 = edge mode, bit 1 = note
-				// tracking, bits 2-4 = number of arguments
+				// tracking, bits 2-4 = number of arguments, bit 5 = sync mode
 				first, count := 0, 0
 				if t := p["instrument"] - 1; t >= 0 && t < len(patch) {
 					first, count = patch.FirstVoiceForInstrument(t), patch[t].NumVoices
@@ -193,7 +197,14 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				args := min(max(p["args"], 0), sointu.MaxSpawnArgs)
 				b.op(opcode)
 				b.defOperands(unit)
-				b.operand(first, count, p["mode"]&1+(p["notetracking"]&1)<<1+args<<2)
+				flags := (p["notetracking"]&1)<<1 + args<<2
+				switch p["mode"] {
+				case sointu.SpawnModeEdge:
+					flags |= 1
+				case sointu.SpawnModeSync:
+					flags |= 32
+				}
+				b.operand(first, count, flags)
 			case "window":
 				b.op(opcode)
 				b.defOperands(unit)
@@ -297,7 +308,7 @@ func newBytecodeBuilder(patch sointu.Patch, bpm int) *bytecodeBuilder {
 		delayTimesU16[i] = uint16(d)
 	}
 	c := bytecodeBuilder{
-		Bytecode:        Bytecode{PolyphonyBitmask: polyphonyBitmask, NumVoices: uint32(patch.NumVoices()), DelayTimes: delayTimesU16},
+		Bytecode:        Bytecode{PolyphonyBitmask: polyphonyBitmask, NumVoices: uint32(patch.NumVoices()), DelayTimes: delayTimesU16, BPM: bpm},
 		sampleOffsetMap: map[SampleOffset]int{},
 		bufferRegionMap: map[BufferRegion]int{},
 		globalAddrs:     map[int]uint16{},

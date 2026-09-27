@@ -833,8 +833,8 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, r BufferRegion, transpose, d
 }
 
 // spawn implements the spawn unit. unit.state[0] is the time until the next
-// spawn in rate mode, in periods, and unit.state[1] the previous input in edge
-// mode. Matches $su_op_spawn in the wasm player.
+// spawn in rate and sync modes, in frames, and unit.state[1] the previous
+// input in edge mode. Matches $su_op_spawn in the wasm player.
 func (s *GoSynth) spawn(unit *unit, own *voice, first, count int, flags byte, rate, transpose, length float32, stack *[]float32) {
 	for i := first; i < first+count; i++ { // release the notes that have lasted their length
 		if v := &s.state.voices[i]; v.release != 0 && s.state.globalTime >= v.release {
@@ -850,14 +850,22 @@ func (s *GoSynth) spawn(unit *unit, own *voice, first, count int, flags byte, ra
 		fire = held && unit.state[1] <= 0 && in > 0
 		unit.state[1] = in
 	} else if held {
+		// counting down whole frames is exact, so spawns do not drift; the
+		// period is read at each spawn
 		if unit.state[0] <= 0 {
 			fire = true
-			unit.state[0] += 1
+			// computed like the wasm player, which uses JavaScript's Math.pow
+			var hz float32
+			if flags&32 != 0 { // sync: spawns per beat
+				hz = float32(float32(math.Pow(2, float64(float32(rate*16)-8))) * (float32(s.bytecode.BPM) / 60))
+			} else {
+				hz = float32(math.Pow(2, float64(float32(rate*16)-5)))
+			}
+			unit.state[0] += 44100 / hz
 		}
-		// computed like the wasm player, which uses JavaScript's Math.pow
-		unit.state[0] -= float32(math.Pow(2, float64(rate*16-5))) / 44100
+		unit.state[0] -= 1
 	}
-	nargs := int(flags >> 2)
+	nargs := int(flags>>2) & 7
 	l := len(*stack)
 	args := (*stack)[l-nargs:]
 	*stack = (*stack)[:l-nargs]

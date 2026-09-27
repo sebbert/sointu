@@ -250,8 +250,9 @@ modulated.
 
 For granular synthesis and arpeggiators, the `spawn` unit triggers notes on the
 voices of another instrument, stealing the voice spawned longest ago. In
-`rate` mode it spawns at a (modulatable) rate while its own note is held; in
-`edge` mode, whenever its input rises above zero. Its `length` releases the
+`rate` mode it spawns at a (modulatable) rate while its own note is held, in
+`sync` mode likewise with the rate in spawns per beat, and in `edge` mode
+whenever its input rises above zero. Its `length` releases the
 spawned notes after a while, and a `window` unit in the spawned instrument
 shapes each note with a smooth window of the same length, for click-free
 grains. It can pass up to four values

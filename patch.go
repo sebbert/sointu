@@ -445,8 +445,9 @@ var UnitTypes = map[string]UnitType{
 	"spawn": {
 		// spawn triggers notes on the voices of another instrument, taking
 		// the voice that was spawned longest ago. In rate mode, it spawns at
-		// the given rate while its own voice is held; in edge mode, when its
-		// input rises above zero while its own voice is held. The note is
+		// the given rate while its own voice is held; in sync mode likewise,
+		// but with the rate in spawns per beat; in edge mode, when its input
+		// rises above zero while its own voice is held. The note is
 		// transposed from the note of its own voice, or from C-4 without note
 		// tracking. The spawned note is released after length, unless it is
 		// 0, which holds it until the voice is taken. It pops args values from the stack (below the input in
@@ -454,7 +455,7 @@ var UnitTypes = map[string]UnitType{
 		// push them. instrument is the index of the instrument plus one; 0
 		// means none.
 		Params: []UnitParameter{
-			{Name: "mode", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc(spawnModeNames[:])},
+			{Name: "mode", MinValue: 0, MaxValue: 2, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc(spawnModeNames[:])},
 			{Name: "rate", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
 				return strconv.FormatFloat(SpawnRateHz(float64(v)/128), 'g', 3, 64), "Hz"
 			}},
@@ -471,7 +472,10 @@ var UnitTypes = map[string]UnitType{
 			{Name: "instrument", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
 		},
 		StackUse: func(u *Unit) StackUse {
-			n := u.Parameters["args"] + u.Parameters["mode"]
+			n := u.Parameters["args"]
+			if u.Parameters["mode"] == SpawnModeEdge {
+				n++ // the input
+			}
 			ret := StackUse{Inputs: make([][]int, n), Modifies: make([]bool, n)}
 			for i := range n {
 				ret.Inputs[i] = []int{0}
@@ -640,9 +644,10 @@ const MaxSpawnArgs = 4
 const (
 	SpawnModeRate = iota
 	SpawnModeEdge
+	SpawnModeSync
 )
 
-var spawnModeNames = [...]string{"rate", "edge"}
+var spawnModeNames = [...]string{"rate", "edge", "sync"}
 
 // Modes of the bufwrite unit.
 const (
@@ -655,6 +660,10 @@ var bufwriteModeNames = [...]string{"once", "ring"}
 // SpawnRateHz returns the rate of a spawn unit in Hz for its rate parameter
 // (with modulation) scaled to 0-1: 8 Hz at the middle, doubling every 8 steps.
 func SpawnRateHz(rate float64) float64 { return math.Pow(2, rate*16-5) }
+
+// SpawnsPerBeat returns the rate of a spawn unit in sync mode, in spawns per
+// beat: 1 at the middle, doubling every 8 steps.
+func SpawnsPerBeat(rate float64) float64 { return math.Pow(2, rate*16-8) }
 
 // LengthFrames returns the length in frames of a spawn or window unit for its
 // length parameter (with modulation) scaled to 0-1: 100 ms at the middle,

@@ -266,6 +266,7 @@ type (
 	reverbParameter      struct{}
 	bufferParameter      struct{}
 	spawnTargetParameter struct{}
+	spawnRateParameter   struct{ namedParameter }
 	bufferFrameParameter struct{ namedParameter }
 
 	ParamYieldFunc func(param Parameter) bool
@@ -792,6 +793,20 @@ func (b *spawnTargetParameter) RoundToGrid(p *Parameter, val int, up bool) int {
 func (b *spawnTargetParameter) Reset(p *Parameter) {
 	defer p.m.change("ResetSpawnTargetParameter", PatchChange, MinorChange)()
 	p.unit.Parameters["instrument"] = 0
+}
+
+// spawnRateParameter vtable: the rate of a spawn unit, shown in spawns per
+// beat in sync mode.
+
+func (b *spawnRateParameter) Hint(p *Parameter) ParameterHint {
+	if p.unit.Parameters["mode"] != sointu.SpawnModeSync {
+		return b.namedParameter.Hint(p)
+	}
+	perBeat := sointu.SpawnsPerBeat(float64(p.Value()) / 128)
+	if perBeat >= 1 {
+		return ParameterHint{fmt.Sprintf("%s per beat", strconv.FormatFloat(perBeat, 'g', 3, 64)), true}
+	}
+	return ParameterHint{fmt.Sprintf("every %s beats", strconv.FormatFloat(1/perBeat, 'g', 3, 64)), true}
 }
 
 // bufferFrameParameter vtable: a position in frames in the buffer played by a

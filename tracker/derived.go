@@ -141,6 +141,9 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 		if unit.Type == "spawn" && up.Name == "instrument" {
 			vtable = &spawnTargetParameter{}
 		}
+		if unit.Type == "spawn" && up.Name == "rate" {
+			vtable = &spawnRateParameter{}
+		}
 		if unit.Type == "bufwrite" && up.Name == "buffer" {
 			vtable = &bufferParameter{}
 		}
