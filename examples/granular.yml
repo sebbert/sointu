@@ -1,136 +1,179 @@
-# Granular synthesis: a melody is recorded continuously into a ring buffer,
-# and two streams of grains play it back:
-# - grains a: spawned at a steady rate from random positions, forwards,
-#   randomly panned
-# - grains b: spawned in sync with the tempo (16ths), backwards from just
-#   behind the write head
-# Bars 1-2: the melody fills the buffer. 3-6: grains a. 7-10: a and b.
-# 11-14: the streams at other pitches. 15-16: the melody stops and the
-# grains fade as the buffer fills with silence.
 bpm: 110
 rowsperbeat: 4
 score:
+    tracks:
+        - numvoices: 3
+          order: [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 2, 2]
+          patterns: [[60, 1, 0, 63, 1, 0, 67, 1, 70, 1, 0, 67, 1, 0, 63, 0], [58, 1, 0, 62, 1, 0, 65, 1, 69, 1, 0, 65, 1, 0, 62, 0], [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
+        - numvoices: 1
+          order: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+          patterns: [[60, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
+        - numvoices: 1
+          order: [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 3, 3, 2, 2, 2, 3]
+          patterns: [[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [60, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [55, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
+        - numvoices: 8
+          order: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+          patterns: [[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
+        - numvoices: 1
+          order: [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 1, 1, 1, 3]
+          patterns: [[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [60, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [67, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
+        - numvoices: 6
+          order: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+          patterns: [[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
     rowsperpattern: 16
     length: 16
-    tracks:
-        - numvoices: 1 # source: heard quietly and sent to the recorder
-          order: [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 2, 2]
-          patterns:
-            - [60, 1, 0, 63, 1, 0, 67, 1, 70, 1, 0, 67, 1, 0, 63, 0]
-            - [58, 1, 0, 62, 1, 0, 65, 1, 69, 1, 0, 65, 1, 0, 62, 0]
-            - [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-        - numvoices: 1 # recorder: retriggered every bar, so that playing can start anywhere; in ring mode, a new note does not clear the buffer
-          order: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-          patterns:
-            - [60, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-        - numvoices: 1 # spawner a: its note sets the pitch of grains a
-          order: [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 3, 3, 2, 2, 2, 3]
-          patterns:
-            - [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-            - [60, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-            - [55, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-            - [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-        - numvoices: 8 # grains a: only spawned, never played by the track
-          order: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-          patterns:
-            - [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-        - numvoices: 1 # spawner b
-          order: [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 1, 1, 1, 3]
-          patterns:
-            - [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-            - [60, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-            - [67, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-            - [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-        - numvoices: 6 # grains b
-          order: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-          patterns:
-            - [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-buffers:
-    - id: 1
-      name: ring
-      channels: 1
-      frames: 176400 # 4 s
 patch:
     - name: source
-      numvoices: 1
+      numvoices: 3
       units:
         - type: envelope
-          parameters: {attack: 16, decay: 70, gain: 128, release: 60, stereo: 0, sustain: 60}
+          id: 72
+          parameters: {attack: 27, decay: 70, gain: 128, release: 49, stereo: 0, sustain: 11}
         - type: oscillator
-          parameters: {color: 90, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 1, unison: 0}
+          id: 73
+          parameters: {color: 90, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 124, stereo: 0, transpose: 64, type: 1, unison: 0}
         - type: mulp
+          id: 74
           parameters: {stereo: 0}
-        - type: push
-          parameters: {stereo: 0}
-        - type: send
-          parameters: {amount: 128, port: 0, sendpop: 1, stereo: 0, target: 50, voice: 0}
+        - type: filter
+          id: 97
+          parameters: {frequency: 128, lowpass: 1, resonance: 99}
         - type: pan
+          id: 77
           parameters: {panning: 64, stereo: 0}
+        - type: delay
+          id: 98
+          parameters: {dry: 128, feedback: 117, notetracking: 0, pregain: 40, stereo: 1}
+          varargs: [1116, 1188, 1276, 1356, 1422, 1492, 1556, 1618, 1140, 1212, 1300, 1380, 1446, 1516, 1580, 1642]
+        - type: send
+          id: 76
+          parameters: {amount: 128, port: 0, sendpop: 0, stereo: 1, target: 50, voice: 0}
         - type: out
+          id: 78
           parameters: {gain: 24, stereo: 1}
     - name: recorder
       numvoices: 1
       units:
         - type: receive
           id: 50
-          parameters: {stereo: 0}
+          parameters: {stereo: 1}
         - type: bufwrite
-          parameters: {buffer: 1, feedback: 0, mode: 1, stereo: 0}
+          id: 79
+          parameters: {buffer: 1, feedback: 0, oneshot: 0, pop: 1, stereo: 1}
     - name: spawner a
       numvoices: 1
       units:
-        - type: noise # arg 0: position
+        - type: noise
+          id: 80
           parameters: {gain: 128, shape: 64, stereo: 0}
-        - type: noise # arg 1: panning
+        - type: noise
+          id: 81
           parameters: {gain: 128, shape: 64, stereo: 0}
-        - type: spawn # about 23 grains per second, 100 ms each
-          parameters: {args: 2, instrument: 4, length: 64, mode: 0, notetracking: 1, rate: 78, transpose: 64}
+        - type: spawn
+          id: 82
+          parameters: {args: 2, instrument: 4, length: 91, mode: 0, notetracking: 1, rate: 70, transpose: 64}
     - name: grains a
       numvoices: 8
       units:
-        - type: window # as long as the spawned note
+        - type: window
+          id: 83
           parameters: {length: 0, shape: 128}
         - type: arg
+          id: 84
           parameters: {index: 1}
-        - type: send # random panning
+        - type: send
+          id: 85
           parameters: {amount: 110, port: 0, sendpop: 1, stereo: 0, target: 61, voice: 0}
         - type: arg
+          id: 86
           parameters: {index: 0}
-        - type: send # random position, +-2 s from the middle of the buffer
+        - type: send
+          id: 87
           parameters: {amount: 96, port: 4, sendpop: 1, stereo: 0, target: 60, voice: 0}
         - type: bufread
           id: 60
-          parameters: {buffer: 1, detune: 64, edgefade: 0, fade: 0, gain: 128, loop: 0, loopstart: 0, looplength: 0, notetracking: 1, speed: 128, start: 88200, stereo: 0, transpose: 64}
+          parameters: {buffer: 1, detune: 64, edgefade: 35481, fade: 0, gain: 128, loop: 0, looplength: 0, loopstart: 0, notetracking: 1, speed: 128, start: 88200, stereo: 0, transpose: 64}
         - type: mulp
+          id: 88
           parameters: {stereo: 0}
         - type: pan
           id: 61
           parameters: {panning: 64, stereo: 0}
         - type: out
+          id: 89
           parameters: {gain: 64, stereo: 1}
     - name: spawner b
       numvoices: 1
       units:
-        - type: noise # arg 0: panning
+        - type: noise
+          id: 90
           parameters: {gain: 128, shape: 64, stereo: 0}
-        - type: spawn # every 16th, 70 ms each
-          parameters: {args: 1, instrument: 6, length: 60, mode: 2, notetracking: 1, rate: 80, transpose: 64}
+        - type: spawn
+          id: 91
+          parameters: {args: 1, instrument: 6, length: 71, mode: 2, notetracking: 1, rate: 94, transpose: 64}
     - name: grains b
       numvoices: 6
       units:
-        - type: window # as long as the spawned note, with short fades
+        - type: window
+          id: 92
           parameters: {length: 0, shape: 40}
         - type: arg
+          id: 93
           parameters: {index: 0}
-        - type: send # random panning
+        - type: send
+          id: 94
           parameters: {amount: 100, port: 0, sendpop: 1, stereo: 0, target: 71, voice: 0}
-        - type: bufread # backwards from 0.2 s behind the write head, faded near the edges of the recording
+        - type: bufread
           id: 70
-          parameters: {buffer: 1, detune: 64, edgefade: 2000, fade: 0, gain: 128, loop: 0, loopstart: 0, looplength: 0, notetracking: 1, speed: 0, start: -8820, stereo: 0, transpose: 64}
+          parameters: {buffer: 1, detune: 64, edgefade: 13366, fade: 0, gain: 128, loop: 0, looplength: 0, loopstart: 0, notetracking: 1, speed: 0, start: -8820, stereo: 0, transpose: 64}
         - type: mulp
+          id: 95
           parameters: {stereo: 0}
         - type: pan
           id: 71
           parameters: {panning: 64, stereo: 0}
         - type: out
+          id: 96
           parameters: {gain: 72, stereo: 1}
+buffers:
+    - id: 1
+      name: ring
+      channels: 2
+      frames: 176400
+    - id: 2
+      name: 'Woah #11'
+      channels: 1
+      sample:
+        filename: 'Woah #11.wav'
+        data: !ascii85 |-
+            ;Fs>Ir\+<P=$]kUAo2W4&-)\1!<<-#,$"[D7'$@g!WWc3F)>l4,QIfEzz-a<XO49,?]zzzzzA79RgXtThUp&Fmgq>^EnrVuirs8Vloq>^?lq#C0irVufqpAb0mrVuTkq>^EnrVuirq>^9jr;Z`qqu?WpqZ$Knrr;`mrVuirrVuirr;Z`qrVuirs8W)up\tEt\H%utYlMT?#lthBo)Yfn.0JE)a8;5$V#2M8,Pr\^"o26o9).*9,l=hA+8WDBM>N;/chiV"Hi[s_<<>5`0*-.rquft'l3'EU/-Xf563ehDAI?KbXU"M).1JQQW!lW6TFE=ZE!hd9A.1'tquqKO$j=uWXS7tQnFmCcaRfr7JFl\.1@=Jq=7(k2H0eMuC[db\*Uijq<;'>dB_d8YQiPA3.Kk5,71@cV?OB.,`<e@,B*;HC]a>G]":9Sfob/#S'b_`)2]2i@SK(lOh%Ol@3<b$3anRL_"SK_(h<mVsTC)45]A]RF[-9=3U$6^a,jb$e7.!8+o]uSPIK)2&ZLuQ6V"D@t7g,(fBbs_c_ARA7)'>gsV%t$bZkTVZ*?-pRZk`BS<#n(AUDQ!/IiuoW#o%R`Gk3TW]'@8tS`c!p8_R4a'>1'S,K>_b`6TIYe`/7E@Hhn)Q2nu4'+b-WJJ0:DN"_Hb2[m&,4;3,O\I[C3:`Uf%W?.BK_]iY:BdDmne2&[*F;g5R;$Z+W8GIH+I.5hI-J4p<7F$D-NQfPee&FDiFjW>-e`_;O"TPD"f`BV1>nI5Pm1L<Q`t^3AH5G'L.3:Gn#:n4ZPWS@rofCqje2PB&gF>W38.-%0*qWLtFkmDLX1jV'f=%B_%(r^ZZ,X2m.FPK[+8!;L/e%Cd/JYu1cO9sd^^k`(+;$IA3Xc0%]G<OKM]qC7\2Gg)Zq!SU9geD*`$EtTO9jn6j5(d-]$%t()R'gH"dl]jKWU*Ce][(.(?cq8oE2l@(a%'L7j5YfW#?BbapjmMc3amdSIWII]G1eqs")thg.=S*.nc^+GVRPa`!F?XaQqj=dD
+            q6Y@B.;1onj9G_karMrPEm6[.2WLC(Q7=:FY<^Ou$]#K-o.i$5'*@'F<b.LCufc'ccZo%6)cld5HDAqF62s<?K-fC&5C'J(I?49sF#U!L7Dc*1c#d+hNl_^?>+j>o_]M!&Jm_Ma5$<?SM@%+r>_><X,B!IfR_$E#@(JYU[sSM`mn&XYf/[eH;oA.H-!0jMg)]f9fp*b`JcnU9)n\cJ+-I!"HCYodd=-r'pQY!(X7M!?^8.VZ`%a*!%\n`sTX"&h$@0q*YfhiCStm9.6#1b3hLM?dL=>m&Sa'g57JI-)e5^0%*qiNrenf?RE3?c9WL>G!tFSeL[sARKjH+*W6WML&\@W^^B`Ol7#C^nM5>@`u'(!#Nq)t?HL=#?)mRe=."N5DR:G)Dr5O.Hj^*!N\5N<0h%L#a[#AN)C+#KScJfiiVs)]Nr@9'B+(7I%4#s@G9CH1"oNT-!8mIun%Y-g@\d5+orieWZHdaT\G+qg,oJ6^oea'<h`NhYQSd)<D\qaIPm`'TZkLRn*#5@q2(Z!_r$Y,S-2Q6PcJ$7f29RJ]9r<]4\t,P%TZd>o%/[:@mj$46D)W.j:d&5L0/N/DkS!FiDZXnXQ2UR^4V$j!;CVZ)V)b1nWWL-+$g!*"U"*VkVltE=ih2d?%D*\9p%TR;[2KW*fg`DUT3/3t[S\b8(EHWkWt]7UJbP>r)!M5!*s%l=V\M&X2!8ZL]@4j:n\4G/T>HT#ik[_$9BAJ9rVec#s"W=a$n][VIn`X5,:VLq#:E+[pDBM,'_e[1cNI8SPn#kPrn^8p#MDB%Vo?QR`OA[Xd(FqXn)_:V71"#Pj<<+oSKNtWR711:CH,rbKbqf6=WF.e?5;T!.M-VETb<1\8HQ@"Mr0uK)U8Jroq?/s=gVJXb2'nu\bCda59N'<!&<q$KK9o-Z7jujHn`2K_[(D_K'J6a`W6e[/IJHVbP)tCWRD:$456:Q]shUW:VP$%n)le-'b!5=[2-G)Q8X+K[5b!F%66L%.NPc,N=L(7$i$@e(&CT!r::`o5
+            3Z.t9YuM&T>e(OiOf-)WmOi-!VgmMhApM\YUY,TC.%G_,<blbOZpE:VD>n+K`M_^)?An'%fk&O4n&6ts2R:DPKA-e!j'_9,c6:8(u]&uO9],7;(@,F:,(U#bZfNc4ZN6lSLW_DT+TBQK_i^Z0E%.<quDWLVqte'9$M5*"k5-:Ks7bhX3,kR"oCOk_&1*+i<\rb8hpWD3*E[hV+<.,>W-OEGS>c5JGO0Z)#W4h<:$C,HHUf^rjkt5.^o2\BY(t(jm86=J/=gtaWRB+-8tNl%o^80J2Oqm2(m5qPm+ShAFDbN4nF[+FnN$+.bYolpWGh:Up/j\jM7A<P3KgWH3P0%RiQ;_XrrEWo1)nNO$6N*^,j%a!$.d<DtY4C:\cL4hrsah#L?Po4jB/2hRQFh4MT.pjnLD?a!8&;*#02(fd>6/[7qB4?8]SM68hR`KE3t'`UY/@7.`V>htT@n[*2@h7`_18=1"I,O3B08^&#n^nJDEPRirao?7:@b[76<G3&JT,?R7uIo_WY$0C[-P546#NhWTUF;Urq9$-6bpS@O?bREWM1@fosWV(%ZQ_&#QbN]8+SG?N*h3C.O9*[9GQGPo,:rSJ%B?eoDBD8phG3n9kH;8!sSO0H",1>9>5D\n?[AfJi&;BBU40h1;(KjDSiH9?=/Q7(2q!=$182!qEgOM[sLa5m*L+2rK4=gDDE/]B$jlh\O7V&qi=cj`_Z-m+=$b"#'1(KO[!?QfpiL]))a7J_l6BC/[\q;=-`eCD7Z<PbfGMm\)LXj]?"6k*!=X=&ZC2'@`37mkNnDcTn>#t4_LL+*9<jnCb%Id)^NN8WRHnBhQdR*+=#A$3D@<O,-DW;5TnXXiNWC^se^<Z^BV2FRdF>"Ku'__H*S!<cBbh:]9d6JaEb&+`'Re^HgkO/@c8:V<IMJ*sBJV'L=9*ZQ@5oG#S";+$UYheteaAiHq5FUh=Oo^_8,1Y,m^.,'[6;V4CgT?7;D&#Rm]S]ZEGJIZiS(GT)<l5@/TdO_Fa.pFB9BOnSN[lOj6
+            `q_:Nl.Wo)c/!'ckgZfc)pO8Qc_gQ126f*k#R1&M746IrPmR[34=S*0?<c6"i`?OH!@#2jqYlKCVW3Kd6e^MO?dZg2'u//-EjM%2go80*!TlEO2'EeW4:Y4!ar</g4%K!O*G)$E`A]_()\]4F;X^=KI.)";Mr62EhpVYD/$q15s05YJH0,23\/@1HD&IX9@3ifF\iP[@WD1f*gb+I)/Hh@)LZBuI)X9c[YNdOu2;XVC>e.&=2RWe87IFFkA1"`.i!Q"Xm1rqYbXR7pen*$!I4qN:SHbhZn`Zb42=:))n)jZ(XjOSq&@a3oe?Zp2\`</[+WE]f\e24^W?F#L;+^4e,\gO_g+jin/.qjZdI+R+c/PS]_Vf"[E7YiNI_s%.afi(j[-0U\m3>pY`<d[kaUMu"RO0:Kc<-T7/N&V,b5t]/Drb-jr9q>`7G\d,1r^WKj0A]n"iKu^7I!MP#:;)S_&B6]e.S&eM(0T5?Vdjs?Sk\&bR(oMJ)icY,4qo.eEdM&p=PeO9spLsb//8T.JDj7I34UmZ5J$2<$dn^=?QX`^K]Se:ak0.*;/IR-/PT]L$4HTMqh=cda:7p8Zt@[rP:\]eI!$3o,I?4X:%<2E[L]E:f*ugSOj\Tl5[A?Wph_+2W70`60(Ys*nLtM*m1t+>Ho-PP/pAd?P)TIaW9aWb6qPnALGnk6!aCp'h0AjT`lD/c03C7fBgrO&*2j/W8Err.F:Asc+(R,.,b=1OrlG4_]iq1+;_U5Te7$L$X52gJ4DRC3<djs,hkB9d,OlXhq&7`4i_$A^og_BJ&'%X(&Kg+:Fn%Ih^+a=2(9h*4@n=5!*SkUBcb(tX7Xj"^"ZoIMV#\oYLK2qfZh=J5I+:u%F\/Fr!fqP7iOl3iYm:m/1lrH[8.<6'Mqds+#B?'Gl1"rUuQ=SSE@B:hp<dkVRX[H:S]):RErkAm0KX&SduPMocO\r*^]p62eJgaq_Vb#lN^G`9'kd$<S[T*S'agOq8sJnA\(L:gU!X"T^ck/E>W$mK`k`kTc38
+            H)a_tS>Zi.:"",W0@eF<q;XA/haREd&bh;F.6+FG,HaGlXlf:e<KbFh78/I.!F;ukZ!AmkK6s)TP.n+P7cPI)m&bdmK>OW['Q/t!VnB5+M6`_f:ZF_^CS+h^JeJS2rcjW&RAgch*ePM6&?pYAT#o(M[]BTa`+6C)ug$*#->2=/G,/4Yn5IW&e7I.2[5SF#.eI%`TNuD7J?So;_F@TIuJN/'-=q&mN6gP9I`pDUK4lqFQRF,Qbfs[`]s1jWM7/N&UKbH`^>7L0@i@-$?&RF-sa@=E'eIO_9#ONQ&HLf>G^Y`hW[*5MdOhPtVXNtnAMs<h8<"gMiFU9,tlP-??2_e2s2af5W%4YU(*tGIQm/<+Ip&(0LdHKEDV9pg1ZFcI=@acskAbM>g$NGMOBF&Pn#q(3aG=5.g\2.)7r>G5.YOcr/D=q!#5j+BiiS)],f?-t=Qg+8FPS$2(Hm'.:[h-1i9d62aoK.CS'cg]l)ZUoHFlLg,Mr>B5r98RlH0>Ik7Fh+P&]1Hl^ZoA:=<>C%.1E`kX;",J2`!E\ks1IhboaV'J`NrYJ(S5kNT7_4#2t`t0?O40--Qn\H1s<&q&Dm[XY`0gaW2oQPTWLK1-tV(#Wq]$T)]G_n^=_qLuWmBJ(t=]'$dVod^-$\.EK!`7g[Qcg+'Z_ngiBNkrhg31fE"/k"otY:Eq_"(?6FgX5#;_.,0!sc-FhT/[ON?e[-@BB^>Hm:_'-2CD'J_,U`4;gH`VM3_R:RSi&_^ap`[cn)!?`jkPXG@F]GIfZEHjFg.aIJ&J_T2$41';&ueU;B0d0PWDl@?!g3,X?Qt9Xp]4@md$,,?0<*[s3tK$0>qA4Dn8-MhpA=UZKlH70H@/9jW)MckTfpSc9*UUVcjO)QSmb=T),SQ5j:/lJEA]BUWoXN40SLW4f^*R,NoF4m0`Cq3tcfW5UYkSTh&ft[8p'sJ3@BglN49S/*Q]oT^2(+mb'257'[N(,--(2jQ/,oFUaHD2$ZGUFVc)EYW10,<),SCD)K-Y?4f<lc0<
+            I<eaR2?%-hloOk.jpqQXe=[Dt>o:^CVKRMDA"\-knFPp1-/S6#&]K1[1=PSKnejlbjr6Lp*!Dr,<Z]>>Mm8?6R9.FBj4`:ZP)'GInbSIJ:..im4kHp/!1=[F/ih_%qD'_E.,IeJ!_AG+:61#^-s6F_'::U6_CqXW5@T*ku3)@0R_W?HmKO@eJ5r_NS]h_,QX+na[OMWg5il0"r$rRh>!2o(9WhRB*)/G!*PeIfh5mLF(K(EPR_3],_ZD*4%;%4VT*H3T?!Y40j22>Bo<kj1=le(%128$hlq%FH3b^&^G%hYt1fP7=u<<%No!YZ`>KFtc>rX8))KK(S=$V!Ol=(uAuRD8O9$n[kC<:uX5%r<T#8m2oUL&/&RkJ/l3LXZk9/?UYGXh%BbbC$9R(s8'M-nFAU'W7UFP"gQ.S1!<)SC'&A^h[FT6L(FM-K-E]>.7VZT[ln.Obn`V=r8'<iL$cnRlLMOQ^Z1s6?,DQ2r5^JS?NUEC<>%M'`sWt)Nun0JD`SRn4>)I8QQ<.;8bR;mkj/3;Jb4-O;<,(;QH@(WVR9jQ&`j]+3"=s\/I^nS6li3S:cLs>'2t>hE&?c%W!CQ5Z0HH$6L=1&OPad!3P4pb@^RE0HhYAc>o-HU1_4F8)]`iC1,!u7hD4UF%iH#mXSuSn@ckGi$hB&Bp#iaAHIXgh't@G`VW!X:g((M&'F[qHS.SgAE@>Zd/47N=@3oIsgA?Qb*oN+DL[AsEK]e3OC"2IhN5F;oXm\jj;&egE73$:_`?6'Mml&lgZpajJ741_N,8.EZZ/bB-]\38>WnKbh-.$kT35!)>fZV8%eIJo)!?1>?V&H]kV)X6%-!`E6/O`/V\I)@-+6PlYp[_)DRbqo,eAB24*jI-*D9p;_rUZ9Y_%pMs!>,\Q9c7Of`AK>@Ueg2AngabOZ0tQJ7I"X[amjfCFk]X5-+#h8?aSJ6Q1]A.$P%UoV%&%on0A`*&kqt$bYV>%Ijb1+%e)=/0AH`nr90L*Vq6jK8[K;7H*:r*4mn760GaU%`=
+            "%)nK;[$3'gnFrBPH[!\E"I0+%%7rT#s!<U*ZJ!T)P]^rN[eAZPg9.a@5EK`_)X[g6"?4r"VVp,>-4c"%i%>=W$O,8*uMK^Mq:jn9/NOPbN2c*fL/6E\SPZK0m;'aC`Pq%s>Q2BH0Rh(We4O%>d*8M^&jbngKU.H)</+7UoVQ1T[q']5t1YHu6Z:"KjM/I<L,"TiB8J-Pc`q'9uC3_ueL4?Bbp^_K*3Q0Kdbjm`-6Y2l/,;9HAUM5oR>WQN9GM#.>^M$nb92$igkFXC!DQ9eJ2M^oMeXW$^3V<gh:YNp9#p$js*5NH#%A^;(0hoLE0;$,AbFrR7k=:F[3i#46qOZQ`>]gfOaGS+fl7I)2`rq#ID?0@%$*71Osi3F?58^f6ZRJl"Imh<>L(DP(2l6AG@Ou)Jf"ZkHmcm+M\WUctD"Q*)@JF0c.^#=%_VnhQ$34'IL3;&.8RhLGf*=H'_ZlPAZjYs53r(inPM(efHYQ.b_m+=2S?K>;F^X.8GM75pTn?!/9pZNS*<?$W2.2:SPp`SfS#sd6D>ZA'tehQ_>edQZl^$.NCM=cAkK^-e>[*B,heYS%u_o,sHNrj&.L("^sS-L\^Hm]=jf3F&>o1LAWcNtZ`\EUj#<:1L]o\(S7B>.Z[h7"`T"m,%Crs)UF9dE:PclL(OJh%-Zq_A[=j=[8Wi>GYq_rb^k!pdPn^%D*c9&\dSA@`qk]Z*_4?N[,3k6NmHiWq4Vp*\`XYY>g03_.gZ5U4edcgWmZnaMD(<TdE<X3f_<)mSe46+hKs(&6&^NtCR^d0FY*0I4%`hab^YrAFTs,nUgp?1K<*S`UXN)!ZJ*eCZA$4icg"ah+t-[-uKG4q]mm5nADToH!NPEBEhi[9.EBMD0u)h#D]hhst"JM=YHFg=tE-PJATX>fB=o/c,AMj:NIGbmP+"E$Npb?TX'4&O:Up=<Vc"lhHn,_Vfe+.e60t[bgu1`P=OD<4tTJf^q`FZl=f?_%,?/\e[=P?8JuW:IJPEh]>c.qtQlB("G.p`T3!>h
+            qbWfl,$K,Ff\TPVU`*MR1rjKqAW*Aob^^VOYrY$?Wc_m*BK?.f+6F)L#D1M!oSmq,2WXV`6)i(JZEpp`P+1f\Gi$/!>J`MN>DO@%5ppLKNZ&p<DAE,?P\b$A`d7[amHn.A`*sJ"NJ-^,d&]/[F0KgOSG+HjV6ejH4d:s:F8"W<C<*H:dst5eL%.):%T^njm98Flga)tL"_=,B"F\>!4^A)H1]5[:Bo&HIfiRZ\0;#2j@*'K##UsZbV`]P\H]&)(A9EYc1oiS"l,!Y6aq6<9WMO<CZe:h\.%7'49^HGQ5^Yo2+=]KFAO8FE@3menH<^q:>n+k!U,$qMql.uJB*kbkd'Tc7b"%%*"'b"#7Z(baUK:22_0AG[T*r6a"qiV.0tk*+n:'SD">.$[,?tu?-ZKf)SNi!n'LXf`V24s%hmY,kR:E,M'=Q*ha((79hV'<gEWC"2ttDfSc4`F/*j1kFjRe9Wj+7c!6sTgAGQZ:)$s"B2[dPB\1G<U^e;[:gGA=IH6>B]NqZZCDX.)biTE;V44*iBKt5U;4hJ\`1%jK/8IOkh_ues-Yo4o:`]YJ?H:`]HCF.II4p6]6'`6M]h>,[j^#E8JMT0eLa0p$.o\c51_YlUui;"Pm%1D8>^bYs]pIGQOhCUB,`>%P7JbMA*+8Y<ljlQNu?.$X/N50AVQ/u?F9*,,(5n0q"Ns2]s]bn[4oIsB%JKuBY]G77G"S,R^^A8iLK(l_@GiEPcYJ1gfpsX$KMu\M98d?jGB`VcWN$)[c#!qE>f/HJR;AtMt=mZ(IL[+j(d,efnf[R.I'YcE<Hd9LnaTB!a)]IcU[2/NWc7<-Y!C51$Qnh&SD]PenblsC&)s.Oh?fqXT2<)%$n^I-LqnDjFA`!ge3sO%FX;#1QfaTDLKd^e"pdRP9;)Ibf#o(JVa6=l=#k:FK-/a1&/^+4.8%/lC[+C*"S,)=U.i+m!D]FKVTIU.$WB2[n\MC?C3AX&GquK7Q)W]H1Gj/o)$fE>\,K"Z6&\hK!NpVMu+:&\j[gNNW
+            UEM9@co2;")FI^fG:[5LOqE3<s6@Ph[dSq6khS;Q^s!P0FhA.'0B)-e`;k,lBb)?ondgd#4!l70)`]H(7ji3ul5.\H[-[YGXkd7DV;tM/LXl^QA%KXa)7r2diU]JBYS3??VA#dA#pd;>CH[>C^IdoWdOj8qf`K+Thqk3ho&_7["lND8$I%&1*3bjC\_&"rBa<?-`>J4W8IR$aJg2^'&kX?@7mLW@'HihG4mWsOhXcEi4R+Z_2V[K<1qXX8*6Ck3L%E4i*?jetYoYY872so,^G7B,nj9B8ngE9,EqCI,][==G?g+KQPiUZVXj%m$qn#YL>41)LiZ.M@4=_m'3?ESq'/Ao>O%(!M>qYRga:,3?n(_d3^"jRhPib-gN8.7R28/[m9#]N@kk<a;$QDk^P8#;[/L8%_n34T]>u'`R1H+_Hh#\GS_UrVXSDShO@FJN(5e1^2%B?#1eC9BD4Tpl_^Du>RC`jNGJMXMnH:HLM5:nQ3m1Qo*4m'?6"liD;%bebJ;U0O*MnV^"P1=+,h!kOGrXG/4Yol@S6R1hI,WFsNq)Sg:].TBte.g.*G3eb]h!4e&\E(T^U!VT4'>#[2WS7RH0)uLkjVCQ0M&u^JLGjQFc:M20D`(*44W)ZMX6N.1O59ou\)Dtl0@IqbD8`g!.*_\IL%19(_$q;%!$+cO`>tX%rA\FYD+/e-dNU^k$kR+Nh<>I,L"efKNo!%TXjh".LrTJ2IEE,W_=#PIbn[?+:a-u"F<!1dD)&Ubm6[C&W$F26_u2OV;;3DR#3:'hmG%Tj:!f?M@E<35C[%5\3<QAu<@$0AV]1R4s!!^Yb;'_cP9ckC,8KhQC%V#Xh:`\#_Voe#$/]mX9[CDgV7uKGdcX0u57Mu^e0RU,AfR-^p+Q)!;F.WLX<nZ"ndDGl,j1QM.biJ3p>VRtD:UtsZ,Q:Pn';'s8c$jDKHK/&5q*fu[3Jj/G<73@KgVjnBGrT7Rf17n\DhVf#il`dh<@8cMV2pp/^1EH0BLdY#Q_^K>o,C=9,djLMBGV
+            FjYZrm2(%2tqA"\oScOlD+6R"g!8bEE?eX)^Dq.b6Y01e0/`0@pV>PoL5o((UIimYlqBu(lPVX.4gaV>+hA_Fg6io@:($)^\e)XWlhr,m>=kjbAcd3-S]]c]po)D2j\fMM0jr`%o!%.@gE%>*?G96YuZk`$8o_3LlGMP:8GN7'23oU%naOi&lf@AR4D<gc_[JC[GcPHm45pKJQ.3f6N![to/h]1\rfbiubK*-/aC#OQs"l2r3XQ/-p?eI-Y:W9H[lf*WkD#p7@66W$HMAYmtCE3:#3&#J3#;(KO9-(\RNqrP>f'4RJQg_NSW9P2WeBobc0?;u%D<NnKmJS=?)B&8ir#-"_T-\S5QSaUUL*pdY<>c8X-j3NGfCE)5mctJL($0#^H.<n^'%$j9F6G7I3r28N";bqq>nq)cC)5JF?n,hCT-t!eJJf(5iWZgd3:L;DD=<&?A`0N?f$O`Ho?p(bmc#n]?1.[fPmN*\.j'0YJ/cBN4"9DC/1VJf]dqVYJ/DGoq=LfT[,oKjQ0%;lakR$IXiC[b"4!Xs2sWp2Je>F2=;k0OZOi!30dBsT[k0Wf1a1<c49mb7`T!NI.-4n%jm/#k9\pB0=3!nS2:sMDQ1"nNpB"n;BG^dcGn&aF\KB?PW&&!A,V^>l-m$;4\bR$4rUOmt*Uckh?JO,YouST*W7ar.7-t-M_>efj+!.g:+X$h+jX&G2'/Vd(RjM5Z>8X=KXT>[#)tFa3P3D,oD!QN5mGULd`R<2dfAgT2NV*M\SeQAcSJ$hk#T$Yc0dclRV(VZm[isN?[f=M=Y34U"d,PMujljV?@b:t6D9G)gOPFL4Re)(4/J^>j,p>8d9G`7"fHZA/q_$MC1)0QkDYSqL.c^3]VWFE8MXOX3&EC.R,1s*PqVc#MD=4IucNGm7;AmLfc3grlF<Kp")`7pYfI%1OJ/-$-^A8$*.daP*&a;pOQf1*^7G,-!e^UPT`9`QVFSqR;.iZGEXV$X-`u4UkPU$VfXX',Lp_CIQ_?*I,^%1FVAFZqrZ1<
+            tGam?IrFPU6]b3!L&IHumf\I%:2,SVL/70WVu8Jha`>r*WW"Y7P<d2&>X=8O*5\aren6h`D/?gI:B>1uX$X52Cg\*;<2<<1V[U_T^9%feWgKa=duCb7J$/LZ/f$5<@CMYjXPC\Y42MY_r"Aag#d]%)5R4O+Dgs5/([mH%157/3ARrVml=0FtuBh(IYDcn-(Y?QZ]rn.Lcdh>QU7[.grshWk^8:>gWTV:Gh*4Q.mGLsfSa.I@E@"VYr!H6;#`2'=V()`,;ejYlloY;<^5.M>)P-iB,#+7rA'1\:M)le!6*,gLMUHH_c'Y1RIJqsd,X=:>TJXV#+c'f*QkO[JIpNAe."oc1%6mI;gs^$\/LLZ%.F"4-)GhnU,S[b=1.+lD#2mcGV`o*3__bp<68[4JpJNBDPK%QOhUnh_F<4<45.<<?.nZ03@cT%"(qp!N`af$S`q:#>'gh;+^ds7[uPO!hn)mkT5=h(-#n69>00ZoDYUhCAF:?iGiI4l;:Oe^<(!He7r>%EcH%KZ<6)PhZ]-=mkGO9b?2-"u6K:#U6`)%6923D+(3Z(FIrPIK,Z$L#mC7:#T40("*6.PJnHR`OTU!En>p*L$UP`:A`-=r>4ZHgG>`_I50,/831H9k8[A5G7%ITmJTQK@dV.tH/Ug=?.Fe]P1pT-7,t*/m.aBTM>7VW5ls=]f,:J3]chS1F9^;+PSE'h0,'N_h$`NEWU."T`T]>Q*rb4$ZM`SM4R>K#:[4PAJ,\[7CB/DT9ERurr"70i=;c<#*?Lat+X7=0HOe"&5QJ(^h=SDVZ2<AM4n.1mV<dU:V=KoLmK]?o=pd^qEpO:t2<J?6o(Gl]r<l[<>7=I6AH1B`[/gF7_@3"MVA(*^<X3[KS-9r<>Quqjr!FnT-2("!N91?'?f#)GBB5cQ*V:HL7K.<0,R3349b'<$#o7n&&JVG\+:HC"^C(M\L^PsB^&AK9(%DLn@HcS7QgJnU-/%8*3n.m#$LKA@*s[l<k7X*q)]?R7@354cY9U_/<@C$R]G:APd/
+            Q#sHL2I7-1H3K?g.aS.GLTE"OCH+MW3O^*W%l#m0hGUk7iUfh&nX*UasJ8kU="geK4o2ndks5[0M`hQ0J&%Gi<Mnn'Z=-"l#L#L=e`Gi8X\"AG,Zr5n.0@`@0(ci@[DH3?tC>3>j+_Ii8M,(_P1"'DlS9jm.ciJap\G?fBDcqq0fX+k28!Cuk`iNrQTpjUY$&U*/)3n03*+g+Qbb+X]u+8f<p.<"*sS>lo3Rp&tWt;=^"=dcIpn*8.jXI,c[5U=LsE)V!R!AEs<q>7iD,!$;pr()ieWN<nqX,n\oI3>n_61DFC)>Pa!@^Z>ma\EMB-AEphj4QK;mQI>ZZ1>kCf>62qUc4ksM\eu2#BcZF_+"2=]?RgRW9.>64MAsqUKaad_ebpK[`:&]LaP9/8);N9e4P#eJFP?u\h<f7UAHFFqe/[!^qBI:7M^KAf:F+1/R3=((D'!='f*'Y!g?<D,$J7f)?JrfX4kb27LXQCORF0pG[-:rmOoo;,g`(hh+!aZ2qC\Hr1,9%i*ANd.MBIclrsN`E&+kG?+7%,2n(bM+:"*Cp;UIARgtBEpL>G&X=nku$(DZrq<A?Qm8h[Fu]dUQ;58q'R(aH+#>n/q#TD3'^"Q2,p!8j1"TA<B");S<PGiWl%*8EF0Y31&uNVS23=V[MI^_\(-:`@Frh&9$)"WA^+Ih?W.Z46F6,m=bVn+ZhP)Y5r_8+rMDYON(o^$S,E7GU;icfe*mW;%Y>`<VG0\ck5'9bT6!D&Eg$N>QpT^C8!`(&f<LrUo:J5l)2lX9!GF$McRK<UCXe^Yk[>RbnY7aQ/`Qc0m7Z49?r=*>&DmV'!AmWubRgD'.XX*[9,U^DG**<=-&5(&/%.\GFbPMY8CgE:6rlIbTt:[,#$K*U?l"nb`h#*t3Z09bMjmnfW6(,UaZ`3@eAbgaLu$!#$FZpAnt(Xma6p:$Um$$Jo@LT%\YD.+(0)Rb'=U3UhLp_[)#/Fq?eJobAkndMXe[3Zf@ae/E]R#orFJ70s;'Pl?U99D!T'&b.11\
+            _Wq3p"!BrA^VRN0]+PIRIcF;XU&AJ7i*Zp4<?F$W>=;'O;*`hZk@KtV&D9,#7ATT8HA>Y!r/>_nb\FA0C1@NTA";;4kMFAc/##PC[,3r%K*"+Kb&PFh&%+P4Wk%XXt/BY=Wl95PnrQo4UL`d)[kO.o`#L"n+j-\_=Y8.XRQ8Sa5,Y&0%FsunE'?.<:ZFN*W!SNcNjI^*uf&D*AG2^0J$QV0,n4)AGK6r[IRMk*UhhSKCgP[1uq'Z+5EgMp"A`c?eokabiFfI0CXGfR05)MnJ3>oFsrV)h^\:LQR`(fFtFdaoGmW<*=!&S"o9nFq=X:P\+?9X8`OOA1"Lj%rmb?4e`m>1D>QR!.Ke'$[0ZF;4W.TJ9I%1rOWZ%i,T67l72%lq]aYhgV$%2&[J$]o#k4nYJ)r9GF61U#1Y=S=f\[V/q<jmPJHN(Z9F#kP^CaKZ^CoB=<ZJ(YJ/b("OVkhC#7*U$64.Q5L&_2Q\,aYHdHq)!NT)JDT@=P'[Fs-i,j-NC^%fJD`rj'_?k3bZX:SJLPoUbe<?nt"i@&Xgb7q;kQO1V:kl4ZWCA*8NRHX.r+5QhNMV;FgACiNkFl^U-7.*kA*V_l#h$W3W9cVh-HQFm]1`;Mqru\ElKdOn]@MA\M;$kYMq"n4qjT=WB\Fp[14mqRle'j0$+4W7&ET!DNQ1&#Q8H/r#LCS&4;]&%G*umW_G79!-`s-qq56Z$2YR2B^B+Mc_0**'kr:\A)JFZV13q+'M%c&Sfm+ftG6KRIt>4[@B2Zh21/eXB`";qC`9,pnN>T_cIh'<OQ_\E.bU([tHrs"qq2[#uV<VA*9h!NMMS_3\`"OJjR38D@+Mr>]>2=-b(N<]t5pEWHZ66P)/`&E<>j["DN,pQt8h$)C3W!H`:8,r\c-gk6tQ.WOp&^_iL*RnuXFO1-7m+#;&@J1*/&-hh<0cF%9ga4p1O=srm1+(*c.3E@GXVYLW9`\Stlh4<LnF@Uob4J-gFQA>=(#Xu*YMIIZdbZkAjls_S<rJs"(C9I=rYLD4
+            K-J)U_]WD,)ACI,AIKFd2$Y#r(Am1rl2iU-g#n(bI0ZDDna)V'3o],XMX1]HC]'=]m+T53AGP$jJJ=FbQO:P.jU&%/g`sKP>nh/iE#B?6Yp27K@27l:OUNN:(&RCm_<enoJ)7!]($*?iQINq'CYr.W..6it/aX8>fC5s<liI;!-l!g?fG2aKD]'T8oc!lQ2'=Iie.s2A,n1^mWVZnrrq"_-&*O;\=5nqjo\1DCNoad8hWah(9)5RhC]tgc712m%7MoJT;'O[:(F-O;XWUjg-Q<(&1_De[L((0eh"uZqqs]4,II`Zog[3q[Ph\:P$/KR[LurL>&b1,;#kpCX<s&C+":bMJ<>]0`CDlg_e/ITmboIN9p(6m)D$Hp9<VA?Jf)AA<T'[6WAF*ReYN=m(NSb6)lJe;rZ0uB#8c0k52$*[]W"0:Qe/Yh;AK1pkjV3Uf>o1m'k7;_E!Y0bj!!gFC5QVAqh"aJ35OoWY/*<\eF5`)=a6'PeET^'^7It0eQ2UF[-4H4P0G=X*R2-bX!YnTImh:s#)\VcN8-^aQS-F*;\cS<'h>]P22>'Z9cLS[:rTTp9\`W)=-1&23V"QtJNVqQ48-gaTq@;Tu1_SUW]+P\gdL_*Daq&b+is,,Wkl>8mV>65K(]*RoeF^`O?1]]>*V#3ZV!`X!B^mPC')*^MlMp>SNs.TO#RbDV*Y'b4M@OS6NsSej7g(4B^Ao#I?i"U8`;.+@KD4d.e+lu=V>?h_]`)@<AGZi46Ma%GQ2;-j&,niphZ+2gJH=F(B)p*UHinp%H3->4?3#BS7g%oV#m5k_-j(UqUBI@rap*A#9EZF=Z2mGrK)`C[)Z8Xl%f5;^FSH:?"o>V%QMH.0K)OF&QN0/MB`i2TM?S/-XU";$]aM7VHjZVTXU*/UF9Fr5M#uuCAcBREKDVkJiV-%>B_;i.K_N:WC&7/mn,-nu!WQR//d&9[*sSnQ8-T2$JHbfO,mBA6,m?[>.0KGJ2ZUu!:&[T\+T="l.K&Q0fD?$SHMUY<!;fdoGl;4
+            QPQ.'O[/aM5joDLarW-"#U]OBpFTJHAp&E/6.0,2)H2p).2#qe"Q2k+h.f_a5?N<@l7K?Eg"9;0rQ2]eASc.sS0)eB?L&RS@6iJqAjSj,uV>i+IX8q;]$NW?jEWO>a-N[u`N<76(r;uEhW<1?GquEPn70(U4FT4N(^&AH>K`)tj#5p1Q/,`3@q>J//$3+T:'*+O&*<EJI'`pK!DZ[*DV#lVXJ-%h7\,ebod/[MR-33H5AcFdj63$WWQ2XY[2Z='_(]IG6NrJ\M8,lThNW7`4%00?-aoMA?jT+0<h>kLpVuWUnT)aoPFoXZ*s8VQfb5\%4SH#trYQ)$1l2USZbl>'Mci;\ugAf.la8aEaWW-f78H2ckJcD_Ljo65!(]Y'H&c`pP(B>HU-3-1/=TE"5:B3ue7K>@I3<37`CB/#J>Q@P"*<>4$aT&pQ\,W9(OoKS(AH,U.7K66bC]ASXL&\4RdJqJkh>dHR(B?Jr9)rW*D#eb[GQ;CW>6%M#9)rN'I/nEj<<,Jg3WKcms8W-!rr;Bcf`/\cNW4/$AcGj3C]AqbMuTIM])ThNec4h4#65VA1]U&HAH7,YO8t.<OoUaIPQ6C;I/nZqB`L^)-NFk]qu>RRdf7&]QiE!DFoQC[DuXbUErU:^MZ97I])ULap&><u.0)L29`SH!@K:6FEr^OeHN8$cC&h6656)u0%KQP/mf22EjT!j3^]1_ATDtJ^Q2caAPlIT[X8fR,`W+3_h>cg@"TTJA.KD+%2?5B1.KD+%-ib^s,lf+h-NGFm+92oP"T\T&s8Vrqr;Z]pq>]a[ci;)d`W*jUb5]`dec42"g&L"1h>ca>m/QbYq>Um(('#$K)ZUTQ(]YNU*<7/]*rm;])uprY(]Y6M%0-k<"T\T&s8VurmJlJOh>c@3irA*>jT"6>huDU6j8\?Cnc/@`qu6g"$ig_:'`\pJ'EB!N'`]!L'`\sK'`\[C&HECC%KHq<"TSc-"T\T&p](*is8W#srVu6al2U5Pkl:)NlMpARnc/.Zkl:;Tnc/
+            .ZqZ$No!WWT.$igP5#lk21%0-k<$igb;'EA[E%0-_8s8N6&p](3ls8Vrqrr;ipq>^*emJlhYo`+7Wnc/1[qu?<gq#Bmaq>^Hos8N?)$ip>-s8N<("oo&3"TSf.$NLG4"T\T&s8N3%s8W-!rVuotrVuirq>^!bnGi:`nGi:`p](*ip&FFZp&FFZmJl_Vnc/Rfq>^Kps8W&ts8W-!"9AK%$31A4#lt#*!W`9#s8W-!s8N?)s8W-!s8W-!rr;uts8VurqZ$6gp&F^bp&G!jp&FjfrVuotrVulss8N6&"TSi/$NL
+        preset: Opus 24k
+encodingpresets:
+    - name: Passthrough
+    - name: Opus 24k
+      format: ogg
+      args: ['-c:a', libopus, '-b:a', 24k, -fflags, +bitexact, '-metadata:s:a:0', encoder=]
+    - name: Opus 32k
+      format: ogg
+      args: ['-c:a', libopus, '-b:a', 32k, -fflags, +bitexact, '-metadata:s:a:0', encoder=]
+    - name: Opus 64k
+      format: ogg
+      args: ['-c:a', libopus, '-b:a', 64k, -fflags, +bitexact, '-metadata:s:a:0', encoder=]
+    - name: Opus 96k
+      format: ogg
+      args: ['-c:a', libopus, '-b:a', 96k, -fflags, +bitexact, '-metadata:s:a:0', encoder=]
