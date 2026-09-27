@@ -1,0 +1,90 @@
+bpm: 110
+rowsperbeat: 4
+score:
+    rowsperpattern: 16
+    length: 8
+    tracks:
+        - numvoices: 1 # source: a melody, heard quietly and sent to the recorder
+          order: [0, 0, 1, 1, 0, 0, 1, 2]
+          patterns:
+            - [60, 1, 0, 63, 1, 0, 67, 1, 70, 1, 0, 67, 1, 0, 63, 0]
+            - [58, 1, 0, 62, 1, 0, 65, 1, 69, 1, 0, 65, 1, 0, 62, 0]
+            - [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        - numvoices: 1 # recorder: retriggered every bar, so that playing can start anywhere; in ring mode, a new note does not clear the buffer
+          order: [0, 0, 0, 0, 0, 0, 0, 0]
+          patterns:
+            - [60, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        - numvoices: 1 # spawner: its note sets the pitch of the grains
+          order: [0, 1, 1, 1, 2, 2, 1, 3]
+          patterns:
+            - [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+            - [60, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+            - [67, 1, 1, 1, 1, 1, 1, 1, 55, 1, 1, 1, 1, 1, 1, 1]
+            - [60, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1]
+        - numvoices: 8 # grains: only spawned, never played by the track
+          order: [0, 0, 0, 0, 0, 0, 0, 0]
+          patterns:
+            - [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+buffers:
+    - id: 1
+      name: ring
+      channels: 1
+      frames: 88200
+patch:
+    - name: source
+      numvoices: 1
+      units:
+        - type: envelope
+          parameters: {attack: 16, decay: 70, gain: 128, release: 60, stereo: 0, sustain: 60}
+        - type: oscillator
+          parameters: {color: 90, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 1, unison: 0}
+        - type: mulp
+          parameters: {stereo: 0}
+        - type: push
+          parameters: {stereo: 0}
+        - type: send
+          parameters: {amount: 128, port: 0, sendpop: 1, stereo: 0, target: 50, voice: 0}
+        - type: pan
+          parameters: {panning: 64, stereo: 0}
+        - type: out
+          parameters: {gain: 24, stereo: 1}
+    - name: recorder
+      numvoices: 1
+      units:
+        - type: receive
+          id: 50
+          parameters: {stereo: 0}
+        - type: bufwrite
+          parameters: {buffer: 1, feedback: 0, mode: 1, stereo: 0}
+    - name: spawner
+      numvoices: 1
+      units:
+        - type: noise # arg 0: position
+          parameters: {gain: 128, shape: 64, stereo: 0}
+        - type: noise # arg 1: panning
+          parameters: {gain: 128, shape: 64, stereo: 0}
+        - type: spawn
+          parameters: {args: 2, instrument: 4, mode: 0, notetracking: 1, rate: 78, transpose: 64}
+    - name: grains
+      numvoices: 8
+      units:
+        - type: envelope
+          parameters: {attack: 44, decay: 58, gain: 128, release: 58, stereo: 0, sustain: 0}
+        - type: arg
+          parameters: {index: 1}
+        - type: send
+          parameters: {amount: 110, port: 0, sendpop: 1, stereo: 0, target: 61, voice: 0}
+        - type: arg
+          parameters: {index: 0}
+        - type: send
+          parameters: {amount: 96, port: 3, sendpop: 1, stereo: 0, target: 60, voice: 0}
+        - type: bufread
+          id: 60
+          parameters: {buffer: 1, detune: 64, fade: 0, gain: 128, loop: 0, loopstart: 0, looplength: 0, notetracking: 1, start: 44100, stereo: 0, transpose: 64}
+        - type: mulp
+          parameters: {stereo: 0}
+        - type: pan
+          id: 61
+          parameters: {panning: 64, stereo: 0}
+        - type: out
+          parameters: {gain: 64, stereo: 1}
