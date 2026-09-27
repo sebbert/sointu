@@ -48,6 +48,7 @@ type (
 		props        *layout.List
 		info         *widget.Selectable
 		waveform     *Plot
+		waveformOf   int // the index of the buffer drawn, to reset the view when it changes
 	}
 )
 
@@ -332,10 +333,9 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 	return Surface{Height: 3, Focus: tr.PatchPanel.TreeFocused(gtx)}.Layout(gtx, f)
 }
 
-// layoutWaveform draws the audio of the selected buffer. Valid frames are
-// drawn in the channel colors, the rest dimmed, and the write head of a
-// writable buffer as the cursor. Scrolling zooms, dragging pans and the
-// secondary button resets the view.
+// layoutWaveform draws the audio of the selected buffer, fitted to its peak.
+// Valid frames are drawn in the channel colors, the rest dimmed, and the write
+// head of a writable buffer as the cursor.
 func (ib *InstrumentBuffers) layoutWaveform(gtx C) D {
 	tr := TrackerFromContext(gtx)
 	audio, head, filled := tr.Buffer().Waveform()
@@ -387,10 +387,21 @@ func (ib *InstrumentBuffers) layoutWaveform(gtx C) D {
 		}
 	}
 	yticks := func(r plotRange, count int, yield func(pos float32, label string)) {
-		yield(-1, "")
 		yield(0, "")
-		yield(1, "")
 	}
+	if sel := tr.Buffer().List().Selected(); sel != ib.waveformOf {
+		ib.waveformOf = sel
+		ib.waveform.Reset()
+	}
+	// fit the height to the peak; long buffers are sampled
+	peak := float32(0)
+	for i := 0; i < len(audio.Data); i += max(len(audio.Data)/50000, 1) {
+		peak = max(peak, float32(math.Abs(float64(audio.Data[i]))))
+	}
+	if peak <= 1e-4 {
+		peak = 1
+	}
+	ib.waveform.SetYRange(plotRange{-peak * 1.05, peak * 1.05})
 	cursor := float32(math.NaN())
 	if audio.Writable && frames > 0 {
 		cursor = float32(head) / float32(frames)

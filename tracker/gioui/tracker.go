@@ -178,6 +178,10 @@ func (t *Tracker) Main() {
 					}
 					acks <- struct{}{}
 					break F // this window is done, we need to create a new one
+				case app.ConfigEvent:
+					if !e.Config.Focused {
+						t.plotZoomModifier = false // Alt is not released in another window
+					}
 				case app.FrameEvent:
 					if titlePath != t.filePathString.Value() || changedSinceSave != t.Song().ChangedSinceSave() {
 						titlePath = t.filePathString.Value()

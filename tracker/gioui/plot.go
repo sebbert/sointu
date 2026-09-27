@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"time"
 
 	"gioui.org/f32"
 	"gioui.org/io/event"
@@ -25,6 +26,10 @@ type (
 		dragging       bool
 		dragId         pointer.ID
 		dragStartPoint f32.Point
+		fixedY         bool // the y range cannot be zoomed
+		hovered        bool
+		lastPressTime  time.Duration
+		lastPressPos   f32.Point
 	}
 
 	PlotStyle struct {
@@ -91,6 +96,17 @@ func (p *Plot) Layout(gtx C, data PlotDataFunc, xticks, yticks PlotTickFunc, cur
 		fillRect(gtx, clip.Rect{Min: image.Pt(csx, 0), Max: image.Pt(csx+1, s.Y)})
 	}
 
+	// how to use it, while hovered
+	if p.hovered {
+		hint := "alt+scroll: zoom · drag: pan · double-click: reset"
+		if !p.fixedY {
+			hint = "alt+scroll: zoom · drag: pan · alt+drag: zoom y · double-click: reset"
+		}
+		stack := op.Offset(image.Pt(gtx.Dp(2), s.Y-gtx.Dp(16))).Push(gtx.Ops)
+		Label(t.Theme, &t.Theme.Plot.Ticks, hint).Layout(gtx)
+		stack.Pop()
+	}
+
 	// draw curves
 	for chn := range numchns {
 		paint.ColorOp{Color: style.CurveColors[chn]}.Add(gtx.Ops)
@@ -152,75 +168,114 @@ func (o *Plot) clamp() {
 	o.xOffset = min(max(o.xOffset, min(lo, hi)), max(lo, hi))
 }
 
+// zoomPerPx is how much scrolling by a pixel zooms, as a change of the log
+// scale; maxZoomPerEvent limits it for coarse mouse wheels.
+const (
+	zoomPerPx        = 0.004
+	maxZoomPerEvent  = 0.3
+	doubleClickTime  = 400 * time.Millisecond
+	doubleClickSlopP = 8 // how far apart, in pixels, the clicks of a double click can be
+)
+
+// Reset shows the original ranges again.
+func (o *Plot) Reset() { o.xScale, o.xOffset, o.yScale = 0, 0, 0 }
+
+// SetYRange sets the y range, which the user then cannot zoom.
+func (o *Plot) SetYRange(r plotRange) {
+	o.origYlim, o.yScale, o.fixedY = r, 0, true
+}
+
+// zoomX zooms the x range by the log scale delta, keeping the point at the
+// screen position px in place.
+func (o *Plot) zoomX(delta float32, px float32, width int) {
+	x1 := o.xlim().fromRelative(plotPx(width).fromScreenF32(px))
+	o.xScale = min(max(o.xScale+delta, minXScale), 0)
+	x2 := o.xlim().fromRelative(plotPx(width).fromScreenF32(px))
+	o.xOffset += x1 - x2
+}
+
 func (o *Plot) update(gtx C) {
 	defer o.clamp()
 	t := TrackerFromContext(gtx)
 	s := gtx.Constraints.Max
 	for {
-		// Plots are in scrolled lists, so scrolling zooms only with Alt held
-		// (Cmd/Ctrl+scroll zooms the whole UI), and only as far as it can;
-		// otherwise the list scrolls. Which handler gets a scroll is decided
-		// before the event, so the tracker follows Alt from key and pointer
-		// events.
-		var scroll pointer.ScrollRange
-		if t.plotZoomModifier && o.xScale > minXScale {
-			scroll.Min = -1e6 // zoom in
+		// Plots are in vertically scrolled lists, so vertical scrolling zooms
+		// only with Alt held (Cmd/Ctrl+scroll zooms the whole UI); otherwise
+		// the list scrolls. Which handler gets a scroll is decided before
+		// the event, so the tracker follows Alt from key and pointer events.
+		// Horizontal scrolling pans, when zoomed in.
+		var scrollX, scrollY pointer.ScrollRange
+		if t.plotZoomModifier {
+			scrollY = pointer.ScrollRange{Min: -1e6, Max: 1e6}
 		}
-		if t.plotZoomModifier && o.xScale < 0 {
-			scroll.Max = 1e6 // zoom out
+		if o.xScale < 0 {
+			scrollX = pointer.ScrollRange{Min: -1e6, Max: 1e6}
 		}
 		ev, ok := gtx.Event(pointer.Filter{
 			Target:  o,
 			Kinds:   pointer.Scroll | pointer.Press | pointer.Drag | pointer.Release | pointer.Cancel | pointer.Move | pointer.Enter | pointer.Leave,
-			ScrollY: scroll,
+			ScrollX: scrollX,
+			ScrollY: scrollY,
 		})
 		if !ok {
 			break
 		}
-		if e, ok := ev.(pointer.Event); ok {
-			if e.Kind != pointer.Leave {
-				t.plotZoomModifier = e.Modifiers.Contain(key.ModAlt)
+		e, ok := ev.(pointer.Event)
+		if !ok {
+			continue
+		}
+		alt := e.Modifiers.Contain(key.ModAlt)
+		switch e.Kind {
+		case pointer.Enter, pointer.Move:
+			o.hovered = true
+			t.plotZoomModifier = alt
+		case pointer.Leave:
+			o.hovered = false
+		case pointer.Scroll:
+			t.plotZoomModifier = alt
+			if e.Scroll.X != 0 && o.xScale < 0 {
+				xl := o.xlim()
+				o.xOffset += e.Scroll.X / float32(max(s.X, 1)) * (xl.b - xl.a)
 			}
-			switch e.Kind {
-			case pointer.Scroll:
-				if !t.plotZoomModifier {
-					break // Alt was released without the tracker noticing
-				}
-				x1 := o.xlim().fromRelative(plotPx(s.X).fromScreenF32(e.Position.X))
-				o.xScale += float32(min(max(-1, int(e.Scroll.Y)), 1)) * 0.1
-				o.xScale = min(max(o.xScale, minXScale), 0) // before keeping the point under the pointer
-				x2 := o.xlim().fromRelative(plotPx(s.X).fromScreenF32(e.Position.X))
-				o.xOffset += x1 - x2
-			case pointer.Press:
-				if e.Buttons&pointer.ButtonSecondary != 0 {
-					o.xOffset = 0
-					o.xScale = 0
-					o.yScale = 0
-				}
-				if e.Buttons&pointer.ButtonPrimary != 0 {
-					o.dragging = true
-					o.dragId = e.PointerID
-					o.dragStartPoint = e.Position
-				}
-			case pointer.Drag:
-				if e.Buttons&pointer.ButtonPrimary != 0 && o.dragging && e.PointerID == o.dragId {
-					x1 := o.xlim().fromRelative(plotPx(s.X).fromScreenF32(o.dragStartPoint.X))
-					x2 := o.xlim().fromRelative(plotPx(s.X).fromScreenF32(e.Position.X))
-					o.xOffset += x1 - x2
-
-					num := o.ylim().fromRelative(plotPx(s.Y).fromScreenF32(e.Position.Y))
-					den := o.ylim().fromRelative(plotPx(s.Y).fromScreenF32(o.dragStartPoint.Y))
-					num -= o.fixedYLevel
-					den -= o.fixedYLevel
-					if l := math.Abs(float64(num / den)); l > 1e-3 && l < 1e3 {
-						o.yScale -= float32(math.Log(l))
-						o.yScale = min(max(o.yScale, -1e3), 1e3)
-					}
-					o.dragStartPoint = e.Position
-				}
-			case pointer.Release | pointer.Cancel:
-				o.dragging = false
+			if e.Scroll.Y != 0 && alt {
+				o.zoomX(min(max(e.Scroll.Y*zoomPerPx, -maxZoomPerEvent), maxZoomPerEvent), e.Position.X, s.X)
 			}
+		case pointer.Press:
+			if e.Buttons&pointer.ButtonSecondary != 0 {
+				o.Reset()
+			}
+			if e.Buttons&pointer.ButtonPrimary != 0 {
+				d := e.Position.Sub(o.lastPressPos)
+				if e.Time-o.lastPressTime < doubleClickTime && d.X*d.X+d.Y*d.Y < doubleClickSlopP*doubleClickSlopP {
+					o.Reset()
+					o.lastPressTime = 0
+					break
+				}
+				o.lastPressTime, o.lastPressPos = e.Time, e.Position
+				o.dragging = true
+				o.dragId = e.PointerID
+				o.dragStartPoint = e.Position
+			}
+		case pointer.Drag:
+			if e.Buttons&pointer.ButtonPrimary == 0 || !o.dragging || e.PointerID != o.dragId {
+				break
+			}
+			// dragging pans; with Alt, dragging vertically zooms the y range
+			x1 := o.xlim().fromRelative(plotPx(s.X).fromScreenF32(o.dragStartPoint.X))
+			x2 := o.xlim().fromRelative(plotPx(s.X).fromScreenF32(e.Position.X))
+			o.xOffset += x1 - x2
+			if alt && !o.fixedY {
+				num := o.ylim().fromRelative(plotPx(s.Y).fromScreenF32(e.Position.Y))
+				den := o.ylim().fromRelative(plotPx(s.Y).fromScreenF32(o.dragStartPoint.Y))
+				num -= o.fixedYLevel
+				den -= o.fixedYLevel
+				if l := math.Abs(float64(num / den)); l > 1e-3 && l < 1e3 {
+					o.yScale -= float32(math.Log(l))
+				}
+			}
+			o.dragStartPoint = e.Position
+		case pointer.Release, pointer.Cancel:
+			o.dragging = false
 		}
 	}
 }
