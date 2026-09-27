@@ -7,6 +7,7 @@ import (
 
 	"gioui.org/f32"
 	"gioui.org/io/event"
+	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -153,28 +154,38 @@ func (o *Plot) clamp() {
 
 func (o *Plot) update(gtx C) {
 	defer o.clamp()
+	t := TrackerFromContext(gtx)
 	s := gtx.Constraints.Max
 	for {
-		// only take the scrolling that can still zoom, so that e.g. a list
-		// containing the plot scrolls when the plot cannot zoom further
+		// Plots are in scrolled lists, so scrolling zooms only with Alt held
+		// (Cmd/Ctrl+scroll zooms the whole UI), and only as far as it can;
+		// otherwise the list scrolls. Which handler gets a scroll is decided
+		// before the event, so the tracker follows Alt from key and pointer
+		// events.
 		var scroll pointer.ScrollRange
-		if o.xScale > minXScale {
+		if t.plotZoomModifier && o.xScale > minXScale {
 			scroll.Min = -1e6 // zoom in
 		}
-		if o.xScale < 0 {
+		if t.plotZoomModifier && o.xScale < 0 {
 			scroll.Max = 1e6 // zoom out
 		}
 		ev, ok := gtx.Event(pointer.Filter{
 			Target:  o,
-			Kinds:   pointer.Scroll | pointer.Press | pointer.Drag | pointer.Release | pointer.Cancel,
+			Kinds:   pointer.Scroll | pointer.Press | pointer.Drag | pointer.Release | pointer.Cancel | pointer.Move | pointer.Enter | pointer.Leave,
 			ScrollY: scroll,
 		})
 		if !ok {
 			break
 		}
 		if e, ok := ev.(pointer.Event); ok {
+			if e.Kind != pointer.Leave {
+				t.plotZoomModifier = e.Modifiers.Contain(key.ModAlt)
+			}
 			switch e.Kind {
 			case pointer.Scroll:
+				if !t.plotZoomModifier {
+					break // Alt was released without the tracker noticing
+				}
 				x1 := o.xlim().fromRelative(plotPx(s.X).fromScreenF32(e.Position.X))
 				o.xScale += float32(min(max(-1, int(e.Scroll.Y)), 1)) * 0.1
 				o.xScale = min(max(o.xScale, minXScale), 0) // before keeping the point under the pointer

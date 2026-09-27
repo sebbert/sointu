@@ -43,6 +43,9 @@ type (
 		// textFocused is set during a frame by a focused text editor, so that
 		// key presses meant as text do not trigger key bindings, e.g. notes
 		textFocused bool
+		// plotZoomModifier is true while Alt is held, which makes scrolling
+		// over plots zoom them
+		plotZoomModifier bool
 
 		DialogState *DialogState
 
@@ -274,6 +277,9 @@ func (t *Tracker) Layout(gtx layout.Context) {
 				}
 			}
 		case key.Event:
+			if e.Name == key.NameAlt {
+				t.plotZoomModifier = e.State == key.Press
+			}
 			t.KeyEvent(e, gtx)
 		case transfer.DataEvent:
 			t.Song().Read(e.Open())
