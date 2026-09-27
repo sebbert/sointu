@@ -105,3 +105,32 @@ func TestSpawnTargetParameter(t *testing.T) {
 		t.Errorf("got choices %q", names)
 	}
 }
+
+func TestUnitsWithoutIDsGetIDsQuietly(t *testing.T) {
+	broker := NewBroker()
+	m := NewModel(broker, []sointu.Synther{vm.GoSynther{}}, NullMIDIContext{}, "")
+	defer m.Close()
+	func() {
+		defer m.change("Test", SongChange, MajorChange)()
+		m.d.Song.Patch = sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{
+			{Type: "loadnote", Parameters: sointu.ParamMap{}},
+			{ID: 5, Type: "loadnote", Parameters: sointu.ParamMap{}},
+			{Type: "loadnote", Parameters: sointu.ParamMap{}},
+		}}}
+	}()
+	seen := map[int]bool{}
+	for _, u := range m.d.Song.Patch[0].Units {
+		if u.ID == 0 || seen[u.ID] {
+			t.Errorf("unit IDs not fixed: %v", m.d.Song.Patch[0].Units)
+		}
+		seen[u.ID] = true
+	}
+	if m.d.Song.Patch[0].Units[1].ID != 5 {
+		t.Error("an existing ID was changed")
+	}
+	for _, a := range m.alerts {
+		if a.Name == "IDCollision" {
+			t.Error("warned about units without IDs")
+		}
+	}
+}

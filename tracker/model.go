@@ -490,15 +490,20 @@ func rewriteSendTargets(units []sointu.Unit, rewrites map[int]int) {
 
 func (m *Model) fixIDCollisions() {
 	// loop over all instruments and units and check if two units have the same
-	// ID. If so, give the later units new IDs.
+	// ID. If so, give the later units new IDs. Units without an ID (0), e.g.
+	// in hand-written songs, get one too, without a warning.
 	usedIDs := map[int]bool{}
-	needsFix := false
+	needsFix, collided := false, false
 	maxID := 0
 	for i, instr := range m.d.Song.Patch {
 		for j, unit := range instr.Units {
+			if unit.ID == 0 {
+				needsFix = true
+				continue
+			}
 			if usedIDs[unit.ID] {
 				m.d.Song.Patch[i].Units[j].ID = 0
-				needsFix = true
+				needsFix, collided = true, true
 			}
 			if unit.ID > maxID {
 				maxID = unit.ID
@@ -507,7 +512,9 @@ func (m *Model) fixIDCollisions() {
 		}
 	}
 	if needsFix {
-		m.Alerts().AddNamed("IDCollision", "Some units had duplicate IDs, they were fixed", Error)
+		if collided {
+			m.Alerts().AddNamed("IDCollision", "Some units had duplicate IDs, they were fixed", Error)
+		}
 		for i, instr := range m.d.Song.Patch {
 			for j, unit := range instr.Units {
 				if unit.ID == 0 {
