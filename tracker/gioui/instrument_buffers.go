@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"math"
+	"strconv"
 
 	"gioui.org/layout"
 	"gioui.org/op/clip"
@@ -45,6 +47,7 @@ type (
 		argsEditor   *DraftEditor
 		props        *layout.List
 		info         *widget.Selectable
+		waveform     *Plot
 	}
 )
 
@@ -74,6 +77,7 @@ func NewInstrumentBuffers(m *tracker.Model) *InstrumentBuffers {
 		argsEditor:   NewDraftEditor(text.Start),
 		props:        &layout.List{Axis: layout.Vertical},
 		info:         new(widget.Selectable),
+		waveform:     NewPlot(plotRange{0, 1}, plotRange{-1, 1}, 0),
 	}
 }
 
@@ -265,6 +269,7 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 				},
 				nil,
 				info,
+				ib.layoutWaveform,
 			)
 		} else {
 			lines = append(common, nil,
@@ -297,6 +302,7 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 				presetBtns,
 				nil,
 				info,
+				ib.layoutWaveform,
 			)
 		}
 		return ib.props.Layout(gtx, len(lines), func(gtx C, i int) D {
@@ -324,6 +330,76 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 		return D{Size: m}
 	}
 	return Surface{Height: 3, Focus: tr.PatchPanel.TreeFocused(gtx)}.Layout(gtx, f)
+}
+
+// layoutWaveform draws the audio of the selected buffer. Valid frames are
+// drawn in the channel colors, the rest dimmed, and the write head of a
+// writable buffer as the cursor. Scrolling zooms, dragging pans and the
+// secondary button resets the view.
+func (ib *InstrumentBuffers) layoutWaveform(gtx C) D {
+	tr := TrackerFromContext(gtx)
+	audio, head, filled := tr.Buffer().Waveform()
+	frames := audio.Frames()
+	oldest := 0
+	if frames > 0 {
+		oldest = ((head-filled)%frames + frames) % frames
+	}
+	valid := func(f int) bool { return (f-oldest+frames)%frames < filled }
+	data := func(chn int, xr plotRange) (plotRange, bool) {
+		if frames == 0 || (chn == 1 && audio.Channels < 2) {
+			return plotRange{}, false
+		}
+		f1 := max(int(xr.a*float32(frames)), 0)
+		f2 := min(int(xr.b*float32(frames)), frames-1)
+		if f1 > f2 {
+			return plotRange{}, false
+		}
+		c1, c2 := chn, chn // channel 2 is the invalid frames of all channels
+		if chn == 2 {
+			c1, c2 = 0, audio.Channels-1
+		}
+		lo, hi, found := float32(math.Inf(1)), float32(math.Inf(-1)), false
+		step := max((f2-f1)/500, 1) // sample long ranges
+		for f := f1; f <= f2; f += step {
+			if valid(f) == (chn == 2) {
+				continue
+			}
+			for c := c1; c <= c2; c++ {
+				v := audio.Data[f*audio.Channels+c]
+				lo, hi, found = min(lo, v), max(hi, v), true
+			}
+		}
+		return plotRange{-hi, -lo}, found
+	}
+	seconds := float32(frames) / 44100
+	xticks := func(r plotRange, count int, yield func(pos float32, label string)) {
+		if seconds <= 0 || count <= 0 {
+			return
+		}
+		span := (r.b - r.a) * seconds
+		step := float32(0.001) // steps of 1, 2 and 5 times powers of ten
+		for i := 0; step*float32(count) < span; i++ {
+			step *= [...]float32{2, 2.5, 2}[i%3]
+		}
+		for i := math.Ceil(float64(r.a * seconds / step)); float32(i)*step <= r.b*seconds; i++ {
+			t := float64(i) * float64(step)
+			yield(float32(t)/seconds, strconv.FormatFloat(t, 'f', -1, 32))
+		}
+	}
+	yticks := func(r plotRange, count int, yield func(pos float32, label string)) {
+		yield(-1, "")
+		yield(0, "")
+		yield(1, "")
+	}
+	cursor := float32(math.NaN())
+	if audio.Writable && frames > 0 {
+		cursor = float32(head) / float32(frames)
+	}
+	h := gtx.Dp(140)
+	gtx.Constraints = layout.Exact(image.Pt(gtx.Constraints.Max.X, h))
+	return layout.UniformInset(unit.Dp(6)).Layout(gtx, func(gtx C) D {
+		return ib.waveform.Layout(gtx, data, xticks, yticks, cursor, 3)
+	})
 }
 
 // layoutField draws a text field: the widget on a rounded background, so that

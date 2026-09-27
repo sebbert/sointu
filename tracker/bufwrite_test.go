@@ -69,7 +69,7 @@ func TestPlayerKeepsWrittenBuffers(t *testing.T) {
 	p.Process(out, NullPlayerProcessContext{})
 	p.synth.Trigger(0, 60)
 	p.Process(out, NullPlayerProcessContext{})
-	if f := p.status.BufferFills[0]; f != (BufferFill{ID: 1, Filled: 10}) {
+	if f := p.status.BufferFills[0]; f != (BufferFill{ID: 1, Head: 10, Filled: 10}) {
 		t.Fatalf("got fill %+v, want 10 frames of buffer 1", f)
 	}
 

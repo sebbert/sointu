@@ -236,12 +236,34 @@ func (m *fitToRecording) Do() {
 // bufferFill returns how many frames of a writable buffer the player has
 // written, if it reports it.
 func (m *Model) bufferFill(id int) (int, bool) {
+	f, ok := m.bufferFillOf(id)
+	return f.Filled, ok
+}
+
+func (m *Model) bufferFillOf(id int) (BufferFill, bool) {
 	for _, f := range m.playerStatus.BufferFills {
 		if f.ID == id && id != 0 {
-			return f.Filled, true
+			return f, true
 		}
 	}
-	return 0, false
+	return BufferFill{}, false
+}
+
+// Waveform returns the audio of the selected buffer, for drawing it, and
+// which frames are valid: the filled frames before head, wrapping around the
+// end. For samples, all frames are valid. The audio of a writable buffer is
+// written by the player while it is read, so what is drawn may be torn.
+func (m *BufferModel) Waveform() (audio sointu.BufferAudio, head, filled int) {
+	buf := m.selected()
+	if buf == nil {
+		return sointu.BufferAudio{}, 0, 0
+	}
+	audio = m.buffers.audio[buf.ID]
+	if !audio.Writable {
+		return audio, 0, audio.Frames()
+	}
+	f, _ := (*Model)(m).bufferFillOf(buf.ID)
+	return audio, f.Head, f.Filled
 }
 
 // setDefaultEncoding makes a new sample use the default preset, or else the

@@ -57,8 +57,9 @@ type (
 		BufferFills [MaxBufferFills]BufferFill
 	}
 
-	// BufferFill tells how many frames of a writable buffer are valid.
-	BufferFill struct{ ID, Filled int }
+	// BufferFill tells which frames of a writable buffer are valid: the
+	// Filled frames before Head, wrapping around the end.
+	BufferFill struct{ ID, Head, Filled int }
 
 	// PlayerProcessContext is the context given to the player when processing
 	// audio. Currently it is only used to get BPM from the VSTI host.
@@ -521,7 +522,7 @@ func (p *Player) updateBufferFills() {
 		if i == MaxBufferFills {
 			break
 		}
-		p.status.BufferFills[i] = BufferFill{ID: id, Filled: b.Filled}
+		p.status.BufferFills[i] = BufferFill{ID: id, Head: b.Head, Filled: b.Filled}
 		i++
 	}
 }
