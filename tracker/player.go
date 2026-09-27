@@ -20,6 +20,7 @@ type (
 		synth      sointu.Synth               // the synth used to render audio
 		buffers    map[int]sointu.BufferAudio // the audio of the song's buffers
 		writable   bool                       // some of the buffers are writable
+		playheads  []sointu.Playhead          // reused for updatePlayheads
 		preview    sointu.BufferAudio         // buffer audio being previewed, mixed into the output
 		previewPos int                        // next frame of the preview
 		song       sointu.Song                // the song being played
@@ -55,6 +56,10 @@ type (
 		// BufferFills tells how many frames have been written to the
 		// writable buffers, for the first MaxBufferFills of them.
 		BufferFills [MaxBufferFills]BufferFill
+		// Playheads are where the held notes of bufread units are playing,
+		// NumPlayheads of them.
+		Playheads    [MaxPlayheads]sointu.Playhead
+		NumPlayheads int
 	}
 
 	// BufferFill tells which frames of a writable buffer are valid: the
@@ -186,6 +191,9 @@ func (p *Player) Process(buffer sointu.AudioBuffer, context PlayerProcessContext
 				if p.writable {
 					p.updateBufferFills()
 				}
+				if len(p.buffers) > 0 {
+					p.updatePlayheads()
+				}
 			}
 			p.send(nil)
 			return
@@ -237,6 +245,7 @@ func sameData(a, b []float32) bool {
 }
 
 func (p *Player) destroySynth() {
+	p.status.NumPlayheads = 0
 	if p.synth != nil {
 		p.keepWrittenBuffers()
 		p.synth.Close()
@@ -506,8 +515,22 @@ func (p *Player) compileOrUpdateSynth() {
 }
 
 // MaxBufferFills is the number of writable buffers whose fill the player
-// reports.
-const MaxBufferFills = 8
+// reports, and MaxPlayheads the number of playheads.
+const (
+	MaxBufferFills = 8
+	MaxPlayheads   = 64
+)
+
+// updatePlayheads reports where bufread units are playing.
+func (p *Player) updatePlayheads() {
+	r, ok := p.synth.(sointu.PlayheadReporter)
+	if !ok {
+		p.status.NumPlayheads = 0
+		return
+	}
+	p.playheads = r.Playheads(p.playheads[:0])
+	p.status.NumPlayheads = copy(p.status.Playheads[:], p.playheads)
+}
 
 // updateBufferFills reports how much has been written to the writable
 // buffers.

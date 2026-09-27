@@ -249,6 +249,20 @@ func (m *Model) bufferFillOf(id int) (BufferFill, bool) {
 	return BufferFill{}, false
 }
 
+// Playheads calls yield with the frames of the selected buffer that bufread
+// units are playing.
+func (m *BufferModel) Playheads(yield func(frame int)) {
+	buf := m.selected()
+	if buf == nil {
+		return
+	}
+	for _, p := range m.playerStatus.Playheads[:m.playerStatus.NumPlayheads] {
+		if p.BufferID == buf.ID {
+			yield(p.Frame)
+		}
+	}
+}
+
 // Waveform returns the audio of the selected buffer, for drawing it, and
 // which frames are valid: the filled frames before head, wrapping around the
 // end. For samples, all frames are valid. The audio of a writable buffer is

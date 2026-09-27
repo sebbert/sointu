@@ -100,6 +100,17 @@ type (
 		WrittenBuffers() map[int]BufferAudio
 	}
 
+	// PlayheadReporter is implemented by Synths that can tell where bufread
+	// units are playing.
+	PlayheadReporter interface {
+		// Playheads appends the positions of the held notes of bufread units
+		// to dst.
+		Playheads(dst []Playhead) []Playhead
+	}
+
+	// Playhead is where a bufread unit is playing: a frame of a buffer.
+	Playhead struct{ BufferID, Frame int }
+
 	// BufferAudio is the audio of a buffer: interleaved frames at 44100 Hz.
 	BufferAudio struct {
 		Channels int

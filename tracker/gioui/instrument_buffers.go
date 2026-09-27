@@ -334,8 +334,9 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 }
 
 // layoutWaveform draws the audio of the selected buffer, fitted to its peak.
-// Valid frames are drawn in the channel colors, the rest dimmed, and the write
-// head of a writable buffer as the cursor.
+// Valid frames are drawn in the channel colors, the rest dimmed, the write
+// head of a writable buffer as the cursor and the playing notes of bufread
+// units as markers.
 func (ib *InstrumentBuffers) layoutWaveform(gtx C) D {
 	tr := TrackerFromContext(gtx)
 	audio, head, filled := tr.Buffer().Waveform()
@@ -402,6 +403,12 @@ func (ib *InstrumentBuffers) layoutWaveform(gtx C) D {
 		peak = 1
 	}
 	ib.waveform.SetYRange(plotRange{-peak * 1.05, peak * 1.05})
+	ib.waveform.Markers = ib.waveform.Markers[:0]
+	if frames > 0 {
+		tr.Buffer().Playheads(func(frame int) {
+			ib.waveform.Markers = append(ib.waveform.Markers, float32(frame)/float32(frames))
+		})
+	}
 	cursor := float32(math.NaN())
 	if audio.Writable && frames > 0 {
 		cursor = float32(head) / float32(frames)

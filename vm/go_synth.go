@@ -144,6 +144,30 @@ func (s *GoSynth) SetBuffers(buffers map[int]sointu.BufferAudio) {
 	}
 }
 
+func (s *GoSynth) Playheads(dst []sointu.Playhead) []sointu.Playhead {
+	for _, b := range s.bytecode.BufreadUnits {
+		r := s.bytecode.BufferRegions[b.Region]
+		buf := s.buffers[int(r.BufferID)]
+		if buf == nil || buf.audio.Frames() == 0 {
+			continue
+		}
+		capacity := uint32(buf.audio.Frames())
+		for v := b.FirstVoice; v < b.FirstVoice+b.NumVoices && v < len(s.state.voices); v++ {
+			voice := &s.state.voices[v]
+			u := &voice.units[b.Unit]
+			if voice.note == 0 || !voice.sustain || math.Float32bits(u.state[3]) == 0 {
+				continue
+			}
+			pos, base := math.Float32bits(u.state[0]), math.Float32bits(u.state[2])
+			if pos >= capacity {
+				continue // past the end
+			}
+			dst = append(dst, sointu.Playhead{BufferID: int(r.BufferID), Frame: int((base + pos) % capacity)})
+		}
+	}
+	return dst
+}
+
 func (s *GoSynth) WrittenBuffers() map[int]sointu.BufferAudio {
 	ret := map[int]sointu.BufferAudio{}
 	for id, b := range s.buffers {

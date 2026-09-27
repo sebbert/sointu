@@ -39,6 +39,9 @@ type (
 		// bufread units. A bufread unit only stores the index pointing to this
 		// table.
 		BufferRegions []BufferRegion
+		// BufreadUnits are the bufread units of the patch, for finding their
+		// state in the voices.
+		BufreadUnits []BufreadUnit
 
 		// PolyphonyBitmask is a rather peculiar bitmask used by Sointu VM to store
 		// the information about which voices use which instruments: bit MAXVOICES -
@@ -58,6 +61,12 @@ type (
 		Start      uint32 // start offset in words (1 word = 2 bytes)
 		LoopStart  uint16 // loop start offset in words, relative to Start
 		LoopLength uint16 // loop length in words
+	}
+
+	// BufreadUnit is a bufread unit: its voices, the index of its state
+	// among the units of the voice, and its buffer region.
+	BufreadUnit struct {
+		FirstVoice, NumVoices, Unit, Region int
 	}
 
 	// BufferRegion is an entry in the buffer region table. Positions are in
@@ -165,6 +174,9 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				index := b.getBufferRegionIndex(unit)
 				if index > 255 {
 					return nil, errors.New("Patch uses over 256 different buffer regions")
+				}
+				if unit.Type == "bufread" {
+					b.BufreadUnits = append(b.BufreadUnits, BufreadUnit{FirstVoice: patch.FirstVoiceForInstrument(instrIndex), NumVoices: instr.NumVoices, Unit: b.unitNo, Region: index})
 				}
 				b.op(opcode + p["stereo"])
 				b.defOperands(unit)

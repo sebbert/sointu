@@ -30,12 +30,16 @@ type (
 		hovered        bool
 		lastPressTime  time.Duration
 		lastPressPos   f32.Point
+		// Markers are x positions drawn as lines, e.g. playheads; set before
+		// Layout.
+		Markers []float32
 	}
 
 	PlotStyle struct {
 		CurveColors [3]color.NRGBA `yaml:",flow"`
 		LimitColor  color.NRGBA    `yaml:",flow"`
 		CursorColor color.NRGBA    `yaml:",flow"`
+		MarkerColor color.NRGBA    `yaml:",flow"`
 		Ticks       LabelStyle
 		DpPerTick   unit.Dp
 	}
@@ -88,6 +92,15 @@ func (p *Plot) Layout(gtx C, data PlotDataFunc, xticks, yticks PlotTickFunc, cur
 		defer op.Offset(image.Pt(gtx.Dp(2), sy)).Push(gtx.Ops).Pop()
 		Label(t.Theme, &t.Theme.Plot.Ticks, txt).Layout(gtx)
 	})
+
+	// draw markers
+	paint.ColorOp{Color: style.MarkerColor}.Add(gtx.Ops)
+	for _, m := range p.Markers {
+		msx := plotPx(s.X).toScreen(xlim.toRelative(m))
+		if msx >= 0 && msx < s.X {
+			fillRect(gtx, clip.Rect{Min: image.Pt(msx, 0), Max: image.Pt(msx+1, s.Y)})
+		}
+	}
 
 	// draw cursor
 	if cursornx == cursornx { // check for NaN

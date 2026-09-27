@@ -187,3 +187,34 @@ func TestBufreadModulatedLoop(t *testing.T) {
 	// a zero length loop does not loop
 	checkLeft(t, renderModulatedBufread(t, loop, map[int]int{5: 0}, bufs, 9), []float32{0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0})
 }
+
+func TestBufreadPlayheads(t *testing.T) {
+	patch := sointu.Patch{
+		{NumVoices: 1, Units: []sointu.Unit{{Type: "loadnote", Parameters: sointu.ParamMap{"stereo": 0}}, {Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 0}}}},
+		{NumVoices: 2, Units: []sointu.Unit{
+			{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "buffer": 1, "notetracking": 0, "start": 2}},
+			{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
+		}},
+	}
+	for _, synther := range []sointu.Synther{vm.GoSynther{}, vm.MakeMultithreadSynther(vm.GoSynther{})} {
+		synth, err := synther.Synth(patch, 120)
+		if err != nil {
+			t.Fatal(err)
+		}
+		synth.(sointu.BufferSetter).SetBuffers(map[int]sointu.BufferAudio{1: ramp(100, 1, 0.01)})
+		synth.Trigger(1, 60)
+		render(t, synth, 3)
+		synth.Trigger(2, 60)
+		render(t, synth, 1)
+		got := synth.(sointu.PlayheadReporter).Playheads(nil)
+		want := []sointu.Playhead{{BufferID: 1, Frame: 6}, {BufferID: 1, Frame: 3}} // started at 2
+		if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+			t.Errorf("%s: got %v, want %v", synther.Name(), got, want)
+		}
+		synth.Release(1)
+		if got := synth.(sointu.PlayheadReporter).Playheads(nil); len(got) != 1 {
+			t.Errorf("%s: released notes reported: %v", synther.Name(), got)
+		}
+		synth.Close()
+	}
+}

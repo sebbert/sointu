@@ -162,6 +162,15 @@ func (s *MultithreadSynth) WrittenBuffers() map[int]sointu.BufferAudio {
 	return ret
 }
 
+func (s *MultithreadSynth) Playheads(dst []sointu.Playhead) []sointu.Playhead {
+	for _, synth := range s.synths {
+		if p, ok := synth.(sointu.PlayheadReporter); ok {
+			dst = p.Playheads(dst)
+		}
+	}
+	return dst
+}
+
 func (s *MultithreadSynth) Trigger(voiceIndex int, note byte) {
 	for i, synth := range s.synths {
 		if ind := s.voiceMapping[i][voiceIndex]; ind >= 0 {

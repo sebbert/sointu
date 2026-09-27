@@ -64,12 +64,12 @@ patch:
         - type: noise # arg 1: panning
           parameters: {gain: 128, shape: 64, stereo: 0}
         - type: spawn
-          parameters: {args: 2, instrument: 4, mode: 0, notetracking: 1, rate: 78, transpose: 64}
+          parameters: {args: 2, instrument: 4, length: 64, mode: 0, notetracking: 1, rate: 78, transpose: 64}
     - name: grains
       numvoices: 8
       units:
-        - type: envelope
-          parameters: {attack: 44, decay: 58, gain: 128, release: 58, stereo: 0, sustain: 0}
+        - type: window # as long as the spawned note
+          parameters: {length: 0, shape: 128}
         - type: arg
           parameters: {index: 1}
         - type: send

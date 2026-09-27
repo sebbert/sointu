@@ -87,6 +87,7 @@ plot:
   curvecolors: [*primarycolor, *secondarycolor,*disabled]
   limitcolor: { r: 255, g: 255, b: 255, a: 8 }
   cursorcolor: { r: 252, g: 186, b: 3, a: 255 }
+  markercolor: { r: 255, g: 255, b: 255, a: 110 }
   ticks: { textsize: 12, color: *disabled, maxlines: 1}  
   dppertick: 50
 numericupdown:
