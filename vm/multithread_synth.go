@@ -17,6 +17,7 @@ type (
 		results      <-chan multithreadSynthResult  // rendered buffer
 		pool         sync.Pool
 		synther      sointu.Synther
+		buffers      map[int]sointu.BufferAudio
 	}
 
 	MultithreadSynther struct {
@@ -82,6 +83,9 @@ func (s *MultithreadSynth) Update(patch sointu.Patch, bpm int) error {
 				s.closeSynths()
 				return err
 			}
+			if b, ok := synth.(sointu.BufferSetter); ok && s.buffers != nil {
+				b.SetBuffers(s.buffers)
+			}
 			s.synths = append(s.synths, synth)
 		} else {
 			if err := s.synths[i].Update(p, bpm); err != nil {
@@ -121,6 +125,16 @@ func (s *MultithreadSynth) closeSynths() {
 		synth.Close()
 	}
 	s.synths = s.synths[:0]
+}
+
+// SetBuffers sets the buffers of the synths of each thread.
+func (s *MultithreadSynth) SetBuffers(buffers map[int]sointu.BufferAudio) {
+	s.buffers = buffers
+	for _, synth := range s.synths {
+		if b, ok := synth.(sointu.BufferSetter); ok {
+			b.SetBuffers(buffers)
+		}
+	}
 }
 
 func (s *MultithreadSynth) Trigger(voiceIndex int, note byte) {
