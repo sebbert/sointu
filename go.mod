@@ -42,3 +42,5 @@ require (
 )
 
 replace gioui.org => ./third_party/gio
+
+replace pipelined.dev/audio/vst2 => ./third_party/vst2
