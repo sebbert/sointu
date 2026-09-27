@@ -20,6 +20,7 @@ type (
 		synth      sointu.Synth               // the synth used to render audio
 		buffers    map[int]sointu.BufferAudio // the audio of the song's buffers
 		writable   bool                       // some of the buffers are writable
+		hostBPM    int                        // the tempo of the host, last told to the model
 		playheads  []sointu.Playhead          // reused for updatePlayheads
 		preview    sointu.BufferAudio         // buffer audio being previewed, mixed into the output
 		previewPos int                        // next frame of the preview
@@ -120,6 +121,7 @@ func NewPlayer(broker *Broker, synther sointu.Synther) *Player {
 // context is also used to get the current BPM from the host.
 func (p *Player) Process(buffer sointu.AudioBuffer, context PlayerProcessContext) {
 	p.processMessages(context)
+	p.followHostTempo(context)
 	p.events.adjustTimes(p.frameDeltas, p.frame, p.frame+int64(len(buffer)))
 
 	for i := 0; i < numRenderTries; i++ {
@@ -512,6 +514,31 @@ func (p *Player) compileOrUpdateSynth() {
 		voice += instr.NumVoices
 	}
 	p.midiAssigns.update(p.song.Patch)
+}
+
+// HostBPMMsg tells the model the tempo of the host (e.g. a DAW), rounded to
+// whole BPM, which the song follows.
+type HostBPMMsg int
+
+// followHostTempo makes the song follow the tempo of the host, when the host
+// has one: the player changes tempo right away, and tells the model to change
+// the song.
+func (p *Player) followHostTempo(context PlayerProcessContext) {
+	bpm, ok := context.BPM()
+	if !ok || bpm <= 0 {
+		return
+	}
+	b := min(max(int(math.Round(bpm)), 1), 999)
+	if b == p.song.BPM && b == p.hostBPM {
+		return
+	}
+	// also when e.g. a loaded song brought another tempo
+	p.hostBPM = b
+	if b != p.song.BPM {
+		p.song.BPM = b
+		p.compileOrUpdateSynth()
+	}
+	p.send(HostBPMMsg(b))
 }
 
 // MaxBufferFills is the number of writable buffers whose fill the player
