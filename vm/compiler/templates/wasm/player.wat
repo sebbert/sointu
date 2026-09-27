@@ -70,14 +70,14 @@
 {{- end}}
 {{- /*
 ;-------------------------------------------------------------------------------
-;    Buffer regions played by bufread units, 6 i32s each: offset of the
+;    Buffer regions played by bufread units, 7 i32s each: offset of the
 ;    buffer's header from su_buffer_headers in bytes, start, loop start, loop
-;    length, fade and flags
+;    length, fade, edge fade and flags
 ;-------------------------------------------------------------------------------
 */}}
 {{- .SetDataLabel "su_buffer_regions"}}
 {{- range .Regions}}
-{{- $.DataD .Header}}{{$.DataD .Start}}{{$.DataD .LoopStart}}{{$.DataD .LoopLength}}{{$.DataD .Fade}}{{$.DataD .Flags}}
+{{- $.DataD .Header}}{{$.DataD .Start}}{{$.DataD .LoopStart}}{{$.DataD .LoopLength}}{{$.DataD .Fade}}{{$.DataD .EdgeFade}}{{$.DataD .Flags}}
 {{- end}}
 {{- end}}
 

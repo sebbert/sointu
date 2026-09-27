@@ -77,10 +77,10 @@ patch:
         - type: arg
           parameters: {index: 0}
         - type: send
-          parameters: {amount: 96, port: 3, sendpop: 1, stereo: 0, target: 60, voice: 0}
+          parameters: {amount: 96, port: 4, sendpop: 1, stereo: 0, target: 60, voice: 0}
         - type: bufread
           id: 60
-          parameters: {buffer: 1, detune: 64, fade: 0, gain: 128, loop: 0, loopstart: 0, looplength: 0, notetracking: 1, start: 44100, stereo: 0, transpose: 64}
+          parameters: {buffer: 1, detune: 64, edgefade: 0, fade: 0, gain: 128, loop: 0, loopstart: 0, looplength: 0, notetracking: 1, speed: 128, start: 44100, stereo: 0, transpose: 64}
         - type: mulp
           parameters: {stereo: 0}
         - type: pan

@@ -242,12 +242,19 @@ neither.
 `bufread` positions (`start`, `loopstart`, `looplength`) are in frames and can
 be modulated: a modulation of 1 shifts them by the length of the buffer.
 `start` is read when a note is triggered, so a `send` to it picks where each
-note starts; `fade` crossfades the end of the loop.
+note starts; a negative `start` counts back from the end, or from the write
+head of a buffer being recorded. `fade` crossfades the end of the loop, and
+`edgefade` fades out near the edges of the valid audio, e.g. the write head.
+`speed` multiplies the playback rate from -1 (backwards) to 1, and can be
+modulated.
 
 For granular synthesis and arpeggiators, the `spawn` unit triggers notes on the
 voices of another instrument, stealing the voice spawned longest ago. In
 `rate` mode it spawns at a (modulatable) rate while its own note is held; in
-`edge` mode, whenever its input rises above zero. It can pass up to four values
+`edge` mode, whenever its input rises above zero. Its `length` releases the
+spawned notes after a while, and a `window` unit in the spawned instrument
+shapes each note with a smooth window of the same length, for click-free
+grains. It can pass up to four values
 from the stack to each spawned voice, where `arg` units push them, e.g. to send
 a random position to `bufread`'s `start`.
 
@@ -261,7 +268,7 @@ the song: the compiled player records them again when it plays. The tracker
 keeps them while editing, until recorded again or cleared; "Fit to recording"
 sets the length of the buffer to what was recorded.
 
-`bufread`, `bufwrite`, `spawn` and `arg` are WebAssembly only for now.
+`bufread`, `bufwrite`, `spawn`, `arg` and `window` are WebAssembly only for now.
 
 If you are looking for an easy way to compile an executable from a Sointu song
 (e.g. for a executable music compo), take a look at [NR4's Python-based

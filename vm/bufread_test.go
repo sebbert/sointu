@@ -12,7 +12,7 @@ import (
 // parameters and returns the first n output frames.
 func renderBufread(t *testing.T, params sointu.ParamMap, buffers map[int]sointu.BufferAudio, note byte, n int) sointu.AudioBuffer {
 	t.Helper()
-	p := sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "buffer": 1, "notetracking": 1}
+	p := sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 1, "notetracking": 1}
 	for k, v := range params {
 		p[k] = v
 	}
@@ -104,7 +104,7 @@ func TestBufreadGain(t *testing.T) {
 
 func TestBufreadUntriggeredVoiceIsSilent(t *testing.T) {
 	patch := sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{
-		{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 1, "transpose": 64, "detune": 64, "gain": 128, "buffer": 1, "notetracking": 1}},
+		{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 1, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 1, "notetracking": 1}},
 		{Type: "out", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128}},
 	}}}
 	synth, err := vm.GoSynther{}.Synth(patch, 120)
@@ -143,7 +143,7 @@ func TestBufreadLoopCrossfade(t *testing.T) {
 // values of loadval units, i.e. (v-64)/64.
 func renderModulatedBufread(t *testing.T, params sointu.ParamMap, mods map[int]int, bufs map[int]sointu.BufferAudio, n int) sointu.AudioBuffer {
 	t.Helper()
-	p := sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "buffer": 1, "notetracking": 1}
+	p := sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 1, "notetracking": 1}
 	for k, v := range params {
 		p[k] = v
 	}
@@ -172,27 +172,27 @@ func renderModulatedBufread(t *testing.T, params sointu.ParamMap, mods map[int]i
 func TestBufreadModulatedStart(t *testing.T) {
 	bufs := map[int]sointu.BufferAudio{1: ramp(8, 1, 0.1)}
 	// +0.5 times the 8 frames of the buffer
-	checkLeft(t, renderModulatedBufread(t, sointu.ParamMap{"start": 1}, map[int]int{3: 96}, bufs, 4), []float32{0.5, 0.6, 0.7, 0})
+	checkLeft(t, renderModulatedBufread(t, sointu.ParamMap{"start": 1}, map[int]int{4: 96}, bufs, 4), []float32{0.5, 0.6, 0.7, 0})
 	// clamped to the beginning
-	checkLeft(t, renderModulatedBufread(t, sointu.ParamMap{"start": 1}, map[int]int{3: 0}, bufs, 3), []float32{0, 0.1, 0.2})
+	checkLeft(t, renderModulatedBufread(t, sointu.ParamMap{"start": 1}, map[int]int{4: 0}, bufs, 3), []float32{0, 0.1, 0.2})
 	// a fraction of a frame is kept: +0.25 of a frame
-	checkLeft(t, renderModulatedBufread(t, nil, map[int]int{3: 66}, bufs, 3), []float32{0.025, 0.125, 0.225})
+	checkLeft(t, renderModulatedBufread(t, nil, map[int]int{4: 66}, bufs, 3), []float32{0.025, 0.125, 0.225})
 }
 
 func TestBufreadModulatedLoop(t *testing.T) {
 	bufs := map[int]sointu.BufferAudio{1: ramp(8, 1, 0.1)}
 	// loop start 1 + 0.25*8 = 3, loop length 4 - 0.25*8 = 2
 	loop := sointu.ParamMap{"loop": 1, "loopstart": 1, "looplength": 4}
-	checkLeft(t, renderModulatedBufread(t, loop, map[int]int{4: 80, 5: 48}, bufs, 8), []float32{0, 0.1, 0.2, 0.3, 0.4, 0.3, 0.4, 0.3})
+	checkLeft(t, renderModulatedBufread(t, loop, map[int]int{5: 80, 6: 48}, bufs, 8), []float32{0, 0.1, 0.2, 0.3, 0.4, 0.3, 0.4, 0.3})
 	// a zero length loop does not loop
-	checkLeft(t, renderModulatedBufread(t, loop, map[int]int{5: 0}, bufs, 9), []float32{0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0})
+	checkLeft(t, renderModulatedBufread(t, loop, map[int]int{6: 0}, bufs, 9), []float32{0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0})
 }
 
 func TestBufreadPlayheads(t *testing.T) {
 	patch := sointu.Patch{
 		{NumVoices: 1, Units: []sointu.Unit{{Type: "loadnote", Parameters: sointu.ParamMap{"stereo": 0}}, {Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 0}}}},
 		{NumVoices: 2, Units: []sointu.Unit{
-			{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "buffer": 1, "notetracking": 0, "start": 2}},
+			{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 1, "notetracking": 0, "start": 2}},
 			{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
 		}},
 	}
@@ -217,4 +217,37 @@ func TestBufreadPlayheads(t *testing.T) {
 		}
 		synth.Close()
 	}
+}
+
+func TestBufreadSpeed(t *testing.T) {
+	bufs := map[int]sointu.BufferAudio{1: ramp(8, 1, 0.1)}
+	// backwards from frame 5, silent before the beginning
+	checkLeft(t, renderBufread(t, sointu.ParamMap{"speed": 0, "start": 5}, bufs, 60, 8), []float32{0.5, 0.4, 0.3, 0.2, 0.1, 0, 0, 0})
+	// frozen
+	checkLeft(t, renderBufread(t, sointu.ParamMap{"speed": 64, "start": 3}, bufs, 60, 3), []float32{0.3, 0.3, 0.3})
+	// half speed backwards
+	checkLeft(t, renderBufread(t, sointu.ParamMap{"speed": 32, "start": 2}, bufs, 60, 5), []float32{0.2, 0.15, 0.1, 0.05, 0})
+}
+
+func TestBufreadBackwardsLoop(t *testing.T) {
+	bufs := map[int]sointu.BufferAudio{1: ramp(8, 1, 0.1)}
+	// starting in the loop 2-5 and going backwards wraps to the loop end
+	loop := sointu.ParamMap{"speed": 0, "start": 3, "loop": 1, "loopstart": 2, "looplength": 3}
+	checkLeft(t, renderBufread(t, loop, bufs, 60, 7), []float32{0.3, 0.2, 0.4, 0.3, 0.2, 0.4, 0.3})
+	// starting before the loop and going backwards does not loop
+	loop["start"] = 1
+	checkLeft(t, renderBufread(t, loop, bufs, 60, 3), []float32{0.1, 0, 0})
+}
+
+func TestBufreadNegativeStart(t *testing.T) {
+	bufs := map[int]sointu.BufferAudio{1: ramp(8, 1, 0.1)}
+	// 3 frames back from the end
+	checkLeft(t, renderBufread(t, sointu.ParamMap{"start": -3}, bufs, 60, 4), []float32{0.5, 0.6, 0.7, 0})
+}
+
+func TestBufreadEdgeFade(t *testing.T) {
+	ones := sointu.BufferAudio{Channels: 1, Data: []float32{1, 1, 1, 1, 1, 1, 1, 1}}
+	bufs := map[int]sointu.BufferAudio{1: ones}
+	// 4 frames of fade from each edge: 0 at the first and last frame
+	checkLeft(t, renderBufread(t, sointu.ParamMap{"edgefade": 4}, bufs, 60, 9), []float32{0, 0.25, 0.5, 0.75, 0.75, 0.5, 0.25, 0, 0})
 }

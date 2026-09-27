@@ -1,6 +1,7 @@
 package sointu
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -395,11 +396,14 @@ var UnitTypes = map[string]UnitType{
 	"bufread": {
 		// bufread plays a buffer. With note tracking, note 60 plays it at its
 		// original speed; transpose and detune shift the pitch like in the
-		// oscillator. start, loopstart and looplength are in frames from the
-		// oldest valid frame of the buffer; modulating them shifts them by
-		// the valid length of the buffer times the modulation. start is read
-		// when the note is triggered. fade is the length of the crossfade at
-		// the end of the loop.
+		// oscillator, and speed multiplies the rate from -1 (backwards) to 1.
+		// start, loopstart and looplength are in frames from the oldest valid
+		// frame of the buffer; a negative start counts back from the newest
+		// one. Modulating them shifts them by the valid length of the buffer
+		// times the modulation. start is read when the note is triggered.
+		// fade is the length of the crossfade at the end of the loop, and
+		// edgefade the length of the fade out near the edges of the valid
+		// frames, e.g. the write head of a buffer being written.
 		Params: []UnitParameter{
 			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "transpose", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
@@ -411,13 +415,15 @@ var UnitTypes = map[string]UnitType{
 			}},
 			{Name: "detune", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return formatFloat(float64(v-64) / 64), "st" }},
 			{Name: "gain", MinValue: 0, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
+			{Name: "speed", MinValue: 0, Neutral: 64, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return formatFloat(float64(v)/64 - 1), "x" }},
 			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
 			{Name: "notetracking", MinValue: 0, Default: 1, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "loop", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-			{Name: "start", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true, NoTransform: true},
+			{Name: "start", MinValue: math.MinInt32 + 1, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true, NoTransform: true},
 			{Name: "loopstart", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true, NoTransform: true},
 			{Name: "looplength", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true, NoTransform: true},
 			{Name: "fade", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+			{Name: "edgefade", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
 		},
 		StackUse: stackUseSource,
 	},
@@ -556,6 +562,48 @@ func stackUseEffect(u *Unit) StackUse {
 		return StackUse{Inputs: [][]int{{0}, {1}}, Modifies: []bool{true, true}, NumOutputs: 2}
 	}
 	return StackUse{Inputs: [][]int{{0}}, Modifies: []bool{true}, NumOutputs: 1}
+}
+
+// addedParameters are parameters added to unit types after songs were saved
+// without them, with the values that keep those songs sounding the same. A
+// missing parameter is otherwise 0.
+var addedParameters = map[string]map[string]int{
+	"bufread": {"speed": 128}, // forwards at the normal speed
+}
+
+// compile errors if interface is not implemented.
+var _ yaml.Unmarshaler = &Unit{}
+
+// UnmarshalYAML fills in parameters added to the unit type after the unit was
+// saved; see addedParameters.
+func (u *Unit) UnmarshalYAML(value *yaml.Node) error {
+	type plain Unit // without the UnmarshalYAML method
+	if err := value.Decode((*plain)(u)); err != nil {
+		return err
+	}
+	u.fillAddedParameters()
+	return nil
+}
+
+// UnmarshalJSON is like UnmarshalYAML.
+func (u *Unit) UnmarshalJSON(data []byte) error {
+	type plain Unit
+	if err := json.Unmarshal(data, (*plain)(u)); err != nil {
+		return err
+	}
+	u.fillAddedParameters()
+	return nil
+}
+
+func (u *Unit) fillAddedParameters() {
+	for name, value := range addedParameters[u.Type] {
+		if _, ok := u.Parameters[name]; !ok {
+			if u.Parameters == nil {
+				u.Parameters = ParamMap{}
+			}
+			u.Parameters[name] = value
+		}
+	}
 }
 
 // compile errors if interface is not implemented.

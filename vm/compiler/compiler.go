@@ -50,7 +50,7 @@ type wasmBufferHeader struct {
 // wasmBufferRegion is an entry of the wasm player's buffer region table.
 // Header is the offset of the buffer's header from su_buffer_headers in bytes.
 type wasmBufferRegion struct {
-	Header, Start, LoopStart, LoopLength, Fade, Flags uint32
+	Header, Start, LoopStart, LoopLength, Fade, EdgeFade, Flags uint32
 }
 
 // wasmBufferData is the buffer data for the wasm player template.
@@ -246,7 +246,7 @@ func (com *Compiler) wasmBuffers(song *sointu.Song, b *vm.Bytecode) (ret wasmBuf
 		}
 		ret.Regions = append(ret.Regions, wasmBufferRegion{
 			Header: uint32(i * wasmBufferHeaderSize), Start: r.Start, LoopStart: r.LoopStart,
-			LoopLength: r.LoopLength, Fade: r.Fade, Flags: r.Flags,
+			LoopLength: r.LoopLength, Fade: r.Fade, EdgeFade: r.EdgeFade, Flags: r.Flags,
 		})
 	}
 	return ret, nil

@@ -148,7 +148,7 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 			switch up.Name {
 			case "buffer":
 				vtable = &bufferParameter{}
-			case "start", "loopstart", "looplength", "fade":
+			case "start", "loopstart", "looplength", "fade", "edgefade":
 				vtable = &bufferFrameParameter{}
 			}
 		}

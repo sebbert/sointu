@@ -334,7 +334,7 @@
 ;;   after the note was triggered. Matches bufwrite in vm/go_synth.go.
 ;;-------------------------------------------------------------------------------
 (func $su_op_bufwrite (param $stereo i32) (local $r i32) (local $h i32) (local $l f32) (local $rt f32) (local $cap i32) (local $head i32) (local $ptr i32) (local $fb f32)
-    (local.set $r (i32.add (i32.const {{index .Labels "su_buffer_regions"}}) (i32.mul (call $scanOperand) (i32.const 24))))
+    (local.set $r (i32.add (i32.const {{index .Labels "su_buffer_regions"}}) (i32.mul (call $scanOperand) (i32.const 28))))
     (local.set $h (i32.add (i32.const {{index .Labels "su_buffer_headers"}}) (i32.load (local.get $r))))
     (local.set $l (call $pop))
     (local.set $rt (local.get $l))
@@ -349,7 +349,7 @@
     ))
     (if (i32.eqz (i32.load (global.get $WRK))) (then
         (i32.store (global.get $WRK) (i32.const 1))
-        (if (i32.eqz (i32.and (i32.load offset=20 (local.get $r)) (i32.const 4))) (then ;; once: a new recording
+        (if (i32.eqz (i32.and (i32.load offset=24 (local.get $r)) (i32.const 4))) (then ;; once: a new recording
             (i32.store offset=12 (local.get $h) (i32.const 0))
             (i32.store offset=16 (local.get $h) (i32.const 0))
         ))
@@ -376,7 +376,7 @@
         ))
     ))
     (local.set $head (i32.add (local.get $head) (i32.const 1)))
-    (if (i32.and (i32.load offset=20 (local.get $r)) (i32.const 4)) (then ;; ring
+    (if (i32.and (i32.load offset=24 (local.get $r)) (i32.const 4)) (then ;; ring
         (i32.store offset=12 (local.get $h) (i32.rem_u (local.get $head) (local.get $cap)))
         (i32.store offset=16 (local.get $h) (select
             (local.get $cap)

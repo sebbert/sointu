@@ -799,10 +799,18 @@ func (b *spawnTargetParameter) Reset(p *Parameter) {
 
 func (b *bufferFrameParameter) Range(p *Parameter) RangeInclusive {
 	frames := p.m.bufferFrames(p.unit.Parameters["buffer"])
-	return RangeInclusive{Min: 0, Max: max(frames, p.unit.Parameters[p.up.Name], 1)}
+	v := p.unit.Parameters[p.up.Name]
+	r := RangeInclusive{Min: 0, Max: max(frames, v, 1)}
+	if p.up.Name == "start" { // negative counts back from the end
+		r.Min = min(-frames, v)
+	}
+	return r
 }
 func (b *bufferFrameParameter) Hint(p *Parameter) ParameterHint {
 	v := b.Value(p)
+	if v < 0 {
+		return ParameterHint{fmt.Sprintf("%s from end (%d)", formatDuration(-v), v), true}
+	}
 	return ParameterHint{fmt.Sprintf("%s (%d)", formatDuration(v), v), true}
 }
 func (b *bufferFrameParameter) RoundToGrid(p *Parameter, val int, up bool) int {

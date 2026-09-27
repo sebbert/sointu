@@ -74,10 +74,11 @@ type (
 	// shifts them by its modulations.
 	BufferRegion struct {
 		BufferID   uint32 // sointu.Buffer.ID
-		Start      uint32 // frame where playback starts
+		Start      uint32 // frame where playback starts; as int32, negative counts back from the newest frame
 		LoopStart  uint32
 		LoopLength uint32
 		Fade       uint32 // length of the crossfade at the end of the loop
+		EdgeFade   uint32 // length of the fade near the edges of the valid frames
 		Flags      uint32 // see BufferRegionNoteTracking and BufferRegionLoop
 	}
 )
@@ -402,7 +403,7 @@ func (b *bytecodeBuilder) getSampleIndex(unit sointu.Unit) int {
 // in the buffer region table, adding it to the table if it is not there yet.
 func (b *bytecodeBuilder) getBufferRegionIndex(unit sointu.Unit) int {
 	p := unit.Parameters
-	r := BufferRegion{BufferID: uint32(p["buffer"]), Start: uint32(p["start"])}
+	r := BufferRegion{BufferID: uint32(p["buffer"]), Start: uint32(int32(p["start"])), EdgeFade: uint32(max(p["edgefade"], 0))}
 	if p["loop"] == 1 {
 		r.LoopStart, r.LoopLength, r.Fade = uint32(p["loopstart"]), uint32(p["looplength"]), uint32(p["fade"])
 		r.Flags |= BufferRegionLoop
