@@ -297,3 +297,70 @@
     ))
 )
 {{end}}
+
+
+{{- if .HasOp "bufwrite"}}
+;;-------------------------------------------------------------------------------
+;;   BUFWRITE opcode: writes a frame to a buffer and pops it
+;;-------------------------------------------------------------------------------
+;;   Mono: pop l and write it
+;;   Stereo: pop l r and write them
+;;   Writes while the voice is held. WRK[0] is 1 once writing has started
+;;   after the note was triggered. Matches bufwrite in vm/go_synth.go.
+;;-------------------------------------------------------------------------------
+(func $su_op_bufwrite (param $stereo i32) (local $r i32) (local $h i32) (local $l f32) (local $rt f32) (local $cap i32) (local $head i32) (local $ptr i32) (local $fb f32)
+    (local.set $r (i32.add (i32.const {{index .Labels "su_buffer_regions"}}) (i32.mul (call $scanOperand) (i32.const 24))))
+    (local.set $h (i32.add (i32.const {{index .Labels "su_buffer_headers"}}) (i32.load (local.get $r))))
+    (local.set $l (call $pop))
+    (local.set $rt (local.get $l))
+{{- if .Stereo "bufwrite"}}
+    (if (local.get $stereo) (then (local.set $rt (call $pop))))
+{{- end}}
+    (local.set $cap (i32.load offset=4 (local.get $h)))
+    (if (i32.or
+            (i32.or (i32.eqz (i32.load (global.get $voice))) (i32.eqz (i32.load offset=4 (global.get $voice))))
+            (i32.eqz (local.get $cap))) (then
+        return
+    ))
+    (if (i32.eqz (i32.load (global.get $WRK))) (then
+        (i32.store (global.get $WRK) (i32.const 1))
+        (if (i32.eqz (i32.and (i32.load offset=20 (local.get $r)) (i32.const 4))) (then ;; once: a new recording
+            (i32.store offset=12 (local.get $h) (i32.const 0))
+            (i32.store offset=16 (local.get $h) (i32.const 0))
+        ))
+    ))
+    (local.set $head (i32.load offset=12 (local.get $h)))
+    (if (i32.ge_u (local.get $head) (local.get $cap)) (then
+        return ;; a recording that reached the end
+    ))
+    (local.set $fb (call $input (i32.const {{.InputNumber "bufwrite" "feedback"}})))
+    (local.set $ptr (i32.add
+        (i32.const {{index .Labels "su_buffers"}})
+        (i32.add
+            (i32.load (local.get $h))
+            (i32.shl (i32.mul (local.get $head) (i32.load offset=8 (local.get $h))) (i32.const 2))
+        )
+    ))
+    (if (i32.eq (i32.load offset=8 (local.get $h)) (i32.const 2)) (then
+        (f32.store (local.get $ptr) (f32.add (f32.mul (f32.load (local.get $ptr)) (local.get $fb)) (local.get $l)))
+        (f32.store offset=4 (local.get $ptr) (f32.add (f32.mul (f32.load offset=4 (local.get $ptr)) (local.get $fb)) (local.get $rt)))
+    )(else
+        (f32.store (local.get $ptr) (f32.add
+            (f32.mul (f32.load (local.get $ptr)) (local.get $fb))
+            (f32.mul (f32.add (local.get $l) (local.get $rt)) (f32.const 0.5))
+        ))
+    ))
+    (local.set $head (i32.add (local.get $head) (i32.const 1)))
+    (if (i32.and (i32.load offset=20 (local.get $r)) (i32.const 4)) (then ;; ring
+        (i32.store offset=12 (local.get $h) (i32.rem_u (local.get $head) (local.get $cap)))
+        (i32.store offset=16 (local.get $h) (select
+            (local.get $cap)
+            (i32.add (i32.load offset=16 (local.get $h)) (i32.const 1))
+            (i32.ge_u (i32.load offset=16 (local.get $h)) (local.get $cap))
+        ))
+    )(else
+        (i32.store offset=12 (local.get $h) (local.get $head))
+        (i32.store offset=16 (local.get $h) (local.get $head))
+    ))
+)
+{{end}}

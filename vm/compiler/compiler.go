@@ -130,7 +130,7 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 		templates = []string{"player.wat"}
 	}
 	features := vm.NecessaryFeaturesFor(song.Patch)
-	for _, unit := range []string{"bufread", "spawn", "arg"} {
+	for _, unit := range []string{"bufread", "bufwrite", "spawn", "arg"} {
 		if _, ok := features.Opcode(unit); ok && com.Arch != "wasm" {
 			return nil, nil, fmt.Errorf(`the %v unit is only supported when compiling for wasm (targeted architecture was %v)`, unit, com.Arch)
 		}
@@ -215,7 +215,13 @@ func (com *Compiler) wasmBuffers(song *sointu.Song, b *vm.Bytecode) (ret wasmBuf
 			i = len(ret.Headers)
 			index[r.BufferID] = i
 			header := wasmBufferHeader{Channels: 1} // a missing buffer has no frames and is silent
-			if buf, found := song.Buffers.Find(int(r.BufferID)); found && buf.Sample != nil {
+			if buf, found := song.Buffers.Find(int(r.BufferID)); found && buf.Writable() {
+				if buf.Channels < 1 || buf.Channels > 2 {
+					return ret, fmt.Errorf("buffer %q has %d channels, expected 1 or 2", buf.Name, buf.Channels)
+				}
+				header = wasmBufferHeader{Offset: uint32(ret.BufferBytes), Capacity: uint32(buf.Frames), Channels: uint32(buf.Channels)}
+				ret.BufferBytes += buf.Frames * buf.Channels * 4
+			} else if found && buf.Sample != nil {
 				enc, ok := com.Buffers[buf.ID]
 				if !ok {
 					return ret, fmt.Errorf("buffer %q has not been encoded", buf.Name)
@@ -232,6 +238,11 @@ func (com *Compiler) wasmBuffers(song *sointu.Song, b *vm.Bytecode) (ret wasmBuf
 				ret.BufferBytes += enc.Frames * enc.Channels * 4
 			}
 			ret.Headers = append(ret.Headers, header)
+		}
+		if r.Flags&vm.BufferRegionWrite != 0 && ret.Headers[i].Capacity > 0 {
+			if buf, _ := song.Buffers.Find(int(r.BufferID)); !buf.Writable() {
+				return ret, fmt.Errorf("a bufwrite unit writes to buffer %q, which has a sample", buf.Name)
+			}
 		}
 		ret.Regions = append(ret.Regions, wasmBufferRegion{
 			Header: uint32(i * wasmBufferHeaderSize), Start: r.Start, LoopStart: r.LoopStart,

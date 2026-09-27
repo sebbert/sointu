@@ -148,3 +148,23 @@ su_op_spawn_pop:
 su_op_spawn_done:
     ret
 {{end}}
+
+
+{{- if .HasOp "bufwrite"}}
+;-------------------------------------------------------------------------------
+;   BUFWRITE opcode: not supported on x86 yet; pops its input
+;-------------------------------------------------------------------------------
+{{.Func "su_op_bufwrite" "Opcode"}}
+    lodsb                                       ; skip the buffer region index
+{{- if .StereoAndMono "bufwrite"}}
+    jnc     su_op_bufwrite_mono
+{{- end}}
+{{- if .Stereo "bufwrite"}}
+    fstp    st0
+{{- end}}
+{{- if .StereoAndMono "bufwrite"}}
+su_op_bufwrite_mono:
+{{- end}}
+    fstp    st0
+    ret
+{{end}}

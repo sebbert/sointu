@@ -13,8 +13,9 @@ import (
 
 type (
 	// Buffer is a block of audio frames at 44100 Hz that units can read from,
-	// e.g. the bufread unit. A buffer is filled from an AudioSample when the
-	// synth starts; buffers without one are silent.
+	// e.g. the bufread unit. A buffer is either filled from an AudioSample
+	// when the synth starts, or, if it has Frames instead, written by bufwrite
+	// units while the song plays.
 	Buffer struct {
 		// ID is used by units to refer to this buffer, and stays the same when
 		// buffers are reordered. ID 0 means no buffer.
@@ -22,6 +23,9 @@ type (
 		Name     string       `yaml:",omitempty"`
 		Channels int          // 1 for mono, 2 for stereo
 		Sample   *AudioSample `yaml:",omitempty"`
+		// Frames is the length of a buffer without a sample, which bufwrite
+		// units write to.
+		Frames int `yaml:",omitempty"`
 	}
 
 	// AudioSample is an audio file that fills a buffer. The file is stored in
@@ -192,6 +196,16 @@ func (s *Song) SampleEncoding(sample *AudioSample) (Encoding, error) {
 type Buffers []Buffer
 
 // Find returns the buffer with the given ID.
+// Writable reports whether the buffer is written by bufwrite units, i.e. it
+// has no sample but a length.
+func (b *Buffer) Writable() bool { return b.Sample == nil && b.Frames > 0 }
+
+// NewAudio returns the audio of a writable buffer before anything has been
+// written to it: silent and without valid frames.
+func (b *Buffer) NewAudio() BufferAudio {
+	return BufferAudio{Channels: b.Channels, Data: make([]float32, b.Frames*b.Channels), Writable: true}
+}
+
 func (b Buffers) Find(id int) (Buffer, bool) {
 	for _, buf := range b {
 		if buf.ID == id {

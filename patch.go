@@ -421,6 +421,21 @@ var UnitTypes = map[string]UnitType{
 		},
 		StackUse: stackUseSource,
 	},
+	"bufwrite": {
+		// bufwrite pops a signal and writes it to a buffer without a sample,
+		// while its voice is held. In once mode, triggering a note clears the
+		// buffer and writing stops at its end; in ring mode, it writes
+		// continuously, wrapping around the end, and the oldest frames are
+		// overwritten. The written frame is the old frame times feedback plus
+		// the signal.
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "feedback", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true},
+			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+			{Name: "mode", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc(bufwriteModeNames[:])},
+		},
+		StackUse: stackUseSink,
+	},
 	"spawn": {
 		// spawn triggers notes on the voices of another instrument, taking
 		// the voice that was spawned longest ago. In rate mode, it spawns at
@@ -565,6 +580,14 @@ const (
 )
 
 var spawnModeNames = [...]string{"rate", "edge"}
+
+// Modes of the bufwrite unit.
+const (
+	BufwriteModeOnce = iota
+	BufwriteModeRing
+)
+
+var bufwriteModeNames = [...]string{"once", "ring"}
 
 // SpawnRateHz returns the rate of a spawn unit in Hz for its rate parameter
 // (with modulation) scaled to 0-1: 8 Hz at the middle, doubling every 8 steps.

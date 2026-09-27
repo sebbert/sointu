@@ -56,7 +56,7 @@
 {{- $.DataW .}}
 {{- end}}
 
-{{- if .HasOp "bufread"}}
+{{- if or (.HasOp "bufread") (.HasOp "bufwrite")}}
 {{- /*
 ;-------------------------------------------------------------------------------
 ;    Buffer headers, 5 i32s each: offset of the buffer's audio from su_buffers
@@ -131,7 +131,7 @@
 {{- .Align}}
 {{- .SetBlockLabel "su_delaylines"}}
 {{- .Block (int (mul 262156 .Song.Patch.NumDelayLines))}}
-{{- if .HasOp "bufread"}}
+{{- if or (.HasOp "bufread") (.HasOp "bufwrite")}}
 {{- .Align}}
 {{- .SetBlockLabel "su_buffers"}}
 {{- .Block .BufferBytes}}

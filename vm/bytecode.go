@@ -80,6 +80,11 @@ const (
 	// BufferRegionLoop is set in BufferRegion.Flags when the bufread unit
 	// loops. A loop of zero length does not loop.
 	BufferRegionLoop = 2
+	// BufferRegionRing is set in BufferRegion.Flags when the bufwrite unit
+	// writes in ring mode.
+	BufferRegionRing = 4
+	// BufferRegionWrite is set in BufferRegion.Flags for bufwrite units.
+	BufferRegionWrite = 8
 )
 
 type bytecodeBuilder struct {
@@ -156,7 +161,7 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				b.op(opcode + p["stereo"])
 				b.defOperands(unit)
 				b.operand(b.delayIndices[instrIndex][unitIndex], countTrack)
-			case "bufread":
+			case "bufread", "bufwrite":
 				index := b.getBufferRegionIndex(unit)
 				if index > 255 {
 					return nil, errors.New("Patch uses over 256 different buffer regions")
@@ -387,7 +392,12 @@ func (b *bytecodeBuilder) getBufferRegionIndex(unit sointu.Unit) int {
 		r.LoopStart, r.LoopLength, r.Fade = uint32(p["loopstart"]), uint32(p["looplength"]), uint32(p["fade"])
 		r.Flags |= BufferRegionLoop
 	}
-	if p["notetracking"] == 1 {
+	if unit.Type == "bufwrite" {
+		r = BufferRegion{BufferID: uint32(p["buffer"]), Flags: BufferRegionWrite}
+		if p["mode"] == sointu.BufwriteModeRing {
+			r.Flags |= BufferRegionRing
+		}
+	} else if p["notetracking"] == 1 {
 		r.Flags |= BufferRegionNoteTracking
 	}
 	index, ok := b.bufferRegionMap[r]

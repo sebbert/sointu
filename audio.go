@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"time"
 )
@@ -85,15 +86,29 @@ type (
 	// BufferSetter is implemented by Synths that can play buffers.
 	BufferSetter interface {
 		// SetBuffers sets the audio of the buffers, keyed by Buffer.ID.
-		// Buffers without audio are silent. Called between synth.Renders; the
-		// audio is not modified afterwards, so the synth can keep it.
+		// Buffers without audio are silent. Called between synth.Renders;
+		// the caller does not modify the audio afterwards, so the synth can
+		// keep it. The synth writes to the Data of writable buffers.
 		SetBuffers(buffers map[int]BufferAudio)
+	}
+
+	// BufferWriter is implemented by Synths that write to buffers.
+	BufferWriter interface {
+		// WrittenBuffers returns the writable buffers with what has been
+		// written to them so far. Passing them to SetBuffers of another synth
+		// continues from there.
+		WrittenBuffers() map[int]BufferAudio
 	}
 
 	// BufferAudio is the audio of a buffer: interleaved frames at 44100 Hz.
 	BufferAudio struct {
 		Channels int
 		Data     []float32
+		// Writable is true for buffers that bufwrite units write to. Their
+		// valid frames are the Filled frames before Head, wrapping around the
+		// end; for other buffers, all frames are valid.
+		Writable     bool
+		Head, Filled int
 	}
 )
 
@@ -113,7 +128,7 @@ func Play(synther Synther, song Song, progress func(float32)) (AudioBuffer, erro
 }
 
 // PlayWithBuffers is like Play, but gives the synth the audio of the song's
-// buffers, keyed by Buffer.ID. It is an error if the song has buffers with
+// buffers with samples, keyed by Buffer.ID. Writable buffers start empty. It is an error if the song has buffers with
 // samples but the synth cannot play buffers.
 func PlayWithBuffers(synther Synther, song Song, buffers map[int]BufferAudio, progress func(float32)) (AudioBuffer, error) {
 	err := song.Validate()
@@ -125,6 +140,15 @@ func PlayWithBuffers(synther Synther, song Song, buffers map[int]BufferAudio, pr
 		return nil, fmt.Errorf("sointu.Play failed: %v", err)
 	}
 	defer synth.Close()
+	buffers = maps.Clone(buffers)
+	if buffers == nil {
+		buffers = map[int]BufferAudio{}
+	}
+	for _, b := range song.Buffers {
+		if b.Writable() {
+			buffers[b.ID] = b.NewAudio() // rendering starts with nothing written
+		}
+	}
 	if s, ok := synth.(BufferSetter); ok {
 		s.SetBuffers(buffers)
 	} else if len(buffers) > 0 {

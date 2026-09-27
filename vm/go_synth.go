@@ -133,8 +133,25 @@ type synthBuffer struct {
 func (s *GoSynth) SetBuffers(buffers map[int]sointu.BufferAudio) {
 	s.buffers = make(map[int]*synthBuffer, len(buffers))
 	for id, b := range buffers {
-		s.buffers[id] = &synthBuffer{audio: b, filled: uint32(b.Frames())}
+		frames := b.Frames()
+		if b.Writable {
+			s.buffers[id] = &synthBuffer{audio: b, head: uint32(min(max(b.Head, 0), frames)), filled: uint32(min(max(b.Filled, 0), frames))}
+		} else {
+			s.buffers[id] = &synthBuffer{audio: b, filled: uint32(frames)}
+		}
 	}
+}
+
+func (s *GoSynth) WrittenBuffers() map[int]sointu.BufferAudio {
+	ret := map[int]sointu.BufferAudio{}
+	for id, b := range s.buffers {
+		if b.audio.Writable {
+			a := b.audio
+			a.Head, a.Filled = int(b.head), int(b.filled)
+			ret[id] = a
+		}
+	}
+	return ret
 }
 
 func (s *GoSynth) CPULoad(loads []sointu.CPULoad) int {
@@ -562,6 +579,10 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 					detuneStereo = -detuneStereo
 				}
 				unit.ports[6] = 0
+			case opBufwrite:
+				index := operands[0]
+				operands = operands[1:]
+				s.bufwrite(unit, voice, s.bytecode.BufferRegions[index], params[0], stereo, &stack)
 			case opSpawn:
 				first, count, flags := int(operands[0]), int(operands[1]), operands[2]
 				operands = operands[3:]
@@ -695,7 +716,7 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, r BufferRegion, transpose, d
 		pos = bufreadFrames(r.Start, unit.ports[3], buf.filled, capacity)
 		// keep the fraction, so that small changes of the modulation do not
 		// jump whole frames
-		offset := unit.ports[3] * float32(buf.filled)
+		offset := float32(unit.ports[3] * float32(buf.filled)) // rounded, not fused with the subtraction
 		frac = offset - float32(math.Floor(float64(offset)))
 	}
 	i, next := pos, pos+1
@@ -729,15 +750,18 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, r BufferRegion, transpose, d
 		return a.Data[int(abs)*a.Channels+min(channel, a.Channels-1)]
 	}
 	read := func(channel int) float32 {
+		// the explicit conversions round the products, so that the compiler
+		// does not fuse them into multiply-adds, which the wasm player does
+		// not do
 		a, b := sample(i, channel), sample(next, channel)
-		v := a + (b-a)*frac
+		v := a + float32((b-a)*frac)
 		if loopLength > 0 && fade > 0 && i >= loopEnd-fade {
 			// crossfade to the frames before the loop start, which the
 			// loop start continues
 			j := i - loopLength
 			c, d := sample(j, channel), sample(j+1, channel)
 			w := (float32(i-(loopEnd-fade)) + frac) / float32(fade)
-			v += (c + (d-c)*frac - v) * w
+			v += float32((c + float32((d-c)*frac) - v) * w)
 		}
 		return v * gain
 	}
@@ -748,7 +772,7 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, r BufferRegion, transpose, d
 	} else {
 		*stack = append(*stack, read(0))
 	}
-	semitones := 64*(transpose*2-1) + (detune*2 - 1)
+	semitones := float32(64*(float32(transpose*2)-1)) + (float32(detune*2) - 1)
 	if r.Flags&BufferRegionNoteTracking != 0 {
 		semitones += float32(voice.note) - 60
 	}
@@ -792,7 +816,7 @@ func (s *GoSynth) spawn(unit *unit, own *voice, first, count int, flags byte, ra
 	if flags&2 != 0 {
 		base = float32(own.note)
 	}
-	n := base + (transpose*2-1)*64 + 0.5
+	n := base + float32((float32(transpose*2)-1)*64) + 0.5 // no multiply-adds, like wasm
 	n = max(min(n, 127), 1)
 	target := first
 	for i := first + 1; i < first+count; i++ {
@@ -803,6 +827,52 @@ func (s *GoSynth) spawn(unit *unit, own *voice, first, count int, flags byte, ra
 	v := &s.state.voices[target]
 	*v = voice{note: byte(math.Floor(float64(n))), sustain: true, spawned: s.state.globalTime + 1}
 	copy(v.args[:], args)
+}
+
+// bufwrite pops a frame from the stack and writes it to a writable buffer
+// while the voice is held. unit.state[0] is 1 (as bits) once writing has
+// started after the note was triggered. Matches $su_op_bufwrite in the wasm
+// player.
+func (s *GoSynth) bufwrite(unit *unit, voice *voice, r BufferRegion, feedback float32, stereo bool, stack *[]float32) {
+	l := len(*stack)
+	left, right := (*stack)[l-1], (*stack)[l-1] // the left channel is on top
+	if stereo {
+		right = (*stack)[l-2]
+		*stack = (*stack)[:l-2]
+	} else {
+		*stack = (*stack)[:l-1]
+	}
+	buf := s.buffers[int(r.BufferID)]
+	if voice.note == 0 || !voice.sustain || buf == nil || !buf.audio.Writable || buf.audio.Frames() == 0 {
+		return
+	}
+	capacity := uint32(buf.audio.Frames())
+	ring := r.Flags&BufferRegionRing != 0
+	if math.Float32bits(unit.state[0]) == 0 {
+		unit.state[0] = math.Float32frombits(1)
+		if !ring { // a new recording
+			buf.head, buf.filled = 0, 0
+		}
+	}
+	if buf.head >= capacity {
+		return // a recording that reached the end
+	}
+	a := buf.audio
+	i := int(buf.head) * a.Channels
+	// no multiply-adds, like wasm
+	if a.Channels == 2 {
+		a.Data[i] = float32(a.Data[i]*feedback) + left
+		a.Data[i+1] = float32(a.Data[i+1]*feedback) + right
+	} else {
+		a.Data[i] = float32(a.Data[i]*feedback) + float32((left+right)*0.5)
+	}
+	buf.head++
+	if ring {
+		buf.head %= capacity
+		buf.filled = min(buf.filled+1, capacity)
+	} else {
+		buf.filled = buf.head
+	}
 }
 
 // bufreadFrames returns a position of a bufread unit: frames shifted by the
