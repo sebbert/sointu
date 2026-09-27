@@ -366,54 +366,67 @@
 ;;-------------------------------------------------------------------------------
 ;;   Mono:   push the next frame of the buffer (channels mixed) on stack
 ;;   Stereo: push r l on stack
-;;   The integer part of the position relative to the region start is in
-;;   WRK[0], the fraction in WRK[1]. Voices never triggered (note 0) are
+;;   Positions are in frames from the oldest valid frame of the buffer when
+;;   the note was triggered. WRK[0] is the integer part of the position,
+;;   WRK[1] the fraction, WRK[2] the oldest valid frame at the trigger and
+;;   WRK[3] 1 once playback has started. Voices never triggered (note 0) are
 ;;   silent. Matches bufread in vm/go_synth.go.
 ;;-------------------------------------------------------------------------------
-(func $su_op_bufread (param $stereo i32) (local $r i32) (local $ptr i32) (local $frames i32) (local $channels i32) (local $pos i32) (local $frac f32) (local $i i32) (local $next i32) (local $loopEnd i32) (local $loopLength i32) (local $semitones f32) (local $whole f32)
-    (local.set $r (i32.add (i32.const {{index .Labels "su_buffer_regions"}}) (i32.mul (call $scanOperand) (i32.const 28))))
-    (if (i32.eqz (i32.load (global.get $voice))) (then
+(func $su_op_bufread (param $stereo i32) (local $r i32) (local $h i32) (local $cap i32) (local $filled i32) (local $pos i32) (local $frac f32) (local $base i32) (local $next i32) (local $ls i32) (local $ll i32) (local $le i32) (local $fade i32) (local $semitones f32) (local $whole f32)
+    (local.set $r (i32.add (i32.const {{index .Labels "su_buffer_regions"}}) (i32.mul (call $scanOperand) (i32.const 24))))
+    (local.set $h (i32.add (i32.const {{index .Labels "su_buffer_headers"}}) (i32.load (local.get $r))))
+    (local.set $cap (i32.load offset=4 (local.get $h)))
+    (local.set $filled (i32.load offset=16 (local.get $h)))
+    (if (i32.or (i32.eqz (i32.load (global.get $voice))) (i32.eqz (local.get $cap))) (then
+        (call $bufreadClearPorts)
 {{- if .Stereo "bufread"}}
         (if (local.get $stereo) (then (call $push (f32.const 0))))
 {{- end}}
         (call $push (f32.const 0))
         return
     ))
-    (local.set $ptr (i32.add (i32.const {{index .Labels "su_buffers"}}) (i32.load (local.get $r))))
-    (local.set $frames (i32.load offset=4 (local.get $r)))
-    (local.set $channels (i32.load offset=8 (local.get $r)))
-    (local.set $loopLength (i32.load offset=20 (local.get $r)))
-    (local.set $loopEnd (i32.add (i32.load offset=16 (local.get $r)) (local.get $loopLength)))
     (local.set $pos (i32.load (global.get $WRK)))
     (local.set $frac (f32.load offset=4 (global.get $WRK)))
-    (local.set $i (i32.add (i32.load offset=12 (local.get $r)) (local.get $pos)))
-    (if (i32.and (i32.ne (local.get $loopLength) (i32.const 0)) (i32.ge_u (local.get $i) (local.get $loopEnd))) (then
-        (local.set $i (i32.add
-            (i32.load offset=16 (local.get $r))
-            (i32.rem_u (i32.sub (local.get $i) (i32.load offset=16 (local.get $r))) (local.get $loopLength))
+    (local.set $base (i32.load offset=8 (global.get $WRK)))
+    (if (i32.eqz (i32.load offset=12 (global.get $WRK))) (then
+        (local.set $base (call $bufreadOldest (local.get $h)))
+        (local.set $pos (call $bufreadFrames (i32.load offset=4 (local.get $r)) (f32.load offset={{add 32 (mul 4 (.InputNumber "bufread" "start"))}} (global.get $WRK)) (local.get $filled) (local.get $cap)))
+        (local.set $frac (f32.mul (f32.load offset={{add 32 (mul 4 (.InputNumber "bufread" "start"))}} (global.get $WRK)) (f32.convert_i32_u (local.get $filled))))
+        (local.set $frac (f32.sub (local.get $frac) (f32.floor (local.get $frac))))
+    ))
+    (local.set $next (i32.add (local.get $pos) (i32.const 1)))
+    (if (i32.and (i32.load offset=20 (local.get $r)) (i32.const 2)) (then ;; loop
+        (local.set $ls (call $bufreadFrames (i32.load offset=8 (local.get $r)) (f32.load offset={{add 32 (mul 4 (.InputNumber "bufread" "loopstart"))}} (global.get $WRK)) (local.get $filled) (local.get $cap)))
+        (local.set $ll (call $bufreadFrames (i32.load offset=12 (local.get $r)) (f32.load offset={{add 32 (mul 4 (.InputNumber "bufread" "looplength"))}} (global.get $WRK)) (local.get $filled) (local.get $cap)))
+        (local.set $le (i32.add (local.get $ls) (local.get $ll)))
+        (local.set $fade (call $minu (call $minu (i32.load offset=16 (local.get $r)) (local.get $ls)) (local.get $ll)))
+        (if (local.get $ll) (then
+            (if (i32.ge_u (local.get $pos) (local.get $le)) (then
+                (local.set $pos (i32.add (local.get $ls) (i32.rem_u (i32.sub (local.get $pos) (local.get $ls)) (local.get $ll))))
+            ))
+            (local.set $next (i32.add (local.get $pos) (i32.const 1)))
+            (if (i32.ge_u (local.get $next) (local.get $le)) (then
+                (local.set $next (local.get $ls))
+            ))
         ))
-        (local.set $pos (i32.sub (local.get $i) (i32.load offset=12 (local.get $r))))
     ))
-    (local.set $next (i32.add (local.get $i) (i32.const 1)))
-    (if (i32.and (i32.ne (local.get $loopLength) (i32.const 0)) (i32.ge_u (local.get $next) (local.get $loopEnd))) (then
-        (local.set $next (i32.load offset=16 (local.get $r)))
-    ))
+    (call $bufreadClearPorts)
 {{- if .Stereo "bufread"}}
     (if (local.get $stereo) (then
-        (call $push (call $bufreadInterpolate (local.get $ptr) (local.get $frames) (local.get $channels) (local.get $i) (local.get $next) (local.get $frac) (i32.const 1)))
-        (call $push (call $bufreadInterpolate (local.get $ptr) (local.get $frames) (local.get $channels) (local.get $i) (local.get $next) (local.get $frac) (i32.const 0)))
+        (call $push (call $bufreadRead (local.get $h) (local.get $base) (local.get $pos) (local.get $next) (local.get $frac) (local.get $ll) (local.get $le) (local.get $fade) (i32.const 1)))
+        (call $push (call $bufreadRead (local.get $h) (local.get $base) (local.get $pos) (local.get $next) (local.get $frac) (local.get $ll) (local.get $le) (local.get $fade) (i32.const 0)))
     )(else
 {{- end}}
-    (if (i32.eq (local.get $channels) (i32.const 2)) (then
+    (if (i32.eq (i32.load offset=8 (local.get $h)) (i32.const 2)) (then
         (call $push (f32.mul
             (f32.add
-                (call $bufreadInterpolate (local.get $ptr) (local.get $frames) (local.get $channels) (local.get $i) (local.get $next) (local.get $frac) (i32.const 0))
-                (call $bufreadInterpolate (local.get $ptr) (local.get $frames) (local.get $channels) (local.get $i) (local.get $next) (local.get $frac) (i32.const 1))
+                (call $bufreadRead (local.get $h) (local.get $base) (local.get $pos) (local.get $next) (local.get $frac) (local.get $ll) (local.get $le) (local.get $fade) (i32.const 0))
+                (call $bufreadRead (local.get $h) (local.get $base) (local.get $pos) (local.get $next) (local.get $frac) (local.get $ll) (local.get $le) (local.get $fade) (i32.const 1))
             )
             (f32.const 0.5)
         ))
     )(else
-        (call $push (call $bufreadInterpolate (local.get $ptr) (local.get $frames) (local.get $channels) (local.get $i) (local.get $next) (local.get $frac) (i32.const 0)))
+        (call $push (call $bufreadRead (local.get $h) (local.get $base) (local.get $pos) (local.get $next) (local.get $frac) (local.get $ll) (local.get $le) (local.get $fade) (i32.const 0)))
     ))
 {{- if .Stereo "bufread"}}
     ))
@@ -422,7 +435,7 @@
         (f32.mul (call $inputSigned (i32.const {{.InputNumber "bufread" "transpose"}})) (f32.const 64))
         (call $inputSigned (i32.const {{.InputNumber "bufread" "detune"}}))
     ))
-    (if (i32.and (i32.load offset=24 (local.get $r)) (i32.const 1)) (then ;; note tracking
+    (if (i32.and (i32.load offset=20 (local.get $r)) (i32.const 1)) (then ;; note tracking
         (local.set $semitones (f32.add
             (local.get $semitones)
             (f32.sub (f32.convert_i32_u (i32.load (global.get $voice))) (f32.const 60))
@@ -432,31 +445,92 @@
     (local.set $whole (f32.floor (local.get $frac)))
     (i32.store (global.get $WRK) (i32.add (local.get $pos) (i32.trunc_f32_u (local.get $whole))))
     (f32.store offset=4 (global.get $WRK) (f32.sub (local.get $frac) (local.get $whole)))
+    (i32.store offset=8 (global.get $WRK) (local.get $base))
+    (i32.store offset=12 (global.get $WRK) (i32.const 1))
 )
 
-;; $bufreadInterpolate returns channel c of the buffer interpolated between
-;; frames i and next, times the gain
-(func $bufreadInterpolate (param $ptr i32) (param $frames i32) (param $channels i32) (param $i i32) (param $next i32) (param $frac f32) (param $c i32) (result f32) (local $a f32)
-    (local.set $c (select (local.get $c) (i32.sub (local.get $channels) (i32.const 1)) (i32.lt_u (local.get $c) (local.get $channels))))
-    (local.set $a (call $bufreadSample (local.get $ptr) (local.get $frames) (local.get $channels) (local.get $i) (local.get $c)))
-    (f32.mul
-        (f32.add
-            (local.get $a)
-            (f32.mul
-                (f32.sub (call $bufreadSample (local.get $ptr) (local.get $frames) (local.get $channels) (local.get $next) (local.get $c)) (local.get $a))
-                (local.get $frac)
-            )
-        )
-        (call $input (i32.const {{.InputNumber "bufread" "gain"}}))
+;; $bufreadClearPorts clears the modulations of start, loop start and loop
+;; length, which bufread reads itself
+(func $bufreadClearPorts
+    (f32.store offset={{add 32 (mul 4 (.InputNumber "bufread" "start"))}} (global.get $WRK) (f32.const 0))
+    (f32.store offset={{add 32 (mul 4 (.InputNumber "bufread" "loopstart"))}} (global.get $WRK) (f32.const 0))
+    (f32.store offset={{add 32 (mul 4 (.InputNumber "bufread" "looplength"))}} (global.get $WRK) (f32.const 0))
+)
+
+;; $bufreadOldest returns the oldest valid frame of the buffer with header h
+(func $bufreadOldest (param $h i32) (result i32)
+    (i32.rem_u
+        (i32.sub (i32.add (i32.load offset=12 (local.get $h)) (i32.load offset=4 (local.get $h))) (i32.load offset=16 (local.get $h)))
+        (i32.load offset=4 (local.get $h))
     )
 )
 
-;; $bufreadSample returns channel c of frame i of a buffer, or 0 past its end
-(func $bufreadSample (param $ptr i32) (param $frames i32) (param $channels i32) (param $i i32) (param $c i32) (result f32)
-    (if (result f32) (i32.ge_u (local.get $i) (local.get $frames)) (then
-        (f32.const 0)
-    )(else
-        (f32.load (i32.add (local.get $ptr) (i32.shl (i32.add (i32.mul (local.get $i) (local.get $channels)) (local.get $c)) (i32.const 2))))
+;; $bufreadFrames returns frames shifted by the modulation times the filled
+;; length of the buffer, clamped between 0 and the capacity
+(func $bufreadFrames (param $frames i32) (param $mod f32) (param $filled i32) (param $cap i32) (result i32) (local $v i64)
+    (local.set $v (i64.add
+        (i64.extend_i32_u (local.get $frames))
+        (i64.trunc_f32_s (f32.max (f32.min
+            (f32.floor (f32.mul (local.get $mod) (f32.convert_i32_u (local.get $filled))))
+            (f32.const 1073741824)) (f32.const -1073741824)))
+    ))
+    (i32.wrap_i64 (select (i64.const 0)
+        (select (i64.extend_i32_u (local.get $cap)) (local.get $v) (i64.gt_s (local.get $v) (i64.extend_i32_u (local.get $cap))))
+        (i64.lt_s (local.get $v) (i64.const 0))
+    ))
+)
+
+(func $minu (param $a i32) (param $b i32) (result i32)
+    (select (local.get $a) (local.get $b) (i32.lt_u (local.get $a) (local.get $b)))
+)
+
+;; $bufreadRead returns channel c of the buffer interpolated between frames
+;; i and next, crossfaded to the frames before the loop start at the end of
+;; the loop, times the gain
+(func $bufreadRead (param $h i32) (param $base i32) (param $i i32) (param $next i32) (param $frac f32) (param $ll i32) (param $le i32) (param $fade i32) (param $c i32) (result f32) (local $v f32) (local $j i32)
+    (local.set $v (call $bufreadLerp (local.get $h) (local.get $base) (local.get $i) (local.get $next) (local.get $frac) (local.get $c)))
+    (if (i32.and (i32.and (i32.ne (local.get $ll) (i32.const 0)) (i32.ne (local.get $fade) (i32.const 0)))
+            (i32.ge_u (local.get $i) (i32.sub (local.get $le) (local.get $fade)))) (then
+        (local.set $j (i32.sub (local.get $i) (local.get $ll)))
+        (local.set $v (f32.add (local.get $v) (f32.mul
+            (f32.sub (call $bufreadLerp (local.get $h) (local.get $base) (local.get $j) (i32.add (local.get $j) (i32.const 1)) (local.get $frac) (local.get $c)) (local.get $v))
+            (f32.div
+                (f32.add (f32.convert_i32_u (i32.sub (local.get $i) (i32.sub (local.get $le) (local.get $fade)))) (local.get $frac))
+                (f32.convert_i32_u (local.get $fade)))
+        )))
+    ))
+    (f32.mul (local.get $v) (call $input (i32.const {{.InputNumber "bufread" "gain"}})))
+)
+
+;; $bufreadLerp returns channel c of the buffer interpolated between frames i
+;; and next
+(func $bufreadLerp (param $h i32) (param $base i32) (param $i i32) (param $next i32) (param $frac f32) (param $c i32) (result f32) (local $a f32)
+    (local.set $a (call $bufreadSample (local.get $h) (local.get $base) (local.get $i) (local.get $c)))
+    (f32.add
+        (local.get $a)
+        (f32.mul
+            (f32.sub (call $bufreadSample (local.get $h) (local.get $base) (local.get $next) (local.get $c)) (local.get $a))
+            (local.get $frac)
+        )
+    )
+)
+
+;; $bufreadSample returns channel c of frame i of a buffer, counted from base,
+;; or 0 outside the valid frames
+(func $bufreadSample (param $h i32) (param $base i32) (param $i i32) (param $c i32) (result f32) (local $cap i32) (local $abs i32) (local $channels i32)
+    (local.set $cap (i32.load offset=4 (local.get $h)))
+    (if (i32.ge_u (local.get $i) (local.get $cap)) (then (return (f32.const 0))))
+    (local.set $abs (i32.rem_u (i32.add (local.get $base) (local.get $i)) (local.get $cap)))
+    (if (i32.ge_u
+            (i32.rem_u (i32.sub (i32.add (local.get $abs) (local.get $cap)) (call $bufreadOldest (local.get $h))) (local.get $cap))
+            (i32.load offset=16 (local.get $h))) (then
+        (return (f32.const 0))
+    ))
+    (local.set $channels (i32.load offset=8 (local.get $h)))
+    (local.set $c (select (local.get $c) (i32.sub (local.get $channels) (i32.const 1)) (i32.lt_u (local.get $c) (local.get $channels))))
+    (f32.load offset={{index .Labels "su_buffers"}} (i32.add
+        (i32.load (local.get $h))
+        (i32.shl (i32.add (i32.mul (local.get $abs) (local.get $channels)) (local.get $c)) (i32.const 2))
     ))
 )
 {{end}}

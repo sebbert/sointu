@@ -59,14 +59,25 @@
 {{- if .HasOp "bufread"}}
 {{- /*
 ;-------------------------------------------------------------------------------
-;    Buffer regions played by bufread units, 7 i32s each: offset of the
-;    buffer's audio from su_buffers in bytes, frames and channels of the
-;    buffer, start, loop start, loop length and flags of the region
+;    Buffer headers, 5 i32s each: offset of the buffer's audio from su_buffers
+;    in bytes, capacity in frames, channels, head and filled. The valid frames
+;    are the filled frames before head.
+;-------------------------------------------------------------------------------
+*/}}
+{{- .SetDataLabel "su_buffer_headers"}}
+{{- range .Headers}}
+{{- $.DataD .Offset}}{{$.DataD .Capacity}}{{$.DataD .Channels}}{{$.DataD .Head}}{{$.DataD .Filled}}
+{{- end}}
+{{- /*
+;-------------------------------------------------------------------------------
+;    Buffer regions played by bufread units, 6 i32s each: offset of the
+;    buffer's header from su_buffer_headers in bytes, start, loop start, loop
+;    length, fade and flags
 ;-------------------------------------------------------------------------------
 */}}
 {{- .SetDataLabel "su_buffer_regions"}}
 {{- range .Regions}}
-{{- $.DataD .Offset}}{{$.DataD .Frames}}{{$.DataD .Channels}}{{$.DataD .Start}}{{$.DataD .LoopStart}}{{$.DataD .LoopLength}}{{$.DataD .Flags}}
+{{- $.DataD .Header}}{{$.DataD .Start}}{{$.DataD .LoopStart}}{{$.DataD .LoopLength}}{{$.DataD .Fade}}{{$.DataD .Flags}}
 {{- end}}
 {{- end}}
 

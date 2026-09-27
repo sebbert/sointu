@@ -123,26 +123,26 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 		if !up.CanSet && !up.CanModulate {
 			continue // skip parameters that cannot be set or modulated
 		}
+		q := 0
+		if up.CanModulate {
+			portIndex++ // count the ports of hidden parameters too
+			q = portIndex
+		}
 		if unit.Type == "oscillator" && unit.Parameters["type"] != sointu.Sample && (up.Name == "samplestart" || up.Name == "loopstart" || up.Name == "looplength") {
 			continue // don't show the sample related params unless necessary
 		}
 		if unit.Type == "send" && up.Name == "port" {
 			continue
 		}
-		if unit.Type == "bufread" && unit.Parameters["loop"] == 0 && (up.Name == "loopstart" || up.Name == "looplength") {
+		if unit.Type == "bufread" && unit.Parameters["loop"] == 0 && (up.Name == "loopstart" || up.Name == "looplength" || up.Name == "fade") {
 			continue // loop points only matter when looping
-		}
-		q := 0
-		if up.CanModulate {
-			portIndex++
-			q = portIndex
 		}
 		var vtable parameterVtable = &namedParameter{}
 		if unit.Type == "bufread" {
 			switch up.Name {
 			case "buffer":
 				vtable = &bufferParameter{}
-			case "start", "loopstart", "looplength":
+			case "start", "loopstart", "looplength", "fade":
 				vtable = &bufferFrameParameter{}
 			}
 		}

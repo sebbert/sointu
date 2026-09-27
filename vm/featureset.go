@@ -63,7 +63,7 @@ func init() {
 				allInputs[paramKey{k, t.Name}] = inputCount
 				inputCount++
 			}
-			if t.CanModulate && t.CanSet {
+			if t.CanModulate && t.CanSet && !t.NoTransform {
 				transformCount++
 			}
 		}

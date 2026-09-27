@@ -104,6 +104,12 @@ type (
 		Default     int    // the default value of the parameter
 		CanSet      bool   // if true, then this parameter can be set through the gui
 		CanModulate bool   // if true, then this parameter can be modulated i.e. has a port number in "send" unit
+		// NoTransform is true for parameters that can be set and modulated,
+		// but whose value is not passed to the unit as a transformed
+		// parameter, e.g. because it does not fit in a byte. The unit reads
+		// the modulation port itself. Such parameters must come after the
+		// transformed ones.
+		NoTransform bool
 		DisplayFunc UnitParameterDisplayFunc
 	}
 
@@ -390,7 +396,10 @@ var UnitTypes = map[string]UnitType{
 		// bufread plays a buffer. With note tracking, note 60 plays it at its
 		// original speed; transpose and detune shift the pitch like in the
 		// oscillator. start, loopstart and looplength are in frames from the
-		// beginning of the buffer.
+		// oldest valid frame of the buffer; modulating them shifts them by
+		// the valid length of the buffer times the modulation. start is read
+		// when the note is triggered. fade is the length of the crossfade at
+		// the end of the loop.
 		Params: []UnitParameter{
 			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "transpose", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
@@ -405,9 +414,10 @@ var UnitTypes = map[string]UnitType{
 			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
 			{Name: "notetracking", MinValue: 0, Default: 1, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "loop", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-			{Name: "start", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
-			{Name: "loopstart", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
-			{Name: "looplength", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+			{Name: "start", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true, NoTransform: true},
+			{Name: "loopstart", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true, NoTransform: true},
+			{Name: "looplength", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true, NoTransform: true},
+			{Name: "fade", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
 		},
 		StackUse: stackUseSource,
 	},

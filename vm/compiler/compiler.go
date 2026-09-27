@@ -40,10 +40,29 @@ type wasmBuffer struct {
 	EncodedHex               string
 }
 
-// wasmBufferRegion is an entry of the wasm player's buffer region table.
-type wasmBufferRegion struct {
-	Offset, Frames, Channels, Start, LoopStart, LoopLength, Flags uint32
+// wasmBufferHeader is the runtime state of a buffer in the wasm player: the
+// offset of its audio from su_buffers in bytes, its capacity in frames, its
+// channels, and the valid frames, which are the filled frames before head.
+type wasmBufferHeader struct {
+	Offset, Capacity, Channels, Head, Filled uint32
 }
+
+// wasmBufferRegion is an entry of the wasm player's buffer region table.
+// Header is the offset of the buffer's header from su_buffer_headers in bytes.
+type wasmBufferRegion struct {
+	Header, Start, LoopStart, LoopLength, Fade, Flags uint32
+}
+
+// wasmBufferData is the buffer data for the wasm player template.
+type wasmBufferData struct {
+	Buffers     []wasmBuffer
+	Headers     []wasmBufferHeader
+	Regions     []wasmBufferRegion
+	BufferBytes int
+}
+
+// wasmBufferHeaderSize is the size of wasmBufferHeader in bytes.
+const wasmBufferHeaderSize = 20
 
 //go:embed templates/amd64-386/* templates/wasm/*
 var templateFS embed.FS
@@ -149,7 +168,7 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 			populatedTemplate, extension, err = com.compile(templateName, &data)
 		} else if com.Arch == "wasm" {
 			wasmMacros := *NewWasmMacros()
-			buffers, regions, bufferBytes, err := com.wasmBuffers(song, encodedPatch)
+			buffers, err := com.wasmBuffers(song, encodedPatch)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -164,10 +183,8 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 				PatternLength  int
 				SequenceLength int
 				Hold           int
-				Buffers        []wasmBuffer
-				Regions        []wasmBufferRegion
-				BufferBytes    int
-			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers, regions, bufferBytes}
+				wasmBufferData
+			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers}
 			populatedTemplate, extension, err = com.compile(templateName, &data)
 		}
 		if err != nil {
@@ -186,38 +203,38 @@ func (com *Compiler) compile(templateName string, data interface{}) (string, str
 }
 
 // wasmBuffers lays out the buffers played by the patch's bufread units in the
-// wasm player's memory and builds the buffer region table. Only buffers that
-// are played are included; regions of buffers that do not exist or have no
-// sample are silent.
-func (com *Compiler) wasmBuffers(song *sointu.Song, b *vm.Bytecode) (buffers []wasmBuffer, regions []wasmBufferRegion, size int, err error) {
-	index := map[uint32]int{}
+// wasm player: a header for each buffer, and the audio of the buffers with
+// samples after each other in su_buffers.
+func (com *Compiler) wasmBuffers(song *sointu.Song, b *vm.Bytecode) (ret wasmBufferData, err error) {
+	index := map[uint32]int{} // buffer ID -> header index
 	for _, r := range b.BufferRegions {
 		i, ok := index[r.BufferID]
 		if !ok {
-			i = -1
+			i = len(ret.Headers)
+			index[r.BufferID] = i
+			header := wasmBufferHeader{Channels: 1} // a missing buffer has no frames and is silent
 			if buf, found := song.Buffers.Find(int(r.BufferID)); found && buf.Sample != nil {
 				enc, ok := com.Buffers[buf.ID]
 				if !ok {
-					return nil, nil, 0, fmt.Errorf("buffer %q has not been encoded", buf.Name)
+					return ret, fmt.Errorf("buffer %q has not been encoded", buf.Name)
 				}
 				if enc.Channels < 1 || enc.Channels > 2 {
-					return nil, nil, 0, fmt.Errorf("buffer %q has %d channels, expected 1 or 2", buf.Name, enc.Channels)
+					return ret, fmt.Errorf("buffer %q has %d channels, expected 1 or 2", buf.Name, enc.Channels)
 				}
-				i = len(buffers)
 				var hex strings.Builder
 				for _, c := range enc.Encoded {
 					fmt.Fprintf(&hex, "\\%02x", c)
 				}
-				buffers = append(buffers, wasmBuffer{Offset: size, Frames: enc.Frames, Channels: enc.Channels, EncodedHex: hex.String()})
-				size += enc.Frames * enc.Channels * 4
+				ret.Buffers = append(ret.Buffers, wasmBuffer{Offset: ret.BufferBytes, Frames: enc.Frames, Channels: enc.Channels, EncodedHex: hex.String()})
+				header = wasmBufferHeader{Offset: uint32(ret.BufferBytes), Capacity: uint32(enc.Frames), Channels: uint32(enc.Channels), Filled: uint32(enc.Frames)}
+				ret.BufferBytes += enc.Frames * enc.Channels * 4
 			}
-			index[r.BufferID] = i
+			ret.Headers = append(ret.Headers, header)
 		}
-		region := wasmBufferRegion{Channels: 1, Start: r.Start, LoopStart: r.LoopStart, LoopLength: r.LoopLength, Flags: r.Flags}
-		if i >= 0 {
-			region.Offset, region.Frames, region.Channels = uint32(buffers[i].Offset), uint32(buffers[i].Frames), uint32(buffers[i].Channels)
-		}
-		regions = append(regions, region)
+		ret.Regions = append(ret.Regions, wasmBufferRegion{
+			Header: uint32(i * wasmBufferHeaderSize), Start: r.Start, LoopStart: r.LoopStart,
+			LoopLength: r.LoopLength, Fade: r.Fade, Flags: r.Flags,
+		})
 	}
-	return buffers, regions, size, nil
+	return ret, nil
 }

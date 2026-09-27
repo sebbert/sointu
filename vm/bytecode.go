@@ -61,19 +61,26 @@ type (
 	}
 
 	// BufferRegion is an entry in the buffer region table. Positions are in
-	// frames from the beginning of the buffer.
+	// frames from the oldest valid frame of the buffer; the bufread unit
+	// shifts them by its modulations.
 	BufferRegion struct {
 		BufferID   uint32 // sointu.Buffer.ID
 		Start      uint32 // frame where playback starts
 		LoopStart  uint32
-		LoopLength uint32 // 0 means no loop
-		Flags      uint32 // see BufferRegionNoteTracking
+		LoopLength uint32
+		Fade       uint32 // length of the crossfade at the end of the loop
+		Flags      uint32 // see BufferRegionNoteTracking and BufferRegionLoop
 	}
 )
 
-// BufferRegionNoteTracking is set in BufferRegion.Flags when the pitch of the
-// bufread unit follows the note.
-const BufferRegionNoteTracking = 1
+const (
+	// BufferRegionNoteTracking is set in BufferRegion.Flags when the pitch
+	// of the bufread unit follows the note.
+	BufferRegionNoteTracking = 1
+	// BufferRegionLoop is set in BufferRegion.Flags when the bufread unit
+	// loops. A loop of zero length does not loop.
+	BufferRegionLoop = 2
+)
 
 type bytecodeBuilder struct {
 	sampleOffsetMap map[SampleOffset]int
@@ -292,7 +299,7 @@ func (b *bytecodeBuilder) operand(operands ...int) {
 // modulated and set
 func (b *bytecodeBuilder) defOperands(unit sointu.Unit) {
 	for _, v := range sointu.UnitTypes[unit.Type].Params {
-		if v.CanModulate && v.CanSet {
+		if v.CanModulate && v.CanSet && !v.NoTransform {
 			b.Operands = append(b.Operands, byte(unit.Parameters[v.Name]))
 		}
 	}
@@ -361,8 +368,9 @@ func (b *bytecodeBuilder) getSampleIndex(unit sointu.Unit) int {
 func (b *bytecodeBuilder) getBufferRegionIndex(unit sointu.Unit) int {
 	p := unit.Parameters
 	r := BufferRegion{BufferID: uint32(p["buffer"]), Start: uint32(p["start"])}
-	if p["loop"] == 1 && p["looplength"] > 0 {
-		r.LoopStart, r.LoopLength = uint32(p["loopstart"]), uint32(p["looplength"])
+	if p["loop"] == 1 {
+		r.LoopStart, r.LoopLength, r.Fade = uint32(p["loopstart"]), uint32(p["looplength"]), uint32(p["fade"])
+		r.Flags |= BufferRegionLoop
 	}
 	if p["notetracking"] == 1 {
 		r.Flags |= BufferRegionNoteTracking

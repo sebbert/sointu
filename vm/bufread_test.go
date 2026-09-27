@@ -125,3 +125,65 @@ func TestBufreadUntriggeredVoiceIsSilent(t *testing.T) {
 		t.Errorf("after triggering: got %v, want 0.1", out[1][0])
 	}
 }
+
+func TestBufreadLoopCrossfade(t *testing.T) {
+	bufs := map[int]sointu.BufferAudio{1: ramp(8, 1, 0.1)}
+	loop := sointu.ParamMap{"loop": 1, "loopstart": 4, "looplength": 4, "fade": 2}
+	// the last two frames of the loop fade to the two frames before the loop
+	// start, which the loop start continues
+	checkLeft(t, renderBufread(t, loop, bufs, 60, 12), []float32{0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.5, 0.4, 0.5, 0.6, 0.5})
+	// limited by the loop start and length; a ramp crossfaded over the whole
+	// loop is flat
+	loop["fade"] = 10
+	checkLeft(t, renderBufread(t, loop, bufs, 60, 10), []float32{0, 0.1, 0.2, 0.3, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4})
+}
+
+// renderModulatedBufread is like renderBufread, but first sends constant
+// values to the modulation ports of the bufread unit. The constants are the
+// values of loadval units, i.e. (v-64)/64.
+func renderModulatedBufread(t *testing.T, params sointu.ParamMap, mods map[int]int, bufs map[int]sointu.BufferAudio, n int) sointu.AudioBuffer {
+	t.Helper()
+	p := sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "buffer": 1, "notetracking": 1}
+	for k, v := range params {
+		p[k] = v
+	}
+	var units []sointu.Unit
+	for port, v := range mods {
+		units = append(units,
+			sointu.Unit{Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": v}},
+			sointu.Unit{Type: "send", Parameters: sointu.ParamMap{"stereo": 0, "amount": 128, "target": 100, "port": port, "sendpop": 1}})
+	}
+	units = append(units,
+		sointu.Unit{ID: 100, Type: "bufread", Parameters: p},
+		sointu.Unit{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}})
+	synth, err := vm.GoSynther{}.Synth(sointu.Patch{{NumVoices: 1, Units: units}}, 120)
+	if err != nil {
+		t.Fatalf("Synth failed: %v", err)
+	}
+	synth.(sointu.BufferSetter).SetBuffers(bufs)
+	synth.Trigger(0, 60)
+	out := make(sointu.AudioBuffer, n)
+	if _, _, err := synth.Render(out, n); err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+	return out
+}
+
+func TestBufreadModulatedStart(t *testing.T) {
+	bufs := map[int]sointu.BufferAudio{1: ramp(8, 1, 0.1)}
+	// +0.5 times the 8 frames of the buffer
+	checkLeft(t, renderModulatedBufread(t, sointu.ParamMap{"start": 1}, map[int]int{3: 96}, bufs, 4), []float32{0.5, 0.6, 0.7, 0})
+	// clamped to the beginning
+	checkLeft(t, renderModulatedBufread(t, sointu.ParamMap{"start": 1}, map[int]int{3: 0}, bufs, 3), []float32{0, 0.1, 0.2})
+	// a fraction of a frame is kept: +0.25 of a frame
+	checkLeft(t, renderModulatedBufread(t, nil, map[int]int{3: 66}, bufs, 3), []float32{0.025, 0.125, 0.225})
+}
+
+func TestBufreadModulatedLoop(t *testing.T) {
+	bufs := map[int]sointu.BufferAudio{1: ramp(8, 1, 0.1)}
+	// loop start 1 + 0.25*8 = 3, loop length 4 - 0.25*8 = 2
+	loop := sointu.ParamMap{"loop": 1, "loopstart": 1, "looplength": 4}
+	checkLeft(t, renderModulatedBufread(t, loop, map[int]int{4: 80, 5: 48}, bufs, 8), []float32{0, 0.1, 0.2, 0.3, 0.4, 0.3, 0.4, 0.3})
+	// a zero length loop does not loop
+	checkLeft(t, renderModulatedBufread(t, loop, map[int]int{5: 0}, bufs, 9), []float32{0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0})
+}

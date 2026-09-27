@@ -94,6 +94,7 @@ func TestBufreadWasmMatchesGoSynth(t *testing.T) {
 			{NumVoices: 1, Order: sointu.Order{0}, Patterns: []sointu.Pattern{{60, 1, 1, 1, 72, 1, 55, 1}}},
 			{NumVoices: 1, Order: sointu.Order{0}, Patterns: []sointu.Pattern{{1, 1, 64, 1, 1, 1, 1, 0}}}, // silent until triggered
 			{NumVoices: 1, Order: sointu.Order{0}, Patterns: []sointu.Pattern{{60, 1, 1, 1, 1, 1, 1, 1}}},
+			{NumVoices: 1, Order: sointu.Order{0}, Patterns: []sointu.Pattern{{60, 1, 67, 1, 60, 1, 53, 1}}},
 		}},
 		Patch: sointu.Patch{
 			{Name: "mono", NumVoices: 1, Units: []sointu.Unit{
@@ -107,6 +108,20 @@ func TestBufreadWasmMatchesGoSynth(t *testing.T) {
 			{Name: "missing", NumVoices: 1, Units: []sointu.Unit{
 				{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "buffer": 99, "notetracking": 0}},
 				{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
+			}},
+			{Name: "modulated loop", NumVoices: 1, Units: []sointu.Unit{
+				// start modulated by an LFO, loop start and loop length by
+				// constants, with a crossfade. Positions are whole frames, so
+				// the tiny differences between the Go and wasm oscillators
+				// would make modulated loop points differ by a frame now and
+				// then.
+				{Type: "oscillator", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 70, "detune": 64, "phase": 0, "color": 64, "shape": 64, "gain": 128, "type": sointu.Sine, "lfo": 1}},
+				{Type: "send", Parameters: sointu.ParamMap{"stereo": 0, "amount": 90, "target": 100, "port": 3, "sendpop": 1}},
+				{Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": 90}},
+				{Type: "send", Parameters: sointu.ParamMap{"stereo": 0, "amount": 70, "target": 100, "port": 4, "sendpop": 0}},
+				{Type: "send", Parameters: sointu.ParamMap{"stereo": 0, "amount": 40, "target": 100, "port": 5, "sendpop": 1}},
+				{ID: 100, Type: "bufread", Parameters: sointu.ParamMap{"stereo": 1, "transpose": 64, "detune": 64, "gain": 128, "buffer": 1, "notetracking": 1, "start": 100, "loop": 1, "loopstart": 2000, "looplength": 4000, "fade": 1500}},
+				{Type: "out", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128}},
 			}},
 		},
 	}

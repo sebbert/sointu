@@ -28,7 +28,7 @@ type (
 		stack      []float32
 		state      synthState
 		delaylines []delayline
-		buffers    map[int]sointu.BufferAudio
+		buffers    map[int]*synthBuffer
 		cpuLoad    sointu.CPULoad
 	}
 
@@ -121,7 +121,19 @@ func (s *GoSynth) Release(voiceIndex int) {
 
 func (s *GoSynth) Close() {}
 
-func (s *GoSynth) SetBuffers(buffers map[int]sointu.BufferAudio) { s.buffers = buffers }
+// synthBuffer is a buffer in the synth. The valid frames are the filled
+// frames before head, wrapping around the end of the buffer.
+type synthBuffer struct {
+	audio        sointu.BufferAudio
+	head, filled uint32
+}
+
+func (s *GoSynth) SetBuffers(buffers map[int]sointu.BufferAudio) {
+	s.buffers = make(map[int]*synthBuffer, len(buffers))
+	for id, b := range buffers {
+		s.buffers[id] = &synthBuffer{audio: b, filled: uint32(b.Frames())}
+	}
+}
 
 func (s *GoSynth) CPULoad(loads []sointu.CPULoad) int {
 	if len(loads) < 1 {
@@ -552,6 +564,7 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 				var index byte
 				index, operands = operands[0], operands[1:]
 				s.bufread(unit, voice, s.bytecode.BufferRegions[index], params[0], params[1], params[2], stereo, &stack)
+				unit.ports[3], unit.ports[4], unit.ports[5] = 0, 0, 0
 			case opDelay:
 				pregain2 := params[0] * params[0]
 				damp := params[3]
@@ -648,46 +661,80 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 	return samples, renderTime, nil
 }
 
-// bufread pushes the next frame of a buffer region on the stack. The position
-// relative to the region start is kept in unit.state: the integer part in
-// state[0] (as bits) and the fraction in state[1], so that it stays accurate
-// for long buffers. Both are zeroed when a note is triggered. Voices that have
-// never been triggered (note 0) are silent.
+// bufread pushes the next frame of a buffer region on the stack. Positions
+// are in frames from the oldest valid frame of the buffer at the time the note
+// was triggered. unit.state holds, as bits, the integer part of the position
+// in state[0], the fraction in state[1], the oldest valid frame at the trigger
+// in state[2] and 1 in state[3] once playback has started; all are zeroed when
+// a note is triggered. The modulations of start, loop start and loop length
+// are in unit.ports[3:6]. Voices that have never been triggered (note 0) are
+// silent. Matches $su_op_bufread in the wasm player.
 func (s *GoSynth) bufread(unit *unit, voice *voice, r BufferRegion, transpose, detune, gain float32, stereo bool, stack *[]float32) {
-	if voice.note == 0 {
+	buf := s.buffers[int(r.BufferID)]
+	if voice.note == 0 || buf == nil || buf.audio.Frames() == 0 {
 		if stereo {
 			*stack = append(*stack, 0)
 		}
 		*stack = append(*stack, 0)
 		return
 	}
-	buf := s.buffers[int(r.BufferID)]
-	frames := uint32(buf.Frames())
-	pos := math.Float32bits(unit.state[0])
-	frac := unit.state[1]
-	i := r.Start + pos
-	loopEnd := r.LoopStart + r.LoopLength
-	if r.LoopLength > 0 && i >= loopEnd {
-		i = r.LoopStart + (i-r.LoopStart)%r.LoopLength
-		pos = i - r.Start
+	capacity := uint32(buf.audio.Frames())
+	pos, frac := math.Float32bits(unit.state[0]), unit.state[1]
+	base := math.Float32bits(unit.state[2])
+	if math.Float32bits(unit.state[3]) == 0 {
+		base = (buf.head + capacity - buf.filled) % capacity
+		pos = bufreadFrames(r.Start, unit.ports[3], buf.filled, capacity)
+		// keep the fraction, so that small changes of the modulation do not
+		// jump whole frames
+		offset := unit.ports[3] * float32(buf.filled)
+		frac = offset - float32(math.Floor(float64(offset)))
 	}
-	next := i + 1
-	if r.LoopLength > 0 && next >= loopEnd {
-		next = r.LoopStart
+	i, next := pos, pos+1
+	var loopStart, loopLength, loopEnd, fade uint32
+	if r.Flags&BufferRegionLoop != 0 {
+		loopStart = bufreadFrames(r.LoopStart, unit.ports[4], buf.filled, capacity)
+		loopLength = bufreadFrames(r.LoopLength, unit.ports[5], buf.filled, capacity)
+		loopEnd = loopStart + loopLength
+		fade = min(r.Fade, loopStart, loopLength)
+		if loopLength > 0 {
+			if i >= loopEnd {
+				i = loopStart + (i-loopStart)%loopLength
+				pos = i
+			}
+			next = i + 1
+			if next >= loopEnd {
+				next = loopStart
+			}
+		}
 	}
+	oldest := (buf.head + capacity - buf.filled) % capacity
 	sample := func(frame uint32, channel int) float32 {
-		if frame >= frames {
+		if frame >= capacity {
 			return 0
 		}
-		return buf.Data[int(frame)*buf.Channels+min(channel, buf.Channels-1)]
+		abs := (base + frame) % capacity
+		if (abs+capacity-oldest)%capacity >= buf.filled {
+			return 0
+		}
+		a := buf.audio
+		return a.Data[int(abs)*a.Channels+min(channel, a.Channels-1)]
 	}
 	read := func(channel int) float32 {
 		a, b := sample(i, channel), sample(next, channel)
-		return (a + (b-a)*frac) * gain
+		v := a + (b-a)*frac
+		if loopLength > 0 && fade > 0 && i >= loopEnd-fade {
+			// crossfade to the frames before the loop start, which the
+			// loop start continues
+			j := i - loopLength
+			c, d := sample(j, channel), sample(j+1, channel)
+			w := (float32(i-(loopEnd-fade)) + frac) / float32(fade)
+			v += (c + (d-c)*frac - v) * w
+		}
+		return v * gain
 	}
 	if stereo {
 		*stack = append(*stack, read(1), read(0)) // the left channel is on top
-	} else if buf.Channels == 2 {
+	} else if buf.audio.Channels == 2 {
 		*stack = append(*stack, (read(0)+read(1))*0.5)
 	} else {
 		*stack = append(*stack, read(0))
@@ -701,6 +748,16 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, r BufferRegion, transpose, d
 	whole := float32(math.Floor(float64(frac)))
 	unit.state[0] = math.Float32frombits(pos + uint32(whole))
 	unit.state[1] = frac - whole
+	unit.state[2] = math.Float32frombits(base)
+	unit.state[3] = math.Float32frombits(1)
+}
+
+// bufreadFrames returns a position of a bufread unit: frames shifted by the
+// modulation times the filled length of the buffer, clamped to the capacity.
+func bufreadFrames(frames uint32, modulation float32, filled, capacity uint32) uint32 {
+	offset := float32(math.Floor(float64(modulation * float32(filled))))
+	offset = max(min(offset, 1<<30), -(1 << 30))
+	return uint32(max(min(int64(frames)+int64(offset), int64(capacity)), 0))
 }
 
 func (s *synthState) rand() float32 {
