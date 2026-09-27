@@ -136,6 +136,9 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 			return nil, nil, fmt.Errorf(`the %v unit is only supported when compiling for wasm (targeted architecture was %v)`, unit, com.Arch)
 		}
 	}
+	if n := max(song.Patch.NumVoices(), song.Score.NumVoices()); n > vm.MAX_VOICES_NARROW && com.Arch != "wasm" {
+		return nil, nil, fmt.Errorf(`more than %v voices are only supported when compiling for wasm (song uses %v voices, targeted architecture was %v)`, vm.MAX_VOICES_NARROW, n, com.Arch)
+	}
 	if _, ok := features.Opcode("speed"); ok {
 		warnings = append(warnings, fmt.Sprintf(`song uses the speed unit, so SU_LENGTH_IN_SAMPLES, SU_BUFFER_LENGTH, and SU_SYNCBUFFER_LENGTH cannot be known without rendering the entire song. They won't be defined in the generated header file. You have to take responsibility for allocating large enough audio buffer and syncBuf.`))
 	}
@@ -171,9 +174,9 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 			populatedTemplate, extension, err = com.compile(templateName, &data)
 		} else if com.Arch == "wasm" {
 			wasmMacros := *NewWasmMacros()
-			buffers, err := com.wasmBuffers(song, encodedPatch)
-			if err != nil {
-				return nil, nil, err
+			buffers, bufErr := com.wasmBuffers(song, encodedPatch)
+			if bufErr != nil {
+				return nil, nil, bufErr
 			}
 			data := struct {
 				CompilerMacros

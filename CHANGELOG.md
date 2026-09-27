@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+### Added
+- Up to 255 voices in the Go synth and the wasm player; the x86 players and
+  the native synth still support 32. Songs with 32 voices or fewer compile to
+  the same code as before.
+
+### Fixed
+- The Go synth sent to the wrong unit for sends targeting units after
+  the 31st unit of an instrument.
+- Errors from executing the wasm template were ignored, giving an empty
+  module.
+
 ### BREAKING CHANGES
 - BREAKING CHANGE: If song uses a speed unit, SU_LENGTH_IN_SAMPLES,
   SU_BUFFER_LENGTH and SU_SYNCBUFFER_LENGTH won't be defined in the generated

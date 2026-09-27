@@ -79,6 +79,9 @@
 ;;-------------------------------------------------------------------------------
 (func $su_op_send (param $stereo i32) (local $address i32) (local $scaledAddress i32)
     (local.set $address (i32.add (call $scanOperand) (i32.shl (call $scanOperand) (i32.const 8))))
+{{- if .WideVoices}}
+    (local.set $address (i32.add (local.get $address) (i32.shl (call $scanOperand) (i32.const 16))))
+{{- end}}
     (if (i32.eqz (i32.and (local.get $address) (i32.const 8)))(then
 {{- if .Stereo "send"}}
         (if (local.get $stereo)(then
@@ -94,14 +97,14 @@
 {{- if .Stereo "send"}}
     loop $stereoLoop
 {{- end}}
-    (local.set $scaledAddress (i32.add (i32.mul (i32.and (local.get $address) (i32.const 0x7FF7)) (i32.const 4))
+    (local.set $scaledAddress (i32.add (i32.mul (i32.and (local.get $address) (i32.const {{if .WideVoices}}0x7FFFF7{{else}}0x7FF7{{end}})) (i32.const 4))
 {{- if .SupportsGlobalSend}}
         (select
             (i32.const {{index .Labels "su_synth"}})
 {{- end}}
             (global.get $voice)
 {{- if .SupportsGlobalSend}}
-            (i32.and (local.get $address)(i32.const 0x8000))
+            (i32.and (local.get $address)(i32.const {{if .WideVoices}}0x800000{{else}}0x8000{{end}}))
         )
 {{- end}}
     ))

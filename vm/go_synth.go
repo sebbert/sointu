@@ -38,7 +38,13 @@ type (
 	}
 )
 
-const MAX_VOICES = 32
+// MAX_VOICES is the maximum number of voices in a patch. Patches with more
+// than MAX_VOICES_NARROW voices use wider send addresses and do not compile to
+// the x86 players.
+const (
+	MAX_VOICES        = 255
+	MAX_VOICES_NARROW = 32
+)
 const MAX_UNITS = 63
 
 type (
@@ -257,7 +263,7 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 					voices = voices[1:]
 					units = voices[0].units[:]
 				}
-				if mask := uint32(1) << uint32(voicesRemaining); s.bytecode.PolyphonyBitmask&mask == mask {
+				if voicesRemaining > 0 && s.bytecode.Polyphony[voicesRemaining] == 1 {
 					opcodes, operands = opcodesInstr, operandsInstr
 				} else {
 					opcodesInstr, operandsInstr = opcodes, operands
@@ -460,15 +466,18 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 					unit.state[i] = phase
 				}
 			case opSend:
-				var addrLow, addrHigh byte
-				addrLow, addrHigh, operands = operands[0], operands[1], operands[2:]
-				addr := (uint16(addrHigh) << 8) + uint16(addrLow)
+				addr, globalFlag := int(operands[0])|int(operands[1])<<8, 0x8000
+				operands = operands[2:]
+				if s.bytecode.WideVoices {
+					addr, globalFlag = addr|int(operands[0])<<16, 0x800000
+					operands = operands[1:]
+				}
 				targetVoice := voice
-				if addr&0x8000 == 0x8000 {
-					addr -= 0x8010
+				if addr&globalFlag == globalFlag {
+					addr -= globalFlag + 0x10
 					targetVoice = &synth.voices[addr>>10]
 				}
-				unitIndex := ((addr & 0x01F0) >> 4) - 1
+				unitIndex := ((addr & 0x03F0) >> 4) - 1
 				port := addr & 7
 				amount := params[0]*2 - 1
 				for i := 0; i < channels; i++ {

@@ -54,7 +54,19 @@ type (
 		// example, if first instrument has 3 voices, second instrument has 2
 		// voices, and third instrument four voices, the PolyphonyBitmask is: (MSB)
 		// 110101110 (LSB)
+		// It is only valid when WideVoices is false.
 		PolyphonyBitmask uint32
+
+		// Polyphony has the same information as PolyphonyBitmask, but a byte
+		// for each voice: Polyphony[n] is bit n of PolyphonyBitmask. Unlike
+		// the bitmask, it works for any number of voices.
+		Polyphony []byte
+
+		// WideVoices is true when the patch has more than 32 voices: the
+		// addresses of the send units are then 3 bytes instead of 2, with the
+		// global flag in bit 23 instead of bit 15, and the players use the
+		// Polyphony table instead of the PolyphonyBitmask.
+		WideVoices bool
 
 		// NumVoices is the total number of voices in the patch
 		NumVoices uint32
@@ -108,9 +120,9 @@ const (
 type bytecodeBuilder struct {
 	sampleOffsetMap map[SampleOffset]int
 	bufferRegionMap map[BufferRegion]int
-	globalAddrs     map[int]uint16
+	globalAddrs     map[int]int
 	globalFixups    map[int]([]int)
-	localAddrs      map[int]uint16
+	localAddrs      map[int]int
 	localFixups     map[int]([]int)
 	voiceNo         int
 	delayIndices    [][]int
@@ -119,8 +131,8 @@ type bytecodeBuilder struct {
 }
 
 func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode, error) {
-	if patch.NumVoices() > 32 {
-		return nil, fmt.Errorf("Sointu does not support more than 32 concurrent voices; patch uses %v", patch.NumVoices())
+	if patch.NumVoices() > MAX_VOICES {
+		return nil, fmt.Errorf("Sointu does not support more than %v concurrent voices; patch uses %v", MAX_VOICES, patch.NumVoices())
 	}
 	b := newBytecodeBuilder(patch, bpm)
 	for instrIndex, instr := range patch {
@@ -256,7 +268,7 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 						b.defOperands(unit)
 						b.localIDRef(targetID, addr)
 					} else {
-						addr += 0x8000
+						addr += b.globalFlag()
 						voiceStart := 0
 						voiceEnd := patch[targetInstrIndex].NumVoices
 						if targetVoice > 0 { // "all" (0) means for global send that it targets all voices of that instrument
@@ -278,13 +290,17 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 					// if no target will be found, the send will trash some of
 					// the last values of the last port of the last voice, which
 					// is unlikely to cause issues. We still honor the POP bit.
-					addr = 0xFFF7
+					// For 32 voices, this is 0xFFF7.
+					addr = b.globalFlag() | (MAX_VOICES_NARROW*1024-1)&^0x8
+					if b.WideVoices {
+						addr = b.globalFlag() | (int(b.NumVoices)*1024-1)&^0x8
+					}
 					if unit.Parameters["sendpop"] == 1 {
 						addr |= 0x8
 					}
 					b.op(opcode + p["stereo"])
 					b.defOperands(unit)
-					b.Operands = append(b.Operands, byte(addr&255), byte(addr>>8))
+					b.address(addr)
 				}
 			default:
 				b.op(opcode + p["stereo"])
@@ -301,11 +317,17 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 
 func newBytecodeBuilder(patch sointu.Patch, bpm int) *bytecodeBuilder {
 	var polyphonyBitmask uint32 = 0
+	numVoices := patch.NumVoices()
+	polyphony := make([]byte, numVoices)
+	voice := 0
 	for _, instr := range patch {
 		for j := 0; j < instr.NumVoices-1; j++ {
 			polyphonyBitmask = (polyphonyBitmask << 1) + 1 // for each instrument, NumVoices - 1 bits are ones
+			polyphony[numVoices-1-voice] = 1
+			voice++
 		}
 		polyphonyBitmask <<= 1 // ...and the last bit is zero, to denote "change instrument"
+		voice++
 	}
 	delayTimesInt, delayIndices := constructDelayTimeTable(patch, bpm)
 	delayTimesU16 := make([]uint16, len(delayTimesInt))
@@ -313,12 +335,12 @@ func newBytecodeBuilder(patch sointu.Patch, bpm int) *bytecodeBuilder {
 		delayTimesU16[i] = uint16(d)
 	}
 	c := bytecodeBuilder{
-		Bytecode:        Bytecode{PolyphonyBitmask: polyphonyBitmask, NumVoices: uint32(patch.NumVoices()), DelayTimes: delayTimesU16, BPM: bpm},
+		Bytecode:        Bytecode{PolyphonyBitmask: polyphonyBitmask, Polyphony: polyphony, WideVoices: numVoices > MAX_VOICES_NARROW, NumVoices: uint32(numVoices), DelayTimes: delayTimesU16, BPM: bpm},
 		sampleOffsetMap: map[SampleOffset]int{},
 		bufferRegionMap: map[BufferRegion]int{},
-		globalAddrs:     map[int]uint16{},
+		globalAddrs:     map[int]int{},
 		globalFixups:    map[int]([]int){},
-		localAddrs:      map[int]uint16{},
+		localAddrs:      map[int]int{},
 		localFixups:     map[int]([]int){},
 		delayIndices:    delayIndices}
 	return &c
@@ -336,7 +358,7 @@ func (b *bytecodeBuilder) opFinish(instr sointu.Instrument) {
 	b.Opcodes = append(b.Opcodes, 0)
 	b.unitNo = 0
 	b.voiceNo += instr.NumVoices
-	b.localAddrs = map[int]uint16{}
+	b.localAddrs = map[int]int{}
 	b.localFixups = map[int]([]int){}
 }
 
@@ -360,42 +382,70 @@ func (b *bytecodeBuilder) defOperands(unit sointu.Unit) {
 // localIDRef adds a reference to a local id label to the value stream; if the targeted ID has not been seen yet, it is added to the fixup list
 func (b *bytecodeBuilder) localIDRef(id int, addr int) {
 	if v, ok := b.localAddrs[id]; ok {
-		addr += int(v)
+		addr += v
 	} else {
 		b.localFixups[id] = append(b.localFixups[id], len(b.Operands))
 	}
-	b.Operands = append(b.Operands, byte(addr&255), byte(addr>>8))
+	b.address(addr)
 }
 
 // globalIDRef adds a reference to a global id label to the value stream; if the targeted ID has not been seen yet, it is added to the fixup list
 func (b *bytecodeBuilder) globalIDRef(id int, addr int) {
 	if v, ok := b.globalAddrs[id]; ok {
-		addr += int(v)
+		addr += v
 	} else {
 		b.globalFixups[id] = append(b.globalFixups[id], len(b.Operands))
 	}
-	b.Operands = append(b.Operands, byte(addr&255), byte(addr>>8))
+	b.address(addr)
+}
+
+// globalFlag is the bit of a send address that marks it global.
+func (b *bytecodeBuilder) globalFlag() int {
+	if b.WideVoices {
+		return 0x800000
+	}
+	return 0x8000
+}
+
+// addressBytes is the number of bytes in a send address.
+func (b *bytecodeBuilder) addressBytes() int {
+	if b.WideVoices {
+		return 3
+	}
+	return 2
+}
+
+// address appends a send address to the operand stream.
+func (b *bytecodeBuilder) address(addr int) {
+	for i := 0; i < b.addressBytes(); i++ {
+		b.Operands = append(b.Operands, byte(addr>>(8*i)))
+	}
 }
 
 // idLabel adds a label to the value stream for the given id; all earlier references to the id are fixed up
 func (b *bytecodeBuilder) idLabel(id int) {
-	localAddr := uint16((b.unitNo + 1) << 4)
+	localAddr := (b.unitNo + 1) << 4
 	b.fixUp(b.localFixups[id], localAddr)
 	b.localFixups[id] = nil
 	b.localAddrs[id] = localAddr
-	globalAddr := localAddr + 16 + uint16(b.voiceNo)*1024
+	globalAddr := localAddr + 16 + b.voiceNo*1024
 	b.fixUp(b.globalFixups[id], globalAddr)
 	b.globalFixups[id] = nil
 	b.globalAddrs[id] = globalAddr
 }
 
 // fixUp fixes up the references to the given id with the given delta
-func (b *bytecodeBuilder) fixUp(positions []int, delta uint16) {
+func (b *bytecodeBuilder) fixUp(positions []int, delta int) {
+	n := b.addressBytes()
 	for _, pos := range positions {
-		orig := (uint16(b.Operands[pos+1]) << 8) + uint16(b.Operands[pos])
-		new := orig + delta
-		b.Operands[pos] = byte(new & 255)
-		b.Operands[pos+1] = byte(new >> 8)
+		addr := 0
+		for i := 0; i < n; i++ {
+			addr |= int(b.Operands[pos+i]) << (8 * i)
+		}
+		addr += delta
+		for i := 0; i < n; i++ {
+			b.Operands[pos+i] = byte(addr >> (8 * i))
+		}
 	}
 }
 

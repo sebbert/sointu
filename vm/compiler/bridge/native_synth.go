@@ -35,6 +35,9 @@ func Synth(patch sointu.Patch, bpm int) (*NativeSynth, error) {
 	if n := patch.NumDelayLines(); n > 128 {
 		return nil, fmt.Errorf("native bridge has currently a hard limit of 128 delaylines; patch uses %v", n)
 	}
+	if n := patch.NumVoices(); n > vm.MAX_VOICES_NARROW {
+		return nil, fmt.Errorf("native bridge supports at most %v voices; patch uses %v", vm.MAX_VOICES_NARROW, n)
+	}
 	comPatch, err := vm.NewBytecode(patch, vm.AllFeatures{}, bpm)
 	if err != nil {
 		return nil, fmt.Errorf("error compiling patch: %v", err)
@@ -145,6 +148,9 @@ func (bridgesynth *NativeSynth) Update(patch sointu.Patch, bpm int) error {
 	s := &bridgesynth.csynth
 	if n := patch.NumDelayLines(); n > 128 {
 		return fmt.Errorf("native bridge has currently a hard limit of 128 delaylines; patch uses %v", n)
+	}
+	if n := patch.NumVoices(); n > vm.MAX_VOICES_NARROW {
+		return fmt.Errorf("native bridge supports at most %v voices; patch uses %v", vm.MAX_VOICES_NARROW, n)
 	}
 	comPatch, err := vm.NewBytecode(patch, vm.AllFeatures{}, bpm)
 	if err != nil {

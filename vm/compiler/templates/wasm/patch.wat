@@ -36,7 +36,11 @@
             (global.set $WRK (global.get $voice)) ;; set WRK point to beginning of voice
             (global.set $voicesRemain (i32.sub (global.get $voicesRemain) (i32.const 1)))
 {{- if .SupportsPolyphony}}
+{{- if .WideVoices}}
+            (if (i32.load8_u offset={{index .Labels "su_polyphony"}} (global.get $voicesRemain))(then
+{{- else}}
             (if (i32.and (i32.shr_u (i32.const {{.PolyphonyBitmask | printf "%v"}}) (global.get $voicesRemain)) (i32.const 1))(then
+{{- end}}
                 (global.set $VAL (global.get $VAL_instr_start))
                 (global.set $COM (global.get $COM_instr_start))
             ))

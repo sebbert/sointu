@@ -56,6 +56,33 @@
 {{- $.DataW .}}
 {{- end}}
 
+{{- if and .SupportsPolyphony .WideVoices}}
+{{- /*
+;-------------------------------------------------------------------------------
+;    Polyphony, a byte for each voice, in place of the polyphony bitmask with
+;    more than 32 voices: byte n is 1 if the voice before the last n voices
+;    uses the same instrument as the next one
+;-------------------------------------------------------------------------------
+*/}}
+{{- .SetDataLabel "su_polyphony"}}
+{{- range .Polyphony}}
+{{- $.DataB .}}
+{{- end}}
+{{- end}}
+
+{{- if and .MultiVoiceTracks .WideTracks}}
+{{- /*
+;-------------------------------------------------------------------------------
+;    Voice tracks, a byte for each voice, in place of the voice track bitmask
+;    with more than 32 voices: 1 if the next voice belongs to the same track
+;-------------------------------------------------------------------------------
+*/}}
+{{- .SetDataLabel "su_voicetracks"}}
+{{- range .VoiceTracks}}
+{{- $.DataB .}}
+{{- end}}
+{{- end}}
+
 {{- if or (.HasOp "bufread") (.HasOp "bufwrite")}}
 {{- /*
 ;-------------------------------------------------------------------------------
@@ -118,9 +145,13 @@
 ;-------------------------------------------------------------------------------
 */}}
 {{- .Align}}
-{{- if ne .VoiceTrackBitmask 0}}
+{{- if .MultiVoiceTracks}}
 {{- .SetBlockLabel "su_trackcurrentvoice"}}
+{{- if .WideTracks}}
+{{- .Block (int (add (len .Sequences) 1))}}
+{{- else}}
 {{- .Block 32}}
+{{- end}}
 {{- end}}
 {{- .Align}}
 {{- .SetBlockLabel "su_synth"}}
@@ -128,7 +159,7 @@
 {{- .SetBlockLabel "su_globalports"}}
 {{- .Block 32}}
 {{- .SetBlockLabel "su_voices"}}
-{{- .Block 131072}}
+{{- .Block .VoiceBytes}}
 {{- .Align}}
 {{- .SetBlockLabel "su_delaylines"}}
 {{- .Block (int (mul 262156 .Song.Patch.NumDelayLines))}}
@@ -291,7 +322,7 @@
     end
 )
 
-{{- if ne .VoiceTrackBitmask 0}}
+{{- if .MultiVoiceTracks}}
 ;; the complex implementation of update_voices: at least one track has more than one voice
 (func $su_update_voices (local $si i32) (local $di i32) (local $tracksRemaining i32) (local $note i32) (local $firstVoice i32) (local $nextTrackStartsAt i32) (local $numVoices i32) (local $voiceNo i32)
     (local.set $tracksRemaining (i32.const {{len .Sequences}}))
@@ -301,6 +332,9 @@
         (local.set $numVoices (i32.const 0))
         (local.set $firstVoice (local.get $nextTrackStartsAt))
         loop $voiceLoop
+{{- if .WideTracks}}
+            (i32.load8_u offset={{index .Labels "su_voicetracks"}} (local.get $nextTrackStartsAt))
+{{- else}}
             (i32.and
                 (i32.shr_u
                     (i32.const {{.VoiceTrackBitmask | printf "%v"}})
@@ -308,6 +342,7 @@
                 )
                 (i32.const 1)
             )
+{{- end}}
             (local.set $nextTrackStartsAt (i32.add (local.get $nextTrackStartsAt) (i32.const 1)))
             (local.set $numVoices (i32.add (local.get $numVoices) (i32.const 1)))
             br_if $voiceLoop

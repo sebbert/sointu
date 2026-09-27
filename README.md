@@ -453,8 +453,15 @@ New features since fork
     tracks that use this instrument, to make chords. See
     [here](tests/test_chords.yml) for an example and
     [here](vm/compiler/templates/amd64-386/patch.asm) for the implementation.
-    The maximum total number of voices is 32: you can have 32 monophonic
-    instruments or any combination of polyphonic instruments adding up to 32.
+    The maximum total number of voices is 32 for the x86 players and the
+    native synth: you can have 32 monophonic instruments or any combination of
+    polyphonic instruments adding up to 32. The Go synth and the wasm player
+    support up to 255 voices; above 32 voices, each global send takes one
+    more byte and the player keeps a byte per voice to know which voices
+    belong to which instrument and track. Songs with 32 voices or fewer
+    compile exactly as before. Every voice is computed on every sample,
+    whether it is playing or not, so the CPU use grows with the number of
+    voices.
   - **Any number of voices per track**. A single track can trigger more than one
     voice. At every note, a new voice from the assigned voices is triggered and
     the previous released. Combined with the previous, you can have a single
