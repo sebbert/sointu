@@ -136,6 +136,11 @@ func (t *Tracker) Main() {
 		w := t.newWindow()
 		w.Option(app.Title(titleFromPath(titlePath, changedSinceSave)))
 		t.Explorer = explorer.NewExplorer(w)
+		// a plugin host, e.g. a DAW, can put its own windows in front of the
+		// new window while it is loading the plugin, so raise the window on
+		// its first frame and once more a moment later
+		raised := false
+		raiseAgain := time.After(500 * time.Millisecond)
 		acks := make(chan struct{})
 		events := make(chan event.Event)
 		go func() {
@@ -183,6 +188,10 @@ func (t *Tracker) Main() {
 						t.plotZoomModifier = false // Alt is not released in another window
 					}
 				case app.FrameEvent:
+					if !raised {
+						raised = true
+						w.Perform(system.ActionRaise)
+					}
 					if titlePath != t.filePathString.Value() || changedSinceSave != t.Song().ChangedSinceSave() {
 						titlePath = t.filePathString.Value()
 						changedSinceSave = t.Song().ChangedSinceSave()
@@ -197,6 +206,8 @@ func (t *Tracker) Main() {
 					}
 				}
 				acks <- struct{}{}
+			case <-raiseAgain:
+				w.Perform(system.ActionRaise)
 			case <-recoveryTicker.C:
 				t.History().SaveRecovery()
 			}
