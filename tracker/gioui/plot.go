@@ -133,7 +133,26 @@ func fillRect(gtx C, rect clip.Rect) {
 	stack.Pop()
 }
 
+// maxYZoomOut is how many times the original y range can be shown when
+// zooming out; the x range cannot be zoomed out beyond the original range.
+const maxYZoomOut = 4
+
+// minXScale limits zooming in to about a millionth of the original x range.
+const minXScale = -14
+
+// clamp keeps the view within the zoom limits, and the x range within the
+// original x range.
+func (o *Plot) clamp() {
+	o.xScale = min(max(o.xScale, minXScale), 0)
+	o.yScale = min(max(o.yScale, -1e3), float32(math.Log(maxYZoomOut)))
+	s := float32(math.Exp(float64(o.xScale)))
+	lo := o.origXlim.a - o.origXlim.a*s
+	hi := o.origXlim.b - o.origXlim.b*s
+	o.xOffset = min(max(o.xOffset, min(lo, hi)), max(lo, hi))
+}
+
 func (o *Plot) update(gtx C) {
+	defer o.clamp()
 	s := gtx.Constraints.Max
 	for {
 		ev, ok := gtx.Event(pointer.Filter{
@@ -149,6 +168,7 @@ func (o *Plot) update(gtx C) {
 			case pointer.Scroll:
 				x1 := o.xlim().fromRelative(plotPx(s.X).fromScreenF32(e.Position.X))
 				o.xScale += float32(min(max(-1, int(e.Scroll.Y)), 1)) * 0.1
+				o.xScale = min(max(o.xScale, minXScale), 0) // before keeping the point under the pointer
 				x2 := o.xlim().fromRelative(plotPx(s.X).fromScreenF32(e.Position.X))
 				o.xOffset += x1 - x2
 			case pointer.Press:
