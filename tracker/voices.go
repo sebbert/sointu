@@ -137,6 +137,8 @@ func (m *Model) marshalVoices(r Range) (data []byte, err error) {
 	if !ok {
 		return nil, fmt.Errorf("marshalVoiceRange: slicing patch failed")
 	}
+	indices, _ := VoiceSlice(m.instrumentIndices(), r)
+	patch = relativeSpawnTargets(patch.Copy(), indices)
 	tracks, ok := VoiceSlice(m.d.Song.Score.Tracks, r)
 	if !ok {
 		return nil, fmt.Errorf("marshalVoiceRange: slicing tracks failed")
@@ -163,6 +165,7 @@ func (m *Model) addVoices(voiceIndex int, p sointu.Patch, t []sointu.Track, inst
 	addedLength := max(p.NumVoices(), sointu.TotalVoices(t))
 	if instruments {
 		m.assignUnitIDsForPatch(p)
+		p = p.Copy()
 		added := make([]instrumentIndex, len(p))
 		for i, instr := range p {
 			added[i] = instrumentIndex{Index: -1, NumVoices: instr.NumVoices}
@@ -173,6 +176,7 @@ func (m *Model) addVoices(voiceIndex int, p sointu.Patch, t []sointu.Track, inst
 			goto fail
 		}
 		m.remapSpawnTargets(indices)
+		m.resolveSpawnTargets(instrRange)
 	}
 	if tracks {
 		m.d.Song.Score.Tracks, trackRange, ok = VoiceInsert(m.d.Song.Score.Tracks, voiceIndex, addedLength, t...)
@@ -207,8 +211,9 @@ func (m *Model) instrumentIndices() []instrumentIndex {
 // remapSpawnTargets keeps the spawn units targeting the same instruments after
 // an operation on the patch, given the instrument indices before the
 // operation in the new order of the instruments. Spawn units targeting
-// removed instruments are left without a target. Added instruments keep
-// their spawn targets as is.
+// removed instruments are left without a target. The targets of added
+// instruments, e.g. pasted ones, refer to the instruments before the
+// operation too; relative targets are resolved separately.
 func (m *Model) remapSpawnTargets(indices []instrumentIndex) {
 	newIndex := map[int]int{}
 	for i, idx := range indices {
@@ -216,13 +221,49 @@ func (m *Model) remapSpawnTargets(indices []instrumentIndex) {
 			newIndex[idx.Index+1] = i + 1
 		}
 	}
-	for i, idx := range indices {
-		if idx.Index < 0 || i >= len(m.d.Song.Patch) {
+	for i := range indices {
+		if i >= len(m.d.Song.Patch) {
 			continue
 		}
 		for _, u := range m.d.Song.Patch[i].Units {
 			if t := u.Parameters["instrument"]; u.Type == "spawn" && t > 0 {
 				u.Parameters["instrument"] = newIndex[t]
+			}
+		}
+	}
+}
+
+// relativeSpawnTargets makes the spawn units of copied instruments that
+// target other copied instruments refer to them relatively, as -(i+1) for the
+// i-th copied instrument, so that pasting them together targets the pasted
+// copies; see resolveSpawnTargets. indices are the original indices of the
+// copied instruments.
+func relativeSpawnTargets(patch sointu.Patch, indices []instrumentIndex) sointu.Patch {
+	rel := map[int]int{} // original target (index + 1) -> index among the copied
+	for i, idx := range indices {
+		rel[idx.Index+1] = i
+	}
+	for _, instr := range patch {
+		for _, u := range instr.Units {
+			if i, ok := rel[u.Parameters["instrument"]]; ok && u.Type == "spawn" {
+				u.Parameters["instrument"] = -(i + 1)
+			}
+		}
+	}
+	return patch
+}
+
+// resolveSpawnTargets makes the relative spawn targets of pasted instruments,
+// in the range r of the patch, refer to the pasted instruments.
+func (m *Model) resolveSpawnTargets(r Range) {
+	for i := r.Start; i < r.End && i < len(m.d.Song.Patch); i++ {
+		for _, u := range m.d.Song.Patch[i].Units {
+			if t := u.Parameters["instrument"]; u.Type == "spawn" && t < 0 {
+				if rel := -t - 1; r.Start+rel < r.End {
+					u.Parameters["instrument"] = r.Start + rel + 1
+				} else {
+					u.Parameters["instrument"] = 0
+				}
 			}
 		}
 	}

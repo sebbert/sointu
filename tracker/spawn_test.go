@@ -134,3 +134,43 @@ func TestUnitsWithoutIDsGetIDsQuietly(t *testing.T) {
 		}
 	}
 }
+
+func TestPastedSpawnTargetsPastedInstrument(t *testing.T) {
+	m := newSpawnTestModel(t) // a, spawner -> target
+	instruments := m.Instrument().List()
+	spawnerTarget := func(i int) int { return m.d.Song.Patch[i].Units[0].Parameters["instrument"] }
+
+	// copy the spawner and its target, and paste them before a
+	instruments.SetSelected(1)
+	instruments.SetSelected2(2)
+	data, ok := instruments.CopyElements()
+	if !ok {
+		t.Fatal("copying failed")
+	}
+	instruments.SetSelected(0)
+	instruments.SetSelected2(0)
+	if !instruments.PasteElements(data) {
+		t.Fatal("pasting failed")
+	}
+	names := []string{}
+	for _, instr := range m.d.Song.Patch {
+		names = append(names, instr.Name)
+	}
+	if !slicesEqual(names, []string{"spawner", "target", "a", "spawner", "target"}) {
+		t.Fatalf("got instruments %v", names)
+	}
+	if spawnerTarget(0) != 2 || spawnerTarget(3) != 5 {
+		t.Errorf("pasted spawner targets %d, original %d; want 2 and 5", spawnerTarget(0), spawnerTarget(3))
+	}
+
+	// a spawner copied without its target keeps targeting the original
+	instruments.SetSelected(3)
+	instruments.SetSelected2(3)
+	data, _ = instruments.CopyElements()
+	instruments.SetSelected(0)
+	instruments.SetSelected2(0)
+	instruments.PasteElements(data)
+	if spawnerTarget(0) != 6 { // the original target, moved by the paste
+		t.Errorf("spawner pasted alone targets %d, want 6", spawnerTarget(0))
+	}
+}
