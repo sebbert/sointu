@@ -131,7 +131,7 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 		templates = []string{"player.wat"}
 	}
 	features := vm.NecessaryFeaturesFor(song.Patch)
-	for _, unit := range []string{"bufread", "bufwrite", "spawn", "arg", "window"} {
+	for _, unit := range []string{"bufread", "bufwrite", "spawn", "arg", "window", "spfft", "spifft", "spcopy"} {
 		if _, ok := features.Opcode(unit); ok && com.Arch != "wasm" {
 			return nil, nil, fmt.Errorf(`the %v unit is only supported when compiling for wasm (targeted architecture was %v)`, unit, com.Arch)
 		}
@@ -190,7 +190,8 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 				SequenceLength int
 				Hold           int
 				wasmBufferData
-			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers}
+				wasmSpectralData
+			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers, wasmSpectral(encodedPatch)}
 			populatedTemplate, extension, err = com.compile(templateName, &data)
 		}
 		if err != nil {
@@ -206,6 +207,61 @@ func (com *Compiler) compile(templateName string, data interface{}) (string, str
 	err := com.Template.ExecuteTemplate(result, templateName, data)
 	extension := filepath.Ext(templateName)
 	return result.String(), extension, err
+}
+
+// wasmSpectralData is the layout of the spectral units in the wasm player.
+// Spectra and the states of the units are in su_spectral, with offsets in
+// bytes from it.
+type wasmSpectralData struct {
+	// SpectrumTable has 4 i32s for each spectrum: offset of its data, base 2
+	// logarithm of its size, the number of spectra written to it and 0.
+	SpectrumTable []uint32
+	// SpectralTable has 4 i32s for each spectral unit: the offset of the
+	// voice that runs it from su_voices, the offset of its state, and the
+	// offsets of its spectrum and source spectrum in SpectrumTable. The state
+	// is the position in its ring and the count of the spectrum it processed
+	// last, 16 bytes, followed by the ring for spfft and spifft.
+	SpectralTable []uint32
+	// SpectralBytes is the size of su_spectral. After the spectra and the
+	// states of the units, it has a scratch space at SpectralScratch for the
+	// largest spectrum, of size 2^SpectralMaxLog2, and the tables computed
+	// when the player starts, like spectralTables in the vm package: the Hann
+	// window of the largest size at SpectralHann, and the twiddle factors
+	// at SpectralTwiddles, each as the pair wr, wr, followed by the pairs
+	// -wi, wi at SpectralTwiddles + SpectralTwiddleBytes.
+	SpectralBytes, SpectralScratch, SpectralMaxLog2      int
+	SpectralHann, SpectralTwiddles, SpectralTwiddleBytes int
+	SpectralMaxSize                                      int
+}
+
+const wasmSpectrumTableStride = 16
+
+func wasmSpectral(b *vm.Bytecode) (ret wasmSpectralData) {
+	offset := 0
+	for _, sp := range b.Spectra {
+		ret.SpectrumTable = append(ret.SpectrumTable, uint32(offset), uint32(sp.Log2Size), 0, 0)
+		offset += 2 * (1 << sp.Log2Size) * 4
+		ret.SpectralMaxLog2 = max(ret.SpectralMaxLog2, sp.Log2Size)
+	}
+	for _, u := range b.SpectralUnits {
+		source := 0
+		if u.Source >= 0 {
+			source = u.Source * wasmSpectrumTableStride
+		}
+		ret.SpectralTable = append(ret.SpectralTable, uint32(u.Voice*4096), uint32(offset), uint32(u.Spectrum*wasmSpectrumTableStride), uint32(source))
+		offset += 16
+		if u.Type == "spfft" || u.Type == "spifft" {
+			offset += (1 << b.Spectra[u.Spectrum].Log2Size) * 4
+		}
+	}
+	maxSize := 1 << ret.SpectralMaxLog2
+	ret.SpectralMaxSize = maxSize
+	ret.SpectralScratch = offset
+	ret.SpectralHann = ret.SpectralScratch + 2*maxSize*4
+	ret.SpectralTwiddles = ret.SpectralHann + maxSize*4
+	ret.SpectralTwiddleBytes = (maxSize - 1) * 8
+	ret.SpectralBytes = ret.SpectralTwiddles + 2*ret.SpectralTwiddleBytes
+	return ret
 }
 
 // wasmBuffers lays out the buffers played by the patch's bufread units in the

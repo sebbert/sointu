@@ -3,6 +3,7 @@ package vm
 import (
 	"errors"
 	"fmt"
+	"math/bits"
 
 	"github.com/vsariola/sointu"
 )
@@ -70,6 +71,29 @@ type (
 
 		// NumVoices is the total number of voices in the patch
 		NumVoices uint32
+
+		// Spectra are the spectrum buffers of the spectral units, and
+		// SpectralUnits the spectral units, in the order of the patch. The
+		// operand of a spectral unit is its index in SpectralUnits.
+		Spectra       []Spectrum
+		SpectralUnits []SpectralUnit
+	}
+
+	// Spectrum is a spectrum buffer: the ID of the buffer and the base 2
+	// logarithm of its size in samples. A spectrum of size n is n complex
+	// values; the spectral units change bins 0 to n/2.
+	Spectrum struct {
+		BufferID int
+		Log2Size int
+	}
+
+	// SpectralUnit is a spectral unit: the voice that runs it, the first
+	// voice of its instrument, its spectrum and, for spcopy, the spectrum it
+	// copies. Spectrum and Source are indices in Bytecode.Spectra.
+	SpectralUnit struct {
+		Type             string
+		Voice            int
+		Spectrum, Source int
 	}
 
 	// SampleOffset is an entry in the sample offset table
@@ -120,6 +144,7 @@ const (
 type bytecodeBuilder struct {
 	sampleOffsetMap map[SampleOffset]int
 	bufferRegionMap map[BufferRegion]int
+	spectrumSizes   map[int]int // spectrum buffer ID -> base 2 logarithm of its size
 	globalAddrs     map[int]int
 	globalFixups    map[int]([]int)
 	localAddrs      map[int]int
@@ -191,6 +216,18 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				b.op(opcode + p["stereo"])
 				b.defOperands(unit)
 				b.operand(b.delayIndices[instrIndex][unitIndex], countTrack)
+			case "spfft", "spifft", "spcopy":
+				if len(b.SpectralUnits) > 255 {
+					return nil, errors.New("Patch uses over 256 spectral units")
+				}
+				u := SpectralUnit{Type: unit.Type, Voice: patch.FirstVoiceForInstrument(instrIndex), Spectrum: b.spectrumIndex(p["buffer"]), Source: -1}
+				if unit.Type == "spcopy" {
+					u.Source = b.spectrumIndex(p["source"])
+				}
+				b.op(opcode)
+				b.defOperands(unit)
+				b.operand(len(b.SpectralUnits))
+				b.SpectralUnits = append(b.SpectralUnits, u)
 			case "bufread", "bufwrite":
 				index := b.getBufferRegionIndex(unit)
 				if index > 255 {
@@ -335,6 +372,7 @@ func newBytecodeBuilder(patch sointu.Patch, bpm int) *bytecodeBuilder {
 		delayTimesU16[i] = uint16(d)
 	}
 	c := bytecodeBuilder{
+		spectrumSizes:   spectrumSizes(patch),
 		Bytecode:        Bytecode{PolyphonyBitmask: polyphonyBitmask, Polyphony: polyphony, WideVoices: numVoices > MAX_VOICES_NARROW, NumVoices: uint32(numVoices), DelayTimes: delayTimesU16, BPM: bpm},
 		sampleOffsetMap: map[SampleOffset]int{},
 		bufferRegionMap: map[BufferRegion]int{},
@@ -463,6 +501,57 @@ func (b *bytecodeBuilder) getSampleIndex(unit sointu.Unit) int {
 		b.SampleOffsets = append(b.SampleOffsets, s)
 	}
 	return index
+}
+
+// spectrumIndex returns the index of the spectrum buffer with the given ID in
+// Bytecode.Spectra, adding it if needed.
+func (b *bytecodeBuilder) spectrumIndex(id int) int {
+	for i, s := range b.Spectra {
+		if s.BufferID == id {
+			return i
+		}
+	}
+	log2Size, ok := b.spectrumSizes[id]
+	if !ok {
+		log2Size = spectrumLog2Size(sointu.SpectrumSizeDefault)
+	}
+	b.Spectra = append(b.Spectra, Spectrum{BufferID: id, Log2Size: log2Size})
+	return len(b.Spectra) - 1
+}
+
+func spectrumLog2Size(size int) int { return bits.Len(uint(sointu.SpectrumSize(size))) - 1 }
+
+// spectrumSizes returns the sizes of the spectrum buffers written by the
+// spfft units of the patch, and copied to by spcopy units, as base 2
+// logarithms.
+func spectrumSizes(patch sointu.Patch) map[int]int {
+	ret := map[int]int{}
+	var copies [][2]int // source, destination
+	for _, instr := range patch {
+		for _, u := range instr.Units {
+			if u.Disabled {
+				continue
+			}
+			switch u.Type {
+			case "spfft":
+				if _, ok := ret[u.Parameters["buffer"]]; !ok {
+					ret[u.Parameters["buffer"]] = spectrumLog2Size(u.Parameters["size"])
+				}
+			case "spcopy":
+				copies = append(copies, [2]int{u.Parameters["source"], u.Parameters["buffer"]})
+			}
+		}
+	}
+	for range copies { // copies of copies
+		for _, c := range copies {
+			if _, ok := ret[c[1]]; !ok {
+				if size, ok := ret[c[0]]; ok {
+					ret[c[1]] = size
+				}
+			}
+		}
+	}
+	return ret
 }
 
 // getBufferRegionIndex returns the index of the region played by a bufread unit

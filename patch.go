@@ -452,6 +452,38 @@ var UnitTypes = map[string]UnitType{
 			return ret
 		},
 	},
+	"spfft": {
+		// spfft pops a signal and analyses it into a spectrum buffer: every
+		// size/4 samples, it takes the last size samples, windows them (Hann)
+		// and replaces the spectrum with their FFT. Other spectral units
+		// modify the spectrum, and spifft turns it back into a signal.
+		// Spectral units run only in the first voice of their instrument.
+		Params: []UnitParameter{
+			{Name: "size", MinValue: 0, Default: SpectrumSizeDefault, MaxValue: SpectrumSizeMax, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(SpectrumSize(v)), "" }},
+			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+		},
+		StackUse: stackUseSink,
+	},
+	"spifft": {
+		// spifft pushes the signal of a spectrum buffer: each new spectrum
+		// is transformed back (inverse FFT), windowed and overlap-added. The
+		// signal comes out about size samples after it went into spfft.
+		Params: []UnitParameter{
+			{Name: "gain", MinValue: 0, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
+			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+		},
+		StackUse: stackUseSource,
+	},
+	"spcopy": {
+		// spcopy copies each new spectrum of the source spectrum buffer to
+		// its own spectrum buffer, e.g. to process the same spectrum in two
+		// different ways.
+		Params: []UnitParameter{
+			{Name: "source", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+		},
+		StackUse: func(u *Unit) StackUse { return StackUse{} },
+	},
 	"spawn": {
 		// spawn triggers notes on the voices of another instrument, taking
 		// the released voice that was spawned longest ago. If all the voices
@@ -559,6 +591,18 @@ var UnitTypes = map[string]UnitType{
 		StackUse: stackUseEffect,
 	},
 }
+
+// The size of the spectra of spfft units is 256 * 2^size samples; the size
+// of a spectrum buffer comes from the spfft unit writing it, or the spcopy
+// unit copying another spectrum to it.
+const (
+	SpectrumSizeDefault = 2 // 1024
+	SpectrumSizeMax     = 5 // 8192
+)
+
+// SpectrumSize returns the size in samples of the spectra of an spfft unit
+// with the given size parameter.
+func SpectrumSize(size int) int { return 256 << min(max(size, 0), SpectrumSizeMax) }
 
 func stackUseSource(u *Unit) StackUse {
 	if stereo, ok := u.Parameters["stereo"]; ok && stereo == 1 {

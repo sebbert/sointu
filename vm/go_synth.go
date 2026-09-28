@@ -29,6 +29,9 @@ type (
 		state      synthState
 		delaylines []delayline
 		buffers    map[int]*synthBuffer
+		spectra    []spectrum
+		spectral   []spectralState // states of the spectral units
+		scratch    []float32
 		cpuLoad    sointu.CPULoad
 	}
 
@@ -117,6 +120,7 @@ func (s GoSynther) Synth(patch sointu.Patch, bpm int) (sointu.Synth, error) {
 	}
 	ret := &GoSynth{bytecode: *bytecode, stack: make([]float32, 0, 4), delaylines: make([]delayline, patch.NumDelayLines())}
 	ret.state.randSeed = 1
+	ret.setSpectra(nil)
 	return ret, nil
 }
 
@@ -216,7 +220,9 @@ func (s *GoSynth) Update(patch sointu.Patch, bpm int) error {
 			}
 		}
 	}
+	old := s.bytecode
 	s.bytecode = *bytecode
+	s.setSpectra(&old)
 	for len(s.delaylines) < patch.NumDelayLines() {
 		s.delaylines = append(s.delaylines, delayline{})
 	}
@@ -630,6 +636,24 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 				first, count, flags := int(operands[0]), int(operands[1]), operands[2]
 				operands = operands[3:]
 				s.spawn(unit, voice, first, count, flags, params[0], params[1], params[2], &stack)
+			case opSpfft:
+				if index := int(operands[0]); s.bytecode.SpectralUnits[index].Voice == int(s.bytecode.NumVoices-voicesRemaining) {
+					s.spfft(index, stack[l-1])
+				}
+				operands = operands[1:]
+				stack = stack[:l-1]
+			case opSpifft:
+				out := float32(0)
+				if index := int(operands[0]); s.bytecode.SpectralUnits[index].Voice == int(s.bytecode.NumVoices-voicesRemaining) {
+					out = s.spifft(index, params[0])
+				}
+				operands = operands[1:]
+				stack = append(stack, out)
+			case opSpcopy:
+				if index := int(operands[0]); s.bytecode.SpectralUnits[index].Voice == int(s.bytecode.NumVoices-voicesRemaining) {
+					s.spcopy(index)
+				}
+				operands = operands[1:]
 			case opWindow:
 				stack = append(stack, window(unit, voice, params[0], params[1]))
 			case opArg:

@@ -274,7 +274,18 @@ the song: the compiled player records them again when it plays. The tracker
 keeps them while editing, until recorded again or cleared; "Fit to recording"
 sets the length of the buffer to what was recorded.
 
-`bufread`, `bufwrite`, `spawn`, `arg` and `window` are WebAssembly only for now.
+For spectral processing, `spfft` analyses a signal into a spectrum buffer:
+every size/4 samples (size 256 to 8192), it replaces the spectrum with the FFT
+of the last size samples, Hann windowed. `spifft` turns a spectrum buffer back
+into a signal with overlap-add, about size samples later, and `spcopy` copies
+each new spectrum of one buffer to another, to process it in two different
+ways. Spectral units run only in the first voice of their instrument, so they
+belong in monophonic instruments or effect buses. Larger sizes resolve lower
+frequencies better (1024 gives 43 Hz bins, 8192 gives 5.4 Hz) but smear
+transients and delay more. The wasm player computes the FFT with SIMD.
+
+`bufread`, `bufwrite`, `spawn`, `arg`, `window` and the spectral units are
+WebAssembly only for now.
 
 If you are looking for an easy way to compile an executable from a Sointu song
 (e.g. for a executable music compo), take a look at [NR4's Python-based

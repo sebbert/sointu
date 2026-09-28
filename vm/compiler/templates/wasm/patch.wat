@@ -57,6 +57,7 @@
 {{- template "effects.wat" .}}
 {{- template "sources.wat" .}}
 {{- template "sinks.wat" .}}
+{{- template "spectral.wat" .}}
 
 ;;-------------------------------------------------------------------------------
 ;; $input returns the float value of a transformed to 0.0 - 1.0f range.

@@ -109,6 +109,26 @@
 {{- end}}
 {{- end}}
 
+{{- if .SpectralTable}}
+{{- /*
+;-------------------------------------------------------------------------------
+;    Spectra, 4 i32s each: offset of the spectrum in su_spectral, base 2
+;    logarithm of its size, number of spectra written to it and 0. Spectral
+;    units, 4 i32s each: offset of the voice running the unit from su_voices,
+;    offset of its state in su_spectral, offsets of its spectrum and source
+;    spectrum in su_spectrum_table.
+;-------------------------------------------------------------------------------
+*/}}
+{{- .SetDataLabel "su_spectrum_table"}}
+{{- range .SpectrumTable}}
+{{- $.DataD .}}
+{{- end}}
+{{- .SetDataLabel "su_spectral_table"}}
+{{- range .SpectralTable}}
+{{- $.DataD .}}
+{{- end}}
+{{- end}}
+
 {{- /*
 ;-------------------------------------------------------------------------------
 ; The number of transformed parameters each opcode takes
@@ -167,6 +187,11 @@
 {{- .Align}}
 {{- .SetBlockLabel "su_buffers"}}
 {{- .Block .BufferBytes}}
+{{- end}}
+{{- if .SpectralTable}}
+{{- .Align}}
+{{- .SetBlockLabel "su_spectral"}}
+{{- .Block .SpectralBytes}}
 {{- end}}
 {{- .Align}}
 {{- .SetBlockLabel "su_outputbuffer"}}
@@ -289,6 +314,9 @@
         (br_if $buffer{{$i}}_loop (i32.lt_u (local.tee $k (i32.add (local.get $k) (i32.const 1))) (i32.const {{mul $b.Frames $b.Channels}})))
     end
 {{- end}}
+{{- end}}
+{{- if .SpectralTable}}
+    (call $spectralInit)
 {{- end}}
     loop $pattern_loop
         (global.set $row (i32.const 0))

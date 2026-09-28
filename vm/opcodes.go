@@ -35,10 +35,13 @@ const (
 	opReceive    = 31
 	opSend       = 32
 	opSpawn      = 33
-	opSpeed      = 34
-	opSync       = 35
-	opWindow     = 36
-	opXch        = 37
+	opSpcopy     = 34
+	opSpeed      = 35
+	opSpfft      = 36
+	opSpifft     = 37
+	opSync       = 38
+	opWindow     = 39
+	opXch        = 40
 )
 
-var transformCounts = [...]int{0, 0, 0, 1, 3, 4, 1, 0, 5, 1, 1, 4, 1, 5, 2, 1, 1, 0, 1, 0, 1, 0, 0, 2, 6, 1, 2, 1, 0, 0, 0, 1, 3, 0, 0, 2, 0}
+var transformCounts = [...]int{0, 0, 0, 1, 3, 4, 1, 0, 5, 1, 1, 4, 1, 5, 2, 1, 1, 0, 1, 0, 1, 0, 0, 2, 6, 1, 2, 1, 0, 0, 0, 1, 3, 0, 0, 0, 1, 0, 2, 0}
