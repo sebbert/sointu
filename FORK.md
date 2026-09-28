@@ -8,10 +8,11 @@ behind on purpose. The [x86 backend](#updating-the-x86-backend) section lists
 what they would need to catch up.
 
 The rule for the synths: the Go synth and the wasm player render
-**identically**, sample for sample, for everything new. Tests in
-`vm/compiler/wasm_*_test.go` render songs in both (with node and wat2wasm) and
-compare them. Small changes to the sound are fine, as long as both stay in
-sync.
+**identically**, sample for sample, for every unit the wasm player has. Tests
+in `vm/compiler/wasm_*_test.go` render songs in both, with node and wat2wasm,
+and require exactly the same output. That covers all the regression songs in
+`tests/`, except `sync` and gm.dls samples, which the wasm player lacks. Small
+changes to the sound are fine, as long as both stay in sync.
 
 ## Build and plugins
 
@@ -72,14 +73,34 @@ README for the details of each unit.
 
 ## Go synth behavior changes
 
-- `waveshape` now matches the wasm and x86 waveshapers operation by operation,
-  and clips its input to [-1, 1] like them. Noise and oscillators with a shape
-  other than 64, and `distort`, sound very slightly different in Go than
-  before, and now identical to wasm.
-- Sends to units after the 31st unit of an instrument now reach the right
-  unit; before, Go decoded the unit index from 5 bits instead of 6.
-- `math.Exp2` is memoized (oscillator pitch, envelope rates): same output,
-  27% faster.
+The Go synth now computes every unit the way the wasm player does, operation
+by operation, in float32:
+
+- **Shared math.** `exp2f`, `log2f`, `powf` and `sinTurns` (sin(2π·t), t in
+  turns) are float32 routines in `vm/mathf.go`. The wasm player has the same
+  ones (`$exp2f`, `$log2f`, `$powf`, `$sinTurns` in `patch.wat`). They
+  replace `math.Exp2`, `math.Pow` and `math.Sin`.
+- **Oscillator.** The phase is float32 instead of float64, as in the wasm
+  player. The gate state moves with unison and stereo like in the wasm
+  player.
+- **Envelope.** Decay ends in a sustain state that holds the level, instead of
+  following a modulated sustain.
+- **belleq.** It uses the wasm player's form of the biquad, including
+  cos(ω) = √(1−sin²ω).
+- **delay.** The damping is computed as (state−s)·damp + s, and note tracking
+  uses `exp2f`.
+- **speed.** The time step is truncated instead of rounded, as in the wasm
+  player.
+- **pan.** A mono pan is s·p and s − s·p, unless the patch has stereo pans;
+  the wasm player's code depends on that (`Bytecode.StereoPan`).
+- **waveshape.** It matches the wasm and x86 waveshapers and clips its input.
+- **Rounding.** Products that are added are rounded with `float32()` first.
+  Go may otherwise fuse them into multiply-adds on arm64, even across
+  statements, which the wasm player never does.
+- **Sends.** Sends to units after the 31st unit of an instrument now reach the
+  right unit; before, Go decoded the unit index from 5 bits instead of 6.
+
+These change the Go synth's sound by tiny amounts, mostly below 1e-5.
 
 ## Tracker
 
@@ -101,9 +122,14 @@ README for the details of each unit.
 - Samples are stored as custom sections (`sointu.buffer`). The host decodes
   them and passes them through the imported function `s.b` before
   instantiation.
+- The player computes 2^x, sin and pow itself, in float32, like the Go synth.
+  It no longer imports anything from JavaScript except samples. With
+  `sointu-compile -imports` (`Compiler.MathImports`), it calls Math.pow and
+  Math.sin through the `m` import as before. That compiles to exactly the
+  old player, which is a bit smaller, but it no longer matches the Go synth
+  exactly. The spectral units use the built-in routines either way.
 - The FFT uses SIMD (f32x4), with window and twiddle tables computed at
-  startup. The spectral units compute `pow`, `exp2` and `log2` in float32
-  themselves (`$powf`, `$exp2f`, `$log2f`) instead of calling Math.pow.
+  startup with `$sinTurns`.
 - Template errors are no longer ignored (they used to give an empty module).
 
 ## Updating the x86 backend
@@ -150,15 +176,27 @@ songs that need any of it for x86.
      operation as in `vm/spectral.go`, or x87's 80-bit precision will make
      x86 differ. SSE would make that easy.
 
-6. **Waveshaper.** Already matches: Go was changed to match x86 and wasm.
+6. **Math and formulas.** To render like the Go synth and the wasm player,
+   the x86 players would need the same float32 routines (`exp2f`, `log2f`,
+   `powf`, `sinTurns` in `vm/mathf.go`) instead of the x87 `fsin`/`f2xm1`,
+   float32 oscillator phases, and the formulas listed under
+   [Go synth behavior changes](#go-synth-behavior-changes). The waveshaper
+   already matches.
 
 7. **Native bridge.** `MAX_VOICES` is 32 in the C header; `Polyphony` is a
    32-bit bitmask there.
 
 ## Known differences left
 
-- The oscillators, envelopes and other original units still differ between
-  Go and wasm by about 1e-5. Go computes some of them in float64
-  (oscillator phase), and wasm imports `sin`, `pow` and `log2` from
-  JavaScript. Replacing those imports with shared float32 routines, like the
-  spectral units' `exp2f`, would make them identical too.
+- **Units the wasm player lacks:** `sync`, and sample oscillators (gm.dls).
+- **Against the x86 players:** the Go synth now follows the wasm player, so
+  it differs from the x86 references wherever the wasm player did.
+  - Some songs are beyond the regression tests' tolerance: `crush`, whose
+    steps flip at quantization boundaries, and frequency modulation, whose
+    float32 phases drift from the x87's 80 bits. `differsFromX86` in
+    `vm/go_synth_test.go` skips them in the Go regression test.
+  - `belleq`, `compressor` and `speed` also differ from x86 in places, as the
+    wasm player always did.
+- **CTest:** `tests/wasm_test_renderer.es6` never fails, because its
+  `return 1` is inside an async function. The wasm-vs-x86 differences above
+  went unnoticed there.

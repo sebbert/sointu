@@ -11,8 +11,6 @@ import (
 // operation, in float32, with products wrapped in float32() so that they are
 // not fused into multiply-adds.
 
-const pi32 = float32(math.Pi)
-
 // maxSpectrumLog2Size is the base 2 logarithm of the largest spectrum size.
 const maxSpectrumLog2Size = 13
 
@@ -21,20 +19,20 @@ const maxSpectrumLog2Size = 13
 // half has half factors, e^(-πik/half), at half-1+k. The window of a smaller
 // size n is every (max size/n)th value of the table: scaling by a power of 2
 // does not change rounding, so they equal sin²(πj/n) computed directly. The
-// wasm player computes the same tables when it starts.
+// wasm player computes the same tables when it starts, with sinTurns too.
 var spectralTables = sync.OnceValue(func() (t struct{ hann, wr, wi []float32 }) {
 	const n = 1 << maxSpectrumLog2Size
 	t.hann = make([]float32, n)
 	for j := range t.hann {
-		sn := float32(math.Sin(float64(float32(float32(j)*pi32) / float32(n))))
+		sn := sinTurns(float32(j) / float32(2*n)) // sin(πj/n)
 		t.hann[j] = float32(sn * sn)
 	}
 	t.wr, t.wi = make([]float32, n-1), make([]float32, n-1)
 	for half := 1; half < n; half <<= 1 {
 		for k := 0; k < half; k++ {
-			a := float32(float32(k)*-pi32) / float32(half)
-			t.wr[half-1+k] = float32(math.Sin(float64(a + pi32/2)))
-			t.wi[half-1+k] = float32(math.Sin(float64(a)))
+			a := -(float32(k) / float32(2*half)) // -πk/half in turns
+			t.wr[half-1+k] = sinTurns(a + 0.25)
+			t.wi[half-1+k] = sinTurns(a)
 		}
 	}
 	return
@@ -591,49 +589,3 @@ func peak(r, sharp float32) float32 {
 	d := float32(math.Abs(float64(r - float32(math.RoundToEven(float64(r))))))
 	return max(1-float32(d*sharp), 0)
 }
-
-// log2f, exp2f and powf are float32 approximations that the wasm player
-// computes itself instead of calling Math.pow of JavaScript for every bin.
-// log2f and exp2f are accurate to about 1e-7 relative; powf to about 1e-7
-// times |y·log2(x)|, as that is rounded to float32. They match the wasm
-// versions operation by operation.
-
-// log2f returns the base 2 logarithm of x > 0: the exponent of x plus
-// ln(m)/ln(2) of its mantissa m in [√½, √2), from the series
-// ln(m) = 2(s + s³/3 + s⁵/5 + s⁷/7), s = (m-1)/(m+1).
-func log2f(x float32) float32 {
-	b := math.Float32bits(x)
-	e := int32(b>>23&0xff) - 127
-	m := math.Float32frombits(b&0x7fffff | 0x3f800000)
-	if m > 1.4142135 {
-		m *= 0.5
-		e++
-	}
-	s := (m - 1) / (m + 1)
-	s2 := s * s
-	p := float32(s2*0.14285715) + 0.2
-	p = float32(p*s2) + 0.33333334
-	p = float32(p*s2) + 1
-	return float32(float32(p*s)*2.8853900) + float32(e) // 2/ln(2)
-}
-
-// exp2f returns 2^y, for y clamped to [-126, 126]: 2 to the nearest integer
-// i of y times e^z, z = (y-i)·ln(2), from the Taylor series up to z⁶.
-func exp2f(y float32) float32 {
-	if !(y > -126) { // also NaN
-		y = -126
-	}
-	y = min(y, 126)
-	i := float32(math.RoundToEven(float64(y)))
-	z := float32(y-i) * 0.6931472
-	p := float32(z*0.0013888889) + 0.008333334
-	p = float32(p*z) + 0.041666668
-	p = float32(p*z) + 0.16666667
-	p = float32(p*z) + 0.5
-	p = float32(p*z) + 1
-	p = float32(p*z) + 1
-	return p * math.Float32frombits(uint32(int32(i)+127)<<23)
-}
-
-// powf returns x^y for x > 0.
-func powf(x, y float32) float32 { return exp2f(float32(y * log2f(x))) }

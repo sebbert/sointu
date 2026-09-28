@@ -220,8 +220,13 @@
         (call $input (i32.const {{.InputNumber "belleq" "frequency"}}))
         (call $input (i32.const {{.InputNumber "belleq" "frequency"}}))
     )
+{{- if .MathImports}}
     (f32.mul (f32.const 2))
     (local.tee $sinw (call $sin))                           ;; sinw x WRK
+{{- else}}
+    (f32.mul (f32.const 0.31830987))                        ;; 2f²/2π turns
+    (local.tee $sinw (call $sinTurns))                      ;; sinw x WRK
+{{- end}}
     (call $input (i32.const {{.InputNumber "belleq" "bandwidth"}})) ;; b sinw x WRK
     (f32.mul (f32.const 2))                                 ;; 2*b sinw x WRK
     (local.tee $alpha (f32.mul))                            ;; alpha=sinw*2*b x WRK
@@ -526,7 +531,7 @@
     ))
     (if (f32.gt) (then ;; if $level > $threshold, note the local.tees
         (call $push
-            (call $pow ;; (t^2/l)^(r/2)
+            (call {{if .MathImports}}$pow{{else}}$powf{{end}} ;; (t^2/l)^(r/2)
                 (f32.div ;; t^2/l
                     (local.get $t2)
                     (local.get $level)

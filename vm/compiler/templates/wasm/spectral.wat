@@ -29,7 +29,7 @@
 ;; wr, wr and -wi, wi, for SIMD complex multiplication.
 (func $spectralInit (local $j i32) (local $half i32) (local $k i32) (local $a f32) (local $s f32) (local $p i32)
     loop $window
-        (local.set $s (call $sin (f32.div (f32.mul (f32.convert_i32_u (local.get $j)) (f32.const 3.1415927)) (f32.const {{.SpectralMaxSize}}))))
+        (local.set $s (call $sinTurns (f32.div (f32.convert_i32_u (local.get $j)) (f32.const {{mul 2 .SpectralMaxSize}}))))
         (f32.store offset={{add (index .Labels "su_spectral") .SpectralHann}} (i32.shl (local.get $j) (i32.const 2)) (f32.mul (local.get $s) (local.get $s)))
         (br_if $window (i32.lt_u (local.tee $j (i32.add (local.get $j) (i32.const 1))) (i32.const {{.SpectralMaxSize}})))
     end
@@ -37,12 +37,14 @@
     loop $stages
         (local.set $k (i32.const 0))
         loop $twiddles
-            (local.set $a (f32.div (f32.mul (f32.convert_i32_u (local.get $k)) (f32.const -3.1415927)) (f32.convert_i32_u (local.get $half))))
+            ;; the phase -πk/half in turns
+            (local.set $a (f32.div (f32.convert_i32_u (local.get $k)) (f32.convert_i32_u (i32.shl (local.get $half) (i32.const 1)))))
+            (local.set $a (f32.neg (local.get $a)))
             (local.set $p (i32.shl (i32.add (i32.sub (local.get $half) (i32.const 1)) (local.get $k)) (i32.const 3)))
-            (local.set $s (call $sin (f32.add (local.get $a) (f32.const 1.5707964))))
+            (local.set $s (call $sinTurns (f32.add (local.get $a) (f32.const 0.25))))
             (f32.store offset={{add (index .Labels "su_spectral") .SpectralTwiddles}} (local.get $p) (local.get $s))
             (f32.store offset={{add (index .Labels "su_spectral") .SpectralTwiddles 4}} (local.get $p) (local.get $s))
-            (local.set $s (call $sin (local.get $a)))
+            (local.set $s (call $sinTurns (local.get $a)))
             (f32.store offset={{add (index .Labels "su_spectral") .SpectralTwiddles .SpectralTwiddleBytes}} (local.get $p) (f32.neg (local.get $s)))
             (f32.store offset={{add (index .Labels "su_spectral") .SpectralTwiddles .SpectralTwiddleBytes 4}} (local.get $p) (local.get $s))
             (br_if $twiddles (i32.lt_u (local.tee $k (i32.add (local.get $k) (i32.const 1))) (local.get $half)))
@@ -353,51 +355,6 @@
 (func $randomPhase (param $rng i32) (result f32 f32) (local $r i32)
     (i32.store (local.get $rng) (local.tee $r (i32.add (i32.mul (i32.load (local.get $rng)) (i32.const 1664525)) (i32.const 1013904223))))
     (call $tablePhase (i32.shr_u (local.get $r) (i32.const 24)))
-)
-{{- end}}
-
-{{- if or (.HasOp "spfilter") (.HasOp "spcompress") (.HasOp "spcross") (.HasOp "spgate") (.HasOp "spscale") (.HasOp "spformant") (.HasOp "spcomb")}}
-;; $log2f, $exp2f and $powf are float32 approximations computed here instead
-;; of calling Math.pow of JavaScript for every bin, like log2f, exp2f and powf
-;; in vm/spectral.go, operation by operation.
-;;
-;; $log2f returns the base 2 logarithm of x > 0: the exponent of x plus
-;; ln(m)/ln(2) of its mantissa m in [√½, √2), from the series
-;; ln(m) = 2(s + s³/3 + s⁵/5 + s⁷/7), s = (m-1)/(m+1)
-(func $log2f (param $x f32) (result f32) (local $b i32) (local $e i32) (local $m f32) (local $s f32) (local $s2 f32) (local $p f32)
-    (local.set $b (i32.reinterpret_f32 (local.get $x)))
-    (local.set $e (i32.sub (i32.and (i32.shr_u (local.get $b) (i32.const 23)) (i32.const 0xff)) (i32.const 127)))
-    (local.set $m (f32.reinterpret_i32 (i32.or (i32.and (local.get $b) (i32.const 0x7fffff)) (i32.const 0x3f800000))))
-    (if (f32.gt (local.get $m) (f32.const 1.4142135)) (then
-        (local.set $m (f32.mul (local.get $m) (f32.const 0.5)))
-        (local.set $e (i32.add (local.get $e) (i32.const 1)))
-    ))
-    (local.set $s (f32.div (f32.sub (local.get $m) (f32.const 1)) (f32.add (local.get $m) (f32.const 1))))
-    (local.set $s2 (f32.mul (local.get $s) (local.get $s)))
-    (local.set $p (f32.add (f32.mul (local.get $s2) (f32.const 0.14285715)) (f32.const 0.2)))
-    (local.set $p (f32.add (f32.mul (local.get $p) (local.get $s2)) (f32.const 0.33333334)))
-    (local.set $p (f32.add (f32.mul (local.get $p) (local.get $s2)) (f32.const 1)))
-    (f32.add (f32.mul (f32.mul (local.get $p) (local.get $s)) (f32.const 2.8853900)) (f32.convert_i32_s (local.get $e)))
-)
-
-;; $exp2f returns 2^y, for y clamped to [-126, 126]: 2 to the nearest integer
-;; i of y times e^z, z = (y-i)·ln(2), from the Taylor series up to z⁶
-(func $exp2f (param $y f32) (result f32) (local $i f32) (local $z f32) (local $p f32)
-    (local.set $y (f32.min (select (local.get $y) (f32.const -126) (f32.gt (local.get $y) (f32.const -126))) (f32.const 126)))
-    (local.set $i (f32.nearest (local.get $y)))
-    (local.set $z (f32.mul (f32.sub (local.get $y) (local.get $i)) (f32.const 0.6931472)))
-    (local.set $p (f32.add (f32.mul (local.get $z) (f32.const 0.0013888889)) (f32.const 0.008333334)))
-    (local.set $p (f32.add (f32.mul (local.get $p) (local.get $z)) (f32.const 0.041666668)))
-    (local.set $p (f32.add (f32.mul (local.get $p) (local.get $z)) (f32.const 0.16666667)))
-    (local.set $p (f32.add (f32.mul (local.get $p) (local.get $z)) (f32.const 0.5)))
-    (local.set $p (f32.add (f32.mul (local.get $p) (local.get $z)) (f32.const 1)))
-    (local.set $p (f32.add (f32.mul (local.get $p) (local.get $z)) (f32.const 1)))
-    (f32.mul (local.get $p) (f32.reinterpret_i32 (i32.shl (i32.add (i32.trunc_f32_s (local.get $i)) (i32.const 127)) (i32.const 23))))
-)
-
-;; $powf returns x^y for x > 0
-(func $powf (param $x f32) (param $y f32) (result f32)
-    (call $exp2f (f32.mul (local.get $y) (call $log2f (local.get $x))))
 )
 {{- end}}
 

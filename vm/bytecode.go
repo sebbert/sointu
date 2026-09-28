@@ -72,6 +72,12 @@ type (
 		// NumVoices is the total number of voices in the patch
 		NumVoices uint32
 
+		// StereoPan is true when the patch has stereo pan units. The wasm
+		// player then pans mono signals with the same code, computing the
+		// right channel as (1-p)·s instead of s-p·s, which rounds
+		// differently; the Go synth does the same.
+		StereoPan bool
+
 		// Spectra are the spectrum buffers of the spectral units, and
 		// SpectralUnits the spectral units, in the order of the patch. The
 		// operand of a spectral unit is its index in SpectralUnits.
@@ -180,6 +186,9 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				b.idLabel(unit.ID)
 			}
 			p := unit.Parameters
+			if unit.Type == "pan" && p["stereo"] == 1 {
+				b.StereoPan = true
+			}
 			switch unit.Type {
 			case "oscillator":
 				color := p["color"]

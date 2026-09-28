@@ -239,6 +239,7 @@
 (func $oscillator_sine (param $phase f32) (param $color f32) (result f32)
     (select
         (f32.const 0)
+{{- if .MathImports}}
         (call $sin (f32.mul
             (f32.div
                 (local.get $phase)
@@ -246,6 +247,9 @@
             )
             (f32.const 6.28318530718)
         ))
+{{- else}}
+        (call $sinTurns (f32.div (local.get $phase) (local.get $color)))
+{{- end}}
         (f32.ge (local.get $phase) (local.get $color))
     )
 )

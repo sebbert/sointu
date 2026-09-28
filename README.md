@@ -228,6 +228,13 @@ sointu-compile -arch=wasm tests/test_chords.yml
 wat2wasm --enable-annotations test_chords.wat
 ```
 
+The wasm player computes its math (2^x, sin, pow) itself in float32, exactly
+like the Go synth of the tracker, so a compiled song sounds exactly like it
+did in the tracker, in every browser. With `-imports`, it calls `Math.pow` and
+`Math.sin` of JavaScript instead, through the `m` import: the player is a bit
+smaller, but its output differs slightly from the tracker's (by about 1e-5)
+and between browsers. Loaders can pass `{m: Math}` either way.
+
 Songs can play audio samples, imported in the tracker's Buffers tab and played
 with the `bufread` unit (WebAssembly only for now). The compiler encodes each
 sample with its encoding preset using [ffmpeg](https://ffmpeg.org/), found

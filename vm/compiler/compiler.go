@@ -22,6 +22,10 @@ type Compiler struct {
 	// Buffers are the encoded samples of the song's buffers, keyed by
 	// sointu.Buffer.ID, for compiling songs that play buffers (wasm only).
 	Buffers map[int]EncodedBuffer
+	// MathImports makes the wasm player call Math.pow and Math.sin of
+	// JavaScript instead of computing them itself: a smaller player, but its
+	// output then differs slightly from the Go synth, and between browsers.
+	MathImports bool
 }
 
 // EncodedBuffer is the sample of a buffer encoded for the compiled player,

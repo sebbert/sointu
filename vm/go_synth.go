@@ -29,7 +29,6 @@ type (
 		state      synthState
 		delaylines []delayline
 		buffers    map[int]*synthBuffer
-		exp2       *exp2Cache
 		spectra    []spectrum
 		spectral   []spectralState // states of the spectral units
 		scratch    []float32
@@ -121,7 +120,6 @@ func (s GoSynther) Synth(patch sointu.Patch, bpm int) (sointu.Synth, error) {
 	}
 	ret := &GoSynth{bytecode: *bytecode, stack: make([]float32, 0, 4), delaylines: make([]delayline, patch.NumDelayLines())}
 	ret.state.randSeed = 1
-	ret.exp2 = newExp2Cache()
 	ret.setSpectra(nil)
 	return ret, nil
 }
@@ -356,38 +354,40 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 				stack = append(stack, val)
 			case opOut:
 				if stereo {
-					synth.outputs[0] += params[0] * stack[l-1]
-					synth.outputs[1] += params[0] * stack[l-2]
+					synth.outputs[0] += float32(stack[l-1] * params[0])
+					synth.outputs[1] += float32(stack[l-2] * params[0])
 					stack = stack[:l-2]
 				} else {
-					synth.outputs[0] += params[0] * stack[l-1]
+					synth.outputs[0] += float32(stack[l-1] * params[0])
 					stack = stack[:l-1]
 				}
 			case opOutaux:
 				if stereo {
-					synth.outputs[0] += params[0] * stack[l-1]
-					synth.outputs[1] += params[0] * stack[l-2]
-					synth.outputs[2] += params[1] * stack[l-1]
-					synth.outputs[3] += params[1] * stack[l-2]
+					synth.outputs[0] += float32(stack[l-1] * params[0])
+					synth.outputs[1] += float32(stack[l-2] * params[0])
+					synth.outputs[2] += float32(stack[l-1] * params[1])
+					synth.outputs[3] += float32(stack[l-2] * params[1])
 					stack = stack[:l-2]
 				} else {
-					synth.outputs[0] += params[0] * stack[l-1]
-					synth.outputs[2] += params[1] * stack[l-1]
+					synth.outputs[0] += float32(stack[l-1] * params[0])
+					synth.outputs[2] += float32(stack[l-1] * params[1])
 					stack = stack[:l-1]
 				}
 			case opAux:
 				var channel byte
 				channel, operands = operands[0], operands[1:]
 				if stereo {
-					synth.outputs[channel+1] += params[0] * stack[l-2]
+					synth.outputs[channel+1] += float32(stack[l-2] * params[0])
 				}
-				synth.outputs[channel] += params[0] * stack[l-1]
+				synth.outputs[channel] += float32(stack[l-1] * params[0])
 				stack = stack[:l-channels]
 			case opSpeed:
-				r := unit.state[0] + float32(math.Exp2(float64(stack[l-1]*2.206896551724138))-1)
-				w := int(r+1.5) - 1
+				// like the wasm player, which truncates the time step; the x86
+				// players round it
+				r := unit.state[0] + (exp2f(stack[l-1]*2.206896551724138) - 1)
+				w := int32(r)
 				unit.state[0] = r - float32(w)
-				renderTime += w
+				renderTime += int(w)
 				stack = stack[:l-1]
 			case opIn:
 				var channel byte
@@ -404,20 +404,25 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 				}
 				state := unit.state[0]
 				level := unit.state[1]
+				// like the wasm player: the rate is that of the parameter of
+				// the state, and decay ends in the sustain state, which holds
+				// the level
+				delta := nonLinearMap(params[int(state)])
 				switch state {
 				case envStateAttack:
-					level += s.exp2.nonLinearMap(params[0])
+					level += delta
 					if level >= 1 {
 						level = 1
 						state = envStateDecay
 					}
 				case envStateDecay:
-					level -= s.exp2.nonLinearMap(params[1])
+					level -= delta
 					if sustain := params[2]; level <= sustain {
 						level = sustain
+						state = envStateSustain
 					}
 				case envStateRelease:
-					level -= s.exp2.nonLinearMap(params[3])
+					level -= delta
 					if level <= 0 {
 						level = 0
 					}
@@ -447,7 +452,7 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 				}
 				stack[l-1] /= params[0]
 			case opDbgain:
-				gain := float32(math.Pow(2, float64(params[0]*2-1)*6.643856189774724))
+				gain := exp2f(float32(params[0]-0.5) * 13.287712379549449)
 				if stereo {
 					stack[l-2] *= gain
 				}
@@ -489,7 +494,7 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 				port := addr & 7
 				amount := params[0]*2 - 1
 				for i := 0; i < channels; i++ {
-					targetVoice.units[unitIndex].ports[int(port)+i] += stack[l-1-i] * amount
+					targetVoice.units[unitIndex].ports[int(port)+i] += float32(stack[l-1-i] * amount)
 				}
 				if addr&0x8 == 0x8 {
 					stack = stack[:l-channels]
@@ -508,6 +513,12 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 					stack = append(stack, noteFloat)
 				}
 			case opPan:
+				if !stereo && !s.bytecode.StereoPan { // like the mono only pan of the wasm player
+					x := stack[l-1]
+					stack[l-1] = x * params[0]
+					stack = append(stack, x-float32(x*params[0]))
+					break
+				}
 				if !stereo {
 					stack = append(stack, stack[l-1])
 					l++
@@ -521,9 +532,9 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 				flags, operands = operands[0], operands[1:]
 				for i := 0; i < channels; i++ {
 					low, band := unit.state[0+i], unit.state[2+i]
-					low += freq2 * band
-					high := stack[l-1-i] - low - res*band
-					band += freq2 * high
+					low += float32(freq2 * band)
+					high := stack[l-1-i] - low - float32(res*band)
+					band += float32(freq2 * high)
 					unit.state[0+i], unit.state[2+i] = low, band
 					var output float32
 					if flags&0x40 == 0x40 {
@@ -546,90 +557,79 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 			case opOscillator:
 				var flags byte
 				flags, operands = operands[0], operands[1:]
-				detuneStereo := params[1]*2 - 1
+				if flags&0x80 == 0x80 { // sample oscillators exist only in the x86 players
+					s.sampleOscillator(unit, voice, flags, operandsAtTransform, &params, channels, &stack)
+					unit.ports[6] = 0
+					break
+				}
+				// like the wasm player, operation by operation
+				freqMod := unit.ports[6]
+				unit.ports[6] = 0
+				detuneStereo := float32(params[1]*2) - 1
 				unison := flags & 3
 				for i := 0; i < channels; i++ {
 					detune := detuneStereo
 					var output float32
 					for j := byte(0); j <= unison; j++ {
-						statevar := &unit.state[byte(i)+j*2]
-						pitch := float64(64*(params[0]*2-1) + detune)
-						if flags&0x8 == 0 { // if lfo is disable, add note to oscillator transpose
-							pitch += float64(voice.note)
+						k := i + 2*int(j) // the state of this oscillator
+						pitch := float32(float32(params[0]*2)-1)/0.015625 + detune
+						if flags&0x8 == 0 { // if lfo is disabled, add note to oscillator transpose
+							pitch += float32(voice.note)
 						}
-						pitch *= 0.083333333333 // from semitones to octaves
-						omega := s.exp2.exp2(pitch)
+						omega := exp2f(pitch * 0.0833333) // semitones to octaves
+						// float32() rounds products before they are added, as Go
+						// may otherwise fuse them into multiply-adds, even
+						// across statements
 						if flags&0x8 == 0 {
-							omega *= 0.000092696138 // scaling coefficient to get middle-C where it should be
+							omega = float32(omega * 0.000092696138) // scaling coefficient to get middle-C where it should be
 						} else {
-							omega *= 0.000038 //  pretty random scaling constant to get LFOs into reasonable range. Historical reasons, goes all the way back to 4klang
+							omega = float32(omega * 0.000038) // pretty random scaling constant to get LFOs into reasonable range. Historical reasons, goes all the way back to 4klang
 						}
-						omega += float64(unit.ports[6]) // add frequency modulation
+						phase := float32(omega+freqMod) + unit.state[k]
+						phase -= floor32(phase)
+						unit.state[k] = phase
+						phase += params[2]
+						phase -= floor32(phase)
+						color := params[3]
 						var amplitude float32
-						phase := float64(*statevar) + omega
-						if flags&0x80 == 0x80 { // if this is a sample oscillator
-							*statevar = float32(phase)
-							phase += float64(params[2])
-							sampleno := operandsAtTransform[3] // reuse color as the sample number
-							sampleoffset := s.bytecode.SampleOffsets[sampleno]
-							sampleindex := int(phase*84.28074964676522 + 0.5)
-							loopstart := int(sampleoffset.LoopStart)
-							if sampleindex >= loopstart {
-								sampleindex -= loopstart
-								sampleindex %= int(sampleoffset.LoopLength)
-								sampleindex += loopstart
+						switch {
+						case flags&0x40 == 0x40: // Sine
+							if phase < color {
+								amplitude = sinTurns(phase / color)
 							}
-							sampleindex += int(sampleoffset.Start)
-							amplitude = float32(int16(binary.LittleEndian.Uint16(su_sample_table[sampleindex*2:]))) / 32767.0
-						} else {
-							// at this point, the native synth actually uses 80-bit precision, so emulate that as closely as possible by using 64-bit math here
-							phase += 1
-							phase -= float64(int(phase))
-							*statevar = float32(phase)
-							phase += float64(params[2])
-							phase += 1
-							phase -= float64(int(phase)) // this should guaranteee that phase is [0,1), so that the Trisaw should not nan even if color = 1
-							color := float64(params[3])
-							switch {
-							case flags&0x40 == 0x40: // Sine
-								if phase < color {
-									amplitude = float32(math.Sin(2 * math.Pi * phase / color))
-								}
-							case flags&0x20 == 0x20: // Trisaw
-								if phase >= color { // since phase cannot be 1, if color = 1, then this condition never fires
-									phase = 1 - phase
-									color = 1 - color
-								}
-								amplitude = float32(phase/color*2 - 1)
-							case flags&0x10 == 0x10: // Pulse
-								if phase >= color {
-									amplitude = -1
-								} else {
-									amplitude = 1
-								}
-							case flags&0x4 == 0x4: // Gate
-								maskLow, maskHigh := operandsAtTransform[3], operandsAtTransform[4]
-								gateBits := (int(maskHigh) << 8) + int(maskLow)
-								amplitude = float32((gateBits >> (int(phase*16+.5) & 15)) & 1)
-								g := unit.state[4+i] // warning: still fucks up with unison = 3
-								amplitude += 0.99609375 * (g - amplitude)
-								unit.state[4+i] = amplitude
+						case flags&0x20 == 0x20: // Trisaw
+							if phase >= color {
+								phase = 1 - phase
+								color = 1 - color
 							}
+							amplitude = float32(float32(phase/color)*2) - 1
+						case flags&0x10 == 0x10: // Pulse
+							if phase >= color {
+								amplitude = -1
+							} else {
+								amplitude = 1
+							}
+						case flags&0x4 == 0x4: // Gate
+							gateBits := int32(operandsAtTransform[4])<<8 | int32(operandsAtTransform[3])
+							x := float32(gateBits >> (int32(float32(phase*16)+0.5) & 15) & 1)
+							// the smoothed gate is 4 floats after the phase,
+							// which with stereo unison runs into the ports
+							g := unitFloat(unit, 4+k)
+							amplitude = float32(float32(*g-x)*0.99609375) + x
+							*g = amplitude
 						}
 						if flags&0x4 == 0 {
-							output += waveshape(amplitude, params[4]) * params[5]
-						} else {
-							output += amplitude * params[5]
+							amplitude = waveshape(amplitude, params[4])
 						}
+						output += float32(amplitude * params[5])
 						if j < unison {
 							params[2] += 0.08333333 // 1/12, add small phase shift so all oscillators don't start in phase
 						}
-						detune = -detune * 0.5
+						detune = float32(-detune * 0.5)
 					}
 					stack = append(stack, output)
 					detuneStereo = -detuneStereo
 				}
-				unit.ports[6] = 0
 			case opBufwrite:
 				index := operands[0]
 				operands = operands[1:]
@@ -716,41 +716,42 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 				for i := 0; i < channels; i++ {
 					var d *delayline
 					signal := stack[stackIndex]
-					output := params[1] * signal // dry output
+					output := float32(params[1] * signal) // dry output
 					for j := byte(0); j < count; j += 2 {
 						d, delaylines = &delaylines[0], delaylines[1:]
-						delay := float32(s.bytecode.DelayTimes[index]) + unit.ports[4]*32767
+						// like the wasm player, operation by operation
+						delay := float32(s.bytecode.DelayTimes[index]) + float32(unit.ports[4]*32767)
 						if count&1 == 0 {
-							delay /= float32(s.exp2.exp2(float64(voice.note) * 0.083333333333))
+							delay /= exp2f(float32(voice.note) * 0.08333333)
 						}
 						delSignal := d.buffer[t-uint16(delay+0.5)]
 						output += delSignal
-						d.dampState = damp*d.dampState + (1-damp)*delSignal
-						d.buffer[t] = feedback*d.dampState + pregain2*signal
+						d.dampState = float32((d.dampState-delSignal)*damp) + delSignal
+						d.buffer[t] = float32(feedback*d.dampState) + float32(pregain2*signal)
 						index++
 					}
-					d.dcFiltState = output + (0.99609375*d.dcFiltState - d.dcIn)
+					d.dcFiltState = output + (float32(0.99609375*d.dcFiltState) - d.dcIn)
 					d.dcIn = output
 					stack[stackIndex] = d.dcFiltState
 					stackIndex++
 				}
 				unit.ports[4] = 0
 			case opCompressor:
-				signalLevel := stack[l-1] * stack[l-1] // square the signal to get power
+				signalLevel := float32(stack[l-1] * stack[l-1]) // square the signal to get power
 				if stereo {
-					signalLevel += stack[l-2] * stack[l-2]
+					signalLevel += float32(stack[l-2] * stack[l-2])
 				}
 				currentLevel := unit.state[0]
 				paramIndex := 0 // compressor attacking
 				if signalLevel < currentLevel {
 					paramIndex = 1 // compressor releasing
 				}
-				alpha := s.exp2.nonLinearMap(params[paramIndex]) // map attack or release to a smoothing coefficient
-				currentLevel += (signalLevel - currentLevel) * alpha
+				alpha := nonLinearMap(params[paramIndex]) // map attack or release to a smoothing coefficient
+				currentLevel += float32((signalLevel - currentLevel) * alpha)
 				unit.state[0] = currentLevel
 				var gain float32 = 1
 				if threshold2 := params[3] * params[3]; currentLevel > threshold2 {
-					gain = float32(math.Pow(float64(threshold2/currentLevel), float64(params[4]/2)))
+					gain = powf(threshold2/currentLevel, params[4]*0.5)
 				}
 				gain /= params[2] // apply inverse gain
 				stack = append(stack, gain)
@@ -763,17 +764,20 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 				//   A = sqrt(10^(dBgain/20)) = 10^(dBgain/40) where dbGain determines the gain at the peak
 				//   b0 = 1 + alpha*A, b1 = -2*cos(omega0), b2 = 1 - alpha*A,
 				//   a0 = 1 + alpha/A, a1 = -2*cos(omega0), a2 = 1 - alpha/A are the biquad filter coefficients
-				omega0 := 2 * params[0] * params[0]                                // square the omega to have a bit more values mapping to bass frequencies
-				alpha := float32(math.Sin(float64(omega0))) * 2 * params[1]        // Q=1/(4*(p/128)) gives a range of Q = 0.25 ... 32
-				A := float32(math.Pow(2, float64(params[2]-.5)*6.643856189774724)) // +-40 dB, reusing same constant as dbgain unit
-				u, v := alpha*A, alpha/A
-				b0, b1, b2 := 1+u, -2*float32(math.Cos(float64(omega0))), 1-u
-				a0, a1, a2 := 1+v, b1, 1-v
-				for i := range channels { // biquad filter in transposed direct from II (https://en.wikipedia.org/wiki/Digital_biquad_filter)
+				// like the wasm player, operation by operation: the state is
+				// s1, s2, at 4 floats further for the right channel, and
+				// cos(omega0) is computed as sqrt(1-sin(omega0)²)
+				sinw := sinTurns(float32(params[0]*params[0]) * 0.31830987) // omega0 = 2f² in turns
+				alpha := sinw * float32(params[1]*2)                        // Q=1/(4*(p/128)) gives a range of Q = 0.25 ... 32
+				A := exp2f(float32(params[2]-0.5) * 6.643856189774724)      // +-40 dB, reusing same constant as dbgain unit
+				u, v := A*alpha, alpha/A
+				cosw := sqrt32(1 - float32(sinw*sinw))
+				for i := range channels {
+					st := unit.state[4*i : 4*i+2]
 					x := stack[l-1-i]
-					y := (b0*x + unit.state[i]) / a0 // the biquad was not in normalized form, so we need to divide by a0
-					unit.state[i] = b1*x - a1*y + unit.state[2+i]
-					unit.state[2+i] = b2*x - a2*y
+					y := float32(float32(x+float32(u*x))+st[0]) / (v + 1)
+					st[0] = float32(float32(float32(y-x)*cosw)*2) + st[1]
+					st[1] = float32(x-y) + float32(float32(v*y)-float32(u*x))
 					stack[l-1-i] = y
 				}
 			case opSync:
@@ -908,7 +912,7 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, r BufferRegion, transpose, d
 		semitones += float32(voice.note) - 60
 	}
 	// computed like the wasm player, which uses JavaScript's Math.pow
-	frac += float32((float32(speed*2) - 1) * float32(math.Pow(2, float64(semitones/12))))
+	frac += float32((float32(speed*2) - 1) * exp2f(semitones/12))
 	whole := float32(math.Floor(float64(frac)))
 	unit.state[0] = math.Float32frombits(uint32(pos + int32(whole)))
 	unit.state[1] = frac - whole
@@ -944,9 +948,9 @@ func (s *GoSynth) spawn(unit *unit, own *voice, first, count int, flags byte, ra
 			// computed like the wasm player, which uses JavaScript's Math.pow
 			var hz float32
 			if flags&32 != 0 { // sync: spawns per beat
-				hz = float32(float32(math.Pow(2, float64(float32(rate*16)-8))) * (float32(s.bytecode.BPM) / 60))
+				hz = float32(exp2f(float32(rate*16)-8) * (float32(s.bytecode.BPM) / 60))
 			} else {
-				hz = float32(math.Pow(2, float64(float32(rate*16)-5)))
+				hz = exp2f(float32(rate*16) - 5)
 			}
 			unit.state[0] += 44100 / hz
 		}
@@ -995,7 +999,7 @@ func (s *GoSynth) spawn(unit *unit, own *voice, first, count int, flags byte, ra
 // lengthFrames returns the length in frames of a spawn or window unit, like
 // sointu.LengthFrames, computed like the wasm player.
 func lengthFrames(length float32) float32 {
-	return float32(math.Floor(float64(4410 * float32(math.Pow(2, float64(float32(length*16)-8))))))
+	return floor32(4410 * exp2f(float32(length*16)-8))
 }
 
 // window implements the window unit. unit.state[0] is the number of frames
@@ -1117,37 +1121,7 @@ func (s *synthState) rand() float32 {
 }
 
 func nonLinearMap(value float32) float32 {
-	return float32(math.Exp2(float64(-24 * value)))
-}
-
-// exp2Cache memoizes math.Exp2, which the oscillators and envelopes call with
-// the same values sample after sample. It returns exactly what math.Exp2
-// returns.
-type exp2Cache [1024]struct {
-	x uint64 // bits of the input
-	y float64
-}
-
-func newExp2Cache() *exp2Cache {
-	c := new(exp2Cache)
-	for i := range c {
-		c[i].y = 1 // math.Exp2(0)
-	}
-	return c
-}
-
-func (c *exp2Cache) exp2(x float64) float64 {
-	b := math.Float64bits(x)
-	e := &c[(b*0x9E3779B97F4A7C15)>>54]
-	if e.x != b {
-		e.x, e.y = b, math.Exp2(x)
-	}
-	return e.y
-}
-
-// nonLinearMap is nonLinearMap using the cache.
-func (c *exp2Cache) nonLinearMap(value float32) float32 {
-	return float32(c.exp2(float64(-24 * value)))
+	return exp2f(-24 * value)
 }
 
 func clip(value float32) float32 {
@@ -1175,4 +1149,62 @@ func waveshape(value, amount float32) float32 {
 		absVal = -absVal
 	}
 	return value * (amount / (1 + (float32((amount+amount-1)*absVal) - amount)))
+}
+
+// floor32 returns the largest integer at most x.
+func floor32(x float32) float32 { return float32(math.Floor(float64(x))) }
+
+// unitFloat returns the kth float of the unit: its state, then its ports.
+func unitFloat(u *unit, k int) *float32 {
+	if k < len(u.state) {
+		return &u.state[k]
+	}
+	return &u.ports[k-len(u.state)]
+}
+
+// sampleOscillator is the oscillator playing a sample of gm.dls, as in the x86
+// players, with the phase in float64 like their 80-bit x87 math.
+func (s *GoSynth) sampleOscillator(unit *unit, voice *voice, flags byte, operandsAtTransform []byte, params *[8]float32, channels int, stack *[]float32) {
+	detuneStereo := params[1]*2 - 1
+	unison := flags & 3
+	for i := 0; i < channels; i++ {
+		detune := detuneStereo
+		var output float32
+		for j := byte(0); j <= unison; j++ {
+			statevar := &unit.state[byte(i)+j*2]
+			pitch := float64(64*(params[0]*2-1) + detune)
+			if flags&0x8 == 0 {
+				pitch += float64(voice.note)
+			}
+			pitch *= 0.083333333333
+			omega := math.Exp2(pitch)
+			if flags&0x8 == 0 {
+				omega *= 0.000092696138
+			} else {
+				omega *= 0.000038
+			}
+			omega += float64(unit.ports[6])
+			phase := float64(*statevar) + omega
+			*statevar = float32(phase)
+			phase += float64(params[2])
+			sampleno := operandsAtTransform[3] // reuse color as the sample number
+			sampleoffset := s.bytecode.SampleOffsets[sampleno]
+			sampleindex := int(phase*84.28074964676522 + 0.5)
+			loopstart := int(sampleoffset.LoopStart)
+			if sampleindex >= loopstart {
+				sampleindex -= loopstart
+				sampleindex %= int(sampleoffset.LoopLength)
+				sampleindex += loopstart
+			}
+			sampleindex += int(sampleoffset.Start)
+			amplitude := float32(int16(binary.LittleEndian.Uint16(su_sample_table[sampleindex*2:]))) / 32767.0
+			output += waveshape(amplitude, params[4]) * params[5]
+			if j < unison {
+				params[2] += 0.08333333
+			}
+			detune = -detune * 0.5
+		}
+		*stack = append(*stack, output)
+		detuneStereo = -detuneStereo
+	}
 }

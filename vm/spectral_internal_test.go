@@ -61,3 +61,12 @@ func TestPowf(t *testing.T) {
 	}
 	t.Logf("worst relative error of powf %g", worst)
 }
+
+func TestSinTurns(t *testing.T) {
+	for x := float32(-3); x < 3; x += 0.0001 {
+		want := math.Sin(2 * math.Pi * float64(x))
+		if d := math.Abs(float64(sinTurns(x)) - want); d > 1e-6 {
+			t.Fatalf("sinTurns(%v) = %v, want %v", x, sinTurns(x), want)
+		}
+	}
+}

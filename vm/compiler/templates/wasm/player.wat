@@ -207,9 +207,11 @@
 ;; Import the difficult math functions from javascript
 ;; (seriously now, it's 2020)
 ;;------------------------------------------------------------------------------
+{{- if .MathImports}}
 (func $pow (import "m" "pow") (param f32) (param f32) (result f32))
 (func $log2 (import "m" "log2") (param f32) (result f32))
 (func $sin (import "m" "sin") (param f32) (result f32))
+{{- end}}
 {{- if .Buffers}}
 ;; Buffer audio from the host: sample (buffer, frame, channel), with buffers
 ;; numbered in the order of the sointu.buffer custom sections holding their

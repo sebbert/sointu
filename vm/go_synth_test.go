@@ -21,6 +21,16 @@ import (
 
 const errorThreshold = 1e-2
 
+// differsFromX86 are the regression tests whose expected output, rendered by
+// the x86 player, the Go synth no longer matches within errorThreshold, as it
+// renders exactly like the wasm player instead, which differs from the x86
+// player there too. The wasm sync test in vm/compiler covers them.
+var differsFromX86 = map[string]string{
+	"test_crush":                        "crush quantizes to steps computed with exp2f; a step 1e-7 away rounds some samples to the next level",
+	"test_oscillat_frequencymod":        "float32 oscillator phases drift from the 80-bit x87 ones under frequency modulation",
+	"test_oscillat_frequencymod_stereo": "float32 oscillator phases drift from the 80-bit x87 ones under frequency modulation",
+}
+
 func TestAllRegressionTests(t *testing.T) {
 	_, myname, _, _ := runtime.Caller(0)
 	files, err := filepath.Glob(path.Join(path.Dir(myname), "..", "tests", "*.yml"))
@@ -34,6 +44,9 @@ func TestAllRegressionTests(t *testing.T) {
 			if runtime.GOOS != "windows" && strings.Contains(testname, "sample") {
 				t.Skip("Samples (gm.dls) available only on Windows")
 				return
+			}
+			if reason, ok := differsFromX86[testname]; ok {
+				t.Skip(reason)
 			}
 			asmcode, err := ioutil.ReadFile(filename)
 			if err != nil {

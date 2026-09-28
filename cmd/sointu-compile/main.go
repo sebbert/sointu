@@ -46,6 +46,7 @@ func main() {
 	output16bit := flag.Bool("i", false, "Compiled song should output 16-bit integers, instead of floats.")
 	targetOs := flag.String("os", runtime.GOOS, "Target OS. Defaults to current OS. Possible values: windows, darwin, linux. Anything else exits with error code. Ignored when targeting wasm.")
 	versionFlag := flag.Bool("v", false, "Print version.")
+	mathImports := flag.Bool("imports", false, "Make the wasm player call Math.pow and Math.sin of JavaScript instead of computing them itself: a smaller player, whose output differs slightly from the Go synth, as used by the tracker, and between browsers.")
 	ffmpegPath := flag.String("ffmpeg", "", "Path of ffmpeg, for encoding the samples of songs that play buffers. By default, $"+ffmpeg.EnvVar+", PATH and common installation directories are searched.")
 	flag.Usage = printUsage
 	flag.Parse()
@@ -79,6 +80,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, `error creating compiler: %v`, err)
 			os.Exit(1)
 		}
+		comp.MathImports = *mathImports
 	}
 	output := func(filename string, extension string, contents []byte) error {
 		if *stdout {

@@ -201,8 +201,8 @@ func renderWasm(t *testing.T, node, wat2wasm string, song sointu.Song, encoded m
 	return got
 }
 
-// compareWasmToGo checks that the output of the wasm player matches the Go
-// synth, and that it is not silent.
+// compareWasmToGo checks that the output of the wasm player is exactly that of
+// the Go synth, and that it is not silent.
 func compareWasmToGo(t *testing.T, want sointu.AudioBuffer, got []float32) {
 	t.Helper()
 	if len(got) != 2*len(want) {
@@ -212,7 +212,7 @@ func compareWasmToGo(t *testing.T, want sointu.AudioBuffer, got []float32) {
 	for i, frame := range want {
 		for c := range 2 {
 			d := math.Abs(float64(got[2*i+c] - frame[c]))
-			if d > 1e-5 && first < 0 {
+			if d > 0 && first < 0 {
 				first = i
 			}
 			if d > maxDiff {
@@ -224,7 +224,7 @@ func compareWasmToGo(t *testing.T, want sointu.AudioBuffer, got []float32) {
 	if maxAbs < 0.1 {
 		t.Fatalf("the song is almost silent (peak %v); the test is not testing anything", maxAbs)
 	}
-	if maxDiff > 1e-5 {
+	if maxDiff > 0 {
 		t.Errorf("wasm and Go outputs differ by up to %v at frame %d, first at frame %d (peak %v)", maxDiff, at, first, maxAbs)
 	}
 	t.Logf("peak %v, max difference %v", maxAbs, maxDiff)
