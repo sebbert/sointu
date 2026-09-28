@@ -78,6 +78,8 @@ patch:
         - type: window
           id: 83
           parameters: {length: 0, shape: 128}
+        - id: 99
+          parameters: {}
         - type: arg
           id: 84
           parameters: {index: 1}
