@@ -140,6 +140,7 @@ func (t *Tracker) Main() {
 		// new window while it is loading the plugin, so raise the window on
 		// its first frame and once more a moment later
 		raised := false
+		onTop := t.preferences.Window.AlwaysOnTop
 		raiseAgain := time.After(500 * time.Millisecond)
 		acks := make(chan struct{})
 		events := make(chan event.Event)
@@ -188,6 +189,10 @@ func (t *Tracker) Main() {
 						t.plotZoomModifier = false // Alt is not released in another window
 					}
 				case app.FrameEvent:
+					if onTop != t.preferences.Window.AlwaysOnTop {
+						onTop = t.preferences.Window.AlwaysOnTop
+						w.Option(app.TopMost(onTop))
+					}
 					if !raised {
 						raised = true
 						w.Perform(system.ActionRaise)
@@ -232,6 +237,7 @@ func (t *Tracker) newWindow() *app.Window {
 	if t.preferences.Window.Maximized {
 		w.Option(app.Maximized.Option())
 	}
+	w.Option(app.TopMost(t.preferences.Window.AlwaysOnTop))
 	return w
 }
 

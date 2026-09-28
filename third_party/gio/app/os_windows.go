@@ -734,6 +734,7 @@ func (w *window) Configure(options []Option) {
 	w.config.Decorated = cnf.Decorated
 	w.config.MinSize = cnf.MinSize
 	w.config.MaxSize = cnf.MaxSize
+	w.config.TopMost = cnf.TopMost
 	windows.SetWindowText(w.hwnd, cnf.Title)
 
 	style := windows.GetWindowLong(w.hwnd, windows.GWL_STYLE)
@@ -794,6 +795,16 @@ func (w *window) Configure(options []Option) {
 	windows.SetWindowPos(w.hwnd, 0, x, y, width, height, swpStyle)
 	windows.SetWindowLong(w.hwnd, windows.GWL_STYLE, style)
 	windows.ShowWindow(w.hwnd, showMode)
+	w.setTopMost()
+}
+
+func (w *window) setTopMost() {
+	after := windows.HWND_NOTOPMOST
+	if w.config.TopMost {
+		after = windows.HWND_TOPMOST
+	}
+	windows.SetWindowPos(w.hwnd, after, 0, 0, 0, 0,
+		windows.SWP_NOMOVE|windows.SWP_NOSIZE|windows.SWP_NOACTIVATE)
 }
 
 func (w *window) WriteClipboard(mime string, s []byte) {
@@ -923,6 +934,9 @@ func (w *window) raise() {
 	windows.SetForegroundWindow(w.hwnd)
 	windows.SetWindowPos(w.hwnd, windows.HWND_TOPMOST, 0, 0, 0, 0,
 		windows.SWP_NOMOVE|windows.SWP_NOSIZE|windows.SWP_SHOWWINDOW)
+	// being top-most brought the window to the front; unless it should stay
+	// top-most, let other windows cover it again
+	w.setTopMost()
 }
 
 func convertKeyCode(code uintptr) (key.Name, bool) {

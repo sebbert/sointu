@@ -503,6 +503,8 @@ func (t *MenuBar) Layout(gtx C) D {
 			ActionMenuChild(tr.History().Redo(), "Redo", keyActionMap["Redo"], icons.ContentRedo),
 			DividerMenuChild(),
 			ActionMenuChild(tr.Order().RemoveUnusedPatterns(), "Remove unused data", keyActionMap["RemoveUnused"], icons.ImageCrop),
+			DividerMenuChild(),
+			BoolMenuChild(tr.AlwaysOnTop(), "Keep window on top", "", icons.NavigationCheck),
 		)
 	})
 	midiBtn := MenuBtn(&t.MenuStates[2], &t.Clickables[2], "MIDI")

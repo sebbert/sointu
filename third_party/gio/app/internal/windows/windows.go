@@ -207,7 +207,8 @@ const (
 	CFS_POINT        = 0x0002
 	CFS_CANDIDATEPOS = 0x0040
 
-	HWND_TOPMOST = ^(uint32(1) - 1) // -1
+	HWND_TOPMOST   = ^uintptr(0) // -1
+	HWND_NOTOPMOST = ^uintptr(1) // -2
 
 	HTCAPTION     = 2
 	HTCLIENT      = 1
@@ -262,6 +263,7 @@ const (
 
 	SWP_FRAMECHANGED  = 0x0020
 	SWP_NOMOVE        = 0x0002
+	SWP_NOACTIVATE    = 0x0010
 	SWP_NOOWNERZORDER = 0x0200
 	SWP_NOSIZE        = 0x0001
 	SWP_NOZORDER      = 0x0004
@@ -782,7 +784,7 @@ func SetWindowPlacement(hwnd syscall.Handle, wp *WindowPlacement) {
 	_SetWindowPlacement.Call(uintptr(hwnd), uintptr(unsafe.Pointer(wp)))
 }
 
-func SetWindowPos(hwnd syscall.Handle, hwndInsertAfter uint32, x, y, dx, dy int32, style uintptr) {
+func SetWindowPos(hwnd syscall.Handle, hwndInsertAfter uintptr, x, y, dx, dy int32, style uintptr) {
 	_SetWindowPos.Call(uintptr(hwnd), uintptr(hwndInsertAfter),
 		uintptr(x), uintptr(y),
 		uintptr(dx), uintptr(dy),

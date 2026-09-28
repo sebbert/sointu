@@ -24,8 +24,11 @@ changes to the sound are fine, as long as both stay in sync.
   edited, and it follows again when the host's tempo changes.
 - The song is saved in the host's project. Edits mark the project unsaved
   (CLAP `mark_dirty`, VST2 `audioMasterUpdateDisplay`).
-- The plugin window comes to the front when it opens.
-- Vendored: Gio (`third_party/gio`, macOS plugin window and event loop fixes),
+- The plugin window comes to the front when it opens. Edit → Keep window on
+  top keeps it above other windows; the setting is saved in the user's
+  `preferences.yml`.
+- Vendored: Gio (`third_party/gio`, macOS plugin window and event loop fixes,
+  `TopMost` on Windows and turning it off),
   vst2 (`third_party/vst2`, `Host.UpdateDisplay`), CLAP headers.
 
 ## Song format

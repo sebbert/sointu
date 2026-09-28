@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"gioui.org/unit"
+	"github.com/vsariola/sointu/tracker"
 )
 
 type (
@@ -21,6 +22,9 @@ type (
 		Width     int
 		Height    int
 		Maximized bool `yaml:",omitempty"`
+		// AlwaysOnTop keeps the window above other windows, e.g. the plugin
+		// host's
+		AlwaysOnTop bool `yaml:",omitempty"`
 	}
 )
 
@@ -62,6 +66,76 @@ func ReadConfig(defaultConfig []byte, path string, target any) (warn error) {
 	return ReadCustomConfig(path, target)
 }
 
+// WriteCustomConfig sets one value in the custom config file, at the path of
+// mapping keys, e.g. "window", "alwaysontop". The rest of the file, including
+// comments, is kept.
+func WriteCustomConfig(filename string, value any, keys ...string) error {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(configDir, "sointu", filename)
+	var doc yaml.Node
+	if b, err := os.ReadFile(path); err == nil {
+		if err := yaml.Unmarshal(b, &doc); err != nil {
+			return fmt.Errorf("WriteCustomConfig %v: %w", filename, err)
+		}
+	}
+	if len(doc.Content) == 0 {
+		doc = yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{{Kind: yaml.MappingNode}}}
+	}
+	node := doc.Content[0]
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("WriteCustomConfig %v: not a mapping", filename)
+	}
+	var valueNode yaml.Node
+	if err := valueNode.Encode(value); err != nil {
+		return err
+	}
+	for i, key := range keys {
+		var child *yaml.Node
+		for j := 0; j+1 < len(node.Content); j += 2 {
+			if node.Content[j].Value == key {
+				child = node.Content[j+1]
+				break
+			}
+		}
+		last := i == len(keys)-1
+		if child == nil {
+			child = &yaml.Node{Kind: yaml.MappingNode}
+			node.Content = append(node.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: key}, child)
+		}
+		if last {
+			*child = valueNode
+		} else if child.Kind != yaml.MappingNode {
+			*child = yaml.Node{Kind: yaml.MappingNode}
+		}
+		node = child
+	}
+	out, err := yaml.Marshal(&doc)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, out, 0644)
+}
+
 func (p Preferences) WindowSize() (unit.Dp, unit.Dp) {
 	return unit.Dp(p.Window.Width), unit.Dp(p.Window.Height)
+}
+
+// AlwaysOnTop toggles Preferences.Window.AlwaysOnTop and saves it in the
+// custom preferences.
+func (t *Tracker) AlwaysOnTop() tracker.Bool { return tracker.MakeBool((*alwaysOnTop)(t)) }
+
+type alwaysOnTop Tracker
+
+func (t *alwaysOnTop) Value() bool { return t.preferences.Window.AlwaysOnTop }
+func (t *alwaysOnTop) SetValue(val bool) {
+	t.preferences.Window.AlwaysOnTop = val
+	if err := WriteCustomConfig("preferences.yml", val, "window", "alwaysontop"); err != nil {
+		(*Tracker)(t).Alerts().Add(fmt.Sprintf("Could not save preferences: %v", err), tracker.Error)
+	}
 }
