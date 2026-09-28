@@ -295,18 +295,29 @@ func (s *GoSynth) spcompress(index int, amount, width float32) {
 	}
 }
 
-// randomPhase returns the cosine and sine of a random phase, one of 256, from
-// the twiddle factors e^(-πik/128), k < 128, conjugated at random, and the
-// next state of the random number generator.
+// tablePhase returns the cosine and sine of the phase -πp/128, p modulo 256,
+// from the twiddle factors e^(-πik/128), k < 128.
+func tablePhase(p uint32) (c, s float32) {
+	t := spectralTables()
+	j := 127 + p&127
+	c, s = t.wr[j], t.wi[j]
+	if p&128 != 0 {
+		return -c, -s
+	}
+	return c, s
+}
+
+// randomPhase returns the cosine and sine of a random phase, one of 256, and
+// the next state of the random number generator.
 func randomPhase(rng uint32) (c, s float32, next uint32) {
 	next = rng*1664525 + 1013904223
-	t := spectralTables()
-	j := 127 + next>>25
-	c, s = t.wr[j], t.wi[j]
-	if next&(1<<24) != 0 {
-		s = -s
-	}
+	c, s = tablePhase(next >> 24)
 	return
+}
+
+// rotate returns x times e^(iθ), given the cosine and sine of θ.
+func rotate(xr, xi, c, s float32) (float32, float32) {
+	return float32(xr*c) - float32(xi*s), float32(xr*s) + float32(xi*c)
 }
 
 // spblur smooths the magnitudes over time, keeping the phases, or while
@@ -339,5 +350,106 @@ func (s *GoSynth) spblur(index int, amount, freeze float32) {
 		}
 		y[2*k], y[2*k+1] = yr, yi
 		x[2*k], x[2*k+1] = yr, yi
+	}
+}
+
+// spgate removes the bins quieter than the threshold, or the louder ones.
+func (s *GoSynth) spgate(index int, threshold float32, invert bool) {
+	x, n, ok := s.spectralFrame(index)
+	if !ok {
+		return
+	}
+	// -96 to 0 dB; a full scale sine has the magnitude n/4
+	thr := pow32(2, float32(threshold*16)-16) * float32(n/4)
+	thr *= thr
+	for k := uint32(0); k <= n/2; k++ {
+		if (float32(float32(x[2*k]*x[2*k])+float32(x[2*k+1]*x[2*k+1])) < thr) != invert {
+			x[2*k], x[2*k+1] = 0, 0
+		}
+	}
+}
+
+// spphase changes the phases: disperse rotates bin k by -πp/128, p growing
+// with k², random by a random phase, robot blends toward phase 0.
+func (s *GoSynth) spphase(index int, mode byte, amount float32) {
+	x, n, ok := s.spectralFrame(index)
+	if !ok {
+		return
+	}
+	st, h := &s.spectral[index], n/2
+	for k := uint32(0); k <= h; k++ {
+		xr, xi := x[2*k], x[2*k+1]
+		switch mode {
+		case 0: // disperse
+			f := float32(float32(float32(amount*float32(k))*float32(k))*64) / float32(h)
+			c, sn := tablePhase(uint32(int32(f)))
+			xr, xi = rotate(xr, xi, c, sn)
+		case 1: // random
+			st.rng = st.rng*1664525 + 1013904223
+			c, sn := tablePhase(uint32(int32(amount * float32(st.rng>>24))))
+			xr, xi = rotate(xr, xi, c, sn)
+		default: // robot
+			m := sqrt32(float32(xr*xr) + float32(xi*xi))
+			xr = float32(float32(m-xr)*amount) + xr
+			xi -= float32(xi * amount)
+		}
+		x[2*k], x[2*k+1] = xr, xi
+	}
+}
+
+// spscale moves bin k to k*scale+shift.
+func (s *GoSynth) spscale(index int, scale, shift float32) {
+	x, n, ok := s.spectralFrame(index)
+	if !ok {
+		return
+	}
+	h := n / 2
+	ratio := pow32(2, float32(scale*2)-1)
+	offset := float32(float32(shift*2)-1) * float32(float32(n)*0.022675737) // up to 1 kHz
+	out := s.scratch[:2*(h+1)]
+	clear(out)
+	for k := uint32(0); k <= h; k++ {
+		j := float32(float32(k)*ratio) + offset
+		if j < 0 {
+			continue
+		}
+		if i := uint32(j + 0.5); i <= h {
+			out[2*i] += x[2*k]
+			out[2*i+1] += x[2*k+1]
+		}
+	}
+	copy(x, out)
+}
+
+// spformant moves the envelope, the average magnitude within width, by
+// scaling its frequencies.
+func (s *GoSynth) spformant(index int, shift, width float32) {
+	x, n, ok := s.spectralFrame(index)
+	if !ok {
+		return
+	}
+	h := n / 2
+	ratio := pow32(2, float32(shift*2)-1)
+	sums, env := s.scratch[:h+2], s.scratch[n:n+h+1]
+	sum := float32(0)
+	sums[0] = 0
+	for k := uint32(0); k <= h; k++ {
+		sum += sqrt32(float32(x[2*k]*x[2*k]) + float32(x[2*k+1]*x[2*k+1]))
+		sums[k+1] = sum
+	}
+	w := int32(1 + uint32(float32(min(max(width, 0), 1)*float32(n/32))))
+	for k := int32(0); k <= int32(h); k++ {
+		lo, hi := max(k-w, 0), min(k+w, int32(h))
+		env[k] = float32(sums[hi+1]-sums[lo]) / float32(hi+1-lo)
+	}
+	for k := uint32(0); k <= h; k++ {
+		src := float32(k) / ratio
+		i := uint32(src)
+		e := env[h]
+		if i < h {
+			e = float32(float32(env[i+1]-env[i])*float32(src-float32(i))) + env[i]
+		}
+		g := float32(e+1e-9) / float32(env[k]+1e-9)
+		x[2*k], x[2*k+1] = x[2*k]*g, x[2*k+1]*g
 	}
 }

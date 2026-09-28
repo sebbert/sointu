@@ -293,7 +293,12 @@ one arrives, reading their parameters then: `spfilter` removes the bins below
 `spcompress` pulls the magnitudes toward their mean, by `amount`, like
 extreme multiband compression (negative amounts exaggerate the envelope
 instead); `spblur` smooths the magnitudes over time, and while `freeze` is on,
-holds them with random phases, for endless textures.
+holds them with random phases, for endless textures. `spgate` removes the bins
+quieter than a threshold (or with `invert`, the louder ones); `spphase`
+disperses the phases into chirps, randomizes them or, in robot mode, zeroes
+them; `spscale` moves the bins to their frequency times `scale` plus `shift`,
+harmonically or inharmonically; `spformant` moves the spectral envelope, the
+formants, without changing the pitch.
 
 `bufread`, `bufwrite`, `spawn`, `arg`, `window` and the spectral units are
 WebAssembly only for now.

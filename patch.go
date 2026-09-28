@@ -517,6 +517,53 @@ var UnitTypes = map[string]UnitType{
 		},
 		StackUse: func(u *Unit) StackUse { return StackUse{} },
 	},
+	"spgate": {
+		// spgate removes the bins of a spectrum quieter than threshold,
+		// relative to a full scale sine, or with invert, the louder ones.
+		Params: []UnitParameter{
+			{Name: "threshold", MinValue: 0, Default: 32, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v*96/128 - 96), "dB" }},
+			{Name: "invert", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+		},
+		StackUse: func(u *Unit) StackUse { return StackUse{} },
+	},
+	"spphase": {
+		// spphase changes the phases of a spectrum: disperse rotates the bins
+		// by angles growing with the square of their frequency, smearing
+		// transients into chirps; random rotates them randomly; robot blends
+		// toward phase 0, pitching the sound to the frame rate. amount scales
+		// the effect.
+		Params: []UnitParameter{
+			{Name: "mode", MinValue: 0, MaxValue: 2, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc(spphaseModeNames[:])},
+			{Name: "amount", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v * 100 / 128), "%" }},
+			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+		},
+		StackUse: func(u *Unit) StackUse { return StackUse{} },
+	},
+	"spscale": {
+		// spscale moves each bin of a spectrum to its frequency times scale,
+		// up to an octave up or down, plus shift, up to 1 kHz up or down.
+		// Scaling keeps harmonics harmonic; shifting makes them inharmonic.
+		Params: []UnitParameter{
+			{Name: "scale", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(math.Pow(2, float64(v)/64-1), 'f', 3, 64), "x"
+			}},
+			{Name: "shift", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.Itoa((v - 64) * 1000 / 64), "Hz" }},
+			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+		},
+		StackUse: func(u *Unit) StackUse { return StackUse{} },
+	},
+	"spformant": {
+		// spformant moves the envelope of a spectrum, its formants, up to an
+		// octave up or down, keeping its fine structure, i.e. the pitch. The
+		// envelope is the average magnitude of the bins within width.
+		Params: []UnitParameter{
+			{Name: "shift", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(float64(v-64)*12/64, 'f', 1, 64), "st" }},
+			{Name: "width", MinValue: 0, Default: 16, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(float64(v)*100/128/16, 'g', 3, 64), "%" }},
+			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+		},
+		StackUse: func(u *Unit) StackUse { return StackUse{} },
+	},
 	"spcopy": {
 		// spcopy copies each new spectrum of the source spectrum buffer to
 		// its own spectrum buffer, e.g. to process the same spectrum in two
@@ -642,6 +689,15 @@ const (
 	SpectrumSizeDefault = 2 // 1024
 	SpectrumSizeMax     = 5 // 8192
 )
+
+// The modes of the spphase unit.
+const (
+	SpphaseDisperse = iota
+	SpphaseRandom
+	SpphaseRobot
+)
+
+var spphaseModeNames = [...]string{"disperse", "random", "robot"}
 
 // SpectralFrequency returns the frequency in Hz of the cutoffs of spfilter:
 // 0 is 0 Hz and 1 is 22050 Hz, exponentially over 10 octaves in between.

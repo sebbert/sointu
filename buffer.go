@@ -213,7 +213,7 @@ func SpectrumBufferParams(unitType string) []string {
 	switch unitType {
 	case "spcopy":
 		return []string{"buffer", "source"}
-	case "spfft", "spifft", "spfilter", "spcompress", "spblur":
+	case "spfft", "spifft", "spfilter", "spcompress", "spblur", "spgate", "spphase", "spscale", "spformant":
 		return []string{"buffer"}
 	}
 	return nil

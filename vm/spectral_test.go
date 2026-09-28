@@ -88,6 +88,11 @@ func TestSpectralModifiersNeutral(t *testing.T) {
 		{Type: "spfilter", Parameters: sointu.ParamMap{"low": 0, "high": 128, "tilt": 64, "buffer": 1}},
 		{Type: "spcompress", Parameters: sointu.ParamMap{"amount": 64, "width": 16, "buffer": 1}},
 		{Type: "spblur", Parameters: sointu.ParamMap{"amount": 0, "freeze": 0, "buffer": 1}},
+		{Type: "spphase", Parameters: sointu.ParamMap{"mode": sointu.SpphaseDisperse, "amount": 0, "buffer": 1}},
+		{Type: "spphase", Parameters: sointu.ParamMap{"mode": sointu.SpphaseRandom, "amount": 0, "buffer": 1}},
+		{Type: "spphase", Parameters: sointu.ParamMap{"mode": sointu.SpphaseRobot, "amount": 0, "buffer": 1}},
+		{Type: "spscale", Parameters: sointu.ParamMap{"scale": 64, "shift": 64, "buffer": 1}},
+		{Type: "spformant", Parameters: sointu.ParamMap{"shift": 64, "width": 16, "buffer": 1}},
 	} {
 		out := render(t, newSynth(t, spectralPatch(1, u)), 4*512)
 		if delay, diff := reconstructionError(out, 1024); delay != 511 || diff > 1e-5 {
@@ -152,5 +157,29 @@ func TestSpblurFreeze(t *testing.T) {
 		if got := rms(after[i : i+1024]); got < want/3 || got > want*3 {
 			t.Errorf("frames %d-%d: rms %v, before freezing %v", i, i+1024, got, want)
 		}
+	}
+}
+
+func TestSpgate(t *testing.T) {
+	// a constant 0.25 is 6 dB below a full scale sine
+	for invert, want := range []float32{0, 0.25} {
+		out := render(t, newSynth(t, dcPatch(80, sointu.Unit{Type: "spgate", Parameters: sointu.ParamMap{"threshold": 128, "invert": invert, "buffer": 1}})), 4*256)
+		for i := 512; i < len(out); i++ {
+			if math.Abs(float64(out[i][0]-want)) > 1e-5 {
+				t.Fatalf("invert %d, frame %d: %v, want %v", invert, i, out[i][0], want)
+			}
+		}
+	}
+}
+
+func TestSpscaleShiftsUp(t *testing.T) {
+	// shifting by 1 kHz moves DC up: the constant disappears
+	out := render(t, newSynth(t, dcPatch(96, sointu.Unit{Type: "spscale", Parameters: sointu.ParamMap{"scale": 64, "shift": 128, "buffer": 1}})), 8*256)
+	mean := 0.0
+	for i := 1024; i < len(out); i++ {
+		mean += float64(out[i][0])
+	}
+	if mean /= float64(len(out) - 1024); math.Abs(mean) > 1e-3 {
+		t.Errorf("mean %v after shifting, want 0", mean)
 	}
 }

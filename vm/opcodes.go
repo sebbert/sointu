@@ -41,10 +41,14 @@ const (
 	opSpeed      = 37
 	opSpfft      = 38
 	opSpfilter   = 39
-	opSpifft     = 40
-	opSync       = 41
-	opWindow     = 42
-	opXch        = 43
+	opSpformant  = 40
+	opSpgate     = 41
+	opSpifft     = 42
+	opSpphase    = 43
+	opSpscale    = 44
+	opSync       = 45
+	opWindow     = 46
+	opXch        = 47
 )
 
-var transformCounts = [...]int{0, 0, 0, 1, 3, 4, 1, 0, 5, 1, 1, 4, 1, 5, 2, 1, 1, 0, 1, 0, 1, 0, 0, 2, 6, 1, 2, 1, 0, 0, 0, 1, 3, 2, 2, 0, 0, 0, 3, 1, 0, 2, 0}
+var transformCounts = [...]int{0, 0, 0, 1, 3, 4, 1, 0, 5, 1, 1, 4, 1, 5, 2, 1, 1, 0, 1, 0, 1, 0, 0, 2, 6, 1, 2, 1, 0, 0, 0, 1, 3, 2, 2, 0, 0, 0, 3, 2, 1, 1, 1, 2, 0, 2, 0}
