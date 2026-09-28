@@ -29,6 +29,7 @@ type (
 		state      synthState
 		delaylines []delayline
 		buffers    map[int]*synthBuffer
+		exp2       *exp2Cache
 		spectra    []spectrum
 		spectral   []spectralState // states of the spectral units
 		scratch    []float32
@@ -120,6 +121,7 @@ func (s GoSynther) Synth(patch sointu.Patch, bpm int) (sointu.Synth, error) {
 	}
 	ret := &GoSynth{bytecode: *bytecode, stack: make([]float32, 0, 4), delaylines: make([]delayline, patch.NumDelayLines())}
 	ret.state.randSeed = 1
+	ret.exp2 = newExp2Cache()
 	ret.setSpectra(nil)
 	return ret, nil
 }
@@ -404,18 +406,18 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 				level := unit.state[1]
 				switch state {
 				case envStateAttack:
-					level += nonLinearMap(params[0])
+					level += s.exp2.nonLinearMap(params[0])
 					if level >= 1 {
 						level = 1
 						state = envStateDecay
 					}
 				case envStateDecay:
-					level -= nonLinearMap(params[1])
+					level -= s.exp2.nonLinearMap(params[1])
 					if sustain := params[2]; level <= sustain {
 						level = sustain
 					}
 				case envStateRelease:
-					level -= nonLinearMap(params[3])
+					level -= s.exp2.nonLinearMap(params[3])
 					if level <= 0 {
 						level = 0
 					}
@@ -556,7 +558,7 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 							pitch += float64(voice.note)
 						}
 						pitch *= 0.083333333333 // from semitones to octaves
-						omega := math.Exp2(pitch)
+						omega := s.exp2.exp2(pitch)
 						if flags&0x8 == 0 {
 							omega *= 0.000092696138 // scaling coefficient to get middle-C where it should be
 						} else {
@@ -719,7 +721,7 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 						d, delaylines = &delaylines[0], delaylines[1:]
 						delay := float32(s.bytecode.DelayTimes[index]) + unit.ports[4]*32767
 						if count&1 == 0 {
-							delay /= float32(math.Exp2(float64(voice.note) * 0.083333333333))
+							delay /= float32(s.exp2.exp2(float64(voice.note) * 0.083333333333))
 						}
 						delSignal := d.buffer[t-uint16(delay+0.5)]
 						output += delSignal
@@ -743,7 +745,7 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 				if signalLevel < currentLevel {
 					paramIndex = 1 // compressor releasing
 				}
-				alpha := nonLinearMap(params[paramIndex]) // map attack or release to a smoothing coefficient
+				alpha := s.exp2.nonLinearMap(params[paramIndex]) // map attack or release to a smoothing coefficient
 				currentLevel += (signalLevel - currentLevel) * alpha
 				unit.state[0] = currentLevel
 				var gain float32 = 1
@@ -1116,6 +1118,36 @@ func (s *synthState) rand() float32 {
 
 func nonLinearMap(value float32) float32 {
 	return float32(math.Exp2(float64(-24 * value)))
+}
+
+// exp2Cache memoizes math.Exp2, which the oscillators and envelopes call with
+// the same values sample after sample. It returns exactly what math.Exp2
+// returns.
+type exp2Cache [1024]struct {
+	x uint64 // bits of the input
+	y float64
+}
+
+func newExp2Cache() *exp2Cache {
+	c := new(exp2Cache)
+	for i := range c {
+		c[i].y = 1 // math.Exp2(0)
+	}
+	return c
+}
+
+func (c *exp2Cache) exp2(x float64) float64 {
+	b := math.Float64bits(x)
+	e := &c[(b*0x9E3779B97F4A7C15)>>54]
+	if e.x != b {
+		e.x, e.y = b, math.Exp2(x)
+	}
+	return e.y
+}
+
+// nonLinearMap is nonLinearMap using the cache.
+func (c *exp2Cache) nonLinearMap(value float32) float32 {
+	return float32(c.exp2(float64(-24 * value)))
 }
 
 func clip(value float32) float32 {
