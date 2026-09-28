@@ -73,3 +73,84 @@ func TestSpectralOnlyFirstVoice(t *testing.T) {
 		}
 	}
 }
+
+// dcPatch returns a patch pushing value (loadval) through spfft, the given
+// units and spifft, with the resynthesis on the left and the input on the
+// right.
+func dcPatch(value int, units ...sointu.Unit) sointu.Patch {
+	patch := spectralPatch(0, units...)
+	patch[0].Units[0] = sointu.Unit{Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": value}}
+	return patch
+}
+
+func TestSpectralModifiersNeutral(t *testing.T) {
+	for _, u := range []sointu.Unit{
+		{Type: "spfilter", Parameters: sointu.ParamMap{"low": 0, "high": 128, "tilt": 64, "buffer": 1}},
+		{Type: "spcompress", Parameters: sointu.ParamMap{"amount": 64, "width": 16, "buffer": 1}},
+		{Type: "spblur", Parameters: sointu.ParamMap{"amount": 0, "freeze": 0, "buffer": 1}},
+	} {
+		out := render(t, newSynth(t, spectralPatch(1, u)), 4*512)
+		if delay, diff := reconstructionError(out, 1024); delay != 511 || diff > 1e-5 {
+			t.Errorf("%v: delay %d, want 511; max difference %v", u.Type, delay, diff)
+		}
+	}
+}
+
+func TestSpfilterRemovesDC(t *testing.T) {
+	// the Hann window spreads DC to bin 1 too; 64 cuts below bin 3.9 of 128
+	out := render(t, newSynth(t, dcPatch(96, sointu.Unit{Type: "spfilter", Parameters: sointu.ParamMap{"low": 64, "high": 128, "tilt": 64, "buffer": 1}})), 4*256)
+	for i := 512; i < len(out); i++ {
+		if math.Abs(float64(out[i][0])) > 1e-5 {
+			t.Fatalf("frame %d: %v, want 0", i, out[i][0])
+		}
+	}
+}
+
+func TestSpcompressFlattens(t *testing.T) {
+	// white noise has a flat envelope already; a lowpassed spectrum gets its
+	// highs back: compare the energy above the cutoff with and without
+	energy := func(units ...sointu.Unit) float64 {
+		units = append([]sointu.Unit{{Type: "spfilter", Parameters: sointu.ParamMap{"low": 0, "high": 100, "tilt": 20, "buffer": 1}}}, units...)
+		out := render(t, newSynth(t, spectralPatch(2, units...)), 8*1024)
+		e := 0.0
+		for i := 2048; i < len(out)-1; i++ {
+			d := float64(out[i+1][0] - out[i][0]) // emphasizes highs
+			e += d * d
+		}
+		return e
+	}
+	plain := energy()
+	flat := energy(sointu.Unit{Type: "spcompress", Parameters: sointu.ParamMap{"amount": 128, "width": 16, "buffer": 1}})
+	if flat < 2*plain {
+		t.Errorf("high frequency energy %v with spcompress, %v without", flat, plain)
+	}
+}
+
+func TestSpblurFreeze(t *testing.T) {
+	// freeze noise, then silence the input: the frozen spectrum continues,
+	// as steady noise of about the same level
+	blur := func(freeze int) sointu.Unit {
+		return sointu.Unit{Type: "spblur", Parameters: sointu.ParamMap{"amount": 0, "freeze": freeze, "buffer": 1}}
+	}
+	synth := newSynth(t, spectralPatch(0, blur(0)))
+	before := render(t, synth, 8*256)
+	patch := spectralPatch(0, blur(128))
+	patch[0].Units[0].Parameters["gain"] = 0
+	if err := synth.Update(patch, 120); err != nil {
+		t.Fatal(err)
+	}
+	after := render(t, synth, 32*256)
+	rms := func(out sointu.AudioBuffer) float64 {
+		e := 0.0
+		for _, f := range out {
+			e += float64(f[0] * f[0])
+		}
+		return math.Sqrt(e / float64(len(out)))
+	}
+	want := rms(before[1024:])
+	for i := 512; i+1024 <= len(after); i += 1024 {
+		if got := rms(after[i : i+1024]); got < want/3 || got > want*3 {
+			t.Errorf("frames %d-%d: rms %v, before freezing %v", i, i+1024, got, want)
+		}
+	}
+}

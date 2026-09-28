@@ -131,8 +131,13 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 		templates = []string{"player.wat"}
 	}
 	features := vm.NecessaryFeaturesFor(song.Patch)
-	for _, unit := range []string{"bufread", "bufwrite", "spawn", "arg", "window", "spfft", "spifft", "spcopy"} {
-		if _, ok := features.Opcode(unit); ok && com.Arch != "wasm" {
+	for _, unit := range features.Instructions() {
+		wasmOnly := len(sointu.SpectrumBufferParams(unit)) > 0
+		switch unit {
+		case "bufread", "bufwrite", "spawn", "arg", "window":
+			wasmOnly = true
+		}
+		if wasmOnly && com.Arch != "wasm" {
 			return nil, nil, fmt.Errorf(`the %v unit is only supported when compiling for wasm (targeted architecture was %v)`, unit, com.Arch)
 		}
 	}
@@ -250,8 +255,11 @@ func wasmSpectral(b *vm.Bytecode) (ret wasmSpectralData) {
 		}
 		ret.SpectralTable = append(ret.SpectralTable, uint32(u.Voice*4096), uint32(offset), uint32(u.Spectrum*wasmSpectrumTableStride), uint32(source))
 		offset += 16
-		if u.Type == "spfft" || u.Type == "spifft" {
+		switch u.Type {
+		case "spfft", "spifft":
 			offset += (1 << b.Spectra[u.Spectrum].Log2Size) * 4
+		case "spblur":
+			offset += (1<<b.Spectra[u.Spectrum].Log2Size + 2) * 4
 		}
 	}
 	maxSize := 1 << ret.SpectralMaxLog2

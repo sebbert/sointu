@@ -216,7 +216,7 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				b.op(opcode + p["stereo"])
 				b.defOperands(unit)
 				b.operand(b.delayIndices[instrIndex][unitIndex], countTrack)
-			case "spfft", "spifft", "spcopy":
+			case "spfft", "spifft", "spcopy", "spfilter", "spcompress", "spblur":
 				if len(b.SpectralUnits) > 255 {
 					return nil, errors.New("Patch uses over 256 spectral units")
 				}

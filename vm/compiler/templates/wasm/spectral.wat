@@ -253,3 +253,178 @@
     (i32.store offset=8 (local.get $h) (i32.add (i32.load offset=8 (local.get $h)) (i32.const 1)))
 )
 {{- end}}
+{{- if or (.HasOp "spfilter") (.HasOp "spcompress") (.HasOp "spblur")}}
+;; $spectralFrame returns the address of the spectrum entry of a modifying
+;; spectral unit if the current voice runs it and there is a new spectrum it
+;; has not processed yet, marking it processed; otherwise 0.
+(func $spectralFrame (param $u i32) (result i32) (local $st i32) (local $h i32)
+    (if (i32.eqz (call $spectralVoice (local.get $u))) (then
+        (return (i32.const 0))
+    ))
+    (local.set $st (i32.add (i32.const {{index .Labels "su_spectral"}}) (i32.load offset=4 (local.get $u))))
+    (local.set $h (i32.add (i32.const {{index .Labels "su_spectrum_table"}}) (i32.load offset=8 (local.get $u))))
+    (if (i32.eq (i32.load offset=8 (local.get $h)) (i32.load offset=4 (local.get $st))) (then
+        (return (i32.const 0))
+    ))
+    (i32.store offset=4 (local.get $st) (i32.load offset=8 (local.get $h)))
+    (local.get $h)
+)
+{{- end}}
+
+{{- if .HasOp "spfilter"}}
+;;-------------------------------------------------------------------------------
+;;   SPFILTER opcode: removes the bins below low and above high, and tilts the
+;;   rest by frequency^e, e = tilt*4-2, around 1 kHz
+;;-------------------------------------------------------------------------------
+(func $su_op_spfilter (param $stereo i32) (local $h i32) (local $x i32) (local $n i32) (local $k i32) (local $lo f32) (local $hi f32) (local $e f32) (local $ref f32) (local $fk f32) (local $g f32)
+    (local.set $h (call $spectralFrame (call $spectralUnit)))
+    (if (i32.eqz (local.get $h)) (then
+        return
+    ))
+    (local.set $x (i32.add (i32.const {{index .Labels "su_spectral"}}) (i32.load (local.get $h))))
+    (local.set $n (i32.shl (i32.const 1) (i32.load offset=4 (local.get $h))))
+    (local.set $lo (f32.mul (f32.convert_i32_u (i32.shr_u (local.get $n) (i32.const 1)))
+        (f32.div (f32.sub (call $pow (f32.const 2) (f32.mul (call $input (i32.const {{.InputNumber "spfilter" "low"}})) (f32.const 10))) (f32.const 1)) (f32.const 1023))))
+    (local.set $hi (f32.mul (f32.convert_i32_u (i32.shr_u (local.get $n) (i32.const 1)))
+        (f32.div (f32.sub (call $pow (f32.const 2) (f32.mul (call $input (i32.const {{.InputNumber "spfilter" "high"}})) (f32.const 10))) (f32.const 1)) (f32.const 1023))))
+    (local.set $e (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spfilter" "tilt"}})) (f32.const 4)) (f32.const 2)))
+    (local.set $ref (f32.div (f32.convert_i32_u (local.get $n)) (f32.const 44.1)))
+    loop $bins
+        (local.set $fk (f32.convert_i32_u (local.get $k)))
+        (if (i32.or (f32.lt (local.get $fk) (local.get $lo)) (f32.gt (local.get $fk) (local.get $hi))) (then
+            (i64.store (local.get $x) (i64.const 0))
+        )(else
+            (if (f32.ne (local.get $e) (f32.const 0)) (then
+                (local.set $g (call $pow (f32.div (f32.max (local.get $fk) (f32.const 1)) (local.get $ref)) (local.get $e)))
+                (f32.store (local.get $x) (f32.mul (f32.load (local.get $x)) (local.get $g)))
+                (f32.store offset=4 (local.get $x) (f32.mul (f32.load offset=4 (local.get $x)) (local.get $g)))
+            ))
+        ))
+        (local.set $x (i32.add (local.get $x) (i32.const 8)))
+        (br_if $bins (i32.le_u (local.tee $k (i32.add (local.get $k) (i32.const 1))) (i32.shr_u (local.get $n) (i32.const 1))))
+    end
+)
+{{- end}}
+
+{{- if .HasOp "spcompress"}}
+;;-------------------------------------------------------------------------------
+;;   SPCOMPRESS opcode: scales each bin by (mean/envelope)^amount, where the
+;;   envelope is the mean magnitude of the bins within width
+;;-------------------------------------------------------------------------------
+(func $su_op_spcompress (param $stereo i32) (local $h i32) (local $x i32) (local $half i32) (local $k i32) (local $w i32) (local $lo i32) (local $hi i32) (local $a f32) (local $sum f32) (local $mean f32) (local $g f32) (local $p i32)
+    (local.set $h (call $spectralFrame (call $spectralUnit)))
+    (if (i32.eqz (local.get $h)) (then
+        return
+    ))
+    (local.set $a (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spcompress" "amount"}})) (f32.const 2)) (f32.const 1)))
+    (if (f32.eq (local.get $a) (f32.const 0)) (then
+        return
+    ))
+    (local.set $x (i32.add (i32.const {{index .Labels "su_spectral"}}) (i32.load (local.get $h))))
+    (local.set $half (i32.shl (i32.const 1) (i32.sub (i32.load offset=4 (local.get $h)) (i32.const 1))))
+    ;; prefix sums of the magnitudes in the scratch space
+    (f32.store offset={{add (index .Labels "su_spectral") .SpectralScratch}} (i32.const 0) (f32.const 0))
+    loop $sums
+        (local.set $p (i32.add (local.get $x) (i32.shl (local.get $k) (i32.const 3))))
+        (local.set $sum (f32.add (local.get $sum) (f32.sqrt (f32.add
+            (f32.mul (f32.load (local.get $p)) (f32.load (local.get $p)))
+            (f32.mul (f32.load offset=4 (local.get $p)) (f32.load offset=4 (local.get $p)))))))
+        (f32.store offset={{add (index .Labels "su_spectral") .SpectralScratch 4}} (i32.shl (local.get $k) (i32.const 2)) (local.get $sum))
+        (br_if $sums (i32.le_u (local.tee $k (i32.add (local.get $k) (i32.const 1))) (local.get $half)))
+    end
+    (local.set $mean (f32.div (local.get $sum) (f32.convert_i32_u (i32.add (local.get $half) (i32.const 1)))))
+    (local.set $w (i32.add (i32.const 1) (i32.trunc_f32_u (f32.mul
+        (f32.min (f32.max (call $input (i32.const {{.InputNumber "spcompress" "width"}})) (f32.const 0)) (f32.const 1))
+        (f32.convert_i32_u (i32.shr_u (local.get $half) (i32.const 4)))))))
+    (local.set $k (i32.const 0))
+    loop $bins
+        (local.set $lo (select (i32.sub (local.get $k) (local.get $w)) (i32.const 0) (i32.gt_s (i32.sub (local.get $k) (local.get $w)) (i32.const 0))))
+        (local.set $hi (select (i32.add (local.get $k) (local.get $w)) (local.get $half) (i32.lt_s (i32.add (local.get $k) (local.get $w)) (local.get $half))))
+        (local.set $g (call $pow
+            (f32.div
+                (f32.add (local.get $mean) (f32.const 1e-9))
+                (f32.add
+                    (f32.div
+                        (f32.sub
+                            (f32.load offset={{add (index .Labels "su_spectral") .SpectralScratch 4}} (i32.shl (local.get $hi) (i32.const 2)))
+                            (f32.load offset={{add (index .Labels "su_spectral") .SpectralScratch}} (i32.shl (local.get $lo) (i32.const 2))))
+                        (f32.convert_i32_s (i32.sub (i32.add (local.get $hi) (i32.const 1)) (local.get $lo))))
+                    (f32.const 1e-9)))
+            (local.get $a)))
+        (local.set $p (i32.add (local.get $x) (i32.shl (local.get $k) (i32.const 3))))
+        (f32.store (local.get $p) (f32.mul (f32.load (local.get $p)) (local.get $g)))
+        (f32.store offset=4 (local.get $p) (f32.mul (f32.load offset=4 (local.get $p)) (local.get $g)))
+        (br_if $bins (i32.le_s (local.tee $k (i32.add (local.get $k) (i32.const 1))) (local.get $half)))
+    end
+)
+{{- end}}
+
+{{- if .HasOp "spblur"}}
+;; $randomPhase updates the random number generator at $rng and returns the
+;; cosine and sine of a random phase, one of 256, like randomPhase in
+;; vm/spectral.go: a twiddle factor e^(-πik/128), k < 128, conjugated at
+;; random.
+(func $randomPhase (param $rng i32) (result f32 f32) (local $r i32) (local $j i32)
+    (i32.store (local.get $rng) (local.tee $r (i32.add (i32.mul (i32.load (local.get $rng)) (i32.const 1664525)) (i32.const 1013904223))))
+    (local.set $j (i32.shl (i32.add (i32.const 127) (i32.shr_u (local.get $r) (i32.const 25))) (i32.const 3)))
+    (f32.load offset={{add (index .Labels "su_spectral") .SpectralTwiddles}} (local.get $j))
+    (f32.load offset={{add (index .Labels "su_spectral") .SpectralTwiddles .SpectralTwiddleBytes 4}} (local.get $j))
+    (if (param f32) (result f32) (i32.and (local.get $r) (i32.const 0x1000000)) (then
+        f32.neg
+    ))
+)
+
+;;-------------------------------------------------------------------------------
+;;   SPBLUR opcode: smooths the magnitudes over time, keeping the phases, or
+;;   while frozen holds the magnitudes with random phases
+;;-------------------------------------------------------------------------------
+(func $su_op_spblur (param $stereo i32) (local $u i32) (local $h i32) (local $st i32) (local $x i32) (local $y i32) (local $half i32) (local $k i32) (local $a f32) (local $frozen i32) (local $xr f32) (local $xi f32) (local $yr f32) (local $yi f32) (local $m f32) (local $b f32) (local $t f32)
+    (local.set $u (call $spectralUnit))
+    (local.set $h (call $spectralFrame (local.get $u)))
+    (if (i32.eqz (local.get $h)) (then
+        return
+    ))
+    (local.set $a (call $input (i32.const {{.InputNumber "spblur" "amount"}})))
+    (local.set $frozen (f32.gt (call $input (i32.const {{.InputNumber "spblur" "freeze"}})) (f32.const 0.5)))
+    (local.set $x (i32.add (i32.const {{index .Labels "su_spectral"}}) (i32.load (local.get $h))))
+    (local.set $st (i32.add (i32.const {{index .Labels "su_spectral"}}) (i32.load offset=4 (local.get $u))))
+    (local.set $y (i32.add (local.get $st) (i32.const 16)))
+    (local.set $half (i32.shl (i32.const 1) (i32.sub (i32.load offset=4 (local.get $h)) (i32.const 1))))
+    loop $bins
+        (local.set $yr (f32.load (local.get $y)))
+        (local.set $yi (f32.load offset=4 (local.get $y)))
+        (if (local.get $frozen) (then
+            (local.set $m (f32.sqrt (f32.add (f32.mul (local.get $yr) (local.get $yr)) (f32.mul (local.get $yi) (local.get $yi)))))
+            (call $randomPhase (i32.add (local.get $st) (i32.const 8)))
+            (local.set $t)
+            (local.set $b)
+            (f32.store (local.get $x) (f32.mul (local.get $m) (local.get $b)))
+            (f32.store offset=4 (local.get $x) (f32.mul (local.get $m) (local.get $t)))
+        )(else
+            (local.set $xr (f32.load (local.get $x)))
+            (local.set $xi (f32.load offset=4 (local.get $x)))
+            (local.set $m (f32.sqrt (f32.add (f32.mul (local.get $xr) (local.get $xr)) (f32.mul (local.get $xi) (local.get $xi)))))
+            (local.set $b (f32.add
+                (f32.mul
+                    (f32.sub (f32.sqrt (f32.add (f32.mul (local.get $yr) (local.get $yr)) (f32.mul (local.get $yi) (local.get $yi)))) (local.get $m))
+                    (local.get $a))
+                (local.get $m)))
+            (if (f32.gt (local.get $m) (f32.const 0)) (then
+                (local.set $t (f32.div (local.get $b) (local.get $m)))
+                (local.set $yr (f32.mul (local.get $xr) (local.get $t)))
+                (local.set $yi (f32.mul (local.get $xi) (local.get $t)))
+            )(else
+                (local.set $yr (local.get $b))
+                (local.set $yi (f32.const 0))
+            ))
+            (f32.store (local.get $y) (local.get $yr))
+            (f32.store offset=4 (local.get $y) (local.get $yi))
+            (f32.store (local.get $x) (local.get $yr))
+            (f32.store offset=4 (local.get $x) (local.get $yi))
+        ))
+        (local.set $x (i32.add (local.get $x) (i32.const 8)))
+        (local.set $y (i32.add (local.get $y) (i32.const 8)))
+        (br_if $bins (i32.le_u (local.tee $k (i32.add (local.get $k) (i32.const 1))) (local.get $half)))
+    end
+)
+{{- end}}

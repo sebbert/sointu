@@ -474,6 +474,49 @@ var UnitTypes = map[string]UnitType{
 		},
 		StackUse: stackUseSource,
 	},
+	"spfilter": {
+		// spfilter removes the bins of a spectrum below low and above high,
+		// and tilts the rest by up to 12 dB per octave around 1 kHz.
+		Params: []UnitParameter{
+			{Name: "low", MinValue: 0, Default: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: spectralFrequencyDisplay},
+			{Name: "high", MinValue: 0, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: spectralFrequencyDisplay},
+			{Name: "tilt", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat((float64(v)/32-2)*6.0206, 'f', 1, 64), "dB/oct"
+			}},
+			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+		},
+		StackUse: func(u *Unit) StackUse { return StackUse{} },
+	},
+	"spcompress": {
+		// spcompress pulls the magnitudes of a spectrum toward their mean:
+		// each bin is scaled by (mean/envelope)^amount, where the envelope is
+		// the average magnitude of the bins within width. Amount 1 flattens
+		// the envelope, like heavy upward and downward multiband compression;
+		// negative amounts exaggerate it.
+		Params: []UnitParameter{
+			{Name: "amount", MinValue: 0, Neutral: 64, Default: 96, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return formatFloat(float64(v)/64 - 1), "" }},
+			{Name: "width", MinValue: 0, Default: 16, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(float64(v)*100/128/16, 'g', 3, 64), "%" }},
+			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+		},
+		StackUse: func(u *Unit) StackUse { return StackUse{} },
+	},
+	"spblur": {
+		// spblur smooths the magnitudes of a spectrum over time, keeping the
+		// phases: amount is how much of the previous magnitude stays each
+		// frame. While freeze is on (above half), it holds the magnitudes
+		// instead, with random phases each frame, for an endless texture.
+		Params: []UnitParameter{
+			{Name: "amount", MinValue: 0, Default: 96, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v * 100 / 128), "%" }},
+			{Name: "freeze", MinValue: 0, Default: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				if v > 64 {
+					return "on", ""
+				}
+				return "off", ""
+			}},
+			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+		},
+		StackUse: func(u *Unit) StackUse { return StackUse{} },
+	},
 	"spcopy": {
 		// spcopy copies each new spectrum of the source spectrum buffer to
 		// its own spectrum buffer, e.g. to process the same spectrum in two
@@ -599,6 +642,18 @@ const (
 	SpectrumSizeDefault = 2 // 1024
 	SpectrumSizeMax     = 5 // 8192
 )
+
+// SpectralFrequency returns the frequency in Hz of the cutoffs of spfilter:
+// 0 is 0 Hz and 1 is 22050 Hz, exponentially over 10 octaves in between.
+func SpectralFrequency(v float64) float64 { return 22050 * (math.Pow(2, 10*v) - 1) / 1023 }
+
+func spectralFrequencyDisplay(v int) (string, string) {
+	f := SpectralFrequency(float64(v) / 128)
+	if f >= 1000 {
+		return strconv.FormatFloat(f/1000, 'f', 2, 64), "kHz"
+	}
+	return strconv.FormatFloat(f, 'f', 0, 64), "Hz"
+}
 
 // SpectrumSize returns the size in samples of the spectra of an spfft unit
 // with the given size parameter.

@@ -287,6 +287,14 @@ above them. The Buffers tab shows the latest spectrum of a spectrum buffer. Larg
 frequencies better (1024 gives 43 Hz bins, 8192 gives 5.4 Hz) but smear
 transients and delay more. The wasm player computes the FFT with SIMD.
 
+Between them, spectral units change the spectrum in place, each time a new
+one arrives, reading their parameters then: `spfilter` removes the bins below
+`low` and above `high` and tilts the rest by up to 12 dB per octave;
+`spcompress` pulls the magnitudes toward their mean, by `amount`, like
+extreme multiband compression (negative amounts exaggerate the envelope
+instead); `spblur` smooths the magnitudes over time, and while `freeze` is on,
+holds them with random phases, for endless textures.
+
 `bufread`, `bufwrite`, `spawn`, `arg`, `window` and the spectral units are
 WebAssembly only for now.
 

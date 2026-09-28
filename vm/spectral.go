@@ -53,8 +53,8 @@ type (
 	// so that retriggering the voice does not reset it: the position in its
 	// ring and the count of the spectrum it processed last.
 	spectralState struct {
-		pos, seen uint32
-		ring      []float32
+		pos, seen, rng uint32
+		ring           []float32
 	}
 )
 
@@ -83,8 +83,11 @@ func (s *GoSynth) setSpectra(old *Bytecode) {
 				continue
 			}
 		}
-		if u.Type == "spfft" || u.Type == "spifft" {
+		switch u.Type {
+		case "spfft", "spifft":
 			states[i].ring = make([]float32, 1<<sp.Log2Size)
+		case "spblur":
+			states[i].ring = make([]float32, 1<<sp.Log2Size+2)
 		}
 	}
 	s.spectra, s.spectral = spectra, states
@@ -222,4 +225,119 @@ func (s *GoSynth) Spectrum(bufferID int, dst []float32) ([]float32, int) {
 		return dst, n
 	}
 	return dst, 0
+}
+
+// spectralFrame returns the spectrum of a modifying spectral unit and its
+// size, if there is a new spectrum the unit has not processed yet, marking it
+// processed.
+func (s *GoSynth) spectralFrame(index int) ([]float32, uint32, bool) {
+	u := s.bytecode.SpectralUnits[index]
+	st, sp := &s.spectral[index], &s.spectra[u.Spectrum]
+	if sp.count == st.seen {
+		return nil, 0, false
+	}
+	st.seen = sp.count
+	return sp.data, uint32(len(sp.data) / 2), true
+}
+
+func pow32(a, b float32) float32 { return float32(math.Pow(float64(a), float64(b))) }
+
+func sqrt32(a float32) float32 { return float32(math.Sqrt(float64(a))) }
+
+// spfilter removes the bins below low and above high, and tilts the rest.
+func (s *GoSynth) spfilter(index int, low, high, tilt float32) {
+	x, n, ok := s.spectralFrame(index)
+	if !ok {
+		return
+	}
+	h := n / 2
+	lo := float32(h) * float32(float32(pow32(2, float32(low*10))-1)/1023)
+	hi := float32(h) * float32(float32(pow32(2, float32(high*10))-1)/1023)
+	e := float32(tilt*4) - 2 // amplitude ∝ frequency^e
+	ref := float32(n) / 44.1 // the bin of 1 kHz
+	for k := uint32(0); k <= h; k++ {
+		fk := float32(k)
+		if fk < lo || fk > hi {
+			x[2*k], x[2*k+1] = 0, 0
+		} else if e != 0 {
+			g := pow32(max(fk, 1)/ref, e)
+			x[2*k], x[2*k+1] = x[2*k]*g, x[2*k+1]*g
+		}
+	}
+}
+
+// spcompress scales each bin by (mean/envelope)^amount.
+func (s *GoSynth) spcompress(index int, amount, width float32) {
+	x, n, ok := s.spectralFrame(index)
+	if !ok {
+		return
+	}
+	a := float32(amount*2) - 1
+	if a == 0 {
+		return
+	}
+	h := n / 2
+	// prefix sums of the magnitudes
+	sums := s.scratch[:h+2]
+	sum := float32(0)
+	sums[0] = 0
+	for k := uint32(0); k <= h; k++ {
+		sum += sqrt32(float32(x[2*k]*x[2*k]) + float32(x[2*k+1]*x[2*k+1]))
+		sums[k+1] = sum
+	}
+	mean := sum / float32(h+1)
+	w := int32(1 + uint32(float32(min(max(width, 0), 1)*float32(n/32))))
+	for k := int32(0); k <= int32(h); k++ {
+		lo, hi := max(k-w, 0), min(k+w, int32(h))
+		env := float32(sums[hi+1]-sums[lo]) / float32(hi+1-lo)
+		g := pow32(float32(mean+1e-9)/float32(env+1e-9), a)
+		x[2*k], x[2*k+1] = x[2*k]*g, x[2*k+1]*g
+	}
+}
+
+// randomPhase returns the cosine and sine of a random phase, one of 256, from
+// the twiddle factors e^(-πik/128), k < 128, conjugated at random, and the
+// next state of the random number generator.
+func randomPhase(rng uint32) (c, s float32, next uint32) {
+	next = rng*1664525 + 1013904223
+	t := spectralTables()
+	j := 127 + next>>25
+	c, s = t.wr[j], t.wi[j]
+	if next&(1<<24) != 0 {
+		s = -s
+	}
+	return
+}
+
+// spblur smooths the magnitudes over time, keeping the phases, or while
+// frozen holds the magnitudes with random phases, for a steady texture.
+func (s *GoSynth) spblur(index int, amount, freeze float32) {
+	x, n, ok := s.spectralFrame(index)
+	if !ok {
+		return
+	}
+	st := &s.spectral[index]
+	y := st.ring
+	for k := uint32(0); k <= n/2; k++ {
+		yr, yi := y[2*k], y[2*k+1]
+		if freeze > 0.5 {
+			var c, sn float32
+			c, sn, st.rng = randomPhase(st.rng)
+			m := sqrt32(float32(yr*yr) + float32(yi*yi))
+			x[2*k], x[2*k+1] = m*c, m*sn
+			continue
+		}
+		xr, xi := x[2*k], x[2*k+1]
+		m := sqrt32(float32(xr*xr) + float32(xi*xi))
+		p := sqrt32(float32(yr*yr) + float32(yi*yi))
+		b := float32(float32(p-m)*amount) + m
+		if m > 0 {
+			sc := b / m
+			yr, yi = xr*sc, xi*sc
+		} else {
+			yr, yi = b, 0
+		}
+		y[2*k], y[2*k+1] = yr, yi
+		x[2*k], x[2*k+1] = yr, yi
+	}
 }
