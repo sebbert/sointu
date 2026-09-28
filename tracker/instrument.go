@@ -237,7 +237,7 @@ func (m *InstrModel) warnAboutCrossThreadSends() {
 					return
 				}
 			}
-			if t := unit.Parameters["instrument"] - 1; unit.Type == "spawn" && t >= 0 && t < len(m.d.Song.Patch) {
+			if t := unit.Parameters["instrument"] - 1; sointu.TargetsInstrument(unit.Type) && t >= 0 && t < len(m.d.Song.Patch) {
 				if instr.ThreadMaskM1 != m.d.Song.Patch[t].ThreadMaskM1 {
 					(*Alerts)(m).AddNamed("CrossThreadSend", fmt.Sprintf("Instrument %d '%s' spawns voices of instrument %d '%s' but they are not on the same threads, which may cause issues", i+1, instr.Name, t+1, m.d.Song.Patch[t].Name), Warning)
 					return

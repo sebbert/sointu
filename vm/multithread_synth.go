@@ -292,7 +292,7 @@ func remapSpawnTargets(patch sointu.Patch, indexMap []int) {
 	for i, instr := range patch {
 		copied := false
 		for j, u := range instr.Units {
-			if u.Type != "spawn" {
+			if !sointu.TargetsInstrument(u.Type) {
 				continue
 			}
 			if !copied {

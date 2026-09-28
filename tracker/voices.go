@@ -226,7 +226,7 @@ func (m *Model) remapSpawnTargets(indices []instrumentIndex) {
 			continue
 		}
 		for _, u := range m.d.Song.Patch[i].Units {
-			if t := u.Parameters["instrument"]; u.Type == "spawn" && t > 0 {
+			if t := u.Parameters["instrument"]; sointu.TargetsInstrument(u.Type) && t > 0 {
 				u.Parameters["instrument"] = newIndex[t]
 			}
 		}
@@ -245,7 +245,7 @@ func relativeSpawnTargets(patch sointu.Patch, indices []instrumentIndex) sointu.
 	}
 	for _, instr := range patch {
 		for _, u := range instr.Units {
-			if i, ok := rel[u.Parameters["instrument"]]; ok && u.Type == "spawn" {
+			if i, ok := rel[u.Parameters["instrument"]]; ok && sointu.TargetsInstrument(u.Type) {
 				u.Parameters["instrument"] = -(i + 1)
 			}
 		}
@@ -258,7 +258,7 @@ func relativeSpawnTargets(patch sointu.Patch, indices []instrumentIndex) sointu.
 func (m *Model) resolveSpawnTargets(r Range) {
 	for i := r.Start; i < r.End && i < len(m.d.Song.Patch); i++ {
 		for _, u := range m.d.Song.Patch[i].Units {
-			if t := u.Parameters["instrument"]; u.Type == "spawn" && t < 0 {
+			if t := u.Parameters["instrument"]; sointu.TargetsInstrument(u.Type) && t < 0 {
 				if rel := -t - 1; r.Start+rel < r.End {
 					u.Parameters["instrument"] = r.Start + rel + 1
 				} else {

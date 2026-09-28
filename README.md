@@ -298,7 +298,13 @@ quieter than a threshold (or with `invert`, the louder ones); `spphase`
 disperses the phases into chirps, randomizes them or, in robot mode, zeroes
 them; `spscale` moves the bins to their frequency times `scale` plus `shift`,
 harmonically or inharmonically; `spformant` moves the spectral envelope, the
-formants, without changing the pitch.
+formants, without changing the pitch. Two units combine spectra: `spcross` puts
+the envelope of a `source` spectrum onto the spectrum, from cross-synthesis
+(`width` 0) to a vocoder, e.g. a growl's envelope onto a chord; `spcomb` keeps
+only the bins near the harmonics of up to eight notes, like resonators tuned
+to a chord: the notes held in the voices of an `instrument`, e.g. a silent
+polyphonic instrument whose track plays the chords, or if none, the note of
+its own voice and up to three intervals above it.
 
 `bufread`, `bufwrite`, `spawn`, `arg`, `window` and the spectral units are
 WebAssembly only for now.

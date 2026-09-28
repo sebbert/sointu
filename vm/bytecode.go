@@ -216,12 +216,12 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				b.op(opcode + p["stereo"])
 				b.defOperands(unit)
 				b.operand(b.delayIndices[instrIndex][unitIndex], countTrack)
-			case "spfft", "spifft", "spcopy", "spfilter", "spcompress", "spblur", "spgate", "spphase", "spscale", "spformant":
+			case "spfft", "spifft", "spcopy", "spfilter", "spcompress", "spblur", "spgate", "spphase", "spscale", "spformant", "spcross", "spcomb":
 				if len(b.SpectralUnits) > 255 {
 					return nil, errors.New("Patch uses over 256 spectral units")
 				}
 				u := SpectralUnit{Type: unit.Type, Voice: patch.FirstVoiceForInstrument(instrIndex), Spectrum: b.spectrumIndex(p["buffer"]), Source: -1}
-				if unit.Type == "spcopy" {
+				if unit.Type == "spcopy" || unit.Type == "spcross" {
 					u.Source = b.spectrumIndex(p["source"])
 				}
 				b.op(opcode)
@@ -232,6 +232,14 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 					b.operand(p["invert"] & 1)
 				case "spphase":
 					b.operand(min(max(p["mode"], 0), 2))
+				case "spcomb":
+					// the voices of the instrument whose notes to use, and
+					// the intervals
+					first, count := 0, 0
+					if t := p["instrument"] - 1; t >= 0 && t < len(patch) {
+						first, count = patch.FirstVoiceForInstrument(t), patch[t].NumVoices
+					}
+					b.operand(first, count, p["interval1"], p["interval2"], p["interval3"])
 				}
 				b.SpectralUnits = append(b.SpectralUnits, u)
 			case "bufread", "bufwrite":

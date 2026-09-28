@@ -93,6 +93,8 @@ func TestSpectralModifiersNeutral(t *testing.T) {
 		{Type: "spphase", Parameters: sointu.ParamMap{"mode": sointu.SpphaseRobot, "amount": 0, "buffer": 1}},
 		{Type: "spscale", Parameters: sointu.ParamMap{"scale": 64, "shift": 64, "buffer": 1}},
 		{Type: "spformant", Parameters: sointu.ParamMap{"shift": 64, "width": 16, "buffer": 1}},
+		{Type: "spcross", Parameters: sointu.ParamMap{"amount": 0, "width": 16, "source": 1, "buffer": 1}},
+		{Type: "spcomb", Parameters: sointu.ParamMap{"q": 64, "amount": 0, "interval1": 4, "buffer": 1}},
 	} {
 		out := render(t, newSynth(t, spectralPatch(1, u)), 4*512)
 		if delay, diff := reconstructionError(out, 1024); delay != 511 || diff > 1e-5 {
@@ -181,5 +183,21 @@ func TestSpscaleShiftsUp(t *testing.T) {
 	}
 	if mean /= float64(len(out) - 1024); math.Abs(mean) > 1e-3 {
 		t.Errorf("mean %v after shifting, want 0", mean)
+	}
+}
+
+func TestSpcrossTakesMagnitudes(t *testing.T) {
+	// width 0: the magnitudes of the source, a constant 0.5, with the phases
+	// of the spectrum, a constant 0.25: the result is the source
+	patch := dcPatch(80,
+		sointu.Unit{Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": 96}},
+		sointu.Unit{Type: "spfft", Parameters: sointu.ParamMap{"size": 0, "buffer": 2}},
+		sointu.Unit{Type: "spcross", Parameters: sointu.ParamMap{"amount": 128, "width": 0, "source": 2, "buffer": 1}},
+	)
+	out := render(t, newSynth(t, patch), 4*256)
+	for i := 512; i < len(out); i++ {
+		if math.Abs(float64(out[i][0]-0.5)) > 1e-4 {
+			t.Fatalf("frame %d: %v, want 0.5", i, out[i][0])
+		}
 	}
 }

@@ -211,9 +211,9 @@ func (b *Buffer) Writable() bool { return b.Sample == nil && b.Frames > 0 }
 // another spectrum it reads. The first one is written by spfft and spcopy.
 func SpectrumBufferParams(unitType string) []string {
 	switch unitType {
-	case "spcopy":
+	case "spcopy", "spcross":
 		return []string{"buffer", "source"}
-	case "spfft", "spifft", "spfilter", "spcompress", "spblur", "spgate", "spphase", "spscale", "spformant":
+	case "spfft", "spifft", "spfilter", "spcompress", "spblur", "spgate", "spphase", "spscale", "spformant", "spcomb":
 		return []string{"buffer"}
 	}
 	return nil

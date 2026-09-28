@@ -649,6 +649,11 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 				}
 				operands = operands[1:]
 				stack = append(stack, out)
+			case opSpcomb:
+				if index := int(operands[0]); s.bytecode.SpectralUnits[index].Voice == int(s.bytecode.NumVoices-voicesRemaining) {
+					s.spcomb(index, voice.note, params[0], params[1], operands[1:6])
+				}
+				operands = operands[6:]
 			case opSpgate, opSpphase:
 				if index := int(operands[0]); s.bytecode.SpectralUnits[index].Voice == int(s.bytecode.NumVoices-voicesRemaining) {
 					if opNoStereo == opSpgate {
@@ -658,9 +663,11 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 					}
 				}
 				operands = operands[2:]
-			case opSpfilter, opSpcompress, opSpblur, opSpscale, opSpformant:
+			case opSpfilter, opSpcompress, opSpblur, opSpscale, opSpformant, opSpcross:
 				if index := int(operands[0]); s.bytecode.SpectralUnits[index].Voice == int(s.bytecode.NumVoices-voicesRemaining) {
 					switch opNoStereo {
+					case opSpcross:
+						s.spcross(index, params[0], params[1])
 					case opSpscale:
 						s.spscale(index, params[0], params[1])
 					case opSpformant:

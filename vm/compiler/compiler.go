@@ -228,8 +228,8 @@ type wasmSpectralData struct {
 	// last, 16 bytes, followed by the ring for spfft and spifft.
 	SpectralTable []uint32
 	// SpectralBytes is the size of su_spectral. After the spectra and the
-	// states of the units, it has a scratch space at SpectralScratch for the
-	// largest spectrum, of size 2^SpectralMaxLog2, and the tables computed
+	// states of the units, it has a scratch space at SpectralScratch of 2n+8
+	// floats for the largest spectrum size n = 2^SpectralMaxLog2, and the tables computed
 	// when the player starts, like spectralTables in the vm package: the Hann
 	// window of the largest size at SpectralHann, and the twiddle factors
 	// at SpectralTwiddles, each as the pair wr, wr, followed by the pairs
@@ -265,7 +265,7 @@ func wasmSpectral(b *vm.Bytecode) (ret wasmSpectralData) {
 	maxSize := 1 << ret.SpectralMaxLog2
 	ret.SpectralMaxSize = maxSize
 	ret.SpectralScratch = offset
-	ret.SpectralHann = ret.SpectralScratch + 2*maxSize*4
+	ret.SpectralHann = ret.SpectralScratch + (2*maxSize+8)*4
 	ret.SpectralTwiddles = ret.SpectralHann + maxSize*4
 	ret.SpectralTwiddleBytes = (maxSize - 1) * 8
 	ret.SpectralBytes = ret.SpectralTwiddles + 2*ret.SpectralTwiddleBytes

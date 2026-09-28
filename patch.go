@@ -564,6 +564,38 @@ var UnitTypes = map[string]UnitType{
 		},
 		StackUse: func(u *Unit) StackUse { return StackUse{} },
 	},
+	"spcross": {
+		// spcross puts the envelope of the source spectrum onto the spectrum:
+		// each bin is scaled by (source envelope/envelope)^amount, where an
+		// envelope is the average magnitude of the bins within width. Width 0
+		// takes the magnitudes of the source and the phases of the spectrum
+		// (cross-synthesis); wider, it is a vocoder, the source being the
+		// modulator. The source must have the same size.
+		Params: []UnitParameter{
+			{Name: "amount", MinValue: 0, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v * 100 / 128), "%" }},
+			{Name: "width", MinValue: 0, Default: 16, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(float64(v)*100/128/32, 'g', 3, 64), "%" }},
+			{Name: "source", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+		},
+		StackUse: func(u *Unit) StackUse { return StackUse{} },
+	},
+	"spcomb": {
+		// spcomb keeps the bins near the harmonics of up to 8 notes, like
+		// resonators tuned to a chord: the notes held in the voices of
+		// instrument, or if none, the note of its own voice and the notes
+		// interval1-3 semitones above it (0 is none). q is how narrow the
+		// peaks are; amount blends from the spectrum (0) to only the peaks.
+		Params: []UnitParameter{
+			{Name: "q", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true},
+			{Name: "amount", MinValue: 0, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v * 100 / 128), "%" }},
+			{Name: "instrument", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+			{Name: "interval1", MinValue: 0, MaxValue: 48, CanSet: true, CanModulate: false, DisplayFunc: intervalDisplay},
+			{Name: "interval2", MinValue: 0, MaxValue: 48, CanSet: true, CanModulate: false, DisplayFunc: intervalDisplay},
+			{Name: "interval3", MinValue: 0, MaxValue: 48, CanSet: true, CanModulate: false, DisplayFunc: intervalDisplay},
+			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+		},
+		StackUse: func(u *Unit) StackUse { return StackUse{} },
+	},
 	"spcopy": {
 		// spcopy copies each new spectrum of the source spectrum buffer to
 		// its own spectrum buffer, e.g. to process the same spectrum in two
@@ -698,6 +730,17 @@ const (
 )
 
 var spphaseModeNames = [...]string{"disperse", "random", "robot"}
+
+func intervalDisplay(v int) (string, string) {
+	if v == 0 {
+		return "none", ""
+	}
+	return strconv.Itoa(v), "st"
+}
+
+// TargetsInstrument reports whether units of the type refer to an instrument
+// with their instrument parameter: its index plus one, 0 for none.
+func TargetsInstrument(unitType string) bool { return unitType == "spawn" || unitType == "spcomb" }
 
 // SpectralFrequency returns the frequency in Hz of the cutoffs of spfilter:
 // 0 is 0 Hz and 1 is 22050 Hz, exponentially over 10 octaves in between.

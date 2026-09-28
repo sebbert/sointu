@@ -36,19 +36,21 @@ const (
 	opSend       = 32
 	opSpawn      = 33
 	opSpblur     = 34
-	opSpcompress = 35
-	opSpcopy     = 36
-	opSpeed      = 37
-	opSpfft      = 38
-	opSpfilter   = 39
-	opSpformant  = 40
-	opSpgate     = 41
-	opSpifft     = 42
-	opSpphase    = 43
-	opSpscale    = 44
-	opSync       = 45
-	opWindow     = 46
-	opXch        = 47
+	opSpcomb     = 35
+	opSpcompress = 36
+	opSpcopy     = 37
+	opSpcross    = 38
+	opSpeed      = 39
+	opSpfft      = 40
+	opSpfilter   = 41
+	opSpformant  = 42
+	opSpgate     = 43
+	opSpifft     = 44
+	opSpphase    = 45
+	opSpscale    = 46
+	opSync       = 47
+	opWindow     = 48
+	opXch        = 49
 )
 
-var transformCounts = [...]int{0, 0, 0, 1, 3, 4, 1, 0, 5, 1, 1, 4, 1, 5, 2, 1, 1, 0, 1, 0, 1, 0, 0, 2, 6, 1, 2, 1, 0, 0, 0, 1, 3, 2, 2, 0, 0, 0, 3, 2, 1, 1, 1, 2, 0, 2, 0}
+var transformCounts = [...]int{0, 0, 0, 1, 3, 4, 1, 0, 5, 1, 1, 4, 1, 5, 2, 1, 1, 0, 1, 0, 1, 0, 0, 2, 6, 1, 2, 1, 0, 0, 0, 1, 3, 2, 2, 2, 0, 2, 0, 0, 3, 2, 1, 1, 1, 2, 0, 2, 0}

@@ -138,7 +138,7 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 			continue // loop points only matter when looping
 		}
 		var vtable parameterVtable = &namedParameter{}
-		if unit.Type == "spawn" && up.Name == "instrument" {
+		if sointu.TargetsInstrument(unit.Type) && up.Name == "instrument" {
 			vtable = &spawnTargetParameter{}
 		}
 		if unit.Type == "spawn" && up.Name == "rate" {

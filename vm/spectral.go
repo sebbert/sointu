@@ -91,8 +91,8 @@ func (s *GoSynth) setSpectra(old *Bytecode) {
 		}
 	}
 	s.spectra, s.spectral = spectra, states
-	if len(s.scratch) < 2*maxSize {
-		s.scratch = make([]float32, 2*maxSize)
+	if len(s.scratch) < 2*maxSize+8 {
+		s.scratch = make([]float32, 2*maxSize+8)
 	}
 }
 
@@ -430,18 +430,8 @@ func (s *GoSynth) spformant(index int, shift, width float32) {
 	}
 	h := n / 2
 	ratio := pow32(2, float32(shift*2)-1)
-	sums, env := s.scratch[:h+2], s.scratch[n:n+h+1]
-	sum := float32(0)
-	sums[0] = 0
-	for k := uint32(0); k <= h; k++ {
-		sum += sqrt32(float32(x[2*k]*x[2*k]) + float32(x[2*k+1]*x[2*k+1]))
-		sums[k+1] = sum
-	}
-	w := int32(1 + uint32(float32(min(max(width, 0), 1)*float32(n/32))))
-	for k := int32(0); k <= int32(h); k++ {
-		lo, hi := max(k-w, 0), min(k+w, int32(h))
-		env[k] = float32(sums[hi+1]-sums[lo]) / float32(hi+1-lo)
-	}
+	env := s.scratch[n : n+h+1]
+	envelope(x, h, int32(1+uint32(float32(min(max(width, 0), 1)*float32(n/32)))), s.scratch[:h+2], env)
 	for k := uint32(0); k <= h; k++ {
 		src := float32(k) / ratio
 		i := uint32(src)
@@ -452,4 +442,93 @@ func (s *GoSynth) spformant(index int, shift, width float32) {
 		g := float32(e+1e-9) / float32(env[k]+1e-9)
 		x[2*k], x[2*k+1] = x[2*k]*g, x[2*k+1]*g
 	}
+}
+
+// envelope writes to env the average magnitudes of the bins of x within w
+// bins, using sums for the prefix sums of the magnitudes.
+func envelope(x []float32, h uint32, w int32, sums, env []float32) {
+	sum := float32(0)
+	sums[0] = 0
+	for k := uint32(0); k <= h; k++ {
+		sum += sqrt32(float32(x[2*k]*x[2*k]) + float32(x[2*k+1]*x[2*k+1]))
+		sums[k+1] = sum
+	}
+	for k := int32(0); k <= int32(h); k++ {
+		lo, hi := max(k-w, 0), min(k+w, int32(h))
+		env[k] = float32(sums[hi+1]-sums[lo]) / float32(hi+1-lo)
+	}
+}
+
+// spcross scales each bin by (source envelope/envelope)^amount.
+func (s *GoSynth) spcross(index int, amount, width float32) {
+	x, n, ok := s.spectralFrame(index)
+	if !ok {
+		return
+	}
+	src := s.spectra[s.bytecode.SpectralUnits[index].Source].data
+	if len(src) != len(x) {
+		return
+	}
+	h := n / 2
+	w := int32(uint32(float32(min(max(width, 0), 1) * float32(n/32))))
+	// the prefix sums and envelopes of the source, then of the spectrum
+	envelope(src, h, w, s.scratch[:h+2], s.scratch[h+2:n+3])
+	envelope(x, h, w, s.scratch[n+4:n+h+6], s.scratch[n+h+6:2*n+7])
+	envS, envX := s.scratch[h+2:], s.scratch[n+h+6:]
+	for k := uint32(0); k <= h; k++ {
+		g := pow32(float32(envS[k]+1e-9)/float32(envX[k]+1e-9), amount)
+		x[2*k], x[2*k+1] = x[2*k]*g, x[2*k+1]*g
+	}
+}
+
+// noteFrequency returns the frequency of a note in Hz: 69 is A 440 Hz.
+func noteFrequency(note int32) float32 {
+	return 440 * pow32(2, float32(note-69)/12)
+}
+
+// spcomb keeps the bins near the harmonics of up to 8 notes: the notes held
+// in the voices given by the operands first and count, or if none, the note
+// of its own voice and the intervals in the rest of the operands above it.
+func (s *GoSynth) spcomb(index int, note byte, q, amount float32, operands []byte) {
+	x, n, ok := s.spectralFrame(index)
+	if !ok {
+		return
+	}
+	f0 := s.scratch[:0:8]
+	for v := int(operands[0]); v < int(operands[0])+int(operands[1]) && len(f0) < 8; v++ {
+		if voice := &s.state.voices[v]; voice.sustain && voice.note != 0 {
+			f0 = append(f0, noteFrequency(int32(voice.note)))
+		}
+	}
+	if len(f0) == 0 && note != 0 {
+		f0 = append(f0, noteFrequency(int32(note)))
+		for _, i := range operands[2:5] {
+			if i != 0 {
+				f0 = append(f0, noteFrequency(int32(note)+int32(i)))
+			}
+		}
+	}
+	if len(f0) == 0 {
+		return
+	}
+	sharp := float32(q*30) + 2
+	binHz := 44100 / float32(n)
+	for k := uint32(0); k <= n/2; k++ {
+		m := float32(0)
+		for _, f := range f0 {
+			m = max(m, peak(float32(float32(k)*binHz)/f, sharp))
+		}
+		g := float32(float32(m-1)*amount) + 1
+		x[2*k], x[2*k+1] = x[2*k]*g, x[2*k+1]*g
+	}
+}
+
+// peak returns how close the frequency ratio r is to a harmonic, from 1 on a
+// harmonic to 0 at 1/sharp or further; below half of the fundamental, 0.
+func peak(r, sharp float32) float32 {
+	if r < 0.5 {
+		return 0
+	}
+	d := float32(math.Abs(float64(r - float32(math.RoundToEven(float64(r))))))
+	return max(1-float32(d*sharp), 0)
 }
