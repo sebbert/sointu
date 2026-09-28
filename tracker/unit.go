@@ -413,7 +413,8 @@ func (m *UnitModel) Buffer(i int) (id int, spectrum, ok bool) {
 }
 
 // UnitPreviewCells is how many parameter cells wide the preview of a unit's
-// buffer is: the rack leaves room for it after the unit's parameters.
+// buffer is: the rack is that much wider, so that scrolled to the right, the
+// previews at its right edge cover no parameters.
 const UnitPreviewCells = 2
 
 func unitBuffer(u *sointu.Unit) (id int, spectrum, ok bool) {

@@ -9,7 +9,7 @@ import (
 	"github.com/vsariola/sointu/tracker"
 )
 
-// layoutUnitPreview draws, after the parameters of unit y, a small view of
+// layoutUnitPreview draws, at the right edge of the row of unit y, a small view of
 // what its buffer holds: the waveform of an audio buffer, with its write head
 // and the notes playing it, or a spectrum as the spectral unit left it.
 // Clicking it shows the buffer in the Buffers tab.
@@ -23,12 +23,12 @@ func (pe *InstrumentEditor) layoutUnitPreview(gtx C, y, id int, spectrum bool) {
 		t.Buffer().Show(id).Do()
 	}
 	inset := gtx.Dp(4)
-	size := image.Pt(tracker.UnitPreviewCells*gtx.Constraints.Max.X, gtx.Constraints.Max.Y)
-	s := size.Sub(image.Pt(2*inset, 2*inset))
+	width := tracker.UnitPreviewCells * gtx.Dp(t.Theme.UnitEditor.Width)
+	s := image.Pt(width, gtx.Constraints.Max.Y).Sub(image.Pt(2*inset, 2*inset))
 	if s.X <= 1 || s.Y <= 1 {
 		return
 	}
-	defer op.Offset(image.Pt(inset, inset)).Push(gtx.Ops).Pop()
+	defer op.Offset(image.Pt(gtx.Constraints.Max.X-width+inset, inset)).Push(gtx.Ops).Pop()
 	defer clip.UniformRRect(image.Rectangle{Max: s}, gtx.Dp(4)).Push(gtx.Ops).Pop()
 	paint.Fill(gtx.Ops, t.Theme.UnitEditor.Preview)
 	style := t.Theme.Plot

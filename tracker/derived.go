@@ -102,14 +102,16 @@ func (m *Model) buildInstrumentTitles() {
 func (m *Model) updateParams() {
 	for i, instr := range m.d.Song.Patch {
 		setSliceLength(&m.derived.patch[i].params, len(instr.Units))
-		paramsWidth := 0
+		paramsWidth, previews := 0, false
 		for u := range instr.Units {
 			p := m.deriveParams(&instr.Units[u], m.derived.patch[i].params[u])
 			m.derived.patch[i].params[u] = p
 			paramsWidth = max(paramsWidth, len(p))
-			if _, _, ok := unitBuffer(&instr.Units[u]); ok {
-				paramsWidth = max(paramsWidth, len(p)+UnitPreviewCells)
-			}
+			_, _, ok := unitBuffer(&instr.Units[u])
+			previews = previews || ok
+		}
+		if previews { // room for the previews at the right edge
+			paramsWidth += UnitPreviewCells
 		}
 		m.derived.patch[i].paramsWidth = paramsWidth
 	}

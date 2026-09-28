@@ -364,13 +364,6 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 		paramStyle := Param(param, t.Theme, pe.Parameters[y][x], pe.paramTable.Table.Cursor() == point, t.Unit().Item(y).Disabled)
 		paramStyle.Layout(gtx)
 		if x == t.Model.Params().RowWidth(y) {
-			if id, spectrum, ok := t.Unit().Buffer(y); ok {
-				if t.preferences.Rack.BufferPreviews {
-					pe.layoutUnitPreview(gtx, y, id, spectrum)
-				}
-				// the comment goes after the preview
-				defer op.Offset(image.Pt(tracker.UnitPreviewCells*cellWidth, 0)).Push(gtx.Ops).Pop()
-			}
 			if y == cursor.Y {
 				return layout.W.Layout(gtx, func(gtx C) D {
 					for pe.commentEditor.Update(gtx, t.Unit().Comment()) != EditorEventNone {
@@ -401,6 +394,13 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 	table.ColumnTitleHeight = 0
 	table.CellWidth = t.Theme.UnitEditor.Width
 	table.CellHeight = t.Theme.UnitEditor.Height
+	if t.preferences.Rack.BufferPreviews {
+		table.RowOverlay = func(gtx C, y int) {
+			if id, spectrum, ok := t.Unit().Buffer(y); ok {
+				pe.layoutUnitPreview(gtx, y, id, spectrum)
+			}
+		}
+	}
 	pe.drawBackGround(gtx)
 	pe.drawSignals(gtx, rowTitleWidth)
 	dims := table.Layout(gtx, cell, coltitle, rowtitle, nil, nil)

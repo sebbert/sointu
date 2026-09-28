@@ -37,6 +37,9 @@ type ScrollTableStyle struct {
 	ColumnTitleHeight unit.Dp
 	CellWidth         unit.Dp
 	CellHeight        unit.Dp
+	// RowOverlay, if set, draws over each row as wide as the table, scrolling
+	// with it vertically but not horizontally.
+	RowOverlay func(gtx C, y int)
 }
 
 func NewScrollTable(table tracker.Table, vertList, horizList tracker.List) *ScrollTable {
@@ -215,7 +218,8 @@ func (s *ScrollTableStyle) handleEvents(gtx layout.Context, p image.Point) {
 }
 
 func (s ScrollTableStyle) layoutTable(gtx C, element func(gtx C, x, y int) D) {
-	defer clip.Rect(image.Rectangle{Max: gtx.Constraints.Min}).Push(gtx.Ops).Pop()
+	size := gtx.Constraints.Min
+	defer clip.Rect(image.Rectangle{Max: size}).Push(gtx.Ops).Pop()
 
 	if s.ScrollTable.requestFocus {
 		s.ScrollTable.requestFocus = false
@@ -228,11 +232,20 @@ func (s ScrollTableStyle) layoutTable(gtx C, element func(gtx C, x, y int) D) {
 
 	colP := s.ColTitleStyle.dragList.List.Position
 	rowP := s.RowTitleStyle.dragList.List.Position
-	defer op.Offset(image.Pt(-colP.Offset, -rowP.Offset)).Push(gtx.Ops).Pop()
+	scroll := op.Offset(image.Pt(-colP.Offset, -rowP.Offset)).Push(gtx.Ops)
 	for x := 0; x < colP.Count; x++ {
 		for y := 0; y < rowP.Count; y++ {
 			o := op.Offset(image.Pt(cellWidth*x, cellHeight*y)).Push(gtx.Ops)
 			element(gtx, x+colP.First, y+rowP.First)
+			o.Pop()
+		}
+	}
+	scroll.Pop()
+	if s.RowOverlay != nil {
+		gtx.Constraints = layout.Exact(image.Pt(size.X, cellHeight))
+		for y := 0; y < rowP.Count; y++ {
+			o := op.Offset(image.Pt(0, cellHeight*y-rowP.Offset)).Push(gtx.Ops)
+			s.RowOverlay(gtx, y+rowP.First)
 			o.Pop()
 		}
 	}
