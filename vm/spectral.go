@@ -268,8 +268,6 @@ func (s *GoSynth) spectralFrame(index int) ([][]float32, uint32, bool) {
 	return channels, n, true
 }
 
-func pow32(a, b float32) float32 { return float32(math.Pow(float64(a), float64(b))) }
-
 func sqrt32(a float32) float32 { return float32(math.Sqrt(float64(a))) }
 
 // spfilter removes the bins below low and above high, and tilts the rest.
@@ -279,8 +277,8 @@ func (s *GoSynth) spfilter(index int, low, high, tilt float32) {
 		return
 	}
 	h := n / 2
-	lo := float32(h) * float32(float32(pow32(2, float32(low*10))-1)/1023)
-	hi := float32(h) * float32(float32(pow32(2, float32(high*10))-1)/1023)
+	lo := float32(h) * float32(float32(exp2f(float32(low*10))-1)/1023)
+	hi := float32(h) * float32(float32(exp2f(float32(high*10))-1)/1023)
 	e := float32(tilt*4) - 2 // amplitude ∝ frequency^e
 	ref := float32(n) / 44.1 // the bin of 1 kHz
 	for _, x := range xs {
@@ -289,7 +287,7 @@ func (s *GoSynth) spfilter(index int, low, high, tilt float32) {
 			if fk < lo || fk > hi {
 				x[2*k], x[2*k+1] = 0, 0
 			} else if e != 0 {
-				g := pow32(max(fk, 1)/ref, e)
+				g := powf(max(fk, 1)/ref, e)
 				x[2*k], x[2*k+1] = x[2*k]*g, x[2*k+1]*g
 			}
 		}
@@ -321,7 +319,7 @@ func (s *GoSynth) spcompress(index int, amount, width float32) {
 		for k := int32(0); k <= int32(h); k++ {
 			lo, hi := max(k-w, 0), min(k+w, int32(h))
 			env := float32(sums[hi+1]-sums[lo]) / float32(hi+1-lo)
-			g := pow32(float32(mean+1e-9)/float32(env+1e-9), a)
+			g := powf(float32(mean+1e-9)/float32(env+1e-9), a)
 			x[2*k], x[2*k+1] = x[2*k]*g, x[2*k+1]*g
 		}
 	}
@@ -397,7 +395,7 @@ func (s *GoSynth) spgate(index int, threshold float32, invert bool) {
 		return
 	}
 	// -96 to 0 dB; a full scale sine has the magnitude n/4
-	thr := pow32(2, float32(threshold*16)-16) * float32(n/4)
+	thr := exp2f(float32(threshold*16)-16) * float32(n/4)
 	thr *= thr
 	for _, x := range xs {
 		for k := uint32(0); k <= n/2; k++ {
@@ -449,7 +447,7 @@ func (s *GoSynth) spscale(index int, scale, shift float32) {
 		return
 	}
 	h := n / 2
-	ratio := pow32(2, float32(scale*2)-1)
+	ratio := exp2f(float32(scale*2) - 1)
 	offset := float32(float32(shift*2)-1) * float32(float32(n)*0.022675737) // up to 1 kHz
 	out := s.scratch[:2*(h+1)]
 	for _, x := range xs {
@@ -476,7 +474,7 @@ func (s *GoSynth) spformant(index int, shift, width float32) {
 		return
 	}
 	h := n / 2
-	ratio := pow32(2, float32(shift*2)-1)
+	ratio := exp2f(float32(shift*2) - 1)
 	w := int32(1 + uint32(float32(min(max(width, 0), 1)*float32(n/32))))
 	for _, x := range xs {
 		env := s.scratch[n : n+h+1]
@@ -534,7 +532,7 @@ func (s *GoSynth) spcross(index int, amount, width float32) {
 		envelope(x, h, w, s.scratch[n+4:n+h+6], s.scratch[n+h+6:2*n+7])
 		envS, envX := s.scratch[h+2:], s.scratch[n+h+6:]
 		for k := uint32(0); k <= h; k++ {
-			g := pow32(float32(envS[k]+1e-9)/float32(envX[k]+1e-9), amount)
+			g := powf(float32(envS[k]+1e-9)/float32(envX[k]+1e-9), amount)
 			x[2*k], x[2*k+1] = x[2*k]*g, x[2*k+1]*g
 		}
 	}
@@ -542,7 +540,7 @@ func (s *GoSynth) spcross(index int, amount, width float32) {
 
 // noteFrequency returns the frequency of a note in Hz: 69 is A 440 Hz.
 func noteFrequency(note int32) float32 {
-	return 440 * pow32(2, float32(note-69)/12)
+	return 440 * exp2f(float32(note-69)/12)
 }
 
 // spcomb keeps the bins near the harmonics of up to 8 notes: the notes held
@@ -593,3 +591,49 @@ func peak(r, sharp float32) float32 {
 	d := float32(math.Abs(float64(r - float32(math.RoundToEven(float64(r))))))
 	return max(1-float32(d*sharp), 0)
 }
+
+// log2f, exp2f and powf are float32 approximations that the wasm player
+// computes itself instead of calling Math.pow of JavaScript for every bin.
+// log2f and exp2f are accurate to about 1e-7 relative; powf to about 1e-7
+// times |y·log2(x)|, as that is rounded to float32. They match the wasm
+// versions operation by operation.
+
+// log2f returns the base 2 logarithm of x > 0: the exponent of x plus
+// ln(m)/ln(2) of its mantissa m in [√½, √2), from the series
+// ln(m) = 2(s + s³/3 + s⁵/5 + s⁷/7), s = (m-1)/(m+1).
+func log2f(x float32) float32 {
+	b := math.Float32bits(x)
+	e := int32(b>>23&0xff) - 127
+	m := math.Float32frombits(b&0x7fffff | 0x3f800000)
+	if m > 1.4142135 {
+		m *= 0.5
+		e++
+	}
+	s := (m - 1) / (m + 1)
+	s2 := s * s
+	p := float32(s2*0.14285715) + 0.2
+	p = float32(p*s2) + 0.33333334
+	p = float32(p*s2) + 1
+	return float32(float32(p*s)*2.8853900) + float32(e) // 2/ln(2)
+}
+
+// exp2f returns 2^y, for y clamped to [-126, 126]: 2 to the nearest integer
+// i of y times e^z, z = (y-i)·ln(2), from the Taylor series up to z⁶.
+func exp2f(y float32) float32 {
+	if !(y > -126) { // also NaN
+		y = -126
+	}
+	y = min(y, 126)
+	i := float32(math.RoundToEven(float64(y)))
+	z := float32(y-i) * 0.6931472
+	p := float32(z*0.0013888889) + 0.008333334
+	p = float32(p*z) + 0.041666668
+	p = float32(p*z) + 0.16666667
+	p = float32(p*z) + 0.5
+	p = float32(p*z) + 1
+	p = float32(p*z) + 1
+	return p * math.Float32frombits(uint32(int32(i)+127)<<23)
+}
+
+// powf returns x^y for x > 0.
+func powf(x, y float32) float32 { return exp2f(float32(y * log2f(x))) }

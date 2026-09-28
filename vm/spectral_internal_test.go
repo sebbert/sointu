@@ -27,3 +27,37 @@ func TestFFTMatchesDFT(t *testing.T) {
 		}
 	}
 }
+
+func TestPowf(t *testing.T) {
+	worst := 0.0
+	for _, x := range []float32{1e-9, 1e-5, 0.01, 0.3, 0.7071, 0.99, 1, 1.01, 1.4142, 1.5, 2, 3.7, 100, 12345.6, 1e9} {
+		for _, y := range []float32{-3, -2, -1, -0.5, -0.1, 0, 0.1, 0.5, 1, 1.3, 2} {
+			want := math.Pow(float64(x), float64(y))
+			if want > math.MaxFloat32 || want < 1e-37 {
+				continue
+			}
+			rel := math.Abs(float64(powf(x, y))-want) / want
+			worst = max(worst, rel)
+			// y·log2(x) is rounded to float32: results far from 1 have
+			// relative errors of about 1e-7 times |y·log2(x)|
+			if rel > 1e-5 {
+				t.Errorf("powf(%v, %v) = %v, want %v", x, y, powf(x, y), want)
+			}
+		}
+	}
+	for x := float32(0.5); x < 2; x += 0.001 {
+		if rel := math.Abs(float64(log2f(x))-math.Log2(float64(x))) / max(math.Abs(math.Log2(float64(x))), 1); rel > 1e-6 {
+			t.Fatalf("log2f(%v) = %v, want %v", x, log2f(x), math.Log2(float64(x)))
+		}
+	}
+	for y := float32(-20); y < 20; y += 0.01 {
+		want := math.Exp2(float64(y))
+		if rel := math.Abs(float64(exp2f(y))-want) / want; rel > 1e-6 {
+			t.Fatalf("exp2f(%v) = %v, want %v", y, exp2f(y), want)
+		}
+	}
+	if powf(2, 0) != 1 || exp2f(0) != 1 {
+		t.Errorf("powf(2, 0) = %v, exp2f(0) = %v, want 1", powf(2, 0), exp2f(0))
+	}
+	t.Logf("worst relative error of powf %g", worst)
+}

@@ -356,6 +356,51 @@
 )
 {{- end}}
 
+{{- if or (.HasOp "spfilter") (.HasOp "spcompress") (.HasOp "spcross") (.HasOp "spgate") (.HasOp "spscale") (.HasOp "spformant") (.HasOp "spcomb")}}
+;; $log2f, $exp2f and $powf are float32 approximations computed here instead
+;; of calling Math.pow of JavaScript for every bin, like log2f, exp2f and powf
+;; in vm/spectral.go, operation by operation.
+;;
+;; $log2f returns the base 2 logarithm of x > 0: the exponent of x plus
+;; ln(m)/ln(2) of its mantissa m in [√½, √2), from the series
+;; ln(m) = 2(s + s³/3 + s⁵/5 + s⁷/7), s = (m-1)/(m+1)
+(func $log2f (param $x f32) (result f32) (local $b i32) (local $e i32) (local $m f32) (local $s f32) (local $s2 f32) (local $p f32)
+    (local.set $b (i32.reinterpret_f32 (local.get $x)))
+    (local.set $e (i32.sub (i32.and (i32.shr_u (local.get $b) (i32.const 23)) (i32.const 0xff)) (i32.const 127)))
+    (local.set $m (f32.reinterpret_i32 (i32.or (i32.and (local.get $b) (i32.const 0x7fffff)) (i32.const 0x3f800000))))
+    (if (f32.gt (local.get $m) (f32.const 1.4142135)) (then
+        (local.set $m (f32.mul (local.get $m) (f32.const 0.5)))
+        (local.set $e (i32.add (local.get $e) (i32.const 1)))
+    ))
+    (local.set $s (f32.div (f32.sub (local.get $m) (f32.const 1)) (f32.add (local.get $m) (f32.const 1))))
+    (local.set $s2 (f32.mul (local.get $s) (local.get $s)))
+    (local.set $p (f32.add (f32.mul (local.get $s2) (f32.const 0.14285715)) (f32.const 0.2)))
+    (local.set $p (f32.add (f32.mul (local.get $p) (local.get $s2)) (f32.const 0.33333334)))
+    (local.set $p (f32.add (f32.mul (local.get $p) (local.get $s2)) (f32.const 1)))
+    (f32.add (f32.mul (f32.mul (local.get $p) (local.get $s)) (f32.const 2.8853900)) (f32.convert_i32_s (local.get $e)))
+)
+
+;; $exp2f returns 2^y, for y clamped to [-126, 126]: 2 to the nearest integer
+;; i of y times e^z, z = (y-i)·ln(2), from the Taylor series up to z⁶
+(func $exp2f (param $y f32) (result f32) (local $i f32) (local $z f32) (local $p f32)
+    (local.set $y (f32.min (select (local.get $y) (f32.const -126) (f32.gt (local.get $y) (f32.const -126))) (f32.const 126)))
+    (local.set $i (f32.nearest (local.get $y)))
+    (local.set $z (f32.mul (f32.sub (local.get $y) (local.get $i)) (f32.const 0.6931472)))
+    (local.set $p (f32.add (f32.mul (local.get $z) (f32.const 0.0013888889)) (f32.const 0.008333334)))
+    (local.set $p (f32.add (f32.mul (local.get $p) (local.get $z)) (f32.const 0.041666668)))
+    (local.set $p (f32.add (f32.mul (local.get $p) (local.get $z)) (f32.const 0.16666667)))
+    (local.set $p (f32.add (f32.mul (local.get $p) (local.get $z)) (f32.const 0.5)))
+    (local.set $p (f32.add (f32.mul (local.get $p) (local.get $z)) (f32.const 1)))
+    (local.set $p (f32.add (f32.mul (local.get $p) (local.get $z)) (f32.const 1)))
+    (f32.mul (local.get $p) (f32.reinterpret_i32 (i32.shl (i32.add (i32.trunc_f32_s (local.get $i)) (i32.const 127)) (i32.const 23))))
+)
+
+;; $powf returns x^y for x > 0
+(func $powf (param $x f32) (param $y f32) (result f32)
+    (call $exp2f (f32.mul (local.get $y) (call $log2f (local.get $x))))
+)
+{{- end}}
+
 {{- if .HasOp "spfilter"}}
 ;;-------------------------------------------------------------------------------
 ;;   SPFILTER opcode: removes the bins below low and above high, and tilts the
@@ -368,9 +413,9 @@
     ))
     (local.set $n (i32.shl (i32.const 1) (i32.load offset=4 (local.get $h))))
     (local.set $lo (f32.mul (f32.convert_i32_u (i32.shr_u (local.get $n) (i32.const 1)))
-        (f32.div (f32.sub (call $pow (f32.const 2) (f32.mul (call $input (i32.const {{.InputNumber "spfilter" "low"}})) (f32.const 10))) (f32.const 1)) (f32.const 1023))))
+        (f32.div (f32.sub (call $exp2f (f32.mul (call $input (i32.const {{.InputNumber "spfilter" "low"}})) (f32.const 10))) (f32.const 1)) (f32.const 1023))))
     (local.set $hi (f32.mul (f32.convert_i32_u (i32.shr_u (local.get $n) (i32.const 1)))
-        (f32.div (f32.sub (call $pow (f32.const 2) (f32.mul (call $input (i32.const {{.InputNumber "spfilter" "high"}})) (f32.const 10))) (f32.const 1)) (f32.const 1023))))
+        (f32.div (f32.sub (call $exp2f (f32.mul (call $input (i32.const {{.InputNumber "spfilter" "high"}})) (f32.const 10))) (f32.const 1)) (f32.const 1023))))
     (local.set $e (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spfilter" "tilt"}})) (f32.const 4)) (f32.const 2)))
     (local.set $ref (f32.div (f32.convert_i32_u (local.get $n)) (f32.const 44.1)))
     loop $channels
@@ -382,7 +427,7 @@
                 (i64.store (local.get $x) (i64.const 0))
             )(else
                 (if (f32.ne (local.get $e) (f32.const 0)) (then
-                    (local.set $g (call $pow (f32.div (f32.max (local.get $fk) (f32.const 1)) (local.get $ref)) (local.get $e)))
+                    (local.set $g (call $powf (f32.div (f32.max (local.get $fk) (f32.const 1)) (local.get $ref)) (local.get $e)))
                     (f32.store (local.get $x) (f32.mul (f32.load (local.get $x)) (local.get $g)))
                     (f32.store offset=4 (local.get $x) (f32.mul (f32.load offset=4 (local.get $x)) (local.get $g)))
                 ))
@@ -432,7 +477,7 @@
         loop $bins
             (local.set $lo (select (i32.sub (local.get $k) (local.get $w)) (i32.const 0) (i32.gt_s (i32.sub (local.get $k) (local.get $w)) (i32.const 0))))
             (local.set $hi (select (i32.add (local.get $k) (local.get $w)) (local.get $half) (i32.lt_s (i32.add (local.get $k) (local.get $w)) (local.get $half))))
-            (local.set $g (call $pow
+            (local.set $g (call $powf
                 (f32.div
                     (f32.add (local.get $mean) (f32.const 1e-9))
                     (f32.add
@@ -527,7 +572,7 @@
     ))
     (local.set $half (i32.shl (i32.const 1) (i32.sub (i32.load offset=4 (local.get $h)) (i32.const 1))))
     (local.set $thr (f32.mul
-        (call $pow (f32.const 2) (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spgate" "threshold"}})) (f32.const 16)) (f32.const 16)))
+        (call $exp2f (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spgate" "threshold"}})) (f32.const 16)) (f32.const 16)))
         (f32.convert_i32_u (i32.shr_u (local.get $half) (i32.const 1)))))
     (local.set $thr (f32.mul (local.get $thr) (local.get $thr)))
     loop $channels
@@ -614,7 +659,7 @@
         return
     ))
     (local.set $half (i32.shl (i32.const 1) (i32.sub (i32.load offset=4 (local.get $h)) (i32.const 1))))
-    (local.set $ratio (call $pow (f32.const 2) (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spscale" "scale"}})) (f32.const 2)) (f32.const 1))))
+    (local.set $ratio (call $exp2f (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spscale" "scale"}})) (f32.const 2)) (f32.const 1))))
     (local.set $offset (f32.mul
         (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spscale" "shift"}})) (f32.const 2)) (f32.const 1))
         (f32.mul (f32.convert_i32_u (i32.shl (local.get $half) (i32.const 1))) (f32.const 0.022675737))))
@@ -681,7 +726,7 @@
         return
     ))
     (local.set $half (i32.shl (i32.const 1) (i32.sub (i32.load offset=4 (local.get $h)) (i32.const 1))))
-    (local.set $ratio (call $pow (f32.const 2) (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spformant" "shift"}})) (f32.const 2)) (f32.const 1))))
+    (local.set $ratio (call $exp2f (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spformant" "shift"}})) (f32.const 2)) (f32.const 1))))
     loop $channels
         (local.set $x (call $channelData (local.get $h) (local.get $c)))
         (local.set $k (i32.const 0))
@@ -750,7 +795,7 @@
             (i32.add (i32.const {{add (index .Labels "su_spectral") .SpectralScratch 16}}) (i32.shl (local.get $half) (i32.const 3)))
             (i32.add (i32.const {{add (index .Labels "su_spectral") .SpectralScratch 24}}) (i32.mul (local.get $half) (i32.const 12))))
         loop $bins
-            (local.set $g (call $pow
+            (local.set $g (call $powf
                 (f32.div
                     (f32.add (f32.load offset={{add (index .Labels "su_spectral") .SpectralScratch 8}} (i32.shl (i32.add (local.get $half) (local.get $k)) (i32.const 2))) (f32.const 1e-9))
                     (f32.add (f32.load offset={{add (index .Labels "su_spectral") .SpectralScratch 24}} (i32.shl (i32.add (i32.mul (local.get $half) (i32.const 3)) (local.get $k)) (i32.const 2))) (f32.const 1e-9)))
@@ -774,7 +819,7 @@
 ;;-------------------------------------------------------------------------------
 ;; $noteFrequency returns the frequency of a note in Hz: 69 is A 440 Hz
 (func $noteFrequency (param $note i32) (result f32)
-    (f32.mul (f32.const 440) (call $pow (f32.const 2) (f32.div (f32.convert_i32_s (i32.sub (local.get $note) (i32.const 69))) (f32.const 12))))
+    (f32.mul (f32.const 440) (call $exp2f (f32.div (f32.convert_i32_s (i32.sub (local.get $note) (i32.const 69))) (f32.const 12))))
 )
 
 ;; $addNote adds the frequency of a note to the list of $nf notes, returning the

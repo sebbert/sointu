@@ -1165,10 +1165,14 @@ func crush(value, amount float32) float32 {
 	return float32(math.Round(float64(value/n)) * float64(n))
 }
 
+// waveshape is the waveshaper of the wasm and x86 players, operation by
+// operation: value·(amount/(1+((2·amount-1)·|value|-amount))), value clipped
+// to [-1, 1] first.
 func waveshape(value, amount float32) float32 {
+	value = clip(value)
 	absVal := value
 	if absVal < 0 {
 		absVal = -absVal
 	}
-	return value * amount / (1 - amount + (2*amount-1)*absVal)
+	return value * (amount / (1 + (float32((amount+amount-1)*absVal) - amount)))
 }
