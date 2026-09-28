@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/vsariola/sointu"
@@ -79,6 +80,12 @@ func (m *BufferModel) Item(i int) (name, info string) {
 	}
 	status := m.buffers.status[buf.ID]
 	switch {
+	case buf.Spectrum:
+		if size, ok := (*Model)(m).spectrumSize(buf.ID); ok {
+			info = fmt.Sprintf("spectrum, %d", size)
+		} else {
+			info = "spectrum, not written"
+		}
 	case buf.Writable():
 		info = fmt.Sprintf("%s, recorded", formatDuration(buf.Frames))
 	case buf.Sample == nil:
@@ -166,6 +173,31 @@ func (m *newEmptyBuffer) Do() {
 	name := fmt.Sprintf("Recording %d", id)
 	m.d.Song.Buffers = append(m.d.Song.Buffers, sointu.Buffer{ID: id, Name: name, Channels: 1, Frames: 44100})
 	m.d.BufferIndex = len(m.d.Song.Buffers) - 1
+}
+
+// IsSpectrum reports whether the selected buffer is a spectrum buffer.
+func (m *BufferModel) IsSpectrum() bool {
+	buf := m.selected()
+	return buf != nil && buf.Spectrum
+}
+
+// Spectrum returns the magnitudes of bins 0 to size/2 of the latest spectrum
+// of the selected spectrum buffer, and the size, or 0 if there is none yet.
+// While it is being called, the player keeps reporting the spectra.
+func (m *BufferModel) Spectrum() ([]float32, int) {
+	id := 0
+	if buf := m.selected(); buf != nil && buf.Spectrum {
+		id = buf.ID
+	}
+	m.spectrumAsked = time.Now()
+	if id != m.spectrumWatch {
+		m.spectrumWatch = id
+		TrySend(m.broker.ToPlayer, any(SpectrumWatchMsg(id)))
+	}
+	if id == 0 || m.bufferSpectrum.ID != id {
+		return nil, 0
+	}
+	return m.bufferSpectrum.Magnitudes, m.bufferSpectrum.Size
 }
 
 // IsWritable reports whether the selected buffer is written by bufwrite
@@ -299,7 +331,11 @@ func (m *BufferModel) Delete() Action { return MakeAction((*deleteBuffer)(m)) }
 
 type deleteBuffer BufferModel
 
-func (m *deleteBuffer) Enabled() bool { return len(m.d.Song.Buffers) > 0 }
+func (m *deleteBuffer) Enabled() bool {
+	buf := (*BufferModel)(m).selected()
+	// a spectrum buffer in use would be created again right away
+	return buf != nil && !(buf.Spectrum && (*Model)(m).spectrumBufferUsed(buf.ID))
+}
 func (m *deleteBuffer) Do() {
 	defer (*BufferModel)(m).change("DeleteBuffer")()
 	i := (*bufferList)(m).Selected()
@@ -686,6 +722,14 @@ func (m *BufferModel) Info() string {
 	buf := m.selected()
 	if buf == nil {
 		return ""
+	}
+	if buf.Spectrum {
+		size, ok := (*Model)(m).spectrumSize(buf.ID)
+		if !ok {
+			return "Spectrum buffer, not written by any spfft or spcopy unit."
+		}
+		return fmt.Sprintf("Spectrum of %d samples: %d bins of %s Hz.\nWritten by spfft units, changed by spectral units and\nturned back into sound by spifft units. Not stored in the song.",
+			size, size/2+1, strconv.FormatFloat(44100/float64(size), 'g', 3, 64))
 	}
 	if buf.Writable() {
 		filled, _ := (*Model)(m).bufferFill(buf.ID)

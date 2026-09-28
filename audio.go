@@ -100,6 +100,15 @@ type (
 		WrittenBuffers() map[int]BufferAudio
 	}
 
+	// SpectrumReporter is implemented by Synths with spectral units.
+	SpectrumReporter interface {
+		// Spectrum appends to dst the magnitudes of bins 0 to size/2 of the
+		// latest spectrum of the spectrum buffer with the given ID, and
+		// returns them and the size of the spectrum, or 0 if the synth has no
+		// such buffer.
+		Spectrum(bufferID int, dst []float32) ([]float32, int)
+	}
+
 	// PlayheadReporter is implemented by Synths that can tell where bufread
 	// units are playing.
 	PlayheadReporter interface {

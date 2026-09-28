@@ -26,6 +26,12 @@ type (
 		// Frames is the length of a buffer without a sample, which bufwrite
 		// units write to.
 		Frames int `yaml:",omitempty"`
+		// Spectrum is true for a spectrum buffer, which spectral units read
+		// and write. Its size comes from the spfft unit writing it.
+		Spectrum bool `yaml:",omitempty"`
+		// Auto is true for a buffer created by the tracker for a unit, which
+		// the tracker deletes when no unit uses it anymore.
+		Auto bool `yaml:",omitempty"`
 	}
 
 	// AudioSample is an audio file that fills a buffer. The file is stored in
@@ -199,6 +205,23 @@ type Buffers []Buffer
 // Writable reports whether the buffer is written by bufwrite units, i.e. it
 // has no sample but a length.
 func (b *Buffer) Writable() bool { return b.Sample == nil && b.Frames > 0 }
+
+// SpectrumBufferParams returns the names of the parameters of a unit type
+// that refer to spectrum buffers: the spectrum it uses, and for some units
+// another spectrum it reads. The first one is written by spfft and spcopy.
+func SpectrumBufferParams(unitType string) []string {
+	switch unitType {
+	case "spcopy":
+		return []string{"buffer", "source"}
+	case "spfft", "spifft":
+		return []string{"buffer"}
+	}
+	return nil
+}
+
+// WritesSpectrum reports whether units of the type write the spectrum buffer
+// in their buffer parameter, replacing its spectra.
+func WritesSpectrum(unitType string) bool { return unitType == "spfft" || unitType == "spcopy" }
 
 // NewAudio returns the audio of a writable buffer before anything has been
 // written to it: silent and without valid frames.

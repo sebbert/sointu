@@ -276,6 +276,13 @@ func (m *UnitModel) SetType(t string) {
 		return
 	}
 	defer (*unitList)(m).Change("SetSelectedType", MajorChange)()
+	// a new spectral unit reads the spectrum written last before it; units
+	// writing a spectrum get a new one when the change is done
+	for j, name := range sointu.SpectrumBufferParams(unit.Type) {
+		if j > 0 || !sointu.WritesSpectrum(unit.Type) {
+			unit.Parameters[name] = (*Model)(m).defaultSpectrumBuffer(m.d.InstrIndex, m.d.UnitIndex)
+		}
+	}
 	m.d.Song.Patch[m.d.InstrIndex].Units[m.d.UnitIndex] = unit
 	m.d.Song.Patch[m.d.InstrIndex].Units[m.d.UnitIndex].ID = oldUnit.ID // keep the ID of the replaced unit
 }

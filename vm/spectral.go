@@ -208,3 +208,18 @@ func fft(x []float32, n uint32) {
 		}
 	}
 }
+
+// Spectrum implements sointu.SpectrumReporter.
+func (s *GoSynth) Spectrum(bufferID int, dst []float32) ([]float32, int) {
+	for i, sp := range s.bytecode.Spectra {
+		if sp.BufferID != bufferID {
+			continue
+		}
+		data, n := s.spectra[i].data, 1<<sp.Log2Size
+		for k := 0; k <= n/2; k++ {
+			dst = append(dst, float32(math.Hypot(float64(data[2*k]), float64(data[2*k+1]))))
+		}
+		return dst, n
+	}
+	return dst, 0
+}

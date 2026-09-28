@@ -280,7 +280,10 @@ of the last size samples, Hann windowed. `spifft` turns a spectrum buffer back
 into a signal with overlap-add, about size samples later, and `spcopy` copies
 each new spectrum of one buffer to another, to process it in two different
 ways. Spectral units run only in the first voice of their instrument, so they
-belong in monophonic instruments or effect buses. Larger sizes resolve lower
+belong in monophonic instruments or effect buses. In the tracker, adding an
+`spfft` or `spcopy` unit creates a spectrum buffer for it, which is deleted
+again with the last unit using it; new spectral units use the spectrum written
+above them. The Buffers tab shows the latest spectrum of a spectrum buffer. Larger sizes resolve lower
 frequencies better (1024 gives 43 Hz bins, 8192 gives 5.4 Hz) but smear
 transients and delay more. The wasm player computes the FFT with SIMD.
 

@@ -17,18 +17,20 @@ type (
 	// model via the playerMessages channel. The model sendTargets messages to the
 	// player via the modelMessages channel.
 	Player struct {
-		synth      sointu.Synth               // the synth used to render audio
-		buffers    map[int]sointu.BufferAudio // the audio of the song's buffers
-		writable   bool                       // some of the buffers are writable
-		hostBPM    int                        // the tempo of the host, last told to the model
-		playheads  []sointu.Playhead          // reused for updatePlayheads
-		preview    sointu.BufferAudio         // buffer audio being previewed, mixed into the output
-		previewPos int                        // next frame of the preview
-		song       sointu.Song                // the song being played
-		playing    bool                       // is the player playing the score or not
-		rowtime    int                        // how many samples have been played in the current row
-		voices     [vm.MAX_VOICES]voice
-		loop       Loop
+		synth         sointu.Synth               // the synth used to render audio
+		buffers       map[int]sointu.BufferAudio // the audio of the song's buffers
+		writable      bool                       // some of the buffers are writable
+		hostBPM       int                        // the tempo of the host, last told to the model
+		playheads     []sointu.Playhead          // reused for updatePlayheads
+		spectrum      int                        // ID of the spectrum buffer to report, 0 if none
+		sinceSpectrum int                        // frames since the spectrum was last reported
+		preview       sointu.BufferAudio         // buffer audio being previewed, mixed into the output
+		previewPos    int                        // next frame of the preview
+		song          sointu.Song                // the song being played
+		playing       bool                       // is the player playing the score or not
+		rowtime       int                        // how many samples have been played in the current row
+		voices        [vm.MAX_VOICES]voice
+		loop          Loop
 
 		recording Recording // the recorded MIDI events and BPM
 
@@ -123,6 +125,7 @@ func (p *Player) Process(buffer sointu.AudioBuffer, context PlayerProcessContext
 	p.processMessages(context)
 	p.followHostTempo(context)
 	p.events.adjustTimes(p.frameDeltas, p.frame, p.frame+int64(len(buffer)))
+	frames := len(buffer)
 
 	for i := 0; i < numRenderTries; i++ {
 		for len(p.events) > 0 && p.events[0].playerTimestamp <= p.frame {
@@ -197,6 +200,7 @@ func (p *Player) Process(buffer sointu.AudioBuffer, context PlayerProcessContext
 				if len(p.buffers) > 0 {
 					p.updatePlayheads()
 				}
+				p.reportSpectrum(frames)
 			}
 			p.send(nil)
 			return
@@ -332,6 +336,8 @@ loop:
 				p.compileOrUpdateSynth()
 			case sointu.Score:
 				p.song.Score = m
+			case SpectrumWatchMsg:
+				p.spectrum = int(m)
 			case PreviewMsg:
 				p.preview, p.previewPos = m.Audio, 0
 				p.status.Previewing = m.Audio.Frames() > 0
@@ -569,6 +575,39 @@ func (p *Player) updatePlayheads() {
 	}
 	p.playheads = r.Playheads(p.playheads[:0])
 	p.status.NumPlayheads = copy(p.status.Playheads[:], p.playheads)
+}
+
+// SpectrumWatchMsg tells the player the ID of the spectrum buffer whose
+// spectra it should report with SpectrumMsg, or 0 for none.
+type SpectrumWatchMsg int
+
+// SpectrumMsg is the latest spectrum of a spectrum buffer: the magnitudes of
+// bins 0 to Size/2.
+type SpectrumMsg struct {
+	ID, Size   int
+	Magnitudes []float32
+}
+
+// spectrumReportFrames is how often the player reports the watched spectrum.
+const spectrumReportFrames = 2205
+
+// reportSpectrum sends the spectrum of the watched spectrum buffer to the
+// model every spectrumReportFrames frames.
+func (p *Player) reportSpectrum(frames int) {
+	if p.spectrum == 0 {
+		return
+	}
+	if p.sinceSpectrum += frames; p.sinceSpectrum < spectrumReportFrames {
+		return
+	}
+	p.sinceSpectrum = 0
+	r, ok := p.synth.(sointu.SpectrumReporter)
+	if !ok {
+		return
+	}
+	if mags, n := r.Spectrum(p.spectrum, nil); n > 0 {
+		p.send(SpectrumMsg{ID: p.spectrum, Size: n, Magnitudes: mags})
+	}
 }
 
 // updateBufferFills reports how much has been written to the writable

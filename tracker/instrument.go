@@ -248,16 +248,27 @@ func (m *InstrModel) warnAboutCrossThreadSends() {
 	writers := map[int]int{} // buffer ID -> index of an instrument writing it
 	for i, instr := range m.d.Song.Patch {
 		for _, unit := range instr.Units {
-			if unit.Type == "bufwrite" && !unit.Disabled {
+			if (unit.Type == "bufwrite" || sointu.WritesSpectrum(unit.Type)) && !unit.Disabled {
 				writers[unit.Parameters["buffer"]] = i
 			}
 		}
 	}
 	for i, instr := range m.d.Song.Patch {
 		for _, unit := range instr.Units {
-			if w, ok := writers[unit.Parameters["buffer"]]; ok && unit.Type == "bufread" && !unit.Disabled && instr.ThreadMaskM1 != m.d.Song.Patch[w].ThreadMaskM1 {
-				(*Alerts)(m).AddNamed("CrossThreadSend", fmt.Sprintf("Instrument %d '%s' reads a buffer that instrument %d '%s' writes, but they are not on the same threads, so it does not hear what is written", i+1, instr.Name, w+1, m.d.Song.Patch[w].Name), Warning)
-				return
+			if unit.Disabled {
+				continue
+			}
+			var read []string
+			if unit.Type == "bufread" {
+				read = []string{"buffer"}
+			} else {
+				read = sointu.SpectrumBufferParams(unit.Type)
+			}
+			for _, p := range read {
+				if w, ok := writers[unit.Parameters[p]]; ok && instr.ThreadMaskM1 != m.d.Song.Patch[w].ThreadMaskM1 {
+					(*Alerts)(m).AddNamed("CrossThreadSend", fmt.Sprintf("Instrument %d '%s' uses a buffer that instrument %d '%s' writes, but they are not on the same threads, so it does not see what is written", i+1, instr.Name, w+1, m.d.Song.Patch[w].Name), Warning)
+					return
+				}
 			}
 		}
 	}

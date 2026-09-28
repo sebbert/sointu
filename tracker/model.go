@@ -46,6 +46,13 @@ type (
 
 		trackerHidden bool
 
+		// bufferSpectrum is the latest spectrum of the spectrum buffer
+		// spectrumWatch, which the player reports while the GUI asks for it,
+		// last at spectrumAsked
+		bufferSpectrum SpectrumMsg
+		spectrumWatch  int
+		spectrumAsked  time.Time
+
 		// onChange, when set, is called after each change to the model data,
 		// e.g. to tell a plugin host that its project has unsaved changes
 		onChange func()
@@ -314,6 +321,7 @@ func (m *Model) change(kind string, t ChangeType, severity ChangeSeverity) func(
 			if m.changeType&PatchChange != 0 {
 				m.fixIDCollisions()
 				m.fixUnitParams()
+				m.fixSpectrumBuffers()
 				m.d.InstrIndex = clamp(m.d.InstrIndex, 0, len(m.d.Song.Patch)-1)
 				m.d.InstrIndex2 = clamp(m.d.InstrIndex2, 0, len(m.d.Song.Patch)-1)
 				unitCount := 0
@@ -397,6 +405,12 @@ func (m *Model) ProcessMsg(msg MsgToModel) {
 		m.d.Song.Score = score
 		m.d.Song.BPM = int(e.BPM + 0.5)
 		m.trackerHidden = false
+	case SpectrumMsg:
+		m.bufferSpectrum = e
+		if time.Since(m.spectrumAsked) > time.Second { // not shown anymore
+			m.spectrumWatch = 0
+			TrySend(m.broker.ToPlayer, any(SpectrumWatchMsg(0)))
+		}
 	case HostBPMMsg:
 		if int(e) != m.d.Song.BPM {
 			defer m.change("HostBPM", SongChange, MinorChange)()

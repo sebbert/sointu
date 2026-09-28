@@ -162,6 +162,19 @@ func (s *MultithreadSynth) WrittenBuffers() map[int]sointu.BufferAudio {
 	return ret
 }
 
+// Spectrum implements sointu.SpectrumReporter, with the spectrum of the first
+// synth that has the buffer.
+func (s *MultithreadSynth) Spectrum(bufferID int, dst []float32) ([]float32, int) {
+	for _, sy := range s.synths {
+		if r, ok := sy.(sointu.SpectrumReporter); ok {
+			if ret, n := r.Spectrum(bufferID, dst); n > 0 {
+				return ret, n
+			}
+		}
+	}
+	return dst, 0
+}
+
 func (s *MultithreadSynth) Playheads(dst []sointu.Playhead) []sointu.Playhead {
 	for _, synth := range s.synths {
 		if p, ok := synth.(sointu.PlayheadReporter); ok {

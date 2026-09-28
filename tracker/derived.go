@@ -145,12 +145,20 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 			vtable = &spawnRateParameter{}
 		}
 		if unit.Type == "bufwrite" && up.Name == "buffer" {
-			vtable = &bufferParameter{}
+			vtable = audioBufferParameter
+		}
+		for j, name := range sointu.SpectrumBufferParams(unit.Type) {
+			if up.Name == name {
+				vtable = spectrumBufferParameter
+				if j == 0 && sointu.WritesSpectrum(unit.Type) {
+					vtable = spectrumWriterParameter
+				}
+			}
 		}
 		if unit.Type == "bufread" {
 			switch up.Name {
 			case "buffer":
-				vtable = &bufferParameter{}
+				vtable = audioBufferParameter
 			case "start", "loopstart", "looplength", "fade", "edgefade":
 				vtable = &bufferFrameParameter{}
 			}

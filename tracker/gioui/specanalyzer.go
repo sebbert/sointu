@@ -107,46 +107,7 @@ func (s *SpectrumState) Layout(gtx C) D {
 
 				return plotRange{y1, y2}, true
 			}
-			xticks := func(r plotRange, count int, yield func(pos float32, label string)) {
-				type pair struct {
-					freq  float64
-					label string
-				}
-				const offset = 0.343408593803857 // log10(22050/10000)
-				const startdiv = 3 * (1 << 8)
-				step := nextPowerOfTwo(int(float64(r.b-r.a)*startdiv/float64(count)) + 1)
-				start := int(math.Floor(float64(r.a+offset) * startdiv / float64(step)))
-				end := int(math.Ceil(float64(r.b+offset) * startdiv / float64(step)))
-				for i := start; i <= end; i++ {
-					lognormfreq := float32(i*step)/startdiv - offset
-					freq := math.Pow(10, float64(lognormfreq)) * 22050
-					df := freq * math.Log(10) * float64(step) / startdiv // this is roughly the difference in Hz between the ticks currently
-					rounding := int(math.Floor(math.Log10(df)))
-					r := math.Pow(10, float64(rounding))
-					freq = math.Round(freq/r) * r
-					tickpos := float32(math.Log10(freq / 22050))
-					if rounding >= 3 {
-						yield(tickpos, fmt.Sprintf("%.0f kHz", freq/1000))
-					} else {
-						yield(tickpos, fmt.Sprintf("%s Hz", strconv.FormatFloat(freq, 'f', -rounding, 64)))
-					}
-				}
-			}
-			yticks := func(r plotRange, count int, yield func(pos float32, label string)) {
-				step := 3
-				var start, end int
-				for {
-					start = int(math.Ceil(float64(r.b) / float64(step)))
-					end = int(math.Floor(float64(r.a) / float64(step)))
-					if end-start+1 <= count*4 { // we use 4x density for the y-lines in the spectrum
-						break
-					}
-					step *= 2
-				}
-				for i := start; i <= end; i++ {
-					yield(float32(i*step), strconv.Itoa(i*step))
-				}
-			}
+			xticks, yticks := spectrumXTicks, spectrumYTicks
 			n := numchns
 			if biquadok {
 				n = 3
@@ -214,4 +175,48 @@ func (s *SpectrumState) Update(gtx C) {
 	}
 	s.resolutionNumber.Update(gtx, t.Model.Spectrum().Resolution())
 	s.speed.Update(gtx, t.Model.Spectrum().Speed())
+}
+
+// spectrumXTicks yields frequency ticks for a plot of log10(frequency/22050 Hz).
+func spectrumXTicks(r plotRange, count int, yield func(pos float32, label string)) {
+	type pair struct {
+		freq  float64
+		label string
+	}
+	const offset = 0.343408593803857 // log10(22050/10000)
+	const startdiv = 3 * (1 << 8)
+	step := nextPowerOfTwo(int(float64(r.b-r.a)*startdiv/float64(count)) + 1)
+	start := int(math.Floor(float64(r.a+offset) * startdiv / float64(step)))
+	end := int(math.Ceil(float64(r.b+offset) * startdiv / float64(step)))
+	for i := start; i <= end; i++ {
+		lognormfreq := float32(i*step)/startdiv - offset
+		freq := math.Pow(10, float64(lognormfreq)) * 22050
+		df := freq * math.Log(10) * float64(step) / startdiv // this is roughly the difference in Hz between the ticks currently
+		rounding := int(math.Floor(math.Log10(df)))
+		r := math.Pow(10, float64(rounding))
+		freq = math.Round(freq/r) * r
+		tickpos := float32(math.Log10(freq / 22050))
+		if rounding >= 3 {
+			yield(tickpos, fmt.Sprintf("%.0f kHz", freq/1000))
+		} else {
+			yield(tickpos, fmt.Sprintf("%s Hz", strconv.FormatFloat(freq, 'f', -rounding, 64)))
+		}
+	}
+}
+
+// spectrumYTicks yields decibel ticks.
+func spectrumYTicks(r plotRange, count int, yield func(pos float32, label string)) {
+	step := 3
+	var start, end int
+	for {
+		start = int(math.Ceil(float64(r.b) / float64(step)))
+		end = int(math.Floor(float64(r.a) / float64(step)))
+		if end-start+1 <= count*4 { // we use 4x density for the y-lines in the spectrum
+			break
+		}
+		step *= 2
+	}
+	for i := start; i <= end; i++ {
+		yield(float32(i*step), strconv.Itoa(i*step))
+	}
 }

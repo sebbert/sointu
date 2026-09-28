@@ -49,6 +49,7 @@ type (
 		info         *widget.Selectable
 		waveform     *Plot
 		waveformOf   int // the index of the buffer drawn, to reset the view when it changes
+		spectrum     *Plot
 	}
 )
 
@@ -79,6 +80,7 @@ func NewInstrumentBuffers(m *tracker.Model) *InstrumentBuffers {
 		props:        &layout.List{Axis: layout.Vertical},
 		info:         new(widget.Selectable),
 		waveform:     NewPlot(plotRange{0, 1}, plotRange{-1, 1}, 0),
+		spectrum:     NewPlot(plotRange{-3.8, 0}, plotRange{bufferSpectrumDbMax, bufferSpectrumDbMin}, bufferSpectrumDbMin),
 	}
 }
 
@@ -100,7 +102,7 @@ func (ib *InstrumentBuffers) update(gtx C, tr *Tracker) {
 		ib.chooseSample(tr, false)
 	}
 	for ib.replaceBtn.Clicked(gtx) {
-		if tr.Buffer().HasSelection() {
+		if tr.Buffer().HasSelection() && !tr.Buffer().IsSpectrum() {
 			ib.chooseSample(tr, true)
 		}
 	}
@@ -137,7 +139,7 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 	addBtn := IconBtn(th, &th.IconButton.Enabled, ib.addBtn, icons.ContentAdd, "Import a sample as a new buffer")
 	newEmptyBtn := ActionIconBtn(tr.Buffer().NewEmpty(), th, ib.newEmptyBtn, icons.AVMic, "Add an empty buffer for bufwrite units to record into")
 	replaceStyle := &th.IconButton.Enabled
-	if !hasSel {
+	if !hasSel || tr.Buffer().IsSpectrum() {
 		replaceStyle = &th.IconButton.Disabled
 	}
 	replaceBtn := IconBtn(th, replaceStyle, ib.replaceBtn, icons.FileFolderOpen, "Replace the sample of the buffer")
@@ -254,7 +256,9 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 			},
 		}
 		var lines []layout.Widget
-		if tr.Buffer().IsWritable() {
+		if tr.Buffer().IsSpectrum() {
+			lines = append(common[:1:1], nil, info, ib.layoutSpectrum)
+		} else if tr.Buffer().IsWritable() {
 			clearBtn := ActionBtn(tr.Buffer().Clear(), th, ib.clearBtn, "Clear", "Discard what has been recorded")
 			fitBtn := ActionBtn(tr.Buffer().FitToRecording(), th, ib.fitBtn, "Fit to recording", "Make the buffer as long as\nwhat has been recorded")
 			lines = append(common,
@@ -425,6 +429,45 @@ func (ib *InstrumentBuffers) layoutWaveform(gtx C) D {
 	gtx.Constraints = layout.Exact(image.Pt(gtx.Constraints.Max.X, h))
 	return layout.UniformInset(unit.Dp(6)).Layout(gtx, func(gtx C) D {
 		return ib.waveform.Layout(gtx, data, xticks, yticks, cursor, 3)
+	})
+}
+
+// The decibel range of the spectrum plot: 0 dB is a full scale sine.
+const (
+	bufferSpectrumDbMin = -96
+	bufferSpectrumDbMax = 12
+)
+
+// layoutSpectrum draws the latest spectrum of the selected spectrum buffer,
+// over logarithmic frequency like the spectrum analyzer.
+func (ib *InstrumentBuffers) layoutSpectrum(gtx C) D {
+	tr := TrackerFromContext(gtx)
+	mags, size := tr.Buffer().Spectrum()
+	// a full scale sine has the magnitude size/4 with the Hann window
+	norm := float64(size) / 4
+	db := func(k int) float32 {
+		return float32(max(20*math.Log10(float64(mags[k])/norm+1e-12), bufferSpectrumDbMin))
+	}
+	data := func(chn int, xr plotRange) (plotRange, bool) {
+		if chn > 0 || len(mags) < 2 {
+			return plotRange{}, false
+		}
+		// x is log10(frequency/22050 Hz); bin k is at k*2/size of that
+		k1 := max(int(math.Pow(10, float64(xr.a))*float64(size)/2), 1)
+		k2 := min(int(math.Pow(10, float64(xr.b))*float64(size)/2), len(mags)-1)
+		if k1 > k2 {
+			return plotRange{}, false
+		}
+		hi := float32(bufferSpectrumDbMin)
+		for k := k1; k <= k2; k++ {
+			hi = max(hi, db(k))
+		}
+		return plotRange{hi, bufferSpectrumDbMin}, true
+	}
+	h := gtx.Dp(180)
+	gtx.Constraints = layout.Exact(image.Pt(gtx.Constraints.Max.X, h))
+	return layout.UniformInset(unit.Dp(6)).Layout(gtx, func(gtx C) D {
+		return ib.spectrum.Layout(gtx, data, spectrumXTicks, spectrumYTicks, float32(math.NaN()), 1)
 	})
 }
 

@@ -259,12 +259,15 @@ type (
 
 	// different parameter vtables to handle different types of parameters.
 	// Casting struct{} to interface does not cause allocations.
-	namedParameter       struct{}
-	delayTimeParameter   struct{}
-	delayLinesParameter  struct{}
-	gmDlsEntryParameter  struct{}
-	reverbParameter      struct{}
-	bufferParameter      struct{}
+	namedParameter      struct{}
+	delayTimeParameter  struct{}
+	delayLinesParameter struct{}
+	gmDlsEntryParameter struct{}
+	reverbParameter     struct{}
+	// bufferParameter is a parameter referring to a buffer, audio or
+	// spectrum; writer means the unit writes a spectrum to it, so that it
+	// cannot be none.
+	bufferParameter      struct{ spectrum, writer bool }
 	spawnTargetParameter struct{}
 	spawnRateParameter   struct{ namedParameter }
 	bufferFrameParameter struct{ namedParameter }
@@ -711,13 +714,29 @@ func roundToSliceGrid(value int, grid []int, up bool) int {
 	return value
 }
 
-// bufferParameter vtable: the buffer played by a bufread unit. Its values are
-// 0 for no buffer and i+1 for the i-th buffer of the song; the unit stores
-// the buffer's ID.
+// bufferParameter vtable: the buffer used by a unit, audio buffers for
+// bufread and bufwrite and spectrum buffers for the spectral units. Its values
+// are 0 for no buffer and i+1 for the i-th of those buffers of the song; the
+// unit stores the buffer's ID.
 
+var (
+	audioBufferParameter    = &bufferParameter{}
+	spectrumBufferParameter = &bufferParameter{spectrum: true}
+	spectrumWriterParameter = &bufferParameter{spectrum: true, writer: true}
+)
+
+func (b *bufferParameter) buffers(p *Parameter) []sointu.Buffer {
+	var ret []sointu.Buffer
+	for _, buf := range p.m.d.Song.Buffers {
+		if buf.Spectrum == b.spectrum {
+			ret = append(ret, buf)
+		}
+	}
+	return ret
+}
 func (b *bufferParameter) Value(p *Parameter) int {
-	id := p.unit.Parameters["buffer"]
-	for i, buf := range p.m.d.Song.Buffers {
+	id := p.unit.Parameters[p.up.Name]
+	for i, buf := range b.buffers(p) {
 		if buf.ID == id {
 			return i + 1
 		}
@@ -725,25 +744,34 @@ func (b *bufferParameter) Value(p *Parameter) int {
 	return 0
 }
 func (b *bufferParameter) SetValue(p *Parameter, v int) bool {
-	id := 0
-	if v > 0 && v <= len(p.m.d.Song.Buffers) {
-		id = p.m.d.Song.Buffers[v-1].ID
+	bufs, id := b.buffers(p), 0
+	if v > 0 && v <= len(bufs) {
+		id = bufs[v-1].ID
+	}
+	if id == 0 && b.writer {
+		return false
 	}
 	defer p.m.change("BufferParameter", PatchChange, MinorChange)()
-	p.unit.Parameters["buffer"] = id
+	p.unit.Parameters[p.up.Name] = id
 	return true
 }
 func (b *bufferParameter) Range(p *Parameter) RangeInclusive {
-	return RangeInclusive{Min: 0, Max: len(p.m.d.Song.Buffers)}
+	r := RangeInclusive{Min: 0, Max: len(b.buffers(p))}
+	if b.writer {
+		r.Min = min(1, r.Max)
+	}
+	return r
 }
 func (b *bufferParameter) Type(p *Parameter) ParameterType { return ChoiceParameter }
-func (b *bufferParameter) Name(p *Parameter) string        { return "buffer" }
+func (b *bufferParameter) Name(p *Parameter) string        { return p.up.Name }
 func (b *bufferParameter) StringOf(p *Parameter, v int) string {
-	if v > 0 && v <= len(p.m.d.Song.Buffers) {
-		name, _ := p.m.Buffer().Item(v - 1)
-		return name
+	if bufs := b.buffers(p); v > 0 && v <= len(bufs) {
+		if bufs[v-1].Name != "" {
+			return bufs[v-1].Name
+		}
+		return fmt.Sprintf("Buffer %d", bufs[v-1].ID)
 	}
-	if id := p.unit.Parameters["buffer"]; id != 0 && v == b.Value(p) {
+	if id := p.unit.Parameters[p.up.Name]; id != 0 && v == b.Value(p) {
 		return "missing"
 	}
 	return "none"
@@ -754,8 +782,11 @@ func (b *bufferParameter) Hint(p *Parameter) ParameterHint {
 }
 func (b *bufferParameter) RoundToGrid(p *Parameter, val int, up bool) int { return val }
 func (b *bufferParameter) Reset(p *Parameter) {
+	if b.writer {
+		return
+	}
 	defer p.m.change("ResetBufferParameter", PatchChange, MinorChange)()
-	p.unit.Parameters["buffer"] = 0
+	p.unit.Parameters[p.up.Name] = 0
 }
 
 // spawnTargetParameter vtable: the instrument whose voices a spawn unit
