@@ -48,6 +48,7 @@ type (
 		enableUnitHint  string
 
 		searching tracker.Bool
+		previews  []Clickable // of the units' buffers, by unit
 	}
 )
 
@@ -363,6 +364,13 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 		paramStyle := Param(param, t.Theme, pe.Parameters[y][x], pe.paramTable.Table.Cursor() == point, t.Unit().Item(y).Disabled)
 		paramStyle.Layout(gtx)
 		if x == t.Model.Params().RowWidth(y) {
+			if id, spectrum, ok := t.Unit().Buffer(y); ok {
+				if t.preferences.Rack.BufferPreviews {
+					pe.layoutUnitPreview(gtx, y, id, spectrum)
+				}
+				// the comment goes after the preview
+				defer op.Offset(image.Pt(tracker.UnitPreviewCells*cellWidth, 0)).Push(gtx.Ops).Pop()
+			}
 			if y == cursor.Y {
 				return layout.W.Layout(gtx, func(gtx C) D {
 					for pe.commentEditor.Update(gtx, t.Unit().Comment()) != EditorEventNone {

@@ -15,6 +15,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 	"gioui.org/x/explorer"
+	"github.com/vsariola/sointu"
 	"github.com/vsariola/sointu/tracker"
 	"golang.org/x/exp/shiny/materialdesign/icons"
 )
@@ -349,37 +350,7 @@ func (ib *InstrumentBuffers) layoutWaveform(gtx C) D {
 	tr := TrackerFromContext(gtx)
 	audio, head, filled := tr.Buffer().Waveform()
 	frames := audio.Frames()
-	oldest := 0
-	if frames > 0 {
-		oldest = ((head-filled)%frames + frames) % frames
-	}
-	valid := func(f int) bool { return (f-oldest+frames)%frames < filled }
-	data := func(chn int, xr plotRange) (plotRange, bool) {
-		if frames == 0 || (chn == 1 && audio.Channels < 2) {
-			return plotRange{}, false
-		}
-		f1 := max(int(xr.a*float32(frames)), 0)
-		f2 := min(int(xr.b*float32(frames)), frames-1)
-		if f1 > f2 {
-			return plotRange{}, false
-		}
-		c1, c2 := chn, chn // channel 2 is the invalid frames of all channels
-		if chn == 2 {
-			c1, c2 = 0, audio.Channels-1
-		}
-		lo, hi, found := float32(math.Inf(1)), float32(math.Inf(-1)), false
-		step := max((f2-f1)/500, 1) // sample long ranges
-		for f := f1; f <= f2; f += step {
-			if valid(f) == (chn == 2) {
-				continue
-			}
-			for c := c1; c <= c2; c++ {
-				v := audio.Data[f*audio.Channels+c]
-				lo, hi, found = min(lo, v), max(hi, v), true
-			}
-		}
-		return plotRange{-hi, -lo}, found
-	}
+	data, peak := waveformData(audio, head, filled)
 	seconds := float32(frames) / 44100
 	xticks := func(r plotRange, count int, yield func(pos float32, label string)) {
 		if seconds <= 0 || count <= 0 {
@@ -401,14 +372,6 @@ func (ib *InstrumentBuffers) layoutWaveform(gtx C) D {
 	if sel := tr.Buffer().List().Selected(); sel != ib.waveformOf {
 		ib.waveformOf = sel
 		ib.waveform.Reset()
-	}
-	// fit the height to the peak; long buffers are sampled
-	peak := float32(0)
-	for i := 0; i < len(audio.Data); i += max(len(audio.Data)/50000, 1) {
-		peak = max(peak, float32(math.Abs(float64(audio.Data[i]))))
-	}
-	if peak <= 1e-4 {
-		peak = 1
 	}
 	ib.waveform.SetYRange(plotRange{-peak * 1.05, peak * 1.05})
 	ib.waveform.Markers = ib.waveform.Markers[:0]
@@ -442,33 +405,7 @@ const (
 // over logarithmic frequency like the spectrum analyzer.
 func (ib *InstrumentBuffers) layoutSpectrum(gtx C) D {
 	tr := TrackerFromContext(gtx)
-	mags, size := tr.Buffer().Spectrum()
-	// a full scale sine has the magnitude size/4 with the Hann window
-	norm := float64(size) / 4
-	bins := size/2 + 1
-	channels := 0
-	if size > 0 {
-		channels = len(mags) / bins
-	}
-	data := func(chn int, xr plotRange) (plotRange, bool) {
-		if chn >= channels {
-			return plotRange{}, false
-		}
-		db := func(k int) float32 {
-			return float32(max(20*math.Log10(float64(mags[chn*bins+k])/norm+1e-12), bufferSpectrumDbMin))
-		}
-		// x is log10(frequency/22050 Hz); bin k is at k*2/size of that
-		k1 := max(int(math.Pow(10, float64(xr.a))*float64(size)/2), 1)
-		k2 := min(int(math.Pow(10, float64(xr.b))*float64(size)/2), bins-1)
-		if k1 > k2 {
-			return plotRange{}, false
-		}
-		hi := float32(bufferSpectrumDbMin)
-		for k := k1; k <= k2; k++ {
-			hi = max(hi, db(k))
-		}
-		return plotRange{hi, bufferSpectrumDbMin}, true
-	}
+	data, channels := spectrumData(tr.Buffer().Spectrum())
 	h := gtx.Dp(180)
 	gtx.Constraints = layout.Exact(image.Pt(gtx.Constraints.Max.X, h))
 	return layout.UniformInset(unit.Dp(6)).Layout(gtx, func(gtx C) D {
@@ -513,4 +450,82 @@ func layoutBufferLine(gtx C, label string, fill bool, content layout.Widget) D {
 		c,
 		layout.Rigid(layout.Spacer{Width: 6}.Layout),
 	)
+}
+
+// waveformData returns the plot data of a buffer's audio over x from 0 to 1,
+// and its peak for fitting the height: channels 0 and 1 are the valid frames
+// of the channels, the filled ones before head, and channel 2 the rest.
+func waveformData(audio sointu.BufferAudio, head, filled int) (data PlotDataFunc, peak float32) {
+	frames := audio.Frames()
+	oldest := 0
+	if frames > 0 {
+		oldest = ((head-filled)%frames + frames) % frames
+	}
+	valid := func(f int) bool { return (f-oldest+frames)%frames < filled }
+	data = func(chn int, xr plotRange) (plotRange, bool) {
+		if frames == 0 || (chn == 1 && audio.Channels < 2) {
+			return plotRange{}, false
+		}
+		f1 := max(int(xr.a*float32(frames)), 0)
+		f2 := min(int(xr.b*float32(frames)), frames-1)
+		if f1 > f2 {
+			return plotRange{}, false
+		}
+		c1, c2 := chn, chn // channel 2 is the invalid frames of all channels
+		if chn == 2 {
+			c1, c2 = 0, audio.Channels-1
+		}
+		lo, hi, found := float32(math.Inf(1)), float32(math.Inf(-1)), false
+		step := max((f2-f1)/500, 1) // sample long ranges
+		for f := f1; f <= f2; f += step {
+			if valid(f) == (chn == 2) {
+				continue
+			}
+			for c := c1; c <= c2; c++ {
+				v := audio.Data[f*audio.Channels+c]
+				lo, hi, found = min(lo, v), max(hi, v), true
+			}
+		}
+		return plotRange{-hi, -lo}, found
+	}
+	// long buffers are sampled
+	for i := 0; i < len(audio.Data); i += max(len(audio.Data)/50000, 1) {
+		peak = max(peak, float32(math.Abs(float64(audio.Data[i]))))
+	}
+	if peak <= 1e-4 {
+		peak = 1
+	}
+	return data, peak
+}
+
+// spectrumData returns the plot data of spectrum magnitudes, as returned by
+// BufferModel.SpectrumOf, over x = log10(frequency/22050 Hz) and y in dB
+// from bufferSpectrumDbMin, and the number of channels.
+func spectrumData(mags []float32, size int) (data PlotDataFunc, channels int) {
+	// a full scale sine has the magnitude size/4 with the Hann window
+	norm := float64(size) / 4
+	bins := size/2 + 1
+	if size > 0 {
+		channels = len(mags) / bins
+	}
+	data = func(chn int, xr plotRange) (plotRange, bool) {
+		if chn >= channels {
+			return plotRange{}, false
+		}
+		db := func(k int) float32 {
+			return float32(max(20*math.Log10(float64(mags[chn*bins+k])/norm+1e-12), bufferSpectrumDbMin))
+		}
+		// bin k is at k*2/size of 22050 Hz
+		k1 := max(int(math.Pow(10, float64(xr.a))*float64(size)/2), 1)
+		k2 := min(int(math.Pow(10, float64(xr.b))*float64(size)/2), bins-1)
+		if k1 > k2 {
+			return plotRange{}, false
+		}
+		hi := float32(bufferSpectrumDbMin)
+		for k := k1; k <= k2; k++ {
+			hi = max(hi, db(k))
+		}
+		return plotRange{hi, bufferSpectrumDbMin}, true
+	}
+	return data, channels
 }

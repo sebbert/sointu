@@ -46,12 +46,12 @@ type (
 
 		trackerHidden bool
 
-		// bufferSpectrum is the latest spectrum of the spectrum buffer
-		// spectrumWatch, which the player reports while the GUI asks for it,
-		// last at spectrumAsked
-		bufferSpectrum SpectrumMsg
-		spectrumWatch  int
-		spectrumAsked  time.Time
+		// spectra are the latest spectra of the sources in spectrumWatch,
+		// which the player reports while the GUI asks for them, last at
+		// spectrumAsked
+		spectra       map[SpectrumSource]SpectrumMsg
+		spectrumWatch []SpectrumSource
+		spectrumAsked map[SpectrumSource]time.Time
 
 		// onChange, when set, is called after each change to the model data,
 		// e.g. to tell a plugin host that its project has unsaved changes
@@ -406,11 +406,11 @@ func (m *Model) ProcessMsg(msg MsgToModel) {
 		m.d.Song.BPM = int(e.BPM + 0.5)
 		m.trackerHidden = false
 	case SpectrumMsg:
-		m.bufferSpectrum = e
-		if time.Since(m.spectrumAsked) > time.Second { // not shown anymore
-			m.spectrumWatch = 0
-			TrySend(m.broker.ToPlayer, any(SpectrumWatchMsg(0)))
+		if m.spectra == nil {
+			m.spectra = map[SpectrumSource]SpectrumMsg{}
 		}
+		m.spectra[e.Source] = e
+		m.unwatchSpectra()
 	case HostBPMMsg:
 		if int(e) != m.d.Song.BPM {
 			defer m.change("HostBPM", SongChange, MinorChange)()

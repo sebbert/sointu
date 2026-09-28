@@ -16,6 +16,13 @@ import (
 type (
 	Preferences struct {
 		Window WindowPreferences
+		Rack   RackPreferences
+	}
+
+	RackPreferences struct {
+		// BufferPreviews shows what the buffers of units hold after their
+		// parameters
+		BufferPreviews bool
 	}
 
 	WindowPreferences struct {

@@ -53,6 +53,11 @@ type (
 	spectralState struct {
 		pos, seen, rng uint32
 		ring           []float32
+		// the spectrum after the unit processed a frame, copied when tapArmed,
+		// for UnitSpectrum; tapMark is the count of the last frame processed
+		tap      []float32
+		tapMark  uint32
+		tapArmed bool
 	}
 )
 
@@ -237,15 +242,60 @@ func (s *GoSynth) Spectrum(bufferID int, dst []float32) ([]float32, int) {
 		if sp.BufferID != bufferID {
 			continue
 		}
-		data, n := s.spectra[i].data, 1<<sp.Log2Size
-		for c := range sp.Channels {
-			for k := 0; k <= n/2; k++ {
-				dst = append(dst, float32(math.Hypot(float64(data[2*(c*n+k)]), float64(data[2*(c*n+k)+1]))))
-			}
-		}
-		return dst, n
+		n := 1 << sp.Log2Size
+		return appendMagnitudes(dst, s.spectra[i].data, n, sp.Channels), n
 	}
 	return dst, 0
+}
+
+// UnitSpectrum appends to dst the magnitudes of bins 0 to size/2 of the
+// spectrum of the spectral unit with the given ID, as it was right after the
+// unit last processed a frame, and returns them and the size of the spectrum,
+// or 0 if there is none. Each call asks for the next frame to be kept, so it
+// should be called regularly while it is shown.
+func (s *GoSynth) UnitSpectrum(unitID int, dst []float32) ([]float32, int) {
+	for i, u := range s.bytecode.SpectralUnits {
+		if u.UnitID != unitID || unitID == 0 {
+			continue
+		}
+		st := &s.spectral[i]
+		st.tapArmed = true
+		sp := s.bytecode.Spectra[u.Spectrum]
+		n := 1 << sp.Log2Size
+		if len(st.tap) != 2*n*sp.Channels {
+			return dst, 0
+		}
+		return appendMagnitudes(dst, st.tap, n, sp.Channels), n
+	}
+	return dst, 0
+}
+
+func appendMagnitudes(dst, data []float32, n, channels int) []float32 {
+	for c := range channels {
+		for k := 0; k <= n/2; k++ {
+			dst = append(dst, float32(math.Hypot(float64(data[2*(c*n+k)]), float64(data[2*(c*n+k)+1]))))
+		}
+	}
+	return dst
+}
+
+// tapSpectrum is called after each spectral unit ran: when it processed a
+// new frame, the spectrum is copied if asked for.
+func (s *GoSynth) tapSpectrum(index int) {
+	u, st := s.bytecode.SpectralUnits[index], &s.spectral[index]
+	sp := &s.spectra[u.Spectrum]
+	mark := st.seen // modifiers mark the frames they processed
+	if u.Type == "spfft" || u.Type == "spcopy" {
+		mark = sp.count // writers count them
+	}
+	if mark == st.tapMark {
+		return
+	}
+	st.tapMark = mark
+	if st.tapArmed {
+		st.tapArmed = false
+		st.tap = append(st.tap[:0], sp.data...)
+	}
 }
 
 // spectralFrame returns the channels of the spectrum of a modifying spectral

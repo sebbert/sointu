@@ -107,6 +107,9 @@ func (m *Model) updateParams() {
 			p := m.deriveParams(&instr.Units[u], m.derived.patch[i].params[u])
 			m.derived.patch[i].params[u] = p
 			paramsWidth = max(paramsWidth, len(p))
+			if _, _, ok := unitBuffer(&instr.Units[u]); ok {
+				paramsWidth = max(paramsWidth, len(p)+UnitPreviewCells)
+			}
 		}
 		m.derived.patch[i].paramsWidth = paramsWidth
 	}

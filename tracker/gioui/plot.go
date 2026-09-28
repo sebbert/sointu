@@ -125,9 +125,15 @@ func (p *Plot) Layout(gtx C, data PlotDataFunc, xticks, yticks PlotTickFunc, cur
 		stack.Pop()
 	}
 
-	// draw curves
-	for chn := range numchns {
-		paint.ColorOp{Color: style.CurveColors[chn]}.Add(gtx.Ops)
+	drawPlotCurves(gtx, style.CurveColors, s, xlim, ylim, data, numchns)
+	return D{Size: s}
+}
+
+// drawPlotCurves draws the first numchns channels of data over an area of
+// size s, each pixel column a bar over the y range data returns for it.
+func drawPlotCurves(gtx C, colors [3]color.NRGBA, s image.Point, xlim, ylim plotRange, data PlotDataFunc, numchns int) {
+	for chn := range min(numchns, len(colors)) {
+		paint.ColorOp{Color: colors[chn]}.Add(gtx.Ops)
 		right := xlim.fromRelative(plotPx(s.X).fromScreen(0))
 		for sx := range s.X {
 			// left and right is the sample range covered by the pixel
@@ -142,7 +148,6 @@ func (p *Plot) Layout(gtx C, data PlotDataFunc, xticks, yticks PlotTickFunc, cur
 			fillRect(gtx, clip.Rect{Min: image.Pt(sx, min(y1, y2)), Max: image.Pt(sx+1, max(y1, y2)+1)})
 		}
 	}
-	return D{Size: s}
 }
 
 func (r plotRange) toRelative(f float32) plotRel    { return plotRel((f - r.a) / (r.b - r.a)) }

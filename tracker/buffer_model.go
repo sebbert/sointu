@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -184,24 +185,54 @@ func (m *BufferModel) IsSpectrum() bool {
 	return buf != nil && buf.Spectrum
 }
 
-// Spectrum returns the magnitudes of bins 0 to size/2 of the latest spectrum
-// of the selected spectrum buffer, for each channel after each other, and the
+// Spectrum returns the latest spectrum of the selected spectrum buffer, as
+// SpectrumOf.
+func (m *BufferModel) Spectrum() ([]float32, int) {
+	if buf := m.selected(); buf != nil && buf.Spectrum {
+		return m.SpectrumOf(buf.ID)
+	}
+	return nil, 0
+}
+
+// SpectrumOf returns the magnitudes of bins 0 to size/2 of the latest
+// spectrum of a spectrum buffer, for each channel after each other, and the
 // size, or 0 if there is none yet.
 // While it is being called, the player keeps reporting the spectra.
-func (m *BufferModel) Spectrum() ([]float32, int) {
-	id := 0
-	if buf := m.selected(); buf != nil && buf.Spectrum {
-		id = buf.ID
-	}
-	m.spectrumAsked = time.Now()
-	if id != m.spectrumWatch {
-		m.spectrumWatch = id
-		TrySend(m.broker.ToPlayer, any(SpectrumWatchMsg(id)))
-	}
-	if id == 0 || m.bufferSpectrum.ID != id {
+func (m *BufferModel) SpectrumOf(id int) ([]float32, int) {
+	if id <= 0 {
 		return nil, 0
 	}
-	return m.bufferSpectrum.Magnitudes, m.bufferSpectrum.Size
+	return (*Model)(m).spectrumOf(SpectrumSource{Buffer: id})
+}
+
+func (m *Model) spectrumOf(src SpectrumSource) ([]float32, int) {
+	if m.spectrumAsked == nil {
+		m.spectrumAsked = map[SpectrumSource]time.Time{}
+	}
+	m.spectrumAsked[src] = time.Now()
+	if !slices.Contains(m.spectrumWatch, src) {
+		m.spectrumWatch = append(m.spectrumWatch, src)
+		TrySend(m.broker.ToPlayer, any(SpectrumWatchMsg(slices.Clone(m.spectrumWatch))))
+	}
+	s := m.spectra[src]
+	return s.Magnitudes, s.Size
+}
+
+// unwatchSpectra stops the reports of the spectra not asked for in a second:
+// they are no longer shown.
+func (m *Model) unwatchSpectra() {
+	watch := slices.DeleteFunc(slices.Clone(m.spectrumWatch), func(src SpectrumSource) bool {
+		if time.Since(m.spectrumAsked[src]) <= time.Second {
+			return false
+		}
+		delete(m.spectrumAsked, src)
+		delete(m.spectra, src)
+		return true
+	})
+	if len(watch) != len(m.spectrumWatch) {
+		m.spectrumWatch = watch
+		TrySend(m.broker.ToPlayer, any(SpectrumWatchMsg(slices.Clone(watch))))
+	}
 }
 
 // IsWritable reports whether the selected buffer is written by bufwrite
@@ -289,12 +320,15 @@ func (m *Model) bufferFillOf(id int) (BufferFill, bool) {
 // units are playing, and how many frames ago the note was released (0 if it
 // is held).
 func (m *BufferModel) Playheads(yield func(frame, released int)) {
-	buf := m.selected()
-	if buf == nil {
-		return
+	if buf := m.selected(); buf != nil {
+		m.PlayheadsOf(buf.ID, yield)
 	}
+}
+
+// PlayheadsOf is Playheads for the buffer with the given ID.
+func (m *BufferModel) PlayheadsOf(id int, yield func(frame, released int)) {
 	for _, p := range m.playerStatus.Playheads[:m.playerStatus.NumPlayheads] {
-		if p.BufferID == buf.ID {
+		if p.BufferID == id {
 			yield(p.Frame, p.Released)
 		}
 	}
@@ -305,15 +339,19 @@ func (m *BufferModel) Playheads(yield func(frame, released int)) {
 // end. For samples, all frames are valid. The audio of a writable buffer is
 // written by the player while it is read, so what is drawn may be torn.
 func (m *BufferModel) Waveform() (audio sointu.BufferAudio, head, filled int) {
-	buf := m.selected()
-	if buf == nil {
-		return sointu.BufferAudio{}, 0, 0
+	if buf := m.selected(); buf != nil {
+		return m.WaveformOf(buf.ID)
 	}
-	audio = m.buffers.audio[buf.ID]
+	return sointu.BufferAudio{}, 0, 0
+}
+
+// WaveformOf is Waveform for the buffer with the given ID.
+func (m *BufferModel) WaveformOf(id int) (audio sointu.BufferAudio, head, filled int) {
+	audio = m.buffers.audio[id]
 	if !audio.Writable {
 		return audio, 0, audio.Frames()
 	}
-	f, _ := (*Model)(m).bufferFillOf(buf.ID)
+	f, _ := (*Model)(m).bufferFillOf(id)
 	return audio, f.Head, f.Filled
 }
 
@@ -884,4 +922,27 @@ func JoinArgs(args []string) string {
 		quoted[i] = "'" + strings.ReplaceAll(a, "'", `'\''`) + "'"
 	}
 	return strings.Join(quoted, " ")
+}
+
+// Show returns an Action to select the buffer with the given ID in the
+// Buffers tab and show the tab.
+func (m *BufferModel) Show(id int) Action { return MakeAction(showBuffer{id, m}) }
+
+type showBuffer struct {
+	id int
+	m  *BufferModel
+}
+
+func (s showBuffer) Enabled() bool {
+	_, ok := s.m.d.Song.Buffers.Find(s.id)
+	return ok
+}
+func (s showBuffer) Do() {
+	for i, buf := range s.m.d.Song.Buffers {
+		if buf.ID == s.id {
+			s.m.List().SetSelected(i)
+			(*Model)(s.m).Instrument().Tab().SetValue(int(InstrumentBuffersTab))
+			return
+		}
+	}
 }

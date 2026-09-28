@@ -255,3 +255,43 @@ func TestSpectralStereo(t *testing.T) {
 		}
 	}
 }
+
+func TestUnitSpectrum(t *testing.T) {
+	// spfft sees the full noise spectrum, spfilter removes the bins above
+	// about 22, and spifft sees what spfilter left
+	patch := spectralPatch(0, sointu.Unit{ID: 11, Type: "spfilter", Parameters: sointu.ParamMap{"low": 0, "high": 96, "tilt": 64, "buffer": 1}})
+	patch[0].Units[2].ID = 10
+	patch[0].Units[4].ID = 12
+	synth := newSynth(t, patch)
+	r := synth.(sointu.UnitSpectrumReporter)
+	if _, n := r.UnitSpectrum(10, nil); n != 0 {
+		t.Fatalf("spectrum before rendering: size %d", n)
+	}
+	for _, id := range []int{11, 12} {
+		r.UnitSpectrum(id, nil) // ask for the next frame, as the call for 10 did
+	}
+	render(t, synth, 1024)
+	high := func(id int) (sum float64) {
+		mags, n := r.UnitSpectrum(id, nil)
+		if n != 256 || len(mags) != n/2+1 {
+			t.Fatalf("unit %d: size %d, %d magnitudes", id, n, len(mags))
+		}
+		for _, m := range mags[n/8:] {
+			sum += float64(m)
+		}
+		return sum
+	}
+	render(t, synth, 1024)
+	if l := high(10); l < 1 {
+		t.Errorf("spfft: high bins sum to %v, want the noise", l)
+	}
+	if l := high(11); l > 1e-6 {
+		t.Errorf("spfilter: high bins sum to %v, want 0", l)
+	}
+	if l := high(12); l > 1e-6 {
+		t.Errorf("spifft: high bins sum to %v, want 0", l)
+	}
+	if _, n := r.UnitSpectrum(99, nil); n != 0 {
+		t.Errorf("unknown unit has a spectrum")
+	}
+}

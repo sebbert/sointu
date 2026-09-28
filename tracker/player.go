@@ -22,7 +22,7 @@ type (
 		writable      bool                       // some of the buffers are writable
 		hostBPM       int                        // the tempo of the host, last told to the model
 		playheads     []sointu.Playhead          // reused for updatePlayheads
-		spectrum      int                        // ID of the spectrum buffer to report, 0 if none
+		spectra       []SpectrumSource           // the spectra to report
 		sinceSpectrum int                        // frames since the spectrum was last reported
 		preview       sointu.BufferAudio         // buffer audio being previewed, mixed into the output
 		previewPos    int                        // next frame of the preview
@@ -337,7 +337,7 @@ loop:
 			case sointu.Score:
 				p.song.Score = m
 			case SpectrumWatchMsg:
-				p.spectrum = int(m)
+				p.spectra = m
 			case PreviewMsg:
 				p.preview, p.previewPos = m.Audio, 0
 				p.status.Previewing = m.Audio.Frames() > 0
@@ -577,36 +577,48 @@ func (p *Player) updatePlayheads() {
 	p.status.NumPlayheads = copy(p.status.Playheads[:], p.playheads)
 }
 
-// SpectrumWatchMsg tells the player the ID of the spectrum buffer whose
-// spectra it should report with SpectrumMsg, or 0 for none.
-type SpectrumWatchMsg int
+// SpectrumSource is where a spectrum is taken: a spectrum buffer, or a
+// spectral unit, right after it processed its buffer. One of them is 0.
+type SpectrumSource struct {
+	Buffer, Unit int
+}
 
-// SpectrumMsg is the latest spectrum of a spectrum buffer: the magnitudes of
-// bins 0 to Size/2.
+// SpectrumWatchMsg tells the player the spectra it should report with
+// SpectrumMsg.
+type SpectrumWatchMsg []SpectrumSource
+
+// SpectrumMsg is the latest spectrum of a source: the magnitudes of bins 0 to
+// Size/2 of each channel.
 type SpectrumMsg struct {
-	ID, Size   int
+	Source     SpectrumSource
+	Size       int
 	Magnitudes []float32
 }
 
 // spectrumReportFrames is how often the player reports the watched spectrum.
 const spectrumReportFrames = 2205
 
-// reportSpectrum sends the spectrum of the watched spectrum buffer to the
+// reportSpectrum sends the spectra of the watched spectrum buffers to the
 // model every spectrumReportFrames frames.
 func (p *Player) reportSpectrum(frames int) {
-	if p.spectrum == 0 {
+	if len(p.spectra) == 0 {
 		return
 	}
 	if p.sinceSpectrum += frames; p.sinceSpectrum < spectrumReportFrames {
 		return
 	}
 	p.sinceSpectrum = 0
-	r, ok := p.synth.(sointu.SpectrumReporter)
-	if !ok {
-		return
-	}
-	if mags, n := r.Spectrum(p.spectrum, nil); n > 0 {
-		p.send(SpectrumMsg{ID: p.spectrum, Size: n, Magnitudes: mags})
+	for _, src := range p.spectra {
+		var mags []float32
+		n := 0
+		if r, ok := p.synth.(sointu.UnitSpectrumReporter); ok && src.Unit != 0 {
+			mags, n = r.UnitSpectrum(src.Unit, nil)
+		} else if r, ok := p.synth.(sointu.SpectrumReporter); ok && src.Buffer != 0 {
+			mags, n = r.Spectrum(src.Buffer, nil)
+		}
+		if n > 0 {
+			p.send(SpectrumMsg{Source: src, Size: n, Magnitudes: mags})
+		}
 	}
 }
 

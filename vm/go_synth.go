@@ -645,6 +645,7 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 						in[1] = stack[l-2]
 					}
 					s.spfft(index, in)
+					s.tapSpectrum(index)
 				}
 				operands = operands[1:]
 				stack = stack[:l-channels]
@@ -652,6 +653,7 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 				var out [2]float32
 				if index := int(operands[0]); s.bytecode.SpectralUnits[index].Voice == int(s.bytecode.NumVoices-voicesRemaining) {
 					out = s.spifft(index, params[0])
+					s.tapSpectrum(index)
 				}
 				operands = operands[1:]
 				if stereo {
@@ -661,6 +663,7 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 			case opSpcomb:
 				if index := int(operands[0]); s.bytecode.SpectralUnits[index].Voice == int(s.bytecode.NumVoices-voicesRemaining) {
 					s.spcomb(index, voice.note, params[0], params[1], operands[1:6])
+					s.tapSpectrum(index)
 				}
 				operands = operands[6:]
 			case opSpgate, opSpphase:
@@ -670,6 +673,7 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 					} else {
 						s.spphase(index, operands[1], params[0])
 					}
+					s.tapSpectrum(index)
 				}
 				operands = operands[2:]
 			case opSpfilter, opSpcompress, opSpblur, opSpscale, opSpformant, opSpcross:
@@ -688,11 +692,13 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 					case opSpblur:
 						s.spblur(index, params[0], params[1])
 					}
+					s.tapSpectrum(index)
 				}
 				operands = operands[1:]
 			case opSpcopy:
 				if index := int(operands[0]); s.bytecode.SpectralUnits[index].Voice == int(s.bytecode.NumVoices-voicesRemaining) {
 					s.spcopy(index)
+					s.tapSpectrum(index)
 				}
 				operands = operands[1:]
 			case opWindow:

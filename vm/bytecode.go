@@ -101,6 +101,7 @@ type (
 	// Channels is 2 for stereo spfft and spifft units, otherwise 1.
 	SpectralUnit struct {
 		Type             string
+		UnitID           int // for UnitSpectrum
 		Voice            int
 		Spectrum, Source int
 		Channels         int
@@ -233,7 +234,7 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				if len(b.SpectralUnits) > 255 {
 					return nil, errors.New("Patch uses over 256 spectral units")
 				}
-				u := SpectralUnit{Type: unit.Type, Voice: patch.FirstVoiceForInstrument(instrIndex), Spectrum: b.spectrumIndex(p["buffer"]), Source: -1, Channels: 1}
+				u := SpectralUnit{Type: unit.Type, UnitID: unit.ID, Voice: patch.FirstVoiceForInstrument(instrIndex), Spectrum: b.spectrumIndex(p["buffer"]), Source: -1, Channels: 1}
 				stereo := 0
 				if unit.Type == "spfft" || unit.Type == "spifft" {
 					stereo = p["stereo"] & 1

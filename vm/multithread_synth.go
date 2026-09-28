@@ -175,6 +175,17 @@ func (s *MultithreadSynth) Spectrum(bufferID int, dst []float32) ([]float32, int
 	return dst, 0
 }
 
+func (s *MultithreadSynth) UnitSpectrum(unitID int, dst []float32) ([]float32, int) {
+	for _, sy := range s.synths {
+		if r, ok := sy.(sointu.UnitSpectrumReporter); ok {
+			if ret, n := r.UnitSpectrum(unitID, dst); n > 0 {
+				return ret, n
+			}
+		}
+	}
+	return dst, 0
+}
+
 func (s *MultithreadSynth) Playheads(dst []sointu.Playhead) []sointu.Playhead {
 	for _, synth := range s.synths {
 		if p, ok := synth.(sointu.PlayheadReporter); ok {

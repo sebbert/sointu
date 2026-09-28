@@ -109,6 +109,16 @@ type (
 		Spectrum(bufferID int, dst []float32) ([]float32, int)
 	}
 
+	// UnitSpectrumReporter is implemented by Synths that can report the
+	// spectrum right after each spectral unit processed it.
+	UnitSpectrumReporter interface {
+		// UnitSpectrum appends to dst the magnitudes of bins 0 to size/2 of
+		// the spectrum as the spectral unit with the given ID last left it,
+		// and returns them and the size, or 0 if there is none yet. Calling
+		// it asks the synth to keep the next one.
+		UnitSpectrum(unitID int, dst []float32) ([]float32, int)
+	}
+
 	// PlayheadReporter is implemented by Synths that can tell where bufread
 	// units are playing.
 	PlayheadReporter interface {

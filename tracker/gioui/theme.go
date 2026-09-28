@@ -121,6 +121,8 @@ type Theme struct {
 		}
 		Error   color.NRGBA
 		Divider color.NRGBA
+		// Preview is the background of the previews of units' buffers
+		Preview color.NRGBA
 	}
 	Cursor    CursorStyle
 	Selection CursorStyle

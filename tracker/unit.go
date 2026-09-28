@@ -387,3 +387,40 @@ func (s *UnitModel) RailWidth() int {
 func (e *RailError) Error() string { return e.Err.Error() }
 
 func (s *Rail) StackAfter() int { return s.PassThrough + s.StackUse.NumOutputs }
+
+// Spectrum returns the spectrum as unit i of the selected instrument, a
+// spectral unit, last left it, as BufferModel.SpectrumOf.
+func (m *UnitModel) Spectrum(i int) ([]float32, int) {
+	if m.d.InstrIndex < 0 || m.d.InstrIndex >= len(m.d.Song.Patch) ||
+		i < 0 || i >= len(m.d.Song.Patch[m.d.InstrIndex].Units) {
+		return nil, 0
+	}
+	id := m.d.Song.Patch[m.d.InstrIndex].Units[i].ID
+	if id == 0 {
+		return nil, 0
+	}
+	return (*Model)(m).spectrumOf(SpectrumSource{Unit: id})
+}
+
+// Buffer returns the ID of the buffer that unit i of the selected instrument
+// plays, writes or holds its spectrum in, and whether it is a spectrum.
+func (m *UnitModel) Buffer(i int) (id int, spectrum, ok bool) {
+	if m.d.InstrIndex < 0 || m.d.InstrIndex >= len(m.d.Song.Patch) ||
+		i < 0 || i >= len(m.d.Song.Patch[m.d.InstrIndex].Units) {
+		return 0, false, false
+	}
+	return unitBuffer(&m.d.Song.Patch[m.d.InstrIndex].Units[i])
+}
+
+// UnitPreviewCells is how many parameter cells wide the preview of a unit's
+// buffer is: the rack leaves room for it after the unit's parameters.
+const UnitPreviewCells = 2
+
+func unitBuffer(u *sointu.Unit) (id int, spectrum, ok bool) {
+	for _, p := range sointu.UnitTypes[u.Type].Params {
+		if p.Name == "buffer" {
+			return u.Parameters["buffer"], sointu.SpectrumBufferParams(u.Type) != nil, true
+		}
+	}
+	return 0, false, false
+}

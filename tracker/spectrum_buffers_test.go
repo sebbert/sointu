@@ -124,7 +124,7 @@ func TestPlayerReportsSpectrum(t *testing.T) {
 			{Type: "spfft", Parameters: sointu.ParamMap{"size": 0, "buffer": 5}},
 		}}}}
 	broker.ToPlayer <- any(song)
-	broker.ToPlayer <- any(SpectrumWatchMsg(5))
+	broker.ToPlayer <- any(SpectrumWatchMsg{{Buffer: 5}})
 	out := make(sointu.AudioBuffer, 512)
 	for range 10 {
 		p.Process(out, NullPlayerProcessContext{})
@@ -134,8 +134,8 @@ func TestPlayerReportsSpectrum(t *testing.T) {
 		case msg := <-broker.ToModel:
 			if s, ok := msg.Data.(SpectrumMsg); ok {
 				// a constant 0.5: the DC bin has 0.5 times the sum of the window
-				if s.ID != 5 || s.Size != 256 || len(s.Magnitudes) != 129 || s.Magnitudes[0] < 60 || s.Magnitudes[0] > 68 {
-					t.Errorf("got spectrum %d of size %d, %d bins, DC %v", s.ID, s.Size, len(s.Magnitudes), s.Magnitudes[0])
+				if s.Source.Buffer != 5 || s.Size != 256 || len(s.Magnitudes) != 129 || s.Magnitudes[0] < 60 || s.Magnitudes[0] > 68 {
+					t.Errorf("got spectrum %v of size %d, %d bins, DC %v", s.Source, s.Size, len(s.Magnitudes), s.Magnitudes[0])
 				}
 				return
 			}
