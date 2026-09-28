@@ -130,22 +130,41 @@ func (p *Plot) Layout(gtx C, data PlotDataFunc, xticks, yticks PlotTickFunc, cur
 }
 
 // drawPlotCurves draws the first numchns channels of data over an area of
-// size s, each pixel column a bar over the y range data returns for it.
+// size s, each pixel column a bar over the y range data returns for it. Where
+// several channels are drawn in a column, they are half transparent, so that
+// the ones below show through.
 func drawPlotCurves(gtx C, colors [3]color.NRGBA, s image.Point, xlim, ylim plotRange, data PlotDataFunc, numchns int) {
-	for chn := range min(numchns, len(colors)) {
-		paint.ColorOp{Color: colors[chn]}.Add(gtx.Ops)
-		right := xlim.fromRelative(plotPx(s.X).fromScreen(0))
-		for sx := range s.X {
-			// left and right is the sample range covered by the pixel
-			left := right
-			right = xlim.fromRelative(plotPx(s.X).fromScreen(sx + 1))
+	numchns = min(numchns, len(colors))
+	var bars [len(colors)]struct {
+		y1, y2 int
+		ok     bool
+	}
+	right := xlim.fromRelative(plotPx(s.X).fromScreen(0))
+	for sx := range s.X {
+		// left and right is the sample range covered by the pixel
+		left := right
+		right = xlim.fromRelative(plotPx(s.X).fromScreen(sx + 1))
+		drawn := 0
+		for chn := range numchns {
 			yr, ok := data(chn, plotRange{left, right})
-			if !ok {
+			b := &bars[chn]
+			b.ok = ok
+			if ok {
+				b.y1 = plotPx(s.Y).toScreen(ylim.toRelative(yr.a))
+				b.y2 = plotPx(s.Y).toScreen(ylim.toRelative(yr.b))
+				drawn++
+			}
+		}
+		for chn, b := range bars[:numchns] {
+			if !b.ok {
 				continue
 			}
-			y1 := plotPx(s.Y).toScreen(ylim.toRelative(yr.a))
-			y2 := plotPx(s.Y).toScreen(ylim.toRelative(yr.b))
-			fillRect(gtx, clip.Rect{Min: image.Pt(sx, min(y1, y2)), Max: image.Pt(sx+1, max(y1, y2)+1)})
+			c := colors[chn]
+			if drawn > 1 {
+				c.A /= 2
+			}
+			paint.ColorOp{Color: c}.Add(gtx.Ops)
+			fillRect(gtx, clip.Rect{Min: image.Pt(sx, min(b.y1, b.y2)), Max: image.Pt(sx+1, max(b.y1, b.y2)+1)})
 		}
 	}
 }
