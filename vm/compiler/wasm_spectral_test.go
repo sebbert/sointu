@@ -164,3 +164,54 @@ func TestSpectralCombineWasmMatchGoSynth(t *testing.T) {
 	}
 	compareWasmToGo(t, want, renderWasm(t, node, wat2wasm, song, nil, nil, nil))
 }
+
+func TestSpectralStereoWasmMatchesGoSynth(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not found")
+	}
+	wat2wasm, err := exec.LookPath("wat2wasm")
+	if err != nil {
+		t.Skip("wat2wasm not found")
+	}
+	// a stereo chain through every unit, a mono spifft of the stereo
+	// spectrum, a stereo spifft of a mono spectrum, and spcross with a mono
+	// source
+	song := sointu.Song{
+		BPM:         120,
+		RowsPerBeat: 4,
+		Score: sointu.Score{RowsPerPattern: 16, Length: 1, Tracks: []sointu.Track{
+			{NumVoices: 1, Order: sointu.Order{0}, Patterns: []sointu.Pattern{{48, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1}}},
+		}},
+		Patch: sointu.Patch{
+			{Name: "fx", NumVoices: 1, Units: []sointu.Unit{
+				{Type: "envelope", Parameters: sointu.ParamMap{"stereo": 0, "attack": 0, "decay": 0, "sustain": 128, "release": 0, "gain": 128}},
+				{Type: "send", Parameters: sointu.ParamMap{"stereo": 0, "amount": 128, "target": 10, "port": 1, "sendpop": 1}},
+				{Type: "noise", Parameters: sointu.ParamMap{"stereo": 0, "shape": 64, "gain": 64}},
+				{Type: "spfft", Parameters: sointu.ParamMap{"stereo": 0, "size": 1, "buffer": 2}},
+				{Type: "noise", Parameters: sointu.ParamMap{"stereo": 1, "shape": 64, "gain": 64}},
+				{Type: "spfft", Parameters: sointu.ParamMap{"stereo": 1, "size": 1, "buffer": 1}},
+				{Type: "spfilter", Parameters: sointu.ParamMap{"low": 30, "high": 115, "tilt": 70, "buffer": 1}},
+				{Type: "spcompress", Parameters: sointu.ParamMap{"amount": 100, "width": 20, "buffer": 1}},
+				{ID: 10, Type: "spblur", Parameters: sointu.ParamMap{"amount": 80, "freeze": 0, "buffer": 1}},
+				{Type: "spgate", Parameters: sointu.ParamMap{"threshold": 40, "invert": 0, "buffer": 1}},
+				{Type: "spphase", Parameters: sointu.ParamMap{"mode": sointu.SpphaseRandom, "amount": 30, "buffer": 1}},
+				{Type: "spscale", Parameters: sointu.ParamMap{"scale": 70, "shift": 60, "buffer": 1}},
+				{Type: "spformant", Parameters: sointu.ParamMap{"shift": 40, "width": 20, "buffer": 1}},
+				{Type: "spcross", Parameters: sointu.ParamMap{"amount": 90, "width": 10, "source": 2, "buffer": 1}},
+				{Type: "spcomb", Parameters: sointu.ParamMap{"q": 50, "amount": 90, "interval1": 7, "buffer": 1}},
+				{Type: "spifft", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128, "buffer": 1}},
+				{Type: "spifft", Parameters: sointu.ParamMap{"stereo": 0, "gain": 100, "buffer": 1}},
+				{Type: "spifft", Parameters: sointu.ParamMap{"stereo": 1, "gain": 60, "buffer": 2}},
+				{Type: "addp", Parameters: sointu.ParamMap{"stereo": 1}},
+				{Type: "addp", Parameters: sointu.ParamMap{"stereo": 0}},
+				{Type: "out", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128}},
+			}},
+		},
+	}
+	want, err := sointu.Play(vm.GoSynther{}, song, nil)
+	if err != nil {
+		t.Fatalf("Go synth failed: %v", err)
+	}
+	compareWasmToGo(t, want, renderWasm(t, node, wat2wasm, song, nil, nil, nil))
+}

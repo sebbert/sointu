@@ -100,10 +100,10 @@ func (m *Model) addSpectrumBuffer(id int) int {
 	return id
 }
 
-// spectrumSize returns the size of the spectrum buffer with the given ID: the
-// size of the spfft unit writing it, or of the spectrum an spcopy unit copies
-// to it, and whether it is written at all.
-func (m *Model) spectrumSize(id int) (int, bool) {
+// spectrumSize returns the size and channels of the spectrum buffer with the
+// given ID: those of the spfft unit writing it, or of the spectrum an spcopy
+// unit copies to it, and whether it is written at all.
+func (m *Model) spectrumSize(id int) (size, channels int, ok bool) {
 	for range 8 { // copies of copies
 		found := false
 		for _, instr := range m.d.Song.Patch {
@@ -113,7 +113,7 @@ func (m *Model) spectrumSize(id int) (int, bool) {
 				}
 				switch u.Type {
 				case "spfft":
-					return sointu.SpectrumSize(u.Parameters["size"]), true
+					return sointu.SpectrumSize(u.Parameters["size"]), 1 + u.Parameters["stereo"]&1, true
 				case "spcopy":
 					if !found {
 						id, found = u.Parameters["source"], true
@@ -125,7 +125,7 @@ func (m *Model) spectrumSize(id int) (int, bool) {
 			break
 		}
 	}
-	return sointu.SpectrumSize(sointu.SpectrumSizeDefault), false
+	return sointu.SpectrumSize(sointu.SpectrumSizeDefault), 1, false
 }
 
 // defaultSpectrumBuffer returns the spectrum buffer a new spectral unit reading

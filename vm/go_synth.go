@@ -638,17 +638,24 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 				s.spawn(unit, voice, first, count, flags, params[0], params[1], params[2], &stack)
 			case opSpfft:
 				if index := int(operands[0]); s.bytecode.SpectralUnits[index].Voice == int(s.bytecode.NumVoices-voicesRemaining) {
-					s.spfft(index, stack[l-1])
+					in := [2]float32{stack[l-1], 0}
+					if stereo {
+						in[1] = stack[l-2]
+					}
+					s.spfft(index, in)
 				}
 				operands = operands[1:]
-				stack = stack[:l-1]
+				stack = stack[:l-channels]
 			case opSpifft:
-				out := float32(0)
+				var out [2]float32
 				if index := int(operands[0]); s.bytecode.SpectralUnits[index].Voice == int(s.bytecode.NumVoices-voicesRemaining) {
 					out = s.spifft(index, params[0])
 				}
 				operands = operands[1:]
-				stack = append(stack, out)
+				if stereo {
+					stack = append(stack, out[1])
+				}
+				stack = append(stack, out[0])
 			case opSpcomb:
 				if index := int(operands[0]); s.bytecode.SpectralUnits[index].Voice == int(s.bytecode.NumVoices-voicesRemaining) {
 					s.spcomb(index, voice.note, params[0], params[1], operands[1:6])

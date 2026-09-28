@@ -41,9 +41,9 @@ var spectralTables = sync.OnceValue(func() (t struct{ hann, wr, wi []float32 }) 
 })
 
 type (
-	// spectrum is a spectrum buffer: size complex values, interleaved, and
-	// the number of spectra written to it, so that the units using it know
-	// when there is a new one.
+	// spectrum is a spectrum buffer: size complex values, interleaved, for
+	// each channel, and the number of spectra written to it, so that the
+	// units using it know when there is a new one.
 	spectrum struct {
 		data  []float32
 		count uint32
@@ -72,22 +72,22 @@ func (s *GoSynth) setSpectra(old *Bytecode) {
 				continue
 			}
 		}
-		spectra[i] = spectrum{data: make([]float32, 2*size)}
+		spectra[i] = spectrum{data: make([]float32, 2*size*sp.Channels)}
 	}
 	states := make([]spectralState, len(s.bytecode.SpectralUnits))
 	for i, u := range s.bytecode.SpectralUnits {
 		sp := s.bytecode.Spectra[u.Spectrum]
 		if old != nil && i < len(old.SpectralUnits) && i < len(s.spectral) {
-			if o := old.SpectralUnits[i]; o.Type == u.Type && old.Spectra[o.Spectrum] == sp && (o.Source < 0) == (u.Source < 0) {
+			if o := old.SpectralUnits[i]; o.Type == u.Type && o.Channels == u.Channels && old.Spectra[o.Spectrum] == sp && (o.Source < 0) == (u.Source < 0) {
 				states[i] = s.spectral[i]
 				continue
 			}
 		}
 		switch u.Type {
-		case "spfft", "spifft":
-			states[i].ring = make([]float32, 1<<sp.Log2Size)
-		case "spblur":
-			states[i].ring = make([]float32, 1<<sp.Log2Size+2)
+		case "spfft", "spifft": // a ring for each channel of the unit
+			states[i].ring = make([]float32, (1<<sp.Log2Size)*u.Channels)
+		case "spblur": // the held spectrum
+			states[i].ring = make([]float32, (1<<sp.Log2Size+2)*sp.Channels)
 		}
 	}
 	s.spectra, s.spectral = spectra, states
@@ -105,55 +105,76 @@ func findSpectrum(spectra []Spectrum, sp Spectrum) int {
 	return -1
 }
 
-// spfft pushes a sample to the ring of the unit, and every size/4 samples
-// replaces the spectrum with the FFT of the last size samples, windowed.
-func (s *GoSynth) spfft(index int, input float32) {
+// spfft pushes a sample of each channel of the unit to its rings, and every
+// size/4 samples replaces the spectrum with the FFT of the last size samples,
+// windowed. input is left, right.
+func (s *GoSynth) spfft(index int, input [2]float32) {
 	u := s.bytecode.SpectralUnits[index]
 	st, sp := &s.spectral[index], &s.spectra[u.Spectrum]
-	n := uint32(len(st.ring))
-	st.ring[st.pos] = input
+	n := uint32(1) << s.bytecode.Spectra[u.Spectrum].Log2Size
+	for c := range u.Channels {
+		st.ring[uint32(c)*n+st.pos] = input[c]
+	}
 	st.pos = (st.pos + 1) & (n - 1)
 	if st.pos&(n/4-1) != 0 {
 		return
 	}
 	hann := hannTable(n)
-	for j := uint32(0); j < n; j++ {
-		sp.data[2*j] = float32(st.ring[(st.pos+j)&(n-1)] * hann(j))
-		sp.data[2*j+1] = 0
+	for c := range uint32(min(u.Channels, s.bytecode.Spectra[u.Spectrum].Channels)) {
+		x, ring := sp.data[2*n*c:2*n*(c+1)], st.ring[n*c:n*(c+1)]
+		for j := uint32(0); j < n; j++ {
+			x[2*j] = float32(ring[(st.pos+j)&(n-1)] * hann(j))
+			x[2*j+1] = 0
+		}
+		fft(x, n)
 	}
-	fft(sp.data[:2*n], n)
 	sp.count++
 }
 
 // spifft overlap-adds each new spectrum, transformed back and windowed, to the
-// ring of the unit, and returns the next sample of the ring times gain.
-func (s *GoSynth) spifft(index int, gain float32) float32 {
+// rings of the unit, and returns the next sample of each channel times gain:
+// left, right. A mono unit averages the channels of a stereo spectrum, a
+// stereo unit repeats a mono one.
+func (s *GoSynth) spifft(index int, gain float32) (out [2]float32) {
 	u := s.bytecode.SpectralUnits[index]
 	st, sp := &s.spectral[index], &s.spectra[u.Spectrum]
-	n := uint32(len(st.ring))
+	n := uint32(1) << s.bytecode.Spectra[u.Spectrum].Log2Size
+	spc := uint32(s.bytecode.Spectra[u.Spectrum].Channels)
+	rings := min(uint32(u.Channels), spc)
 	if sp.count != st.seen {
 		st.seen = sp.count
-		// the inverse FFT of a spectrum with conjugate symmetry is real:
-		// real(ifft(X)) = real(fft(conj(X)))/n. Bins above n/2 mirror the
-		// bins below it; conjugating the mirrored conjugate leaves them as is
-		x := s.scratch[:2*n]
-		for k := uint32(0); k <= n/2; k++ {
-			x[2*k], x[2*k+1] = sp.data[2*k], -sp.data[2*k+1]
-		}
-		for k := n/2 + 1; k < n; k++ {
-			x[2*k], x[2*k+1] = sp.data[2*(n-k)], sp.data[2*(n-k)+1]
-		}
-		fft(x, n)
 		// the squared Hann windows overlapping by 3/4 sum to 3/2
 		scale := float32(0.6666667) / float32(n)
+		if spc > rings {
+			scale *= 0.5
+		}
 		hann := hannTable(n)
-		for j := uint32(0); j < n; j++ {
-			k := (st.pos + j) & (n - 1)
-			st.ring[k] += float32(float32(x[2*j]*scale) * hann(j))
+		for c := range spc {
+			// the inverse FFT of a spectrum with conjugate symmetry is real:
+			// real(ifft(X)) = real(fft(conj(X)))/n. Bins above n/2 mirror
+			// the bins below it; conjugating the mirrored conjugate leaves
+			// them as is
+			data, x := sp.data[2*n*c:2*n*(c+1)], s.scratch[:2*n]
+			for k := uint32(0); k <= n/2; k++ {
+				x[2*k], x[2*k+1] = data[2*k], -data[2*k+1]
+			}
+			for k := n/2 + 1; k < n; k++ {
+				x[2*k], x[2*k+1] = data[2*(n-k)], data[2*(n-k)+1]
+			}
+			fft(x, n)
+			ring := st.ring[n*min(c, rings-1):]
+			for j := uint32(0); j < n; j++ {
+				k := (st.pos + j) & (n - 1)
+				ring[k] += float32(float32(x[2*j]*scale) * hann(j))
+			}
 		}
 	}
-	out := float32(st.ring[st.pos] * gain)
-	st.ring[st.pos] = 0
+	for c := range u.Channels {
+		out[c] = float32(st.ring[n*min(uint32(c), rings-1)+st.pos] * gain)
+	}
+	for c := range rings {
+		st.ring[n*c+st.pos] = 0
+	}
 	st.pos = (st.pos + 1) & (n - 1)
 	return out
 }
@@ -219,25 +240,32 @@ func (s *GoSynth) Spectrum(bufferID int, dst []float32) ([]float32, int) {
 			continue
 		}
 		data, n := s.spectra[i].data, 1<<sp.Log2Size
-		for k := 0; k <= n/2; k++ {
-			dst = append(dst, float32(math.Hypot(float64(data[2*k]), float64(data[2*k+1]))))
+		for c := range sp.Channels {
+			for k := 0; k <= n/2; k++ {
+				dst = append(dst, float32(math.Hypot(float64(data[2*(c*n+k)]), float64(data[2*(c*n+k)+1]))))
+			}
 		}
 		return dst, n
 	}
 	return dst, 0
 }
 
-// spectralFrame returns the spectrum of a modifying spectral unit and its
-// size, if there is a new spectrum the unit has not processed yet, marking it
-// processed.
-func (s *GoSynth) spectralFrame(index int) ([]float32, uint32, bool) {
+// spectralFrame returns the channels of the spectrum of a modifying spectral
+// unit and its size, if there is a new spectrum the unit has not processed
+// yet, marking it processed.
+func (s *GoSynth) spectralFrame(index int) ([][]float32, uint32, bool) {
 	u := s.bytecode.SpectralUnits[index]
 	st, sp := &s.spectral[index], &s.spectra[u.Spectrum]
 	if sp.count == st.seen {
 		return nil, 0, false
 	}
 	st.seen = sp.count
-	return sp.data, uint32(len(sp.data) / 2), true
+	n := uint32(1) << s.bytecode.Spectra[u.Spectrum].Log2Size
+	channels := make([][]float32, 0, 2)
+	for c := uint32(0); c < uint32(len(sp.data))/(2*n); c++ {
+		channels = append(channels, sp.data[2*n*c:2*n*(c+1)])
+	}
+	return channels, n, true
 }
 
 func pow32(a, b float32) float32 { return float32(math.Pow(float64(a), float64(b))) }
@@ -246,7 +274,7 @@ func sqrt32(a float32) float32 { return float32(math.Sqrt(float64(a))) }
 
 // spfilter removes the bins below low and above high, and tilts the rest.
 func (s *GoSynth) spfilter(index int, low, high, tilt float32) {
-	x, n, ok := s.spectralFrame(index)
+	xs, n, ok := s.spectralFrame(index)
 	if !ok {
 		return
 	}
@@ -255,20 +283,22 @@ func (s *GoSynth) spfilter(index int, low, high, tilt float32) {
 	hi := float32(h) * float32(float32(pow32(2, float32(high*10))-1)/1023)
 	e := float32(tilt*4) - 2 // amplitude ∝ frequency^e
 	ref := float32(n) / 44.1 // the bin of 1 kHz
-	for k := uint32(0); k <= h; k++ {
-		fk := float32(k)
-		if fk < lo || fk > hi {
-			x[2*k], x[2*k+1] = 0, 0
-		} else if e != 0 {
-			g := pow32(max(fk, 1)/ref, e)
-			x[2*k], x[2*k+1] = x[2*k]*g, x[2*k+1]*g
+	for _, x := range xs {
+		for k := uint32(0); k <= h; k++ {
+			fk := float32(k)
+			if fk < lo || fk > hi {
+				x[2*k], x[2*k+1] = 0, 0
+			} else if e != 0 {
+				g := pow32(max(fk, 1)/ref, e)
+				x[2*k], x[2*k+1] = x[2*k]*g, x[2*k+1]*g
+			}
 		}
 	}
 }
 
 // spcompress scales each bin by (mean/envelope)^amount.
 func (s *GoSynth) spcompress(index int, amount, width float32) {
-	x, n, ok := s.spectralFrame(index)
+	xs, n, ok := s.spectralFrame(index)
 	if !ok {
 		return
 	}
@@ -277,21 +307,23 @@ func (s *GoSynth) spcompress(index int, amount, width float32) {
 		return
 	}
 	h := n / 2
-	// prefix sums of the magnitudes
-	sums := s.scratch[:h+2]
-	sum := float32(0)
-	sums[0] = 0
-	for k := uint32(0); k <= h; k++ {
-		sum += sqrt32(float32(x[2*k]*x[2*k]) + float32(x[2*k+1]*x[2*k+1]))
-		sums[k+1] = sum
-	}
-	mean := sum / float32(h+1)
 	w := int32(1 + uint32(float32(min(max(width, 0), 1)*float32(n/32))))
-	for k := int32(0); k <= int32(h); k++ {
-		lo, hi := max(k-w, 0), min(k+w, int32(h))
-		env := float32(sums[hi+1]-sums[lo]) / float32(hi+1-lo)
-		g := pow32(float32(mean+1e-9)/float32(env+1e-9), a)
-		x[2*k], x[2*k+1] = x[2*k]*g, x[2*k+1]*g
+	for _, x := range xs {
+		// prefix sums of the magnitudes
+		sums := s.scratch[:h+2]
+		sum := float32(0)
+		sums[0] = 0
+		for k := uint32(0); k <= h; k++ {
+			sum += sqrt32(float32(x[2*k]*x[2*k]) + float32(x[2*k+1]*x[2*k+1]))
+			sums[k+1] = sum
+		}
+		mean := sum / float32(h+1)
+		for k := int32(0); k <= int32(h); k++ {
+			lo, hi := max(k-w, 0), min(k+w, int32(h))
+			env := float32(sums[hi+1]-sums[lo]) / float32(hi+1-lo)
+			g := pow32(float32(mean+1e-9)/float32(env+1e-9), a)
+			x[2*k], x[2*k+1] = x[2*k]*g, x[2*k+1]*g
+		}
 	}
 }
 
@@ -323,12 +355,17 @@ func rotate(xr, xi, c, s float32) (float32, float32) {
 // spblur smooths the magnitudes over time, keeping the phases, or while
 // frozen holds the magnitudes with random phases, for a steady texture.
 func (s *GoSynth) spblur(index int, amount, freeze float32) {
-	x, n, ok := s.spectralFrame(index)
+	xs, n, ok := s.spectralFrame(index)
 	if !ok {
 		return
 	}
 	st := &s.spectral[index]
-	y := st.ring
+	for c, x := range xs {
+		spblurChannel(st, x, st.ring[uint32(c)*(n+2):], n, amount, freeze)
+	}
+}
+
+func spblurChannel(st *spectralState, x, y []float32, n uint32, amount, freeze float32) {
 	for k := uint32(0); k <= n/2; k++ {
 		yr, yi := y[2*k], y[2*k+1]
 		if freeze > 0.5 {
@@ -355,16 +392,18 @@ func (s *GoSynth) spblur(index int, amount, freeze float32) {
 
 // spgate removes the bins quieter than the threshold, or the louder ones.
 func (s *GoSynth) spgate(index int, threshold float32, invert bool) {
-	x, n, ok := s.spectralFrame(index)
+	xs, n, ok := s.spectralFrame(index)
 	if !ok {
 		return
 	}
 	// -96 to 0 dB; a full scale sine has the magnitude n/4
 	thr := pow32(2, float32(threshold*16)-16) * float32(n/4)
 	thr *= thr
-	for k := uint32(0); k <= n/2; k++ {
-		if (float32(float32(x[2*k]*x[2*k])+float32(x[2*k+1]*x[2*k+1])) < thr) != invert {
-			x[2*k], x[2*k+1] = 0, 0
+	for _, x := range xs {
+		for k := uint32(0); k <= n/2; k++ {
+			if (float32(float32(x[2*k]*x[2*k])+float32(x[2*k+1]*x[2*k+1])) < thr) != invert {
+				x[2*k], x[2*k+1] = 0, 0
+			}
 		}
 	}
 }
@@ -372,11 +411,17 @@ func (s *GoSynth) spgate(index int, threshold float32, invert bool) {
 // spphase changes the phases: disperse rotates bin k by -πp/128, p growing
 // with k², random by a random phase, robot blends toward phase 0.
 func (s *GoSynth) spphase(index int, mode byte, amount float32) {
-	x, n, ok := s.spectralFrame(index)
+	xs, n, ok := s.spectralFrame(index)
 	if !ok {
 		return
 	}
-	st, h := &s.spectral[index], n/2
+	for _, x := range xs {
+		spphaseChannel(&s.spectral[index], x, n, mode, amount)
+	}
+}
+
+func spphaseChannel(st *spectralState, x []float32, n uint32, mode byte, amount float32) {
+	h := n / 2
 	for k := uint32(0); k <= h; k++ {
 		xr, xi := x[2*k], x[2*k+1]
 		switch mode {
@@ -399,7 +444,7 @@ func (s *GoSynth) spphase(index int, mode byte, amount float32) {
 
 // spscale moves bin k to k*scale+shift.
 func (s *GoSynth) spscale(index int, scale, shift float32) {
-	x, n, ok := s.spectralFrame(index)
+	xs, n, ok := s.spectralFrame(index)
 	if !ok {
 		return
 	}
@@ -407,31 +452,40 @@ func (s *GoSynth) spscale(index int, scale, shift float32) {
 	ratio := pow32(2, float32(scale*2)-1)
 	offset := float32(float32(shift*2)-1) * float32(float32(n)*0.022675737) // up to 1 kHz
 	out := s.scratch[:2*(h+1)]
-	clear(out)
-	for k := uint32(0); k <= h; k++ {
-		j := float32(float32(k)*ratio) + offset
-		if j < 0 {
-			continue
+	for _, x := range xs {
+		clear(out)
+		for k := uint32(0); k <= h; k++ {
+			j := float32(float32(k)*ratio) + offset
+			if j < 0 {
+				continue
+			}
+			if i := uint32(j + 0.5); i <= h {
+				out[2*i] += x[2*k]
+				out[2*i+1] += x[2*k+1]
+			}
 		}
-		if i := uint32(j + 0.5); i <= h {
-			out[2*i] += x[2*k]
-			out[2*i+1] += x[2*k+1]
-		}
+		copy(x, out)
 	}
-	copy(x, out)
 }
 
 // spformant moves the envelope, the average magnitude within width, by
 // scaling its frequencies.
 func (s *GoSynth) spformant(index int, shift, width float32) {
-	x, n, ok := s.spectralFrame(index)
+	xs, n, ok := s.spectralFrame(index)
 	if !ok {
 		return
 	}
 	h := n / 2
 	ratio := pow32(2, float32(shift*2)-1)
-	env := s.scratch[n : n+h+1]
-	envelope(x, h, int32(1+uint32(float32(min(max(width, 0), 1)*float32(n/32)))), s.scratch[:h+2], env)
+	w := int32(1 + uint32(float32(min(max(width, 0), 1)*float32(n/32))))
+	for _, x := range xs {
+		env := s.scratch[n : n+h+1]
+		envelope(x, h, w, s.scratch[:h+2], env)
+		spformantChannel(x, env, h, ratio)
+	}
+}
+
+func spformantChannel(x, env []float32, h uint32, ratio float32) {
 	for k := uint32(0); k <= h; k++ {
 		src := float32(k) / ratio
 		i := uint32(src)
@@ -461,23 +515,28 @@ func envelope(x []float32, h uint32, w int32, sums, env []float32) {
 
 // spcross scales each bin by (source envelope/envelope)^amount.
 func (s *GoSynth) spcross(index int, amount, width float32) {
-	x, n, ok := s.spectralFrame(index)
+	xs, n, ok := s.spectralFrame(index)
 	if !ok {
 		return
 	}
-	src := s.spectra[s.bytecode.SpectralUnits[index].Source].data
-	if len(src) != len(x) {
+	u := s.bytecode.SpectralUnits[index]
+	if s.bytecode.Spectra[u.Source].Log2Size != s.bytecode.Spectra[u.Spectrum].Log2Size {
 		return
 	}
+	src := s.spectra[u.Source].data
 	h := n / 2
 	w := int32(uint32(float32(min(max(width, 0), 1) * float32(n/32))))
-	// the prefix sums and envelopes of the source, then of the spectrum
-	envelope(src, h, w, s.scratch[:h+2], s.scratch[h+2:n+3])
-	envelope(x, h, w, s.scratch[n+4:n+h+6], s.scratch[n+h+6:2*n+7])
-	envS, envX := s.scratch[h+2:], s.scratch[n+h+6:]
-	for k := uint32(0); k <= h; k++ {
-		g := pow32(float32(envS[k]+1e-9)/float32(envX[k]+1e-9), amount)
-		x[2*k], x[2*k+1] = x[2*k]*g, x[2*k+1]*g
+	for c, x := range xs {
+		// a mono source is used for both channels
+		sc := min(uint32(c), uint32(len(src))/(2*n)-1)
+		// the prefix sums and envelopes of the source, then of the spectrum
+		envelope(src[2*n*sc:], h, w, s.scratch[:h+2], s.scratch[h+2:n+3])
+		envelope(x, h, w, s.scratch[n+4:n+h+6], s.scratch[n+h+6:2*n+7])
+		envS, envX := s.scratch[h+2:], s.scratch[n+h+6:]
+		for k := uint32(0); k <= h; k++ {
+			g := pow32(float32(envS[k]+1e-9)/float32(envX[k]+1e-9), amount)
+			x[2*k], x[2*k+1] = x[2*k]*g, x[2*k+1]*g
+		}
 	}
 }
 
@@ -490,7 +549,7 @@ func noteFrequency(note int32) float32 {
 // in the voices given by the operands first and count, or if none, the note
 // of its own voice and the intervals in the rest of the operands above it.
 func (s *GoSynth) spcomb(index int, note byte, q, amount float32, operands []byte) {
-	x, n, ok := s.spectralFrame(index)
+	xs, n, ok := s.spectralFrame(index)
 	if !ok {
 		return
 	}
@@ -519,7 +578,9 @@ func (s *GoSynth) spcomb(index int, note byte, q, amount float32, operands []byt
 			m = max(m, peak(float32(float32(k)*binHz)/f, sharp))
 		}
 		g := float32(float32(m-1)*amount) + 1
-		x[2*k], x[2*k+1] = x[2*k]*g, x[2*k+1]*g
+		for _, x := range xs {
+			x[2*k], x[2*k+1] = x[2*k]*g, x[2*k+1]*g
+		}
 	}
 }
 

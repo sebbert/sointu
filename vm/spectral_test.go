@@ -201,3 +201,57 @@ func TestSpcrossTakesMagnitudes(t *testing.T) {
 		}
 	}
 }
+
+// constants returns units pushing right, then left, through a stereo spfft
+// to buffer 1 and the given units, and the output units.
+func stereoDCPatch(left, right int, units ...sointu.Unit) sointu.Patch {
+	us := []sointu.Unit{
+		{Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": right}},
+		{Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": left}},
+		{Type: "spfft", Parameters: sointu.ParamMap{"stereo": 1, "size": 0, "buffer": 1}},
+	}
+	return sointu.Patch{{NumVoices: 1, Units: append(us, units...)}}
+}
+
+func TestSpectralStereo(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		units []sointu.Unit
+		want  [2]float32
+	}{
+		{"stereo", []sointu.Unit{
+			{Type: "spifft", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128, "buffer": 1}},
+			{Type: "out", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128}},
+		}, [2]float32{0.5, 0.25}},
+		{"mono spifft averages", []sointu.Unit{
+			{Type: "spifft", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128, "buffer": 1}},
+			{Type: "push", Parameters: sointu.ParamMap{"stereo": 0}},
+			{Type: "out", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128}},
+		}, [2]float32{0.375, 0.375}},
+		{"copy", []sointu.Unit{
+			{Type: "spcopy", Parameters: sointu.ParamMap{"source": 1, "buffer": 2}},
+			{Type: "spfilter", Parameters: sointu.ParamMap{"low": 0, "high": 128, "tilt": 64, "buffer": 1}},
+			{Type: "spifft", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128, "buffer": 2}},
+			{Type: "out", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128}},
+		}, [2]float32{0.5, 0.25}}, // spcopy makes buffer 2 stereo too
+	} {
+		out := render(t, newSynth(t, stereoDCPatch(96, 80, c.units...)), 4*256)
+		for i := 512; i < len(out); i++ {
+			if math.Abs(float64(out[i][0]-c.want[0])) > 1e-5 || math.Abs(float64(out[i][1]-c.want[1])) > 1e-5 {
+				t.Errorf("%s: frame %d: %v, want %v", c.name, i, out[i], c.want)
+				break
+			}
+		}
+	}
+	// a stereo spifft repeats a mono spectrum
+	patch := dcPatch(96)
+	patch[0].Units[3] = sointu.Unit{Type: "spifft", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128, "buffer": 1}}
+	patch[0].Units[4] = sointu.Unit{Type: "out", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128}}
+	patch[0].Units = append(patch[0].Units, sointu.Unit{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 0}})
+	out := render(t, newSynth(t, patch), 4*256)
+	for i := 512; i < len(out); i++ {
+		if math.Abs(float64(out[i][0]-0.5)) > 1e-5 || math.Abs(float64(out[i][1]-0.5)) > 1e-5 {
+			t.Fatalf("mono spectrum: frame %d: %v, want [0.5 0.5]", i, out[i])
+		}
+	}
+}

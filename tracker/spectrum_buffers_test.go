@@ -54,8 +54,8 @@ func TestSpectrumBufferLifetime(t *testing.T) {
 	if got := m.d.Song.Patch[0].Units[2].Parameters["buffer"]; got != id {
 		t.Errorf("spifft reads buffer %d, want the spectrum above it, %d", got, id)
 	}
-	if size, ok := m.spectrumSize(id); !ok || size != 1024 {
-		t.Errorf("spectrum size %d, %v, want 1024", size, ok)
+	if size, channels, ok := m.spectrumSize(id); !ok || size != 1024 || channels != 1 {
+		t.Errorf("spectrum size %d, channels %d, %v, want 1024, 1", size, channels, ok)
 	}
 	// deleting the spfft keeps the buffer, as spifft uses it
 	m.d.UnitIndex, m.d.UnitIndex2 = 1, 1

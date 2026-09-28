@@ -445,16 +445,21 @@ func (ib *InstrumentBuffers) layoutSpectrum(gtx C) D {
 	mags, size := tr.Buffer().Spectrum()
 	// a full scale sine has the magnitude size/4 with the Hann window
 	norm := float64(size) / 4
-	db := func(k int) float32 {
-		return float32(max(20*math.Log10(float64(mags[k])/norm+1e-12), bufferSpectrumDbMin))
+	bins := size/2 + 1
+	channels := 0
+	if size > 0 {
+		channels = len(mags) / bins
 	}
 	data := func(chn int, xr plotRange) (plotRange, bool) {
-		if chn > 0 || len(mags) < 2 {
+		if chn >= channels {
 			return plotRange{}, false
+		}
+		db := func(k int) float32 {
+			return float32(max(20*math.Log10(float64(mags[chn*bins+k])/norm+1e-12), bufferSpectrumDbMin))
 		}
 		// x is log10(frequency/22050 Hz); bin k is at k*2/size of that
 		k1 := max(int(math.Pow(10, float64(xr.a))*float64(size)/2), 1)
-		k2 := min(int(math.Pow(10, float64(xr.b))*float64(size)/2), len(mags)-1)
+		k2 := min(int(math.Pow(10, float64(xr.b))*float64(size)/2), bins-1)
 		if k1 > k2 {
 			return plotRange{}, false
 		}
@@ -467,7 +472,7 @@ func (ib *InstrumentBuffers) layoutSpectrum(gtx C) D {
 	h := gtx.Dp(180)
 	gtx.Constraints = layout.Exact(image.Pt(gtx.Constraints.Max.X, h))
 	return layout.UniformInset(unit.Dp(6)).Layout(gtx, func(gtx C) D {
-		return ib.spectrum.Layout(gtx, data, spectrumXTicks, spectrumYTicks, float32(math.NaN()), 1)
+		return ib.spectrum.Layout(gtx, data, spectrumXTicks, spectrumYTicks, float32(math.NaN()), max(channels, 1))
 	})
 }
 

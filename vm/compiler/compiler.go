@@ -219,13 +219,15 @@ func (com *Compiler) compile(templateName string, data interface{}) (string, str
 // bytes from it.
 type wasmSpectralData struct {
 	// SpectrumTable has 4 i32s for each spectrum: offset of its data, base 2
-	// logarithm of its size, the number of spectra written to it and 0.
+	// logarithm of its size, the number of spectra written to it and the
+	// number of channels, whose data follow each other.
 	SpectrumTable []uint32
 	// SpectralTable has 4 i32s for each spectral unit: the offset of the
 	// voice that runs it from su_voices, the offset of its state, and the
 	// offsets of its spectrum and source spectrum in SpectrumTable. The state
-	// is the position in its ring and the count of the spectrum it processed
-	// last, 16 bytes, followed by the ring for spfft and spifft.
+	// is the position in its ring, the count of the spectrum it processed
+	// last and the state of its random number generator, 16 bytes, followed
+	// by the rings of spfft and spifft and the held spectrum of spblur.
 	SpectralTable []uint32
 	// SpectralBytes is the size of su_spectral. After the spectra and the
 	// states of the units, it has a scratch space at SpectralScratch of 2n+8
@@ -244,8 +246,8 @@ const wasmSpectrumTableStride = 16
 func wasmSpectral(b *vm.Bytecode) (ret wasmSpectralData) {
 	offset := 0
 	for _, sp := range b.Spectra {
-		ret.SpectrumTable = append(ret.SpectrumTable, uint32(offset), uint32(sp.Log2Size), 0, 0)
-		offset += 2 * (1 << sp.Log2Size) * 4
+		ret.SpectrumTable = append(ret.SpectrumTable, uint32(offset), uint32(sp.Log2Size), 0, uint32(sp.Channels))
+		offset += 2 * (1 << sp.Log2Size) * 4 * sp.Channels
 		ret.SpectralMaxLog2 = max(ret.SpectralMaxLog2, sp.Log2Size)
 	}
 	for _, u := range b.SpectralUnits {
@@ -256,10 +258,10 @@ func wasmSpectral(b *vm.Bytecode) (ret wasmSpectralData) {
 		ret.SpectralTable = append(ret.SpectralTable, uint32(u.Voice*4096), uint32(offset), uint32(u.Spectrum*wasmSpectrumTableStride), uint32(source))
 		offset += 16
 		switch u.Type {
-		case "spfft", "spifft":
-			offset += (1 << b.Spectra[u.Spectrum].Log2Size) * 4
-		case "spblur":
-			offset += (1<<b.Spectra[u.Spectrum].Log2Size + 2) * 4
+		case "spfft", "spifft": // a ring for each channel of the unit
+			offset += (1 << b.Spectra[u.Spectrum].Log2Size) * 4 * u.Channels
+		case "spblur": // the held spectrum
+			offset += (1<<b.Spectra[u.Spectrum].Log2Size + 2) * 4 * b.Spectra[u.Spectrum].Channels
 		}
 	}
 	maxSize := 1 << ret.SpectralMaxLog2

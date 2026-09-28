@@ -81,8 +81,11 @@ func (m *BufferModel) Item(i int) (name, info string) {
 	status := m.buffers.status[buf.ID]
 	switch {
 	case buf.Spectrum:
-		if size, ok := (*Model)(m).spectrumSize(buf.ID); ok {
+		if size, channels, ok := (*Model)(m).spectrumSize(buf.ID); ok {
 			info = fmt.Sprintf("spectrum, %d", size)
+			if channels == 2 {
+				info += ", stereo"
+			}
 		} else {
 			info = "spectrum, not written"
 		}
@@ -182,7 +185,8 @@ func (m *BufferModel) IsSpectrum() bool {
 }
 
 // Spectrum returns the magnitudes of bins 0 to size/2 of the latest spectrum
-// of the selected spectrum buffer, and the size, or 0 if there is none yet.
+// of the selected spectrum buffer, for each channel after each other, and the
+// size, or 0 if there is none yet.
 // While it is being called, the player keeps reporting the spectra.
 func (m *BufferModel) Spectrum() ([]float32, int) {
 	id := 0
@@ -724,12 +728,16 @@ func (m *BufferModel) Info() string {
 		return ""
 	}
 	if buf.Spectrum {
-		size, ok := (*Model)(m).spectrumSize(buf.ID)
+		size, channels, ok := (*Model)(m).spectrumSize(buf.ID)
 		if !ok {
 			return "Spectrum buffer, not written by any spfft or spcopy unit."
 		}
-		return fmt.Sprintf("Spectrum of %d samples: %d bins of %s Hz.\nWritten by spfft units, changed by spectral units and\nturned back into sound by spifft units. Not stored in the song.",
-			size, size/2+1, strconv.FormatFloat(44100/float64(size), 'g', 3, 64))
+		kind := "Spectrum"
+		if channels == 2 {
+			kind = "Stereo spectrum"
+		}
+		return fmt.Sprintf("%s of %d samples: %d bins of %s Hz.\nWritten by spfft units, changed by spectral units and\nturned back into sound by spifft units. Not stored in the song.",
+			kind, size, size/2+1, strconv.FormatFloat(44100/float64(size), 'g', 3, 64))
 	}
 	if buf.Writable() {
 		filled, _ := (*Model)(m).bufferFill(buf.ID)

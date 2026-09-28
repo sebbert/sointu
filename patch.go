@@ -455,10 +455,12 @@ var UnitTypes = map[string]UnitType{
 	"spfft": {
 		// spfft pops a signal and analyses it into a spectrum buffer: every
 		// size/4 samples, it takes the last size samples, windows them (Hann)
-		// and replaces the spectrum with their FFT. Other spectral units
+		// and replaces the spectrum with their FFT. A stereo spfft makes a
+		// stereo spectrum, which the other units process channel by channel. Other spectral units
 		// modify the spectrum, and spifft turns it back into a signal.
 		// Spectral units run only in the first voice of their instrument.
 		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "size", MinValue: 0, Default: SpectrumSizeDefault, MaxValue: SpectrumSizeMax, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(SpectrumSize(v)), "" }},
 			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
 		},
@@ -467,8 +469,11 @@ var UnitTypes = map[string]UnitType{
 	"spifft": {
 		// spifft pushes the signal of a spectrum buffer: each new spectrum
 		// is transformed back (inverse FFT), windowed and overlap-added. The
-		// signal comes out about size samples after it went into spfft.
+		// signal comes out about size samples after it went into spfft. A
+		// mono spifft averages the channels of a stereo spectrum; a stereo
+		// one pushes a mono spectrum to both channels.
 		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "gain", MinValue: 0, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
 			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
 		},

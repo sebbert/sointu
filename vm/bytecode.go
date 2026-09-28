@@ -79,21 +79,25 @@ type (
 		SpectralUnits []SpectralUnit
 	}
 
-	// Spectrum is a spectrum buffer: the ID of the buffer and the base 2
-	// logarithm of its size in samples. A spectrum of size n is n complex
-	// values; the spectral units change bins 0 to n/2.
+	// Spectrum is a spectrum buffer: the ID of the buffer, the base 2
+	// logarithm of its size in samples and its number of channels. A
+	// spectrum of size n is n complex values for each channel; the spectral
+	// units change bins 0 to n/2.
 	Spectrum struct {
 		BufferID int
 		Log2Size int
+		Channels int
 	}
 
 	// SpectralUnit is a spectral unit: the voice that runs it, the first
-	// voice of its instrument, its spectrum and, for spcopy, the spectrum it
-	// copies. Spectrum and Source are indices in Bytecode.Spectra.
+	// voice of its instrument, its spectrum and, for spcopy and spcross, the
+	// spectrum it reads. Spectrum and Source are indices in Bytecode.Spectra.
+	// Channels is 2 for stereo spfft and spifft units, otherwise 1.
 	SpectralUnit struct {
 		Type             string
 		Voice            int
 		Spectrum, Source int
+		Channels         int
 	}
 
 	// SampleOffset is an entry in the sample offset table
@@ -144,7 +148,7 @@ const (
 type bytecodeBuilder struct {
 	sampleOffsetMap map[SampleOffset]int
 	bufferRegionMap map[BufferRegion]int
-	spectrumSizes   map[int]int // spectrum buffer ID -> base 2 logarithm of its size
+	spectrumSizes   map[int]Spectrum // spectrum buffer ID -> its size and channels
 	globalAddrs     map[int]int
 	globalFixups    map[int]([]int)
 	localAddrs      map[int]int
@@ -220,11 +224,16 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				if len(b.SpectralUnits) > 255 {
 					return nil, errors.New("Patch uses over 256 spectral units")
 				}
-				u := SpectralUnit{Type: unit.Type, Voice: patch.FirstVoiceForInstrument(instrIndex), Spectrum: b.spectrumIndex(p["buffer"]), Source: -1}
+				u := SpectralUnit{Type: unit.Type, Voice: patch.FirstVoiceForInstrument(instrIndex), Spectrum: b.spectrumIndex(p["buffer"]), Source: -1, Channels: 1}
+				stereo := 0
+				if unit.Type == "spfft" || unit.Type == "spifft" {
+					stereo = p["stereo"] & 1
+					u.Channels += stereo
+				}
 				if unit.Type == "spcopy" || unit.Type == "spcross" {
 					u.Source = b.spectrumIndex(p["source"])
 				}
-				b.op(opcode)
+				b.op(opcode + stereo)
 				b.defOperands(unit)
 				b.operand(len(b.SpectralUnits))
 				switch unit.Type {
@@ -525,21 +534,22 @@ func (b *bytecodeBuilder) spectrumIndex(id int) int {
 			return i
 		}
 	}
-	log2Size, ok := b.spectrumSizes[id]
+	sp, ok := b.spectrumSizes[id]
 	if !ok {
-		log2Size = spectrumLog2Size(sointu.SpectrumSizeDefault)
+		sp = Spectrum{Log2Size: spectrumLog2Size(sointu.SpectrumSizeDefault), Channels: 1}
 	}
-	b.Spectra = append(b.Spectra, Spectrum{BufferID: id, Log2Size: log2Size})
+	sp.BufferID = id
+	b.Spectra = append(b.Spectra, sp)
 	return len(b.Spectra) - 1
 }
 
 func spectrumLog2Size(size int) int { return bits.Len(uint(sointu.SpectrumSize(size))) - 1 }
 
-// spectrumSizes returns the sizes of the spectrum buffers written by the
-// spfft units of the patch, and copied to by spcopy units, as base 2
-// logarithms.
-func spectrumSizes(patch sointu.Patch) map[int]int {
-	ret := map[int]int{}
+// spectrumSizes returns the sizes, as base 2 logarithms, and the channels of
+// the spectrum buffers written by the spfft units of the patch, and copied to
+// by spcopy units.
+func spectrumSizes(patch sointu.Patch) map[int]Spectrum {
+	ret := map[int]Spectrum{}
 	var copies [][2]int // source, destination
 	for _, instr := range patch {
 		for _, u := range instr.Units {
@@ -549,7 +559,7 @@ func spectrumSizes(patch sointu.Patch) map[int]int {
 			switch u.Type {
 			case "spfft":
 				if _, ok := ret[u.Parameters["buffer"]]; !ok {
-					ret[u.Parameters["buffer"]] = spectrumLog2Size(u.Parameters["size"])
+					ret[u.Parameters["buffer"]] = Spectrum{Log2Size: spectrumLog2Size(u.Parameters["size"]), Channels: 1 + u.Parameters["stereo"]&1}
 				}
 			case "spcopy":
 				copies = append(copies, [2]int{u.Parameters["source"], u.Parameters["buffer"]})
