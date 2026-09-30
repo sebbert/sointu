@@ -943,7 +943,7 @@ func envelopeCurveDispFunc(v int) (string, string) {
 		return "linear", ""
 	}
 	p := float64(v) / 128
-	return strconv.FormatFloat(12*p*p*20*math.Log10(2), 'f', 1, 64), "dB"
+	return strconv.FormatFloat(12*p*p*20*math.Log10(2), 'g', 3, 64), "dB"
 }
 
 func engineeringTime(sec float64) (string, string) {

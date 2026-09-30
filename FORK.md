@@ -63,6 +63,46 @@ All of these are Go and wasm only.
 Spectral units run only in the first voice of their instrument. See the
 README for the details of each unit.
 
+## Envelope curve
+
+The `envelope` has a `curve` parameter, 0 to 128, modulatable, in the Go synth
+and the wasm player. 0, the value old songs get, is the linear envelope as
+before. Above 0, with c = 12·curve² (curve from 0 to 1, 12 at 128), a stage
+from `start` to `end` (0 to 1, 1 to sustain, or the level where the release
+starts to 0) moves each sample as
+
+    target = end + (end - start)/(2^c - 1)
+    level += (target - level)·(1 - 2^(-c·delta/|end - start|))
+
+where delta is the rate of the linear stage, 2^(-24·p) per sample for the
+parameter p. The target lies beyond the end: 2^c/(2^c - 1) of the stage away
+from the level at the start, 1/(2^c - 1) at the end, so the distance to it
+shrinks by 2^(-c) over the stage, and by 2^(-c·delta/|end - start|) per
+sample. The stage therefore takes |end - start|/delta samples, exactly as
+long as the linear one. As c grows, the target comes closer and the stage
+bends more: attack fast then slow, decay and release fast then slow. As c goes
+to 0, the target goes to infinity and the stage becomes linear; below
+c = 2^-20 it is computed as linear. The state machine is unchanged, except
+that the state keeps the level where the release starts.
+
+2^x - 1 is computed with `exp2m1f` (`$exp2m1f`): for a slow stage,
+1 - 2^(-x) is below the precision of `1 - exp2f(-x)`, which would stop the
+stage.
+
+The curve is one-directional: an opposite curvature below a linear 64 made
+the wasm player 9 bytes larger (5 gzipped) and needed a clamp, as a strongly
+opposite curve puts the target on the start, where the stage never moves.
+
+**Encoding.** `curve` is the last transformed parameter of the envelope,
+after `gain`. `NecessaryFeatures.TransformCount` counts it only when an
+envelope of the song has a curve other than 0 or something modulates it
+(`optionalParams` in `vm/featureset.go`); the bytecode (`defOperands`) and
+the transform count tables of the players follow it, and the wasm player
+leaves out the curved envelope. So songs with linear envelopes compile to
+exactly the same players as before, on every target. Otherwise every
+envelope of the song has the curve operand. The Go synth, which encodes with
+`AllFeatures`, always has it, as does the x86 library.
+
 ## Voices
 
 - Up to 255 voices in the Go synth and wasm player (`vm.MAX_VOICES`). Patches
@@ -82,12 +122,13 @@ by operation, in float32:
 - **Shared math.** `exp2f`, `log2f`, `powf` and `sinTurns` (sin(2π·t), t in
   turns) are float32 routines in `vm/mathf.go`. The wasm player has the same
   ones (`$exp2f`, `$log2f`, `$powf`, `$sinTurns` in `patch.wat`). They
-  replace `math.Exp2`, `math.Pow` and `math.Sin`.
+  replace `math.Exp2`, `math.Pow` and `math.Sin`. `exp2m1f` (`$exp2m1f`),
+  2^y - 1, serves the curved envelope.
 - **Oscillator.** The phase is float32 instead of float64, as in the wasm
   player. The gate state moves with unison and stereo like in the wasm
   player.
 - **Envelope.** Decay ends in a sustain state that holds the level, instead of
-  following a modulated sustain.
+  following a modulated sustain. See also [Envelope curve](#envelope-curve).
 - **belleq.** It uses the wasm player's form of the biquad, including
   cos(ω) = √(1−sin²ω).
 - **delay.** The damping is computed as (state−s)·damp + s, and note tracking
@@ -187,19 +228,29 @@ songs that need any of it for x86.
      operation as in `vm/spectral.go`, or x87's 80-bit precision will make
      x86 differ. SSE would make that easy.
 
-6. **Math and formulas.** To render like the Go synth and the wasm player,
+6. **Envelope curve.** The compiler refuses songs whose envelopes have the
+   curve operand (a curve other than 0, or a modulated curve). The operand
+   follows the gain; the x86 library, encoded with `AllFeatures`, already
+   reads it as a sixth transformed parameter and ignores it. The envelope
+   would need the curved stages of `envelopeStep` in `vm/go_synth.go`, with
+   `exp2m1f`, computed in float32 operation by operation, and the level where
+   the release starts, at offset 8 of the unit state.
+
+7. **Math and formulas.** To render like the Go synth and the wasm player,
    the x86 players would need the same float32 routines (`exp2f`, `log2f`,
    `powf`, `sinTurns` in `vm/mathf.go`) instead of the x87 `fsin`/`f2xm1`,
    float32 oscillator phases, and the formulas listed under
    [Go synth behavior changes](#go-synth-behavior-changes). The waveshaper
    already matches.
 
-7. **Native bridge.** `MAX_VOICES` is 32 in the C header; `Polyphony` is a
+8. **Native bridge.** `MAX_VOICES` is 32 in the C header; `Polyphony` is a
    32-bit bitmask there.
 
 ## Known differences left
 
 - **Units the wasm player lacks:** `sync`, and sample oscillators (gm.dls).
+- **Native synth:** it plays curved envelopes linearly, as the x86 library
+  ignores the curve.
 - **Against the x86 players:** the Go synth now follows the wasm player, so
   it differs from the x86 references wherever the wasm player did.
   - Some songs are beyond the regression tests' tolerance: `crush`, whose
