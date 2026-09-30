@@ -303,7 +303,10 @@ one arrives, reading their parameters then: `spfilter` removes the bins below
 `low` and above `high` and tilts the rest by up to 12 dB per octave;
 `spcompress` pulls the magnitudes toward their mean, by `amount`, like
 extreme multiband compression (negative amounts exaggerate the envelope
-instead); `spblur` smooths the magnitudes over time, and while `freeze` is on,
+instead), and with `attack` and `release` (0 to about 4 s, set on the unit
+only), smooths the envelope of each bin over time like a compressor's level
+detector, so that the gain follows changes slowly, e.g. letting transients
+through; at 0, it follows them instantly; `spblur` smooths the magnitudes over time, and while `freeze` is on,
 holds them with random phases, for endless textures. `spgate` removes the bins
 quieter than a threshold (or with `invert`, the louder ones); `spphase`
 disperses the phases into chirps, randomizes them or, in robot mode, zeroes
