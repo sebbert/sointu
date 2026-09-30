@@ -129,6 +129,25 @@
 {{- end}}
 {{- end}}
 
+{{- if .MCTable}}
+{{- /*
+;-------------------------------------------------------------------------------
+;    mc units, 4 i32s each: offset of the voice running the unit from
+;    su_voices, offsets of its bus and its state in su_mc, and offset of its
+;    constant data in su_mc_consts. The constants start with the modulation
+;    rates and phases of mcdelay and the byte offsets of the 8 channels.
+;-------------------------------------------------------------------------------
+*/}}
+{{- .SetDataLabel "su_mc_table"}}
+{{- range .MCTable}}
+{{- $.DataD .}}
+{{- end}}
+{{- .SetDataLabel "su_mc_consts"}}
+{{- range .MCConsts}}
+{{- $.DataD .}}
+{{- end}}
+{{- end}}
+
 {{- /*
 ;-------------------------------------------------------------------------------
 ; The number of transformed parameters each opcode takes
@@ -203,6 +222,16 @@
 {{- .Align}}
 {{- .SetBlockLabel "su_spectral"}}
 {{- .Block .SpectralBytes}}
+{{- end}}
+{{- if .MCTable}}
+{{- /*
+;-------------------------------------------------------------------------------
+;    The buses of the mc units and their states, with the rings of mcdelay
+;-------------------------------------------------------------------------------
+*/}}
+{{- .Align}}
+{{- .SetBlockLabel "su_mc"}}
+{{- .Block .MCBytes}}
 {{- end}}
 {{- .Align}}
 {{- .SetBlockLabel "su_outputbuffer"}}

@@ -83,6 +83,12 @@ type (
 		// operand of a spectral unit is its index in SpectralUnits.
 		Spectra       []Spectrum
 		SpectralUnits []SpectralUnit
+
+		// Buses are the buffer IDs of the buses of the mc units, and MCUnits
+		// the mc units, in the order of the patch. The operand of an mc unit
+		// is its index in MCUnits.
+		Buses   []int
+		MCUnits []MCUnit
 	}
 
 	// Spectrum is a spectrum buffer: the ID of the buffer, the base 2
@@ -282,6 +288,40 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 					b.operand(first, count, p["interval1"], p["interval2"], p["interval3"])
 				}
 				b.SpectralUnits = append(b.SpectralUnits, u)
+			case "mcspread", "mcsum", "mcdelay", "mcmix", "mcloop", "mcloopend", "mcfilter":
+				// operands: the index in MCUnits, and for mcspread add, for
+				// mcmix the type, for mcfilter highpass and for mcdelay the
+				// flags
+				if len(b.MCUnits) > 255 {
+					return nil, errors.New("Patch uses over 256 mc units")
+				}
+				u := MCUnit{Type: unit.Type, UnitID: unit.ID, Voice: patch.FirstVoiceForInstrument(instrIndex), Bus: b.busIndex(p["bus"])}
+				b.op(opcode + p["stereo"]&1)
+				b.defOperands(unit)
+				b.operand(len(b.MCUnits))
+				switch unit.Type {
+				case "mcspread":
+					b.operand(p["add"] & 1)
+				case "mcmix":
+					typ := min(max(p["type"], 0), sointu.MCMixShuffle)
+					if typ == sointu.MCMixShuffle {
+						u.Shuffle = newMCShuffle(p["seed"])
+					}
+					b.operand(typ)
+				case "mcfilter":
+					b.operand(p["type"] & 1)
+				case "mcdelay":
+					u.Delay = newMCDelay(p)
+					flags := 0
+					if p["notetracking"] == 1 {
+						flags |= MCDelayNoteTracking
+					}
+					if p["allpass"] == 1 {
+						flags |= MCDelayAllpass
+					}
+					b.operand(flags)
+				}
+				b.MCUnits = append(b.MCUnits, u)
 			case "bufread", "bufwrite":
 				index := b.getBufferRegionIndex(unit)
 				if index > 255 {

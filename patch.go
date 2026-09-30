@@ -753,6 +753,139 @@ var UnitTypes = map[string]UnitType{
 		Params:   []UnitParameter{},
 		StackUse: func(u *Unit) StackUse { return StackUse{Inputs: [][]int{{0}}, Modifies: []bool{false}, NumOutputs: 1} },
 	},
+	"mcspread": {
+		// mcspread pops a signal, or left and right, and spreads it over the
+		// 8 channels of a bus, for the other mc units to process: channel c
+		// gets the signal (the left one for even c, the right one for odd c
+		// in stereo) times the gain, with the polarity of MCPolarity(c). With
+		// add, it adds to what the bus holds instead of replacing it, e.g. to
+		// mix several instruments into one bus. The mc units run only in the
+		// first voice of their instrument, and in the order of the patch.
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "gain", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: mcGainDisplay},
+			{Name: "add", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "bus", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+		},
+		StackUse: stackUseSink,
+	},
+	"mcsum": {
+		// mcsum pushes the sum of the channels of a bus, each with the
+		// polarity of MCPolarity(c): in stereo, the even channels to the left
+		// and the odd ones to the right, scaled by 1/4; in mono, all of them
+		// scaled by 1/8, so that mcspread followed by mcsum passes the signal
+		// through. width scales the difference of left and right, from 0
+		// (mono) to 200%. The bus is left as it is.
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, Default: 1, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "gain", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: mcGainDisplay},
+			{Name: "width", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v * 100 / 64), "%" }},
+			{Name: "bus", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+		},
+		StackUse: stackUseSource,
+	},
+	"mcdelay": {
+		// mcdelay delays each of the 8 channels of a bus by its own length.
+		// The lengths lie between size·(1-spread) and size, one in each eighth
+		// of that range, placed and assigned to the channels at random by
+		// seed. moddepth and modrate move each length along a triangle wave,
+		// each channel at its own rate and phase, read with linear
+		// interpolation. With notetracking, the lengths scale by
+		// 2^((60-note)/12) with the note of the voice. With allpass, each
+		// channel is a Schroeder allpass with coefficient apgain instead of
+		// a plain delay.
+		//
+		// decay makes each channel lose what it takes to decay by 60 dB in
+		// the decay time over its length, so that in a feedback loop
+		// (mcloop, mcloopend) with an energy-preserving mcmix the sound
+		// decays in that time; hfdecay and lfdecay are the decay times above
+		// 3 kHz and below 250 Hz relative to it (first-order shelves). decay
+		// 0 is off: no loss. An allpass delays the frequencies where it
+		// resonates by up to (1+apgain)/(1-apgain) times its length, and
+		// those make the tail, so in allpass mode the loss is calibrated for
+		// that delay: the tail decays in roughly the decay time, the rest of
+		// the sound faster. The lengths are whole samples, unless they follow
+		// the note; linear interpolation damps the highs a little when they
+		// are not, or are modulated.
+		Params: []UnitParameter{
+			{Name: "moddepth", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(MCModDepthMs(float64(v)/128), 'g', 3, 64), "ms"
+			}},
+			{Name: "modrate", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(MCModRateHz(float64(v)/128), 'g', 3, 64), "Hz"
+			}},
+			{Name: "size", MinValue: 1, Default: 500, MaxValue: MCSizeMax, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(float64(v)/10, 'f', 1, 64), "ms"
+			}},
+			{Name: "spread", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v * 100 / 128), "%" }},
+			{Name: "seed", MinValue: 0, MaxValue: 255, CanSet: true, CanModulate: false},
+			{Name: "decay", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				if v <= 0 {
+					return "off", ""
+				}
+				return strconv.FormatFloat(MCDecaySeconds(v), 'g', 3, 64), "s"
+			}},
+			{Name: "hfdecay", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(MCHFDecayRatio(v), 'g', 3, 64), "×"
+			}},
+			{Name: "lfdecay", MinValue: 0, Default: 64, Neutral: 64, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(MCLFDecayRatio(v), 'g', 3, 64), "×"
+			}},
+			{Name: "notetracking", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "allpass", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "apgain", MinValue: 0, Default: 80, MaxValue: MCAllpassGainMax, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(float64(v)/128, 'f', 3, 64), ""
+			}},
+			{Name: "bus", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+		},
+		StackUse: stackUseNone,
+	},
+	"mcmix": {
+		// mcmix mixes the 8 channels of a bus with an energy-preserving
+		// (orthogonal) matrix: hadamard mixes every channel into every other
+		// with the same weight, householder reflects the channels at their
+		// mean (each keeps 3/4 of itself), and shuffle permutes the channels
+		// and flips the polarity of some, at random by seed.
+		Params: []UnitParameter{
+			{Name: "type", MinValue: 0, MaxValue: MCMixShuffle, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc(mcMixNames[:])},
+			{Name: "seed", MinValue: 0, MaxValue: 255, CanSet: true, CanModulate: false},
+			{Name: "bus", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+		},
+		StackUse: stackUseNone,
+	},
+	"mcloop": {
+		// mcloop starts a feedback loop on a bus: it adds what mcloopend
+		// stored in the previous sample, times feedback, to the bus.
+		Params: []UnitParameter{
+			{Name: "feedback", MinValue: 0, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v * 100 / 128), "%" }},
+			{Name: "bus", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+		},
+		StackUse: stackUseNone,
+	},
+	"mcloopend": {
+		// mcloopend ends a feedback loop on a bus: it stores the bus for the
+		// mcloop of the next sample.
+		Params: []UnitParameter{
+			{Name: "bus", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+		},
+		StackUse: stackUseNone,
+	},
+	"mcfilter": {
+		// mcfilter filters every channel of a bus with a one-pole low-pass
+		// or high-pass filter, from 20 Hz to 20 kHz.
+		Params: []UnitParameter{
+			{Name: "frequency", MinValue: 0, Default: 96, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				f := MCFilterHz(float64(v) / 128)
+				if f >= 1000 {
+					return strconv.FormatFloat(f/1000, 'f', 2, 64), "kHz"
+				}
+				return strconv.FormatFloat(f, 'f', 0, 64), "Hz"
+			}},
+			{Name: "type", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"lowpass", "highpass"})},
+			{Name: "bus", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+		},
+		StackUse: stackUseNone,
+	},
 	"belleq": {
 		Params: []UnitParameter{
 			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
@@ -821,6 +954,74 @@ func spectralFrequencyDisplay(v int) (string, string) {
 // SpectrumSize returns the size in samples of the spectra of an spfft unit
 // with the given size parameter.
 func SpectrumSize(size int) int { return 256 << min(max(size, 0), SpectrumSizeMax) }
+
+// The mc units process a bus of MCChannels channels.
+const MCChannels = 8
+
+// MCSizeMax is the largest size of an mcdelay unit, in tenths of a
+// millisecond: 2 seconds.
+const MCSizeMax = 20000
+
+// MCAllpassGainMax is the largest apgain of an mcdelay unit, 0.9375.
+const MCAllpassGainMax = 120
+
+// The types of the mcmix unit.
+const (
+	MCMixHadamard = iota
+	MCMixHouseholder
+	MCMixShuffle
+)
+
+var mcMixNames = [...]string{"hadamard", "householder", "shuffle"}
+
+// MCPolarity returns the polarity with which mcspread spreads a signal to
+// channel c of a bus, and mcsum sums the channel: +1 for channels 0, 1, 4
+// and 5, -1 for 2, 3, 6 and 7.
+func MCPolarity(c int) float64 { return float64(1 - 2*(c>>1&1)) }
+
+// MCModDepthMs returns the modulation depth of an mcdelay unit in
+// milliseconds, for moddepth scaled to 0-1: 8·depth², up to 8 ms.
+func MCModDepthMs(depth float64) float64 { return 8 * depth * depth }
+
+// MCModRateHz returns the modulation rate of an mcdelay unit in Hz, for
+// modrate scaled to 0-1: 1 Hz at the middle, doubling every 16 steps. The
+// channels run at 1 to 1.875 times that rate.
+func MCModRateHz(rate float64) float64 { return math.Pow(2, rate*8-4) }
+
+// MCDecaySeconds returns the time an mcdelay unit takes to decay by 60 dB
+// for its decay parameter v > 0: 1 second at 64, doubling every 16 steps.
+func MCDecaySeconds(v int) float64 { return math.Pow(2, float64(v)/16-4) }
+
+// MCHFDecayRatio returns the decay time above 3 kHz of an mcdelay unit,
+// relative to its decay time, for its hfdecay parameter: v/128.
+func MCHFDecayRatio(v int) float64 { return float64(v) / 128 }
+
+// MCLFDecayRatio returns the decay time below 250 Hz of an mcdelay unit,
+// relative to its decay time, for its lfdecay parameter: 1/4 to 4.
+func MCLFDecayRatio(v int) float64 { return math.Pow(2, float64(v-64)/32) }
+
+// MCFilterHz returns the cutoff frequency of mcfilter for its frequency
+// parameter scaled to 0-1: 20 Hz to 20 kHz, exponentially.
+func MCFilterHz(f float64) float64 { return 20 * math.Pow(2, 10*f) }
+
+// mcGainDisplay shows the gain of mcspread and mcsum, ±40 dB like dbgain.
+func mcGainDisplay(v int) (string, string) { return formatFloat(40 * (float64(v)/64 - 1)), "dB" }
+
+// BusParams returns the names of the parameters of a unit type that refer to
+// buses: the bus the mc units process.
+func BusParams(unitType string) []string {
+	switch unitType {
+	case "mcspread", "mcsum", "mcdelay", "mcmix", "mcloop", "mcloopend", "mcfilter":
+		return []string{"bus"}
+	}
+	return nil
+}
+
+// WritesBus reports whether units of the type replace what a bus holds, and
+// so start a chain of mc units: mcspread.
+func WritesBus(unitType string) bool { return unitType == "mcspread" }
+
+func stackUseNone(u *Unit) StackUse { return StackUse{} }
 
 func stackUseSource(u *Unit) StackUse {
 	if stereo, ok := u.Parameters["stereo"]; ok && stereo == 1 {

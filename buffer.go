@@ -29,6 +29,10 @@ type (
 		// Spectrum is true for a spectrum buffer, which spectral units read
 		// and write. Its size comes from the spfft unit writing it.
 		Spectrum bool `yaml:",omitempty"`
+		// Bus is true for a bus: 8 channels of one frame, which the mc units
+		// (mcspread, mcsum, mcdelay, mcmix, mcloop, mcloopend, mcfilter)
+		// read and change in place every sample.
+		Bus bool `yaml:",omitempty"`
 		// Auto is true for a buffer created by the tracker for a unit, which
 		// the tracker deletes when no unit uses it anymore.
 		Auto bool `yaml:",omitempty"`

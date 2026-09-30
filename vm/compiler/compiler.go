@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"embed"
 	"fmt"
+	"math"
 	"path/filepath"
 	"strings"
 	"text/template"
@@ -136,7 +137,7 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 	}
 	features := vm.NecessaryFeaturesFor(song.Patch)
 	for _, unit := range features.Instructions() {
-		wasmOnly := len(sointu.SpectrumBufferParams(unit)) > 0
+		wasmOnly := len(sointu.SpectrumBufferParams(unit)) > 0 || len(sointu.BusParams(unit)) > 0
 		switch unit {
 		case "bufread", "bufwrite", "spawn", "arg", "window", "ott":
 			wasmOnly = true
@@ -206,7 +207,8 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 				Hold           int
 				wasmBufferData
 				wasmSpectralData
-			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers, wasmSpectral(encodedPatch)}
+				wasmMCData
+			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers, wasmSpectral(encodedPatch), wasmMC(encodedPatch)}
 			populatedTemplate, extension, err = com.compile(templateName, &data)
 		}
 		if err != nil {
@@ -286,6 +288,74 @@ func wasmSpectral(b *vm.Bytecode) (ret wasmSpectralData) {
 	ret.SpectralTwiddles = ret.SpectralHann + maxSize*4
 	ret.SpectralTwiddleBytes = (maxSize - 1) * 8
 	ret.SpectralBytes = ret.SpectralTwiddles + 2*ret.SpectralTwiddleBytes
+	return ret
+}
+
+// wasmMCData is the layout of the mc units in the wasm player. The buses and
+// the states of the units are in su_mc, with offsets in bytes from it; their
+// constant data in su_mc_consts.
+type wasmMCData struct {
+	// MCTable has 4 i32s for each mc unit: the offset of the voice that runs
+	// it from su_voices, the offsets of its bus and its state in su_mc and
+	// the offset of its constant data in su_mc_consts. A bus is the frame
+	// the units process and the frame stored by mcloopend, 8 floats each. A
+	// state is the phases of the modulation, the states of the low and high
+	// decay filters (8 floats each) and the position in the ring, 128 bytes,
+	// followed by the ring, frames of 8 floats.
+	MCTable []uint32
+	// MCConsts starts with the rates and the phase offsets of the
+	// modulation of mcdelay and the byte offsets of the channels, 8 each.
+	// The constant data of an mcdelay follows: its lengths and decay
+	// coefficients A, B and C (8 floats each), the mask of its ring, the
+	// longest delay and the allpass coefficient; of an mcmix of type shuffle
+	// the byte offsets of the source channels and their signs.
+	MCConsts []uint32
+	MCBytes  int
+}
+
+// wasmMCStateBytes is the size of the state of an mcdelay in the wasm player
+// before its ring.
+const wasmMCStateBytes = 128
+
+func wasmMC(b *vm.Bytecode) (ret wasmMCData) {
+	if len(b.MCUnits) == 0 {
+		return ret
+	}
+	f := math.Float32bits
+	for _, x := range [...]float32{1, 1.125, 1.25, 1.375, 1.5, 1.625, 1.75, 1.875, 0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875} {
+		ret.MCConsts = append(ret.MCConsts, f(x))
+	}
+	for c := range sointu.MCChannels {
+		ret.MCConsts = append(ret.MCConsts, uint32(4*c))
+	}
+	ret.MCBytes = 64 * len(b.Buses)
+	for _, u := range b.MCUnits {
+		state, consts := 0, 0
+		switch {
+		case u.Delay != nil:
+			state, consts = ret.MCBytes, 4*len(ret.MCConsts)
+			ret.MCBytes += wasmMCStateBytes + 4*sointu.MCChannels<<u.Delay.Log2Frames
+			for _, v := range [...][sointu.MCChannels]float32{u.Delay.Lengths, u.Delay.A, u.Delay.B, u.Delay.C} {
+				for _, x := range v {
+					ret.MCConsts = append(ret.MCConsts, f(x))
+				}
+			}
+			mask := uint32(1)<<u.Delay.Log2Frames - 1
+			ret.MCConsts = append(ret.MCConsts, mask, f(float32(mask-1)), f(u.Delay.APGain), 0)
+		case u.Type == "mcfilter":
+			state = ret.MCBytes
+			ret.MCBytes += 64
+		case u.Shuffle != nil:
+			consts = 4 * len(ret.MCConsts)
+			for _, c := range u.Shuffle.Source {
+				ret.MCConsts = append(ret.MCConsts, uint32(4*c))
+			}
+			for _, x := range u.Shuffle.Sign {
+				ret.MCConsts = append(ret.MCConsts, f(x))
+			}
+		}
+		ret.MCTable = append(ret.MCTable, uint32(u.Voice*4096), uint32(64*u.Bus), uint32(state), uint32(consts))
+	}
 	return ret
 }
 

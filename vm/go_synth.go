@@ -32,6 +32,8 @@ type (
 		buffers    map[int]*synthBuffer
 		spectra    []spectrum
 		spectral   []spectralState // states of the spectral units
+		buses      []mcBus
+		mc         []mcState // states of the mc units
 		scratch    []float32
 		cpuLoad    sointu.CPULoad
 	}
@@ -122,6 +124,7 @@ func (s GoSynther) Synth(patch sointu.Patch, bpm int) (sointu.Synth, error) {
 	ret := &GoSynth{bytecode: *bytecode, stack: make([]float32, 0, 4), delaylines: make([]delayline, patch.NumDelayLines()), otts: make([]ottState, patch.NumOtts())}
 	ret.state.randSeed = 1
 	ret.setSpectra(nil)
+	ret.setMC(nil)
 	return ret, nil
 }
 
@@ -250,6 +253,7 @@ func (s *GoSynth) Update(patch sointu.Patch, bpm int) error {
 	old := s.bytecode
 	s.bytecode = *bytecode
 	s.setSpectra(&old)
+	s.setMC(&old)
 	for len(s.delaylines) < patch.NumDelayLines() {
 		s.delaylines = append(s.delaylines, delayline{})
 	}
@@ -793,6 +797,8 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 					stackIndex++
 				}
 				unit.ports[4] = 0
+			case opMcspread, opMcsum, opMcdelay, opMcmix, opMcloop, opMcloopend, opMcfilter:
+				operands = s.runMC(opNoStereo, stereo, operands, &params, int(s.bytecode.NumVoices-voicesRemaining), voice.note, &stack)
 			case opOtt:
 				ott(&otts[0], &params, channels, stack)
 				otts = otts[1:]

@@ -58,6 +58,7 @@
 {{- template "sources.wat" .}}
 {{- template "sinks.wat" .}}
 {{- template "spectral.wat" .}}
+{{- template "mc.wat" .}}
 
 ;;-------------------------------------------------------------------------------
 ;; $input returns the float value of a transformed to 0.0 - 1.0f range.
@@ -96,7 +97,7 @@
     (call $exp2f (local.get $value))
 {{- end}}
 )
-{{- if or (not .MathImports) .SpectralTable (.HasOp "ott")}}
+{{- if or (not .MathImports) .SpectralTable (.HasOp "ott") .MCTable}}
 
 ;;-------------------------------------------------------------------------------
 ;; $exp2f returns 2^y, for y clamped to [-126, 126]: 2 to the nearest integer
