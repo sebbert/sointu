@@ -124,6 +124,32 @@ func (s GoSynther) Synth(patch sointu.Patch, bpm int) (sointu.Synth, error) {
 	return ret, nil
 }
 
+// envelopeStep moves the level of an envelope stage from start to end by one
+// sample. delta is the rate of the linear envelope, positive when rising.
+// With a curve c > 0 (12·curve², from 0 to 12 when not modulated), the level
+// instead follows a one-pole filter toward a target beyond end:
+//
+//	target = end + (end - start)/(2^c - 1)
+//	level += (target - level)·(1 - 2^(-c·|delta|/|end - start|))
+//
+// The distance to the target shrinks by 2^(-c) from start to end, as the
+// target is 2^c/(2^c - 1) of the stage away at the start and 1/(2^c - 1) at
+// the end. It shrinks by 2^(-c·|delta|/|end - start|) per sample, so the
+// stage takes |end - start|/|delta| samples, as long as the linear stage.
+// The larger c, the closer the target and the more curved the stage; as c
+// goes to 0, the target goes to infinity and the stage becomes linear, which
+// it is below c = 2^-20. 2^x - 1 is computed with exp2m1f, as for slow stages
+// 1 - 2^(-x) is too small for 1 - exp2f(-x). The wasm player computes the
+// same, operation by operation.
+func envelopeStep(level, delta, start, end, curve float32) float32 {
+	if curve < 0x1p-20 {
+		return level + delta
+	}
+	target := float32((end-start)/exp2m1f(curve)) + end
+	span := float32(math.Abs(float64(end - start)))
+	return level + float32((level-target)*exp2m1f(-curve*float32(math.Abs(float64(delta)))/span))
+}
+
 func (s *GoSynth) Trigger(voiceIndex int, note byte) {
 	s.state.voices[voiceIndex] = voice{}
 	s.state.voices[voiceIndex].note = note
@@ -400,6 +426,9 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 				synth.outputs[channel] = 0
 			case opEnvelope:
 				if !voices[0].sustain {
+					if unit.state[0] != envStateRelease {
+						unit.state[2] = unit.state[1] // the level where the release starts
+					}
 					unit.state[0] = envStateRelease // set state to release
 				}
 				state := unit.state[0]
@@ -408,21 +437,23 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 				// the state, and decay ends in the sustain state, which holds
 				// the level
 				delta := nonLinearMap(params[int(state)])
+				curve := params[5] * params[5] * 12
 				switch state {
 				case envStateAttack:
-					level += delta
+					level = envelopeStep(level, delta, 0, 1, curve)
 					if level >= 1 {
 						level = 1
 						state = envStateDecay
 					}
 				case envStateDecay:
-					level -= delta
-					if sustain := params[2]; level <= sustain {
+					sustain := params[2]
+					level = envelopeStep(level, -delta, 1, sustain, curve)
+					if level <= sustain {
 						level = sustain
 						state = envStateSustain
 					}
 				case envStateRelease:
-					level -= delta
+					level = envelopeStep(level, -delta, unit.state[2], 0, curve)
 					if level <= 0 {
 						level = 0
 					}

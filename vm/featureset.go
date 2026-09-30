@@ -44,6 +44,19 @@ type paramKey struct {
 	Param string
 }
 
+// optionalParams are transformed parameters that songs compiled before they
+// existed did without, with the value that does nothing. Each is the last
+// transformed parameter of its unit type. NecessaryFeatures leaves it out of
+// the transform count, and so out of the bytecode and the players, unless a
+// unit of the song sets it to another value or something modulates it; such
+// songs then compile exactly as before.
+var optionalParams = map[string]struct {
+	Name  string
+	Value int
+}{
+	"envelope": {"curve", 0},
+}
+
 var allOpcodes map[string]int
 var allInstructions []string
 var allInputs map[paramKey]int
@@ -195,8 +208,28 @@ func (n NecessaryFeatures) InputNumber(unitType string, paramName string) int {
 	return allInputs[paramKey{unitType, paramName}]
 }
 
-func (_ NecessaryFeatures) TransformCount(unitType string) int {
-	return allTransformCounts[unitType]
+func (n NecessaryFeatures) TransformCount(unitType string) int {
+	count := allTransformCounts[unitType]
+	if o, ok := optionalParams[unitType]; ok && !n.SupportsParamValueOtherThan(unitType, o.Name, o.Value) && !n.SupportsModulation(unitType, o.Name) {
+		count--
+	}
+	return count
+}
+
+// TransformsParam reports whether the players of the feature set transform,
+// and so read, the parameter of the unit type. It is false for the optional
+// parameters the feature set leaves out.
+func TransformsParam(f FeatureSet, unitType string, paramName string) bool {
+	i := 0
+	for _, t := range sointu.UnitTypes[unitType].Params {
+		if t.CanModulate && t.CanSet && !t.NoTransform {
+			if t.Name == paramName {
+				return i < f.TransformCount(unitType)
+			}
+			i++
+		}
+	}
+	return false
 }
 
 func (n NecessaryFeatures) SupportsGlobalSend() bool {

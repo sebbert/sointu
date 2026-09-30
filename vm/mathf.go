@@ -2,7 +2,7 @@ package vm
 
 import "math"
 
-// log2f, exp2f, powf and sinTurns are the float32 math functions of the synths.
+// log2f, exp2f, exp2m1f, powf and sinTurns are the float32 math functions of the synths.
 // The wasm player computes them the same way, operation by operation, instead
 // of calling Math.pow and Math.sin of JavaScript, so that the Go synth and the
 // wasm player render exactly the same (unless the wasm player is compiled to
@@ -45,6 +45,26 @@ func exp2f(y float32) float32 {
 	p = float32(p*z) + 1
 	p = float32(p*z) + 1
 	return p * math.Float32frombits(uint32(int32(i)+127)<<23)
+}
+
+// exp2m1f returns 2^y - 1, also for y near 0, where exp2f(y) - 1 would lose
+// its digits: 2^i·e^z - 1 = 2^i·(e^z - 1) + (2^i - 1), for i and z as in
+// exp2f, with e^z - 1 from the same series without its constant term.
+func exp2m1f(y float32) float32 {
+	if !(y > -126) { // also NaN
+		y = -126
+	}
+	y = min(y, 126)
+	i := float32(math.RoundToEven(float64(y)))
+	z := float32(y-i) * 0.6931472
+	p := float32(z*0.0013888889) + 0.008333334
+	p = float32(p*z) + 0.041666668
+	p = float32(p*z) + 0.16666667
+	p = float32(p*z) + 0.5
+	p = float32(p*z) + 1
+	p *= z
+	e := math.Float32frombits(uint32(int32(i)+127) << 23)
+	return float32(p*e) + (e - 1)
 }
 
 // powf returns x^y for x > 0.

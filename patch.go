@@ -355,6 +355,9 @@ var UnitTypes = map[string]UnitType{
 			{Name: "sustain", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
 			{Name: "release", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return engineeringTime(math.Pow(2, 24*float64(v)/128) / 44100) }},
 			{Name: "gain", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
+			// curve must stay the last transformed parameter: songs that do not
+			// use it compile without it (see vm.NecessaryFeatures)
+			{Name: "curve", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: envelopeCurveDispFunc},
 		},
 		StackUse: stackUseSource,
 	},
@@ -804,6 +807,7 @@ var addedParameters = map[string]map[string]int{
 	"bufread":    {"speed": 128}, // forwards at the normal speed
 	"bufwrite":   {"pop": 1},
 	"spcompress": {"attack": 0, "release": 0}, // no smoothing
+	"envelope":   {"curve": 0},                // linear
 }
 
 // compile errors if interface is not implemented.
@@ -928,6 +932,18 @@ func compressorTimeDispFunc(v int) (string, string) {
 	alpha := math.Pow(2, -24*float64(v)/128) // alpha is the "smoothing factor" of first order low pass iir
 	sec := -1 / (44100 * math.Log(1-alpha))  // from smoothing factor to time constant, https://en.wikipedia.org/wiki/Exponential_smoothing
 	return engineeringTime(sec)
+}
+
+// envelopeCurveDispFunc shows the curve of the envelope as the depth of the
+// exponential that each stage follows: a stage moves toward a target beyond
+// its end, and ends when the distance to the target has fallen by
+// 12·(v/128)² halvings, 72 dB at 128. 0 is linear.
+func envelopeCurveDispFunc(v int) (string, string) {
+	if v == 0 {
+		return "linear", ""
+	}
+	p := float64(v) / 128
+	return strconv.FormatFloat(12*p*p*20*math.Log10(2), 'f', 1, 64), "dB"
 }
 
 func engineeringTime(sec float64) (string, string) {
