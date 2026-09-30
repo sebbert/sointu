@@ -183,6 +183,17 @@
 {{- .Align}}
 {{- .SetBlockLabel "su_delaylines"}}
 {{- .Block (int (mul 262156 .Song.Patch.NumDelayLines))}}
+{{- if .HasOp "ott"}}
+{{- /*
+;-------------------------------------------------------------------------------
+;    The states of the ott units, 11 floats each, in the order the units run,
+;    voice by voice
+;-------------------------------------------------------------------------------
+*/}}
+{{- .Align}}
+{{- .SetBlockLabel "su_ott"}}
+{{- .Block (int (mul 44 .Song.Patch.NumOtts))}}
+{{- end}}
 {{- if or (.HasOp "bufread") (.HasOp "bufwrite")}}
 {{- .Align}}
 {{- .SetBlockLabel "su_buffers"}}
@@ -242,6 +253,9 @@
 {{- end}}
 {{- if .HasOp "delay"}}
 (global $delayWRK (mut i32) (i32.const 0))
+{{- end}}
+{{- if .HasOp "ott"}}
+(global $ottWRK (mut i32) (i32.const 0))
 {{- end}}
 (global $globaltick (mut i32) (i32.const 0))
 (global $row (mut i32) (i32.const 0))
@@ -337,6 +351,9 @@
                 (global.set $voicesRemain (i32.const {{.Song.Patch.NumVoices | printf "%v"}}))
 {{- if .HasOp "delay"}}
                 (global.set $delayWRK (i32.const {{index .Labels "su_delaylines"}}))
+{{- end}}
+{{- if .HasOp "ott"}}
+                (global.set $ottWRK (i32.const {{index .Labels "su_ott"}}))
 {{- end}}
                 (call $su_run_vm)
                 {{- template "output_sound.wat" .}}

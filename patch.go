@@ -295,6 +295,43 @@ var UnitTypes = map[string]UnitType{
 			return StackUse{Inputs: [][]int{{0, 1}}, Modifies: []bool{false, true}, NumOutputs: 2}
 		},
 	},
+	"ott": {
+		// ott is a three-band upward and downward compressor, like Xfer's OTT
+		// or the OTT preset of Ableton's Multiband Dynamics. It splits the
+		// signal at 88.3 Hz and 2.5 kHz (2-pole state-variable low-passes, Q
+		// 0.707, the rest is the difference, so the bands sum back to the
+		// input) and follows the power of each band (stereo: the sum of the
+		// channels' powers, one gain for both). Above the upper threshold, a
+		// band is compressed downward at 66.7:1, scaled by downward; below the
+		// lower threshold, it is lifted upward at 4:1, scaled by upward, by at
+		// most 24 dB. Then the band's gain applies, and depth mixes the bands
+		// back with the dry input. The thresholds, in dB of the mean square
+		// (a full-scale sine is -3 dB), attack and release at time 64:
+		//
+		//	band  upper     lower     attack   release
+		//	low   -33.8 dB  -40.8 dB  47.8 ms  282 ms
+		//	mid   -30.2 dB  -41.8 dB  22.4 ms  282 ms
+		//	high  -35.5 dB  -40.8 dB  13.5 ms  132 ms
+		//
+		// time scales the attacks and releases by 1/16 to 16. The OTT preset
+		// also boosts the bands by 5.2 dB going in and by about 10.3, 5.7 and
+		// 10.3 dB coming out; ott has no fixed gains, so that with upward and
+		// downward at 0 it passes the input through: set low, mid and high
+		// to taste (91, 79 and 91 for the preset's output gains).
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "depth", MinValue: 0, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v * 100 / 128), "%" }},
+			{Name: "time", MinValue: 0, Default: 64, Neutral: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(math.Pow(2, (float64(v)/128-0.5)*8), 'g', 3, 64), "×"
+			}},
+			{Name: "upward", MinValue: 0, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v * 100 / 128), "%" }},
+			{Name: "downward", MinValue: 0, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v * 100 / 128), "%" }},
+			{Name: "low", MinValue: 0, Default: 64, Neutral: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: ottGainDisplay},
+			{Name: "mid", MinValue: 0, Default: 64, Neutral: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: ottGainDisplay},
+			{Name: "high", MinValue: 0, Default: 64, Neutral: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: ottGainDisplay},
+		},
+		StackUse: stackUseEffect,
+	},
 	"speed": {
 		Params:   []UnitParameter{},
 		StackUse: func(u *Unit) StackUse { return StackUse{Inputs: [][]int{{0}}, Modifies: []bool{true}, NumOutputs: 0} },
@@ -930,6 +967,11 @@ func compressorTimeDispFunc(v int) (string, string) {
 	return engineeringTime(sec)
 }
 
+// ottGainDisplay shows the gain of a band of ott, 2^((v/128-0.5)·8): ±24 dB.
+func ottGainDisplay(v int) (string, string) {
+	return strconv.FormatFloat(toDecibel(math.Pow(2, (float64(v)/128-0.5)*8)), 'f', 1, 64), "dB"
+}
+
 func engineeringTime(sec float64) (string, string) {
 	if sec < 1e-3 {
 		return fmt.Sprintf("%.2f", sec*1e6), "us"
@@ -1097,6 +1139,22 @@ func (p Patch) NumDelayLines() int {
 		for _, unit := range instr.Units {
 			if unit.Type == "delay" {
 				total += len(unit.VarArgs) * instr.NumVoices
+			}
+		}
+	}
+	return total
+}
+
+// NumOtts returns the number of ott states of the patch: the number of ott
+// units of every instrument times its number of voices. The synths keep them
+// outside the voices, like delay lines, as a unit has room for 8 floats and a
+// stereo ott needs 11.
+func (p Patch) NumOtts() int {
+	total := 0
+	for _, instr := range p {
+		for _, unit := range instr.Units {
+			if unit.Type == "ott" && !unit.Disabled {
+				total += instr.NumVoices
 			}
 		}
 	}

@@ -96,7 +96,7 @@
     (call $exp2f (local.get $value))
 {{- end}}
 )
-{{- if or (not .MathImports) .SpectralTable}}
+{{- if or (not .MathImports) .SpectralTable (.HasOp "ott")}}
 
 ;;-------------------------------------------------------------------------------
 ;; $exp2f returns 2^y, for y clamped to [-126, 126]: 2 to the nearest integer
@@ -115,7 +115,7 @@
 )
 {{- end}}
 
-{{- if or (and (not .MathImports) (.HasOp "compressor")) (.HasOp "spfilter") (.HasOp "spcompress") (.HasOp "spcross")}}
+{{- if or (and (not .MathImports) (.HasOp "compressor")) (.HasOp "spfilter") (.HasOp "spcompress") (.HasOp "spcross") (.HasOp "ott")}}
 ;; $log2f, $exp2f, $powf and $sinTurns are the float32 math functions of the
 ;; player, computed like log2f, exp2f, powf and sinTurns in vm/mathf.go,
 ;; operation by operation, so that the Go synth renders exactly the same.

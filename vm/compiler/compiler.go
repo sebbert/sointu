@@ -138,7 +138,7 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 	for _, unit := range features.Instructions() {
 		wasmOnly := len(sointu.SpectrumBufferParams(unit)) > 0
 		switch unit {
-		case "bufread", "bufwrite", "spawn", "arg", "window":
+		case "bufread", "bufwrite", "spawn", "arg", "window", "ott":
 			wasmOnly = true
 		}
 		if wasmOnly && com.Arch != "wasm" {

@@ -491,3 +491,12 @@ su_op_compressor_mono:
 {{- end}}
     ret
 {{- end}}
+
+
+{{- if .HasOp "ott"}}
+;-------------------------------------------------------------------------------
+;   OTT opcode: not supported on x86 yet; leaves the signal unchanged
+;-------------------------------------------------------------------------------
+{{.Func "su_op_ott" "Opcode"}}
+    ret
+{{end}}

@@ -28,6 +28,7 @@ type (
 		stack      []float32
 		state      synthState
 		delaylines []delayline
+		otts       []ottState
 		buffers    map[int]*synthBuffer
 		spectra    []spectrum
 		spectral   []spectralState // states of the spectral units
@@ -118,7 +119,7 @@ func (s GoSynther) Synth(patch sointu.Patch, bpm int) (sointu.Synth, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error compiling %v", err)
 	}
-	ret := &GoSynth{bytecode: *bytecode, stack: make([]float32, 0, 4), delaylines: make([]delayline, patch.NumDelayLines())}
+	ret := &GoSynth{bytecode: *bytecode, stack: make([]float32, 0, 4), delaylines: make([]delayline, patch.NumDelayLines()), otts: make([]ottState, patch.NumOtts())}
 	ret.state.randSeed = 1
 	ret.setSpectra(nil)
 	return ret, nil
@@ -226,7 +227,11 @@ func (s *GoSynth) Update(patch sointu.Patch, bpm int) error {
 	for len(s.delaylines) < patch.NumDelayLines() {
 		s.delaylines = append(s.delaylines, delayline{})
 	}
+	for len(s.otts) < patch.NumOtts() {
+		s.otts = append(s.otts, ottState{})
+	}
 	if needsRefresh {
+		clear(s.otts)
 		for i := range s.state.voices {
 			for j := range s.state.voices[i].units {
 				s.state.voices[i].units[j] = unit{}
@@ -254,6 +259,7 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 		operandsInstr := s.bytecode.Operands
 		opcodes, operands := opcodesInstr, operandsInstr
 		delaylines := s.delaylines
+		otts := s.otts
 		voicesRemaining := s.bytecode.NumVoices
 		voices := s.state.voices[:]
 		units := voices[0].units[:]
@@ -751,6 +757,9 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 					stackIndex++
 				}
 				unit.ports[4] = 0
+			case opOtt:
+				ott(&otts[0], &params, channels, stack)
+				otts = otts[1:]
 			case opCompressor:
 				signalLevel := float32(stack[l-1] * stack[l-1]) // square the signal to get power
 				if stereo {

@@ -557,3 +557,126 @@
     (f32.store (global.get $WRK) (local.get $level)) ;; save the updated levels
 )
 {{- end}}
+
+{{- if .HasOp "ott"}}
+;;-------------------------------------------------------------------------------
+;;   OTT opcode: three-band upward and downward compressor
+;;-------------------------------------------------------------------------------
+;;   Mono:   compresses ST0
+;;   Stereo: compresses ST0 and ST1, with one level for each band, from the sum
+;;           of the powers of the channels
+;;   The state of the unit, 11 floats, is at $ottWRK, in su_ott: the low and
+;;   band of the two crossovers for each channel, then the levels of the
+;;   bands. Matches ott in vm/ott.go, where the constants are explained.
+;;-------------------------------------------------------------------------------
+(func $su_op_ott (param $stereo i32) (local $l0 f32) (local $m0 f32) (local $h0 f32) (local $l1 f32) (local $m1 f32) (local $h1 f32) (local $inv f32) (local $g0 f32) (local $g1 f32)
+    (call $ottSplit (call $peek) (global.get $ottWRK))
+    (local.set $h0) (local.set $m0) (local.set $l0)
+{{- if .Stereo "ott"}}
+    (if (local.get $stereo) (then
+        (call $ottSplit (call $peek2) (i32.add (global.get $ottWRK) (i32.const 16)))
+        (local.set $h1) (local.set $m1) (local.set $l1)
+    ))
+{{- end}}
+    ;; 1 / the time multiplier
+    (local.set $inv (call $exp2f (f32.mul
+        (f32.sub (f32.const 0.5) (call $input (i32.const {{.InputNumber "ott" "time"}})))
+        (f32.const 8)
+    )))
+    ;; in mono, the right channel's bands are 0 and add nothing to the powers
+    (local.set $g0 (call $ottGain
+        (f32.add (f32.mul (local.get $l0) (local.get $l0)) (f32.mul (local.get $l1) (local.get $l1)))
+        (i32.add (global.get $ottWRK) (i32.const 32)) (local.get $inv)
+        (f32.const -0.00068439695) (f32.const -0.00011600771) (f32.const -11.228117) (f32.const -13.553467)
+        (call $input (i32.const {{.InputNumber "ott" "low"}}))
+    ))
+    (local.set $g1 (call $ottGain
+        (f32.add (f32.mul (local.get $m0) (local.get $m0)) (f32.mul (local.get $m1) (local.get $m1)))
+        (i32.add (global.get $ottWRK) (i32.const 36)) (local.get $inv)
+        (f32.const -0.0014604542) (f32.const -0.00011600771) (f32.const -10.032223) (f32.const -13.885659)
+        (call $input (i32.const {{.InputNumber "ott" "mid"}}))
+    ))
+    (local.set $inv (call $ottGain
+        (f32.add (f32.mul (local.get $h0) (local.get $h0)) (f32.mul (local.get $h1) (local.get $h1)))
+        (i32.add (global.get $ottWRK) (i32.const 40)) (local.get $inv)
+        (f32.const -0.0024232720) (f32.const -0.00024783466) (f32.const -11.792845) (f32.const -13.553467)
+        (call $input (i32.const {{.InputNumber "ott" "high"}}))
+    )) ;; $inv is the gain of the high band from here on
+    (f32.store (global.get $sp) (call $ottMix (call $peek) (local.get $l0) (local.get $m0) (local.get $h0) (local.get $g0) (local.get $g1) (local.get $inv)))
+{{- if .Stereo "ott"}}
+    (if (local.get $stereo) (then
+        (f32.store offset=4 (global.get $sp) (call $ottMix (call $peek2) (local.get $l1) (local.get $m1) (local.get $h1) (local.get $g0) (local.get $g1) (local.get $inv)))
+    ))
+{{- end}}
+    (global.set $ottWRK (i32.add (global.get $ottWRK) (i32.const 44)))
+)
+
+;; $ottSplit splits $x into the low, mid and high bands of ott, with the
+;; state of the crossovers of the channel at $s
+(func $ottSplit (param $x f32) (param $s i32) (result f32 f32 f32) (local $low f32) (local $rest f32) (local $mid f32)
+    (local.set $low (f32.add (f32.load (local.get $s)) (f32.mul (f32.const 0.012580535) (f32.load offset=4 (local.get $s)))))
+    (local.set $rest (f32.sub (local.get $x) (local.get $low)))
+    (local.set $mid (f32.add (f32.load offset=8 (local.get $s)) (f32.mul (f32.const 0.35430971) (f32.load offset=12 (local.get $s)))))
+    (f32.store offset=4 (local.get $s) (f32.add
+        (f32.load offset=4 (local.get $s))
+        (f32.mul (f32.const 0.012580535) (f32.sub (local.get $rest) (f32.mul (f32.const 1.4142135) (f32.load offset=4 (local.get $s)))))
+    ))
+    (f32.store offset=12 (local.get $s) (f32.add
+        (f32.load offset=12 (local.get $s))
+        (f32.mul (f32.const 0.35430971) (f32.sub (f32.sub (local.get $rest) (local.get $mid)) (f32.mul (f32.const 1.4142135) (f32.load offset=12 (local.get $s)))))
+    ))
+    (f32.store (local.get $s) (local.get $low))
+    (f32.store offset=8 (local.get $s) (local.get $mid))
+    (local.get $low)
+    (local.get $mid)
+    (f32.sub (local.get $rest) (local.get $mid))
+)
+
+;; $ottGain moves the level of a band at $a toward the power $x2 of the band
+;; and returns the gain of the band: downward above $down, upward below $up,
+;; times the band's gain parameter $gain
+(func $ottGain (param $x2 f32) (param $a i32) (param $inv f32) (param $attack f32) (param $release f32) (param $down f32) (param $up f32) (param $gain f32) (result f32) (local $level f32) (local $g f32)
+    (local.set $level (f32.load (local.get $a)))
+    (local.set $level (f32.add (local.get $level) (f32.mul
+        (f32.sub (local.get $x2) (local.get $level))
+        (f32.sub (f32.const 1) (call $exp2f (f32.mul
+            (select (local.get $release) (local.get $attack) (f32.lt (local.get $x2) (local.get $level)))
+            (local.get $inv)
+        )))
+    )))
+    (f32.store (local.get $a) (local.get $level))
+    (local.set $level (call $log2f (local.get $level)))
+    (local.set $g (f32.mul (f32.sub (local.get $gain) (f32.const 0.5)) (f32.const 8)))
+    (if (f32.gt (local.get $level) (local.get $down)) (then
+        (local.set $g (f32.sub (local.get $g) (f32.mul
+            (f32.mul (f32.sub (local.get $level) (local.get $down)) (f32.const 0.49250376))
+            (call $input (i32.const {{.InputNumber "ott" "downward"}}))
+        )))
+    ))
+    (if (f32.lt (local.get $level) (local.get $up)) (then
+        (local.set $g (f32.add (local.get $g) (f32.min
+            (f32.mul
+                (f32.mul (f32.sub (local.get $up) (local.get $level)) (f32.const 0.375))
+                (call $input (i32.const {{.InputNumber "ott" "upward"}}))
+            )
+            (f32.const 3.9863138)
+        )))
+    ))
+    (call $exp2f (local.get $g))
+)
+
+;; $ottMix sums the bands of a channel with their gains and mixes them with
+;; the dry signal $x by depth
+(func $ottMix (param $x f32) (param $low f32) (param $mid f32) (param $high f32) (param $gl f32) (param $gm f32) (param $gh f32) (result f32)
+    (f32.add (local.get $x) (f32.mul
+        (f32.sub
+            (f32.add
+                (f32.add (f32.mul (local.get $low) (local.get $gl)) (f32.mul (local.get $mid) (local.get $gm)))
+                (f32.mul (local.get $high) (local.get $gh))
+            )
+            (local.get $x)
+        )
+        (call $input (i32.const {{.InputNumber "ott" "depth"}}))
+    ))
+)
+{{end}}
