@@ -145,6 +145,15 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 		if unit.Type == "bufread" && unit.Parameters["loop"] == 0 && (up.Name == "loopstart" || up.Name == "looplength" || up.Name == "fade") {
 			continue // loop points only matter when looping
 		}
+		if unit.Type == "mcdelay" && (unit.Parameters["allpass"] == 0 && up.Name == "apgain" || unit.Parameters["decay"] == 0 && (up.Name == "hfdecay" || up.Name == "lfdecay")) {
+			continue // the allpass coefficient and the band decays only matter when used
+		}
+		if unit.Type == "mcmix" && unit.Parameters["type"] != sointu.MCMixShuffle && up.Name == "seed" {
+			continue // only the shuffle is random
+		}
+		if unit.Type == "mcsum" && unit.Parameters["stereo"] == 0 && up.Name == "width" {
+			continue
+		}
 		var vtable parameterVtable = &namedParameter{}
 		if sointu.TargetsInstrument(unit.Type) && up.Name == "instrument" {
 			vtable = &spawnTargetParameter{}
@@ -160,6 +169,14 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 				vtable = spectrumBufferParameter
 				if j == 0 && sointu.WritesSpectrum(unit.Type) {
 					vtable = spectrumWriterParameter
+				}
+			}
+		}
+		for _, name := range sointu.BusParams(unit.Type) {
+			if up.Name == name {
+				vtable = busParameter
+				if sointu.WritesBus(unit.Type) {
+					vtable = busWriterParameter
 				}
 			}
 		}

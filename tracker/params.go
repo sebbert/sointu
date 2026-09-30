@@ -264,10 +264,10 @@ type (
 	delayLinesParameter struct{}
 	gmDlsEntryParameter struct{}
 	reverbParameter     struct{}
-	// bufferParameter is a parameter referring to a buffer, audio or
-	// spectrum; writer means the unit writes a spectrum to it, so that it
-	// cannot be none.
-	bufferParameter      struct{ spectrum, writer bool }
+	// bufferParameter is a parameter referring to a buffer, audio,
+	// spectrum or bus; writer means the unit writes a spectrum or starts a
+	// chain of mc units on it, so that it cannot be none.
+	bufferParameter      struct{ spectrum, bus, writer bool }
 	spawnTargetParameter struct{}
 	spawnRateParameter   struct{ namedParameter }
 	bufferFrameParameter struct{ namedParameter }
@@ -715,7 +715,8 @@ func roundToSliceGrid(value int, grid []int, up bool) int {
 }
 
 // bufferParameter vtable: the buffer used by a unit, audio buffers for
-// bufread and bufwrite and spectrum buffers for the spectral units. Its values
+// bufread and bufwrite, spectrum buffers for the spectral units and buses for
+// the mc units. Its values
 // are 0 for no buffer and i+1 for the i-th of those buffers of the song; the
 // unit stores the buffer's ID.
 
@@ -723,12 +724,14 @@ var (
 	audioBufferParameter    = &bufferParameter{}
 	spectrumBufferParameter = &bufferParameter{spectrum: true}
 	spectrumWriterParameter = &bufferParameter{spectrum: true, writer: true}
+	busParameter            = &bufferParameter{bus: true}
+	busWriterParameter      = &bufferParameter{bus: true, writer: true}
 )
 
 func (b *bufferParameter) buffers(p *Parameter) []sointu.Buffer {
 	var ret []sointu.Buffer
 	for _, buf := range p.m.d.Song.Buffers {
-		if buf.Spectrum == b.spectrum {
+		if buf.Spectrum == b.spectrum && buf.Bus == b.bus {
 			ret = append(ret, buf)
 		}
 	}

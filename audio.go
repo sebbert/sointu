@@ -109,6 +109,15 @@ type (
 		Spectrum(bufferID int, dst []float32) ([]float32, int)
 	}
 
+	// UnitLevelsReporter is implemented by Synths that can report the levels
+	// of the buses of the mc units.
+	UnitLevelsReporter interface {
+		// UnitLevels appends to dst the peak level of each channel of the bus
+		// right after the mc unit with the given ID, since the last call, and
+		// returns them, or nil if there is no such unit.
+		UnitLevels(unitID int, dst []float32) []float32
+	}
+
 	// UnitSpectrumReporter is implemented by Synths that can report the
 	// spectrum right after each spectral unit processed it.
 	UnitSpectrumReporter interface {

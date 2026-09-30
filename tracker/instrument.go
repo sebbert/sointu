@@ -251,6 +251,9 @@ func (m *InstrModel) warnAboutCrossThreadSends() {
 			if (unit.Type == "bufwrite" || sointu.WritesSpectrum(unit.Type)) && !unit.Disabled {
 				writers[unit.Parameters["buffer"]] = i
 			}
+			if sointu.WritesBus(unit.Type) && !unit.Disabled {
+				writers[unit.Parameters["bus"]] = i
+			}
 		}
 	}
 	for i, instr := range m.d.Song.Patch {
@@ -261,8 +264,8 @@ func (m *InstrModel) warnAboutCrossThreadSends() {
 			var read []string
 			if unit.Type == "bufread" {
 				read = []string{"buffer"}
-			} else {
-				read = sointu.SpectrumBufferParams(unit.Type)
+			} else if read = sointu.SpectrumBufferParams(unit.Type); read == nil {
+				read = sointu.BusParams(unit.Type)
 			}
 			for _, p := range read {
 				if w, ok := writers[unit.Parameters[p]]; ok && instr.ThreadMaskM1 != m.d.Song.Patch[w].ThreadMaskM1 {

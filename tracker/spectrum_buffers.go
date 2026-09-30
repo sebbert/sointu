@@ -52,7 +52,7 @@ func (m *Model) fixSpectrumBuffers() {
 	}
 	bufs := m.d.Song.Buffers[:0]
 	for _, b := range m.d.Song.Buffers {
-		if b.Auto && !used[b.ID] {
+		if b.Auto && b.Spectrum && !used[b.ID] {
 			continue
 		}
 		bufs = append(bufs, b)

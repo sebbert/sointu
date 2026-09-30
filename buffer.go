@@ -227,6 +227,10 @@ func SpectrumBufferParams(unitType string) []string {
 // in their buffer parameter, replacing its spectra.
 func WritesSpectrum(unitType string) bool { return unitType == "spfft" || unitType == "spcopy" }
 
+// IsAudio reports whether the buffer holds audio, for bufread and bufwrite
+// units: it is neither a spectrum nor a bus.
+func (b *Buffer) IsAudio() bool { return !b.Spectrum && !b.Bus }
+
 // NewAudio returns the audio of a writable buffer before anything has been
 // written to it: silent and without valid frames.
 func (b *Buffer) NewAudio() BufferAudio {

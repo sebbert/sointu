@@ -578,9 +578,12 @@ func (p *Player) updatePlayheads() {
 }
 
 // SpectrumSource is where a spectrum is taken: a spectrum buffer, or a
-// spectral unit, right after it processed its buffer. One of them is 0.
+// spectral unit, right after it processed its buffer. One of them is 0. With
+// Levels, the "spectrum" is instead the peak level of each channel of the bus
+// after the mc unit, since the last report.
 type SpectrumSource struct {
 	Buffer, Unit int
+	Levels       bool
 }
 
 // SpectrumWatchMsg tells the player the spectra it should report with
@@ -611,7 +614,10 @@ func (p *Player) reportSpectrum(frames int) {
 	for _, src := range p.spectra {
 		var mags []float32
 		n := 0
-		if r, ok := p.synth.(sointu.UnitSpectrumReporter); ok && src.Unit != 0 {
+		if r, ok := p.synth.(sointu.UnitLevelsReporter); ok && src.Levels {
+			mags = r.UnitLevels(src.Unit, nil)
+			n = len(mags)
+		} else if r, ok := p.synth.(sointu.UnitSpectrumReporter); ok && src.Unit != 0 {
 			mags, n = r.UnitSpectrum(src.Unit, nil)
 		} else if r, ok := p.synth.(sointu.SpectrumReporter); ok && src.Buffer != 0 {
 			mags, n = r.Spectrum(src.Buffer, nil)

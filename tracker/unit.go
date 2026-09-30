@@ -283,6 +283,13 @@ func (m *UnitModel) SetType(t string) {
 			unit.Parameters[name] = (*Model)(m).defaultSpectrumBuffer(m.d.InstrIndex, m.d.UnitIndex)
 		}
 	}
+	// a new mc unit uses the bus of the mc unit before it; mcspread gets a
+	// new one when the change is done
+	for _, name := range sointu.BusParams(unit.Type) {
+		if !sointu.WritesBus(unit.Type) {
+			unit.Parameters[name] = (*Model)(m).defaultBus(m.d.InstrIndex, m.d.UnitIndex)
+		}
+	}
 	m.d.Song.Patch[m.d.InstrIndex].Units[m.d.UnitIndex] = unit
 	m.d.Song.Patch[m.d.InstrIndex].Units[m.d.UnitIndex].ID = oldUnit.ID // keep the ID of the replaced unit
 }
@@ -400,6 +407,20 @@ func (m *UnitModel) Spectrum(i int) ([]float32, int) {
 		return nil, 0
 	}
 	return (*Model)(m).spectrumOf(SpectrumSource{Unit: id})
+}
+
+// Bus returns the ID of the bus of unit i of the selected instrument, if it
+// is an mc unit, whose preview shows the levels of its bus.
+func (m *UnitModel) Bus(i int) (id int, ok bool) {
+	if m.d.InstrIndex < 0 || m.d.InstrIndex >= len(m.d.Song.Patch) ||
+		i < 0 || i >= len(m.d.Song.Patch[m.d.InstrIndex].Units) {
+		return 0, false
+	}
+	u := &m.d.Song.Patch[m.d.InstrIndex].Units[i]
+	if sointu.BusParams(u.Type) == nil {
+		return 0, false
+	}
+	return u.Parameters["bus"], true
 }
 
 // Buffer returns the ID of the buffer that unit i of the selected instrument

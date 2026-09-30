@@ -186,6 +186,17 @@ func (s *MultithreadSynth) UnitSpectrum(unitID int, dst []float32) ([]float32, i
 	return dst, 0
 }
 
+func (s *MultithreadSynth) UnitLevels(unitID int, dst []float32) []float32 {
+	for _, sy := range s.synths {
+		if r, ok := sy.(sointu.UnitLevelsReporter); ok {
+			if ret := r.UnitLevels(unitID, dst); ret != nil {
+				return ret
+			}
+		}
+	}
+	return nil
+}
+
 func (s *MultithreadSynth) Playheads(dst []sointu.Playhead) []sointu.Playhead {
 	for _, synth := range s.synths {
 		if p, ok := synth.(sointu.PlayheadReporter); ok {

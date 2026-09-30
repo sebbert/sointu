@@ -103,7 +103,7 @@ func (ib *InstrumentBuffers) update(gtx C, tr *Tracker) {
 		ib.chooseSample(tr, false)
 	}
 	for ib.replaceBtn.Clicked(gtx) {
-		if tr.Buffer().HasSelection() && !tr.Buffer().IsSpectrum() {
+		if tr.Buffer().HasSelection() && !tr.Buffer().IsSpectrum() && !tr.Buffer().IsBus() {
 			ib.chooseSample(tr, true)
 		}
 	}
@@ -140,7 +140,7 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 	addBtn := IconBtn(th, &th.IconButton.Enabled, ib.addBtn, icons.ContentAdd, "Import a sample as a new buffer")
 	newEmptyBtn := ActionIconBtn(tr.Buffer().NewEmpty(), th, ib.newEmptyBtn, icons.AVMic, "Add an empty buffer for bufwrite units to record into")
 	replaceStyle := &th.IconButton.Enabled
-	if !hasSel || tr.Buffer().IsSpectrum() {
+	if !hasSel || tr.Buffer().IsSpectrum() || tr.Buffer().IsBus() {
 		replaceStyle = &th.IconButton.Disabled
 	}
 	replaceBtn := IconBtn(th, replaceStyle, ib.replaceBtn, icons.FileFolderOpen, "Replace the sample of the buffer")
@@ -257,7 +257,9 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 			},
 		}
 		var lines []layout.Widget
-		if tr.Buffer().IsSpectrum() {
+		if tr.Buffer().IsBus() {
+			lines = append(common[:1:1], nil, info)
+		} else if tr.Buffer().IsSpectrum() {
 			lines = append(common[:1:1], nil, info, ib.layoutSpectrum)
 		} else if tr.Buffer().IsWritable() {
 			clearBtn := ActionBtn(tr.Buffer().Clear(), th, ib.clearBtn, "Clear", "Discard what has been recorded")

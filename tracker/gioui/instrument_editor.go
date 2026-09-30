@@ -396,7 +396,9 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 	table.CellHeight = t.Theme.UnitEditor.Height
 	if t.preferences.Rack.BufferPreviews {
 		table.RowOverlay = func(gtx C, y int) {
-			if id, spectrum, ok := t.Unit().Buffer(y); ok {
+			if id, ok := t.Unit().Bus(y); ok {
+				pe.layoutBusPreview(gtx, y, id)
+			} else if id, spectrum, ok := t.Unit().Buffer(y); ok {
 				pe.layoutUnitPreview(gtx, y, id, spectrum)
 			}
 		}

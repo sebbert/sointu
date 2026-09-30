@@ -81,6 +81,8 @@ func (m *BufferModel) Item(i int) (name, info string) {
 	}
 	status := m.buffers.status[buf.ID]
 	switch {
+	case buf.Bus:
+		info = "bus, 8 channels"
 	case buf.Spectrum:
 		if size, channels, ok := (*Model)(m).spectrumSize(buf.ID); ok {
 			info = fmt.Sprintf("spectrum, %d", size)
@@ -177,6 +179,12 @@ func (m *newEmptyBuffer) Do() {
 	name := fmt.Sprintf("Recording %d", id)
 	m.d.Song.Buffers = append(m.d.Song.Buffers, sointu.Buffer{ID: id, Name: name, Channels: 1, Frames: 44100})
 	m.d.BufferIndex = len(m.d.Song.Buffers) - 1
+}
+
+// IsBus reports whether the selected buffer is a bus of mc units.
+func (m *BufferModel) IsBus() bool {
+	buf := m.selected()
+	return buf != nil && buf.Bus
 }
 
 // IsSpectrum reports whether the selected buffer is a spectrum buffer.
@@ -375,8 +383,8 @@ type deleteBuffer BufferModel
 
 func (m *deleteBuffer) Enabled() bool {
 	buf := (*BufferModel)(m).selected()
-	// a spectrum buffer in use would be created again right away
-	return buf != nil && !(buf.Spectrum && (*Model)(m).spectrumBufferUsed(buf.ID))
+	// a spectrum buffer or bus in use would be created again right away
+	return buf != nil && !(buf.Spectrum && (*Model)(m).spectrumBufferUsed(buf.ID)) && !(buf.Bus && (*Model)(m).busUsed(buf.ID))
 }
 func (m *deleteBuffer) Do() {
 	defer (*BufferModel)(m).change("DeleteBuffer")()
@@ -764,6 +772,9 @@ func (m *BufferModel) Info() string {
 	buf := m.selected()
 	if buf == nil {
 		return ""
+	}
+	if buf.Bus {
+		return "Bus of 8 channels, processed in place every sample by\nmc units: mcspread spreads a signal over it, mcdelay,\nmcmix, mcfilter, mcloop and mcloopend change it, and\nmcsum sums it back. Not stored in the song."
 	}
 	if buf.Spectrum {
 		size, channels, ok := (*Model)(m).spectrumSize(buf.ID)
