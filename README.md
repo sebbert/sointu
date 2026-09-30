@@ -324,7 +324,17 @@ to a chord: the notes held in the voices of an `instrument`, e.g. a silent
 polyphonic instrument whose track plays the chords, or if none, the note of
 its own voice and up to three intervals above it.
 
-`bufread`, `bufwrite`, `spawn`, `arg`, `window` and the spectral units are
+`ott` is a three-band upward and downward compressor, like Xfer's OTT or the
+OTT preset of Ableton's Multiband Dynamics: it splits the signal at 88 Hz and
+2.5 kHz, squashes the loud parts of each band down (`downward`) and lifts the
+quiet parts up (`upward`, by at most 24 dB), then applies the gain of each band
+(`low`, `mid`, `high`, ±24 dB) and mixes with the dry signal by `depth`.
+`time` makes all the attacks and releases 16 times faster to 16 times slower.
+A stereo `ott` uses the same gains on both channels. Unlike the OTT preset,
+it adds no fixed gain, so the output is often quieter than the input: raise
+the band gains, e.g. to about +10, +5.6 and +10 dB (91, 79 and 91).
+
+`bufread`, `bufwrite`, `spawn`, `arg`, `window`, `ott` and the spectral units are
 WebAssembly only for now.
 
 If you are looking for an easy way to compile an executable from a Sointu song

@@ -59,9 +59,29 @@ All of these are Go and wasm only.
 | `spfft`, `spifft`, `spcopy` | Spectral analysis and resynthesis (Hann, 4× overlap, 256 to 8192 samples, mono or stereo), copying spectra |
 | `spfilter`, `spcompress`, `spblur`, `spgate`, `spphase`, `spscale`, `spformant` | Change a spectrum in place: band cut and tilt, magnitudes pulled to their mean (with optional attack and release per bin), time smoothing and freeze, gate, phase dispersion/randomization/robot, bin scaling and shifting, formant shift |
 | `spcross`, `spcomb` | Cross-synthesis/vocoder with another spectrum; resonances at the harmonics of up to 8 notes held in another instrument |
+| `ott` | A three-band upward and downward compressor, like Ableton's OTT preset: crossovers at 88.3 Hz and 2.5 kHz, `depth`, `time`, `upward`, `downward`, a gain per band |
 
 Spectral units run only in the first voice of their instrument. See the
 README for the details of each unit.
+
+`ott`'s constants, fixed in the unit (`vm/ott.go`, documented in `patch.go`),
+approximate the OTT preset of Ableton's Multiband Dynamics:
+
+| Band | Crossover | Upper threshold | Lower threshold | Attack | Release |
+|---|---|---|---|---|---|
+| low | below 88.3 Hz | -33.8 dB | -40.8 dB | 47.8 ms | 282 ms |
+| mid | to 2.5 kHz | -30.2 dB | -41.8 dB | 22.4 ms | 282 ms |
+| high | above | -35.5 dB | -40.8 dB | 13.5 ms | 132 ms |
+
+Downward 66.7:1 above the upper threshold (the preset's high band is ∞:1),
+upward 4:1 below the lower one, at most +24 dB. Thresholds are of the mean
+square level (a full-scale sine is -3 dB); in stereo, of the sum of the
+channels'. The crossovers are the `filter` unit's state-variable low-pass,
+damping √2 (Q 0.707): the mid band is the low-pass of what the low band
+leaves, the high band what is left after that, so the bands sum back to the
+input, up to rounding. The preset's input gain
+(+5.2 dB) and output gains (about +10.3, +5.7, +10.3 dB) are not built in,
+so that `upward` and `downward` at 0 pass the input through.
 
 ## Voices
 
@@ -194,7 +214,23 @@ songs that need any of it for x86.
    [Go synth behavior changes](#go-synth-behavior-changes). The waveshaper
    already matches.
 
-7. **Native bridge.** `MAX_VOICES` is 32 in the C header; `Polyphony` is a
+7. **ott.** A stereo `ott` needs 11 floats of state (two crossovers × low and
+   band × two channels, and three band levels) and a unit has 8. Instead of
+   taking two unit slots, which would move the addresses of the units after
+   it, the states live in a table of their own, like delay lines:
+   `su_ott` in the wasm player, 44 bytes (11 floats) per state and
+   `Patch.NumOtts()` states (ott units × voices), and `GoSynth.otts`. The
+   player walks them with `$ottWRK`, reset to `su_ott` every sample and
+   advanced by 44 after each ott, so the states go in the order the units
+   run, voice by voice. A state holds, for channel i at float 4i, the low
+   and band of the 88 Hz crossover, then those of the 2.5 kHz one, and the
+   levels of the low, mid and high bands at floats 8 to 10. They are not
+   cleared when a note is triggered. The x86 players would need the same
+   table and pointer, `ott` as in `vm/ott.go`, and the float32 `exp2f` and
+   `log2f` (see 6). The x86 template has a stub that leaves the signal
+   unchanged; the compiler refuses ott for x86.
+
+8. **Native bridge.** `MAX_VOICES` is 32 in the C header; `Polyphony` is a
    32-bit bitmask there.
 
 ## Known differences left
