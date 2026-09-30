@@ -388,7 +388,10 @@ var UnitTypes = map[string]UnitType{
 			{Name: "lfo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "unison", MinValue: 0, MaxValue: 3, CanSet: true, CanModulate: false},
 			// bandlimit reduces the aliasing of the sine, trisaw and pulse
-			// waveforms with polyBLEP and polyBLAMP; see OscillatorBandlimited.
+			// waveforms with polyBLEP and polyBLAMP, keeping the trisaw's
+			// color a sample from 0 and 1 and the sine's in [dt, 1]. The
+			// waveshaper still aliases. LFOs ignore it; see
+			// OscillatorBandlimited.
 			{Name: "bandlimit", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "samplestart", MinValue: 0, MaxValue: 1720329, CanSet: true, CanModulate: false},
 			{Name: "loopstart", MinValue: 0, MaxValue: 65535, CanSet: true, CanModulate: false},

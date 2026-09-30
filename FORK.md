@@ -63,6 +63,36 @@ All of these are Go and wasm only.
 Spectral units run only in the first voice of their instrument. See the
 README for the details of each unit.
 
+## Bandlimited oscillators
+
+The `oscillator` has a new parameter, `bandlimit` (0 or 1, not modulatable;
+0 in older songs). With 1, sine, trisaw and pulse oscillators that are not
+LFOs correct their jumps with a 2-sample polyBLEP and their corners with
+polyBLAMP, in the Go synth and the wasm player (not x86):
+
+- **Phase advance.** dt = |ω + frequency modulation + change of the phase
+  parameter since the last sample|, kept between 2^-20 and 0.5, for each
+  unison voice and channel. The phase parameter of the last sample is kept
+  in the unit's port 7, which the oscillator has no input for. On the first
+  sample of a note it is 0, as if the phase had moved from 0.
+- **Corrections**, for a discontinuity at phase 0 at distance d = min(t,
+  1−t), y = max(1 − d/dt, 0): polyBLEP ∓y² (after/before) for a step of +2,
+  polyBLAMP y³·dt/6 per unit of slope change.
+- **pulse:** color kept in [0, 1]; +polyBLEP at 0, −polyBLEP at color.
+- **trisaw:** color kept in [dt, 1−dt], so the slope change 2/(c(1−c)) times
+  dt stays at most 4; a saw's jump becomes a one-sample ramp. +polyBLAMP at 0,
+  −polyBLAMP at color.
+- **sine:** color kept in [dt, 1]; slope change 2π/color at 0 and at color.
+- The waveshaper after the waveform still aliases.
+
+**Encoding.** The type bits of the flags byte are one-hot, and gate (0x04)
+never goes with sine (0x40), trisaw (0x20) or pulse (0x10). So 0x04 together
+with one of them means bandlimited: no extra bytes at all. A gate is then
+flags & 0x74 == 0x04. The compiler sets the bit only where bandlimit has an
+effect, and the wasm player's correction code, the dt computation and the
+stricter gate test are included only when some oscillator uses it; songs
+without it compile to the same wasm as before.
+
 ## Voices
 
 - Up to 255 voices in the Go synth and wasm player (`vm.MAX_VOICES`). Patches
@@ -194,7 +224,14 @@ songs that need any of it for x86.
    [Go synth behavior changes](#go-synth-behavior-changes). The waveshaper
    already matches.
 
-7. **Native bridge.** `MAX_VOICES` is 32 in the C header; `Polyphony` is a
+7. **Bandlimited oscillators.** Flags 0x04 with 0x40, 0x20 or 0x10 mean
+   bandlimited, so the gate test becomes flags & 0x74 == 0x04. Keep the
+   phase parameter of the last sample in port 7 (offset 60 of the unit),
+   compute dt and the corrections as in `oscillatorSine`, `oscillatorTrisaw`
+   and `oscillatorPulse` in `vm/go_synth.go`, operation by operation in
+   float32.
+
+8. **Native bridge.** `MAX_VOICES` is 32 in the C header; `Polyphony` is a
    32-bit bitmask there.
 
 ## Known differences left
