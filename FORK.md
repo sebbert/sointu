@@ -57,7 +57,7 @@ All of these are Go and wasm only.
 | `arg` | Pushes a value passed by the `spawn` that triggered the voice |
 | `window` | A smoothstep window over the spawned note, for click-free grains |
 | `spfft`, `spifft`, `spcopy` | Spectral analysis and resynthesis (Hann, 4× overlap, 256 to 8192 samples, mono or stereo), copying spectra |
-| `spfilter`, `spcompress`, `spblur`, `spgate`, `spphase`, `spscale`, `spformant` | Change a spectrum in place: band cut and tilt, magnitudes pulled to their mean, time smoothing and freeze, gate, phase dispersion/randomization/robot, bin scaling and shifting, formant shift |
+| `spfilter`, `spcompress`, `spblur`, `spgate`, `spphase`, `spscale`, `spformant` | Change a spectrum in place: band cut and tilt, magnitudes pulled to their mean (with optional attack and release per bin), time smoothing and freeze, gate, phase dispersion/randomization/robot, bin scaling and shifting, formant shift |
 | `spcross`, `spcomb` | Cross-synthesis/vocoder with another spectrum; resonances at the harmonics of up to 8 notes held in another instrument |
 
 Spectral units run only in the first voice of their instrument. See the
@@ -174,6 +174,14 @@ songs that need any of it for x86.
      and twiddles.
    - The operand of each spectral unit is its index in the spectral unit
      table. `spgate`, `spphase` and `spcomb` have extra operands.
+   - `spcompress` with a nonzero attack or release is encoded with the
+     stereo bit, and its attack and release follow the index as two more
+     operands. Its state holds a smoothed envelope, a float for each bin
+     (size/2+1) and channel, which moves toward the envelope each frame by
+     1 - 2^(-hop/(44.1·T)·log2 e), hop = size/4, T = 2^(12p/128) - 1 ms,
+     or 1 when T = 0; the attack when rising, the release when falling. The
+     mean is then the mean of the smoothed envelope, as in `spcompress` in
+     `vm/spectral.go`.
    - Stereo spectra keep their channels one after the other.
    - The float32 `log2f`, `exp2f` and `powf` must be computed operation by
      operation as in `vm/spectral.go`, or x87's 80-bit precision will make

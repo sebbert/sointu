@@ -98,13 +98,16 @@ type (
 	// SpectralUnit is a spectral unit: the voice that runs it, the first
 	// voice of its instrument, its spectrum and, for spcopy and spcross, the
 	// spectrum it reads. Spectrum and Source are indices in Bytecode.Spectra.
-	// Channels is 2 for stereo spfft and spifft units, otherwise 1.
+	// Channels is 2 for stereo spfft and spifft units, otherwise 1. Smooth is
+	// true for spcompress units with a nonzero attack or release, which keep
+	// a smoothed envelope for each bin and channel.
 	SpectralUnit struct {
 		Type             string
 		UnitID           int // for UnitSpectrum
 		Voice            int
 		Spectrum, Source int
 		Channels         int
+		Smooth           bool
 	}
 
 	// SampleOffset is an entry in the sample offset table
@@ -243,6 +246,13 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				if unit.Type == "spcopy" || unit.Type == "spcross" {
 					u.Source = b.spectrumIndex(p["source"])
 				}
+				// spcompress does not use the stereo bit: it marks the
+				// smoothing, whose attack and release follow the index
+				attack, release := min(max(p["attack"], 0), 128), min(max(p["release"], 0), 128)
+				if unit.Type == "spcompress" && (attack != 0 || release != 0) {
+					u.Smooth = true
+					stereo = 1
+				}
 				b.op(opcode + stereo)
 				b.defOperands(unit)
 				b.operand(len(b.SpectralUnits))
@@ -251,6 +261,10 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 					b.operand(p["invert"] & 1)
 				case "spphase":
 					b.operand(min(max(p["mode"], 0), 2))
+				case "spcompress":
+					if u.Smooth {
+						b.operand(attack, release)
+					}
 				case "spcomb":
 					// the voices of the instrument whose notes to use, and
 					// the intervals

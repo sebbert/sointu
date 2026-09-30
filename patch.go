@@ -497,10 +497,14 @@ var UnitTypes = map[string]UnitType{
 		// each bin is scaled by (mean/envelope)^amount, where the envelope is
 		// the average magnitude of the bins within width. Amount 1 flattens
 		// the envelope, like heavy upward and downward multiband compression;
-		// negative amounts exaggerate it.
+		// negative amounts exaggerate it. attack and release smooth the
+		// envelope of each bin over time, like the level detector of a
+		// compressor; 0 follows it instantly.
 		Params: []UnitParameter{
 			{Name: "amount", MinValue: 0, Neutral: 64, Default: 96, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return formatFloat(float64(v)/64 - 1), "" }},
 			{Name: "width", MinValue: 0, Default: 16, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(float64(v)*100/128/16, 'g', 3, 64), "%" }},
+			{Name: "attack", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: spcompressTimeDisplay},
+			{Name: "release", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: spcompressTimeDisplay},
 			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
 		},
 		StackUse: func(u *Unit) StackUse { return StackUse{} },
@@ -727,6 +731,15 @@ const (
 	SpectrumSizeMax     = 5 // 8192
 )
 
+// SpcompressTime returns the attack or release time of spcompress, in
+// milliseconds, for the parameter value v: 2^(12v/128) - 1, from 0 to about 4
+// seconds.
+func SpcompressTime(v int) float64 { return math.Exp2(float64(v)*12/128) - 1 }
+
+func spcompressTimeDisplay(v int) (string, string) {
+	return strconv.FormatFloat(SpcompressTime(v), 'g', 3, 64), "ms"
+}
+
 // The modes of the spphase unit.
 const (
 	SpphaseDisperse = iota
@@ -788,8 +801,9 @@ func stackUseEffect(u *Unit) StackUse {
 // without them, with the values that keep those songs sounding the same. A
 // missing parameter is otherwise 0.
 var addedParameters = map[string]map[string]int{
-	"bufread":  {"speed": 128}, // forwards at the normal speed
-	"bufwrite": {"pop": 1},
+	"bufread":    {"speed": 128}, // forwards at the normal speed
+	"bufwrite":   {"pop": 1},
+	"spcompress": {"attack": 0, "release": 0}, // no smoothing
 }
 
 // compile errors if interface is not implemented.
