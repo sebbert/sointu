@@ -676,7 +676,18 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 					s.tapSpectrum(index)
 				}
 				operands = operands[2:]
-			case opSpfilter, opSpcompress, opSpblur, opSpscale, opSpformant, opSpcross:
+			case opSpcompress:
+				// with the stereo bit, the attack and release follow the index
+				var attack, release byte
+				if stereo {
+					attack, release = operands[1], operands[2]
+				}
+				if index := int(operands[0]); s.bytecode.SpectralUnits[index].Voice == int(s.bytecode.NumVoices-voicesRemaining) {
+					s.spcompress(index, params[0], params[1], attack, release)
+					s.tapSpectrum(index)
+				}
+				operands = operands[1+2*(op&1):]
+			case opSpfilter, opSpblur, opSpscale, opSpformant, opSpcross:
 				if index := int(operands[0]); s.bytecode.SpectralUnits[index].Voice == int(s.bytecode.NumVoices-voicesRemaining) {
 					switch opNoStereo {
 					case opSpcross:
@@ -687,8 +698,6 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 						s.spformant(index, params[0], params[1])
 					case opSpfilter:
 						s.spfilter(index, params[0], params[1], params[2])
-					case opSpcompress:
-						s.spcompress(index, params[0], params[1])
 					case opSpblur:
 						s.spblur(index, params[0], params[1])
 					}

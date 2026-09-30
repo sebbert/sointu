@@ -133,6 +133,48 @@ func TestSpcompressFlattens(t *testing.T) {
 	}
 }
 
+func TestSpcompressSmoothing(t *testing.T) {
+	// a loud sine starts over quiet noise, in bin 6. Without smoothing,
+	// spcompress pulls the bin down to the mean from the first frame on; with
+	// a slow attack, its envelope rises slowly and the gain of the bin falls
+	// with it.
+	gains := func(attack int) (ret []float64) {
+		patch := sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{
+			{Type: "envelope", Parameters: sointu.ParamMap{"stereo": 0, "attack": 0, "decay": 0, "sustain": 128, "release": 0, "gain": 128}},
+			{Type: "oscillator", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "phase": 0, "color": 128, "shape": 64, "gain": 128, "type": sointu.Sine}},
+			{Type: "mulp", Parameters: sointu.ParamMap{"stereo": 0}},
+			{Type: "noise", Parameters: sointu.ParamMap{"stereo": 0, "shape": 64, "gain": 16}},
+			{Type: "addp", Parameters: sointu.ParamMap{"stereo": 0}},
+			{ID: 10, Type: "spfft", Parameters: sointu.ParamMap{"size": 1, "buffer": 1}},
+			{ID: 11, Type: "spcompress", Parameters: sointu.ParamMap{"amount": 128, "width": 16, "attack": attack, "release": attack, "buffer": 1}},
+			{Type: "spifft", Parameters: sointu.ParamMap{"gain": 128, "buffer": 1}},
+			{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
+		}}}
+		synth := newSynth(t, patch)
+		r := synth.(sointu.UnitSpectrumReporter)
+		render(t, synth, 8192)
+		synth.Trigger(0, 72) // 523 Hz, bin 6 of 512
+		for range 200 {
+			r.UnitSpectrum(10, nil) // ask for the next frame
+			r.UnitSpectrum(11, nil)
+			render(t, synth, 128) // a frame
+			in, _ := r.UnitSpectrum(10, nil)
+			out, _ := r.UnitSpectrum(11, nil)
+			ret = append(ret, float64(out[6]/in[6]))
+		}
+		return
+	}
+	instant, slow := gains(0), gains(64) // 63 ms, 22 frames
+	for i := 1; i < 10; i++ {
+		if slow[i] < 1.5*instant[i] || slow[i] > slow[i-1] {
+			t.Errorf("frame %d: gain %v with smoothing, falling from %v; %v without", i, slow[i], slow[i-1], instant[i])
+		}
+	}
+	if i := len(slow) - 1; math.Abs(slow[i]-instant[i]) > 0.2*instant[i] {
+		t.Errorf("after %d frames: gain %v with smoothing, %v without", i, slow[i], instant[i])
+	}
+}
+
 func TestSpblurFreeze(t *testing.T) {
 	// freeze noise, then silence the input: the frozen spectrum continues,
 	// as steady noise of about the same level

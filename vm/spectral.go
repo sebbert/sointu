@@ -81,7 +81,7 @@ func (s *GoSynth) setSpectra(old *Bytecode) {
 	for i, u := range s.bytecode.SpectralUnits {
 		sp := s.bytecode.Spectra[u.Spectrum]
 		if old != nil && i < len(old.SpectralUnits) && i < len(s.spectral) {
-			if o := old.SpectralUnits[i]; o.Type == u.Type && o.Channels == u.Channels && old.Spectra[o.Spectrum] == sp && (o.Source < 0) == (u.Source < 0) {
+			if o := old.SpectralUnits[i]; o.Type == u.Type && o.Channels == u.Channels && o.Smooth == u.Smooth && old.Spectra[o.Spectrum] == sp && (o.Source < 0) == (u.Source < 0) {
 				states[i] = s.spectral[i]
 				continue
 			}
@@ -91,6 +91,10 @@ func (s *GoSynth) setSpectra(old *Bytecode) {
 			states[i].ring = make([]float32, (1<<sp.Log2Size)*u.Channels)
 		case "spblur": // the held spectrum
 			states[i].ring = make([]float32, (1<<sp.Log2Size+2)*sp.Channels)
+		case "spcompress": // the smoothed envelope of each bin
+			if u.Smooth {
+				states[i].ring = make([]float32, (1<<(sp.Log2Size-1)+1)*sp.Channels)
+			}
 		}
 	}
 	s.spectra, s.spectral = spectra, states
@@ -342,19 +346,26 @@ func (s *GoSynth) spfilter(index int, low, high, tilt float32) {
 	}
 }
 
-// spcompress scales each bin by (mean/envelope)^amount.
-func (s *GoSynth) spcompress(index int, amount, width float32) {
+// spcompress scales each bin by (mean/envelope)^amount. With attack or
+// release, the envelope of each bin is smoothed over time, and the mean is
+// the mean of the smoothed envelope.
+func (s *GoSynth) spcompress(index int, amount, width float32, attack, release byte) {
 	xs, n, ok := s.spectralFrame(index)
 	if !ok {
 		return
 	}
 	a := float32(amount*2) - 1
-	if a == 0 {
+	smooth := s.bytecode.SpectralUnits[index].Smooth
+	if a == 0 && !smooth {
 		return
 	}
 	h := n / 2
 	w := int32(1 + uint32(float32(min(max(width, 0), 1)*float32(n/32))))
-	for _, x := range xs {
+	var ca, cr float32
+	if smooth {
+		ca, cr = smoothingCoefficient(attack, n), smoothingCoefficient(release, n)
+	}
+	for c, x := range xs {
 		// prefix sums of the magnitudes
 		sums := s.scratch[:h+2]
 		sum := float32(0)
@@ -364,13 +375,48 @@ func (s *GoSynth) spcompress(index int, amount, width float32) {
 			sums[k+1] = sum
 		}
 		mean := sum / float32(h+1)
+		var env []float32 // the smoothed envelope
+		if smooth {
+			env = s.spectral[index].ring[uint32(c)*(h+1) : (uint32(c)+1)*(h+1)]
+			sum = 0
+			for k := int32(0); k <= int32(h); k++ {
+				lo, hi := max(k-w, 0), min(k+w, int32(h))
+				e := float32(sums[hi+1]-sums[lo]) / float32(hi+1-lo)
+				coef := cr
+				if e > env[k] {
+					coef = ca
+				}
+				env[k] = float32(float32(e-env[k])*coef) + env[k]
+				sum += env[k]
+			}
+			mean = sum / float32(h+1)
+			if a == 0 {
+				continue
+			}
+		}
 		for k := int32(0); k <= int32(h); k++ {
-			lo, hi := max(k-w, 0), min(k+w, int32(h))
-			env := float32(sums[hi+1]-sums[lo]) / float32(hi+1-lo)
-			g := powf(float32(mean+1e-9)/float32(env+1e-9), a)
+			var e float32
+			if smooth {
+				e = env[k]
+			} else {
+				lo, hi := max(k-w, 0), min(k+w, int32(h))
+				e = float32(sums[hi+1]-sums[lo]) / float32(hi+1-lo)
+			}
+			g := powf(float32(mean+1e-9)/float32(e+1e-9), a)
 			x[2*k], x[2*k+1] = x[2*k]*g, x[2*k+1]*g
 		}
 	}
+}
+
+// smoothingCoefficient returns how far the smoothed envelope of spcompress
+// moves toward the envelope each frame of n samples, hop n/4, for the attack
+// or release p: 1 - e^(-hop/T), T = SpcompressTime(p) milliseconds.
+func smoothingCoefficient(p byte, n uint32) float32 {
+	t := exp2f(float32(float32(p)/128*12)) - 1
+	if t == 0 {
+		return 1
+	}
+	return 1 - exp2f(-(float32(n/4) / float32(t*44.1) * math.Log2E))
 }
 
 // tablePhase returns the cosine and sine of the phase -πp/128, p modulo 256,
