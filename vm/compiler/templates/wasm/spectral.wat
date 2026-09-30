@@ -398,19 +398,63 @@
 {{- end}}
 
 {{- if .HasOp "spcompress"}}
+{{- $smooth := or (.SupportsParamValueOtherThan "spcompress" "attack" 0) (.SupportsParamValueOtherThan "spcompress" "release" 0)}}
 ;;-------------------------------------------------------------------------------
 ;;   SPCOMPRESS opcode: scales each bin by (mean/envelope)^amount, where the
 ;;   envelope is the mean magnitude of the bins within width
+{{- if $smooth}}
+;;   With the stereo bit, attack and release follow the index, and the
+;;   envelope of each bin is smoothed over time, in the state after its first
+;;   16 bytes; the mean is then the mean of the smoothed envelope.
+{{- end}}
 ;;-------------------------------------------------------------------------------
+{{- if $smooth}}
+;; $smoothingCoefficient returns how far the smoothed envelope moves toward
+;; the envelope each frame, for the attack or release $p and the spectrum
+;; whose entry is at $h: 1 - e^(-hop/T), hop = size/4 and T = 2^(12p/128) - 1
+;; milliseconds
+(func $smoothingCoefficient (param $p f32) (param $h i32) (result f32) (local $t f32)
+    (local.set $t (f32.sub (call $exp2f (f32.mul (f32.div (local.get $p) (f32.const 128)) (f32.const 12))) (f32.const 1)))
+    (if (f32.eq (local.get $t) (f32.const 0)) (then
+        (return (f32.const 1))
+    ))
+    (f32.sub (f32.const 1) (call $exp2f (f32.neg (f32.mul
+        (f32.div
+            (f32.convert_i32_u (i32.shl (i32.const 1) (i32.sub (i32.load offset=4 (local.get $h)) (i32.const 2))))
+            (f32.mul (local.get $t) (f32.const 44.1)))
+        (f32.const 1.44269504)))))
+)
+
+{{- end}}
 (func $su_op_spcompress (param $stereo i32) (local $c i32) (local $h i32) (local $x i32) (local $half i32) (local $k i32) (local $w i32) (local $lo i32) (local $hi i32) (local $a f32) (local $sum f32) (local $mean f32) (local $g f32) (local $p i32)
+{{- if $smooth}} (local $u i32) (local $env i32) (local $e f32) (local $ca f32) (local $cr f32){{end}}
+{{- if $smooth}}
+    (local.set $u (call $spectralUnit))
+    (local.set $h (call $spectralFrame (local.get $u)))
+    (if (local.get $stereo) (then
+        (local.set $ca (f32.convert_i32_u (call $scanOperand)))
+        (local.set $cr (f32.convert_i32_u (call $scanOperand)))
+    ))
+{{- else}}
     (local.set $h (call $spectralFrame (call $spectralUnit)))
+{{- end}}
     (if (i32.eqz (local.get $h)) (then
         return
     ))
     (local.set $a (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spcompress" "amount"}})) (f32.const 2)) (f32.const 1)))
+{{- if $smooth}}
+    (if (i32.and (f32.eq (local.get $a) (f32.const 0)) (i32.eqz (local.get $stereo))) (then
+        return
+    ))
+    (if (local.get $stereo) (then
+        (local.set $ca (call $smoothingCoefficient (local.get $ca) (local.get $h)))
+        (local.set $cr (call $smoothingCoefficient (local.get $cr) (local.get $h)))
+    ))
+{{- else}}
     (if (f32.eq (local.get $a) (f32.const 0)) (then
         return
     ))
+{{- end}}
     (local.set $half (i32.shl (i32.const 1) (i32.sub (i32.load offset=4 (local.get $h)) (i32.const 1))))
     (local.set $w (i32.add (i32.const 1) (i32.trunc_f32_u (f32.mul
         (f32.min (f32.max (call $input (i32.const {{.InputNumber "spcompress" "width"}})) (f32.const 0)) (f32.const 1))
@@ -430,6 +474,36 @@
             (br_if $sums (i32.le_u (local.tee $k (i32.add (local.get $k) (i32.const 1))) (local.get $half)))
         end
         (local.set $mean (f32.div (local.get $sum) (f32.convert_i32_u (i32.add (local.get $half) (i32.const 1)))))
+{{- if $smooth}}
+        (if (local.get $stereo) (then
+            ;; the smoothed envelope of channel c is at st+16+c*4(half+1)
+            (local.set $env (i32.add
+                (i32.add (i32.const {{add (index .Labels "su_spectral") 16}}) (i32.load offset=4 (local.get $u)))
+                (i32.mul (local.get $c) (i32.shl (i32.add (local.get $half) (i32.const 1)) (i32.const 2)))))
+            (local.set $sum (f32.const 0))
+            (local.set $k (i32.const 0))
+            loop $smooth
+                (local.set $lo (select (i32.sub (local.get $k) (local.get $w)) (i32.const 0) (i32.gt_s (i32.sub (local.get $k) (local.get $w)) (i32.const 0))))
+                (local.set $hi (select (i32.add (local.get $k) (local.get $w)) (local.get $half) (i32.lt_s (i32.add (local.get $k) (local.get $w)) (local.get $half))))
+                (local.set $e (f32.div
+                    (f32.sub
+                        (f32.load offset={{add (index .Labels "su_spectral") .SpectralScratch 4}} (i32.shl (local.get $hi) (i32.const 2)))
+                        (f32.load offset={{add (index .Labels "su_spectral") .SpectralScratch}} (i32.shl (local.get $lo) (i32.const 2))))
+                    (f32.convert_i32_s (i32.sub (i32.add (local.get $hi) (i32.const 1)) (local.get $lo)))))
+                (local.set $p (i32.add (local.get $env) (i32.shl (local.get $k) (i32.const 2))))
+                (local.set $g (f32.load (local.get $p)))
+                (local.set $g (f32.add
+                    (f32.mul
+                        (f32.sub (local.get $e) (local.get $g))
+                        (select (local.get $ca) (local.get $cr) (f32.gt (local.get $e) (local.get $g))))
+                    (local.get $g)))
+                (f32.store (local.get $p) (local.get $g))
+                (local.set $sum (f32.add (local.get $sum) (local.get $g)))
+                (br_if $smooth (i32.le_s (local.tee $k (i32.add (local.get $k) (i32.const 1))) (local.get $half)))
+            end
+            (local.set $mean (f32.div (local.get $sum) (f32.convert_i32_u (i32.add (local.get $half) (i32.const 1)))))
+        ))
+{{- end}}
         (local.set $k (i32.const 0))
         loop $bins
             (local.set $lo (select (i32.sub (local.get $k) (local.get $w)) (i32.const 0) (i32.gt_s (i32.sub (local.get $k) (local.get $w)) (i32.const 0))))
@@ -438,11 +512,19 @@
                 (f32.div
                     (f32.add (local.get $mean) (f32.const 1e-9))
                     (f32.add
+{{- if $smooth}}
+                        (if (result f32) (local.get $stereo) (then
+                            (f32.load (i32.add (local.get $env) (i32.shl (local.get $k) (i32.const 2))))
+                        )(else
+{{- end}}
                         (f32.div
                             (f32.sub
                                 (f32.load offset={{add (index .Labels "su_spectral") .SpectralScratch 4}} (i32.shl (local.get $hi) (i32.const 2)))
                                 (f32.load offset={{add (index .Labels "su_spectral") .SpectralScratch}} (i32.shl (local.get $lo) (i32.const 2))))
                             (f32.convert_i32_s (i32.sub (i32.add (local.get $hi) (i32.const 1)) (local.get $lo))))
+{{- if $smooth}}
+                        ))
+{{- end}}
                         (f32.const 1e-9)))
                 (local.get $a)))
             (local.set $p (i32.add (local.get $x) (i32.shl (local.get $k) (i32.const 3))))

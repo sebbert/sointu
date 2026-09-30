@@ -390,9 +390,6 @@ func (s *GoSynth) spcompress(index int, amount, width float32, attack, release b
 				sum += env[k]
 			}
 			mean = sum / float32(h+1)
-			if a == 0 {
-				continue
-			}
 		}
 		for k := int32(0); k <= int32(h); k++ {
 			var e float32

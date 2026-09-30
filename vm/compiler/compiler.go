@@ -231,7 +231,8 @@ type wasmSpectralData struct {
 	// offsets of its spectrum and source spectrum in SpectrumTable. The state
 	// is the position in its ring, the count of the spectrum it processed
 	// last and the state of its random number generator, 16 bytes, followed
-	// by the rings of spfft and spifft and the held spectrum of spblur.
+	// by the rings of spfft and spifft, the held spectrum of spblur and the
+	// smoothed envelope of spcompress, a float for each bin and channel.
 	SpectralTable []uint32
 	// SpectralBytes is the size of su_spectral. After the spectra and the
 	// states of the units, it has a scratch space at SpectralScratch of 2n+8
@@ -266,6 +267,10 @@ func wasmSpectral(b *vm.Bytecode) (ret wasmSpectralData) {
 			offset += (1 << b.Spectra[u.Spectrum].Log2Size) * 4 * u.Channels
 		case "spblur": // the held spectrum
 			offset += (1<<b.Spectra[u.Spectrum].Log2Size + 2) * 4 * b.Spectra[u.Spectrum].Channels
+		case "spcompress": // the smoothed envelope of each bin
+			if u.Smooth {
+				offset += (1<<(b.Spectra[u.Spectrum].Log2Size-1) + 1) * 4 * b.Spectra[u.Spectrum].Channels
+			}
 		}
 	}
 	maxSize := 1 << ret.SpectralMaxLog2
