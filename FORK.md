@@ -344,6 +344,9 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
 - The FFT uses SIMD (f32x4), with window and twiddle tables computed at
   startup with `$sinTurns`.
 - Template errors are no longer ignored (they used to give an empty module).
+- Stereo `push` copies the pair (left and right), like the Go synth and the
+  x86 players; it used to copy the top signal twice. This changes the players
+  of songs with stereo pushes.
 
 ## Updating the x86 backend
 
@@ -457,11 +460,6 @@ songs that need any of it for x86.
     `vm/go_synth_test.go` skips them in the Go regression test.
   - `belleq`, `compressor` and `speed` also differ from x86 in places, as the
     wasm player always did.
-- **Stereo push in the wasm player:** it pushes a copy of the top of the
-  stack, the left signal, twice, so the copies are left and left, while the
-  Go synth and the x86 players copy the pair, left and right. `test_push_stereo` pops the copies, so it did not
-  show. Fixing it changes the players of songs with stereo pushes, so it is
-  left for a change of its own.
 - **CTest:** `tests/wasm_test_renderer.es6` never fails, because its
   `return 1` is inside an async function. The wasm-vs-x86 differences above
   went unnoticed there.

@@ -191,7 +191,11 @@
 (func $su_op_push (param $stereo i32)
 {{- if .Stereo "push"}}
     (if (local.get $stereo) (then
-        (call $push (call $peek))
+        ;; copy the pair: the second value, then the second again, which is
+        ;; now the old top
+        (call $push (call $peek2))
+        (call $push (call $peek2))
+        return
     ))
 {{- end}}
     (call $push (call $peek))
