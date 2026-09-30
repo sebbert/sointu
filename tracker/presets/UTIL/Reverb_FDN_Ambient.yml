@@ -1,0 +1,80 @@
+name: Reverb FDN Ambient
+numvoices: 1
+units:
+    - id: 1
+      parameters: {}
+      comment: 'Ambient reverb, about 7 s, dark and lush: a long diffuser and a strongly modulated feedback delay network. Uses mc units: Go synth and wasm player only. Load this before Global mastering.'
+    - type: in
+      id: 2
+      parameters: {channel: 2, stereo: 1}
+      comment: Set channel to 4 for a second reverb; send to it with aux
+    - type: mcspread
+      id: 3
+      parameters: {add: 0, bus: 1, gain: 75, stereo: 1}
+      comment: Spreads the stereo input over the 8 channels of the bus; gain is the level of the reverb
+    - type: mcdelay
+      id: 4
+      parameters: {allpass: 0, apgain: 80, bus: 1, decay: 0, hfdecay: 64, lfdecay: 64, moddepth: 0, modrate: 64, notetracking: 0, seed: 1, size: 600, spread: 128}
+      comment: 'Diffuser: each step delays the 8 channels by random amounts up to size, shuffles and mixes them'
+    - type: mcmix
+      id: 5
+      parameters: {bus: 1, seed: 1, type: 2}
+    - type: mcmix
+      id: 6
+      parameters: {bus: 1, seed: 0, type: 0}
+    - type: mcdelay
+      id: 7
+      parameters: {allpass: 0, apgain: 80, bus: 1, decay: 0, hfdecay: 64, lfdecay: 64, moddepth: 0, modrate: 64, notetracking: 0, seed: 2, size: 300, spread: 128}
+    - type: mcmix
+      id: 8
+      parameters: {bus: 1, seed: 2, type: 2}
+    - type: mcmix
+      id: 9
+      parameters: {bus: 1, seed: 0, type: 0}
+    - type: mcdelay
+      id: 10
+      parameters: {allpass: 0, apgain: 80, bus: 1, decay: 0, hfdecay: 64, lfdecay: 64, moddepth: 0, modrate: 64, notetracking: 0, seed: 3, size: 150, spread: 128}
+    - type: mcmix
+      id: 11
+      parameters: {bus: 1, seed: 3, type: 2}
+    - type: mcmix
+      id: 12
+      parameters: {bus: 1, seed: 0, type: 0}
+    - type: mcdelay
+      id: 13
+      parameters: {allpass: 0, apgain: 80, bus: 1, decay: 0, hfdecay: 64, lfdecay: 64, moddepth: 0, modrate: 64, notetracking: 0, seed: 4, size: 75, spread: 128}
+    - type: mcmix
+      id: 14
+      parameters: {bus: 1, seed: 4, type: 2}
+    - type: mcmix
+      id: 15
+      parameters: {bus: 1, seed: 0, type: 0}
+    - type: mcsum
+      id: 16
+      parameters: {bus: 1, gain: 40, stereo: 1, width: 64}
+      comment: 'Early reflections: the diffused input'
+    - type: mcloop
+      id: 17
+      parameters: {bus: 1, feedback: 128}
+      comment: 'Feedback delay network: 8 delay lines mixed back into each other'
+    - type: mcdelay
+      id: 18
+      parameters: {allpass: 0, apgain: 80, bus: 1, decay: 120, hfdecay: 40, lfdecay: 64, moddepth: 28, modrate: 48, notetracking: 0, seed: 7, size: 2500, spread: 64}
+      comment: decay is the reverb time; hfdecay and lfdecay the time of the highs and lows relative to it; moddepth and modrate move the lines against ringing
+    - type: mcsum
+      id: 19
+      parameters: {bus: 1, gain: 64, stereo: 1, width: 64}
+      comment: The tail
+    - type: mcmix
+      id: 20
+      parameters: {bus: 1, seed: 0, type: 1}
+    - type: mcloopend
+      id: 21
+      parameters: {bus: 1}
+    - type: addp
+      id: 22
+      parameters: {stereo: 1}
+      comment: Early reflections plus the tail
+    - type: out
+      id: 23
+      parameters: {gain: 128, stereo: 1}

@@ -516,6 +516,7 @@ success:
 		m.d.Song.Patch = append(m.d.Song.Patch, defaultInstrument.Copy())
 	}
 	(*Model)(m).assignUnitIDs(instrument.Units)
+	(*Model)(m).assignBuses(instrument.Units)
 	m.d.Song.Patch[m.d.InstrIndex].Name = instrument.Name // only copy the relevant fields to preserve the user defined values e.g. NumVoices and MIDI configuration
 	m.d.Song.Patch[m.d.InstrIndex].Comment = instrument.Comment
 	m.d.Song.Patch[m.d.InstrIndex].Units = instrument.Units

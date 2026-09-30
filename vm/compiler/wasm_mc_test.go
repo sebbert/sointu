@@ -1,12 +1,15 @@
 package compiler_test
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/vsariola/sointu"
 	"github.com/vsariola/sointu/vm"
 	"github.com/vsariola/sointu/vm/compiler"
+	"gopkg.in/yaml.v3"
 )
 
 func mcTestUnit(typ string, bus int, params sointu.ParamMap) sointu.Unit {
@@ -189,5 +192,53 @@ func TestMCX86Refused(t *testing.T) {
 				t.Errorf("compiling %v for %v succeeded, want an error", typ, arch)
 			}
 		}
+	}
+}
+
+// TestMCPresetsWasmMatchGoSynth renders the reverb presets made of mc units,
+// fed by a burst of noise, in both synths.
+func TestMCPresetsWasmMatchGoSynth(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not found")
+	}
+	wat2wasm, err := exec.LookPath("wat2wasm")
+	if err != nil {
+		t.Skip("wat2wasm not found")
+	}
+	files, err := filepath.Glob("../../tracker/presets/UTIL/Reverb_FDN_*.yml")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no presets found: %v", err)
+	}
+	for _, file := range files {
+		t.Run(filepath.Base(file), func(t *testing.T) {
+			data, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var reverb sointu.Instrument
+			if err := yaml.Unmarshal(data, &reverb); err != nil {
+				t.Fatal(err)
+			}
+			reverb.NumVoices = 1
+			song := sointu.Song{BPM: 120, RowsPerBeat: 4,
+				Score: sointu.Score{RowsPerPattern: 16, Length: 1, Tracks: []sointu.Track{
+					{NumVoices: 1, Order: sointu.Order{0}, Patterns: []sointu.Pattern{{60, 1, 1, 1, 0, 1, 1, 1, 64, 1, 0, 1, 1, 1, 1, 1}}},
+					{NumVoices: 1, Order: sointu.Order{0}, Patterns: []sointu.Pattern{make(sointu.Pattern, 16)}},
+				}},
+				Patch: sointu.Patch{{Name: "burst", NumVoices: 1, Units: []sointu.Unit{
+					{Type: "envelope", Parameters: sointu.ParamMap{"stereo": 0, "attack": 0, "decay": 50, "sustain": 0, "release": 50, "gain": 128}},
+					{Type: "noise", Parameters: sointu.ParamMap{"stereo": 0, "shape": 64, "gain": 128}},
+					{Type: "mulp", Parameters: sointu.ParamMap{"stereo": 0}},
+					{Type: "push", Parameters: sointu.ParamMap{"stereo": 0}},
+					{Type: "aux", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128, "channel": 2}},
+				}}, reverb},
+			}
+			want, err := sointu.Play(vm.GoSynther{}, song, nil)
+			if err != nil {
+				t.Fatalf("Go synth failed: %v", err)
+			}
+			compareWasmToGo(t, want, renderWasm(t, node, wat2wasm, song, nil, nil, nil))
+		})
 	}
 }

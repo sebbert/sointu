@@ -141,3 +141,20 @@ func TestPlayerReportsBusLevels(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadedInstrumentGetsOwnBus(t *testing.T) {
+	m := newSpectrumTestModel(t)
+	addTestUnit(m, "mcspread") // bus 2
+	units := []sointu.Unit{
+		{Type: "mcspread", Parameters: sointu.ParamMap{"gain": 64, "bus": 2}},
+		{Type: "mcsum", Parameters: sointu.ParamMap{"gain": 64, "bus": 2}},
+		{Type: "mcsum", Parameters: sointu.ParamMap{"gain": 64, "bus": 9}},
+	}
+	m.assignBuses(units)
+	if units[0].Parameters["bus"] != 3 || units[1].Parameters["bus"] != 3 {
+		t.Errorf("the loaded units use buses %d and %d, want 3", units[0].Parameters["bus"], units[1].Parameters["bus"])
+	}
+	if units[2].Parameters["bus"] != 9 {
+		t.Errorf("a free bus ID was changed to %d", units[2].Parameters["bus"])
+	}
+}

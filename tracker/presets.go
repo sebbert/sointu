@@ -165,6 +165,7 @@ func (m *presetResultList) SetSelected(i int) {
 	}
 	newInstr := m.presetData.cache.results[i].instr.Copy()
 	(*Model)(m).assignUnitIDs(newInstr.Units)
+	(*Model)(m).assignBuses(newInstr.Units)
 	m.d.Song.Patch[m.d.InstrIndex].Name = newInstr.Name // only copy the relevant fields to preserve the  user defined values e.g. NumVoices and MIDI configuration
 	m.d.Song.Patch[m.d.InstrIndex].Comment = newInstr.Comment
 	m.d.Song.Patch[m.d.InstrIndex].Units = newInstr.Units

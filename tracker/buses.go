@@ -64,6 +64,31 @@ func (m *Model) fixBuses() {
 	m.warnBuses()
 }
 
+// assignBuses moves the mc units of an instrument being loaded, e.g. from a
+// preset, to buses of their own: bus IDs that the song already uses for a
+// buffer become new IDs, the same for all the units sharing one. fixBuses
+// then creates the buses.
+func (m *Model) assignBuses(units []sointu.Unit) {
+	next := 1
+	for _, b := range m.d.Song.Buffers {
+		next = max(next, b.ID+1)
+	}
+	rewrites := map[int]int{}
+	for i := range units {
+		for _, p := range sointu.BusParams(units[i].Type) {
+			id := units[i].Parameters[p]
+			if _, ok := m.d.Song.Buffers.Find(id); id == 0 || !ok {
+				continue
+			}
+			if _, ok := rewrites[id]; !ok {
+				rewrites[id] = next
+				next++
+			}
+			units[i].Parameters[p] = rewrites[id]
+		}
+	}
+}
+
 // warnBuses warns about mc units in instruments with more than one voice,
 // which run only in the first one.
 func (m *Model) warnBuses() {
