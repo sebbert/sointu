@@ -43,6 +43,7 @@ sounding the same (`addedParameters` in `patch.go`).
   - A buffer with `Frames` is written by `bufwrite` units while the song plays.
   - A buffer with `Spectrum` holds FFT spectra. `Auto` marks buffers the
     tracker created for units and deletes with them.
+  - A buffer with `Bus` is a bus of 8 channels for the mc units.
 - `Song.EncodingPresets`: named ffmpeg encodings that samples share.
 
 ## New units
@@ -60,9 +61,11 @@ All of these are Go and wasm only.
 | `spfilter`, `spcompress`, `spblur`, `spgate`, `spphase`, `spscale`, `spformant` | Change a spectrum in place: band cut and tilt, magnitudes pulled to their mean (with optional attack and release per bin), time smoothing and freeze, gate, phase dispersion/randomization/robot, bin scaling and shifting, formant shift |
 | `spcross`, `spcomb` | Cross-synthesis/vocoder with another spectrum; resonances at the harmonics of up to 8 notes held in another instrument |
 | `ott` | A three-band upward and downward compressor, like Ableton's OTT preset: crossovers at 88.3 Hz and 2.5 kHz, `depth`, `time`, `upward`, `downward`, a gain per band |
+| `mcspread`, `mcsum` | Spread a mono or stereo signal over a bus of 8 channels (replacing or adding), and sum it back (with `width`) |
+| `mcdelay`, `mcmix`, `mcfilter`, `mcloop`, `mcloopend` | Change a bus in place every sample: a delay line per channel (seeded lengths, modulation, note tracking, allpass, per-band decay), orthogonal mixes (Hadamard, Householder, seeded shuffle), one-pole filters, and a feedback loop. See [mc units](#mc-units) |
 
-Spectral units run only in the first voice of their instrument. See the
-README for the details of each unit.
+Spectral units and mc units run only in the first voice of their
+instrument. See the README for the details of each unit.
 
 `ott`'s constants, fixed in the unit (`vm/ott.go`, documented in `patch.go`),
 approximate the OTT preset of Ableton's Multiband Dynamics:
@@ -82,6 +85,115 @@ leaves, the high band what is left after that, so the bands sum back to the
 input, up to rounding. The preset's input gain
 (+5.2 dB) and output gains (about +10.3, +5.7, +10.3 dB) are not built in,
 so that `upward` and `downward` at 0 pass the input through.
+
+## mc units
+
+A modular multichannel reverb, after Geraint Luff's "Let's write a
+reverb": the units share a bus of 8 channels, which they read and change
+in place every sample, like the spectral units share a spectrum buffer
+frame by frame. A diffuser (`mcdelay` without decay, `mcmix` shuffle,
+`mcmix` hadamard, a few times with shrinking sizes) feeding a feedback
+delay network (`mcloop`, `mcdelay` with decay, `mcsum`, `mcmix`
+householder, `mcloopend`) is a reverb; the presets Reverb FDN Room, Hall,
+Ambient and Plate in UTIL are such chains.
+
+**Parameters.**
+
+| Unit | Parameter | Values |
+|---|---|---|
+| `mcspread` | `gain` | ±40 dB, like `dbgain` (modulatable) |
+| | `add` | 0 replaces the bus, 1 adds to it |
+| `mcsum` | `gain` | ±40 dB (modulatable) |
+| | `width` | 0 to 200 % of the stereo difference (modulatable) |
+| `mcdelay` | `size` | the longest line, 0.1 to 2000 ms in steps of 0.1 ms |
+| | `spread` | the shortest line is `size`·(1-`spread`), 0 to 100 % |
+| | `seed` | 0 to 255 |
+| | `decay` | 0 is no loss; else the time to fall by 60 dB, 2^(v/16-4) s: 1 s at 64, doubling every 16 steps (0.07 to 16 s) |
+| | `hfdecay` | the decay time above 3 kHz relative to `decay`, v/128 |
+| | `lfdecay` | the decay time below 250 Hz relative to `decay`, 2^((v-64)/32): 1/4 to 4 |
+| | `moddepth` | 8·(v/128)² ms, up to 8 ms (modulatable) |
+| | `modrate` | 2^((v-64)/16) Hz, 1/16 to 16 Hz (modulatable) |
+| | `notetracking` | the lengths times 2^((60-note)/12) |
+| | `allpass`, `apgain` | Schroeder allpasses with coefficient v/128, up to 0.9375 |
+| `mcmix` | `type`, `seed` | hadamard, householder, or shuffle with `seed` |
+| `mcloop` | `feedback` | 0 to 100 % (modulatable) |
+| `mcfilter` | `frequency`, `type` | 20·2^(10v/128) Hz, 20 Hz to 20 kHz (modulatable); lowpass or highpass |
+
+**Channels and polarity.** `mcspread` puts the left signal on the even
+channels and the right one on the odd ones (both on all in mono), with
+polarity +1 for channels 0, 1, 4, 5 and -1 for 2, 3, 6, 7. `mcsum` sums
+with the same polarities, the even channels to the left and the odd ones
+to the right, times 1/4 (all times 1/8 in mono), so that a spread followed
+by a sum passes the signal through. For decorrelated channels, as after a
+diffuser, the sum is then 6 dB (stereo) or 9 dB (mono) below the input;
+the presets raise the gain of `mcspread` to compensate.
+
+**mcdelay.** When the patch is encoded (`newMCDelay` in `vm/mc.go`),
+channel c gets the length size·(1-spread·(p(c)+r)/8), where p is a random
+permutation of 0 to 7 and r a random number in [0, 1): one length in each
+eighth of the range, in random order. The lengths are rounded to whole
+samples, which linear interpolation does not damp, unless note tracking
+scales them. The random numbers come from a 32-bit linear congruential
+generator (x·1664525 + 1013904223, Numerical Recipes), seeded with
+seed·0x9E3779B9 + 1 and advanced 4 times; it runs only in Go, and the
+players read the lengths from tables. Per sample and channel:
+
+1. The modulation: the phase advances by the rate times 1, 1.125, ...,
+   1.875 for channels 0 to 7; the triangle |2·frac(phase + c/8) - 1| times
+   the depth is added to the length.
+2. The line is read at that delay, clamped to [1, frames-2], with linear
+   interpolation, and written with the channel: or with allpass, x + g·y,
+   the output being y - g·(x + g·y).
+3. The decay filter (`mcDecay`): `lo += 0.035·(y - lo)`, `y += A·lo`,
+   `hi += 0.348·(y - hi)`, `out = B·y + C·hi`: one-pole low-passes at
+   250 Hz and 3 kHz making a low shelf and a high shelf. With the gains
+   g = 10^(-3L/(44100·T)) of a line of length L for the decay time T of
+   each band, A = glo/gmid - 1, B = ghi, C = gmid - ghi. Each shelf's
+   magnitude lies between its gains, and `hfdecay` is at most 1, so the
+   magnitude stays below max(glo, gmid) < 1 and a loop with orthogonal
+   mixes is stable (Jot). Losses of several lines in a loop add up, so two
+   `mcdelay`s with the same decay in one loop still decay in that time.
+4. In allpass mode, the modes near an allpass' resonances are delayed up
+   to (1+g)/(1-g) times the length, decay slowest and make the tail; the
+   decay is calibrated for that longer length. The tail then decays in
+   roughly the decay time (-53 dB/s for 1 s in the tests), the rest of the
+   sound faster.
+
+The ring of a unit has 2^n frames of 8 floats, enough for the longest line
+(times 32 with note tracking, for note 0) plus 32·44.1 samples of
+modulation, at most 2^17 frames (3 s).
+
+**mcmix.** Hadamard: butterflies of channels 4, 2 and 1 apart, then times
+1/√8. Householder: x - (Σx)/4, the sum computed as
+((x0+x4)+(x2+x6)) + ((x1+x5)+(x3+x7)). Shuffle: channel c becomes channel
+p(c) times ±1, from the generator above.
+
+**Encoding.** Operands: the transformed parameters, then the index of the
+unit in `Bytecode.MCUnits`, then for `mcspread` add, for `mcmix` the type,
+for `mcfilter` the type and for `mcdelay` flags (1 note tracking, 2
+allpass). `mcspread` and `mcsum` use the stereo bit. `Bytecode.Buses` are
+the buffer IDs of the buses, `MCUnit.Delay` and `MCUnit.Shuffle` the
+tables.
+
+**Wasm player.** `su_mc_table` has 4 i32s per unit: the offset of the
+voice running it from `su_voices`, the offsets of its bus and state in
+`su_mc`, and the offset of its constants in `su_mc_consts`. A bus is 16
+floats: the frame, and the frame stored by `mcloopend`. An `mcdelay` state
+is the phases, the low and high filter states, the ring position (128
+bytes) and the ring; an `mcfilter` state 64 bytes. `su_mc_consts` starts
+with the modulation rates, phase offsets and channel byte offsets, then
+per `mcdelay` the lengths, A, B, C, the ring mask, the longest delay and
+apgain, and per shuffle the source offsets and signs. Every unit computes
+the 8 channels as two f32x4 vectors; `mcdelay` gathers its reads lane by
+lane. Code for `add`, each `mcmix` type, the high-pass, note tracking and
+allpass is included only when a unit uses it; without mc units, nothing
+changes. The shuffle uses the unit's own state in the voice as scratch.
+
+**Costs.** Under node, a song of 20 s with a burst of noise into the
+Reverb FDN Hall preset renders in 2.2 s (0.3 s without the reverb), like
+the old Reverb Hall preset of 32 delay lines (2.1 s). Its player is 4 KB
+larger than without the reverb, 1.4 KB gzipped, 0.9 KB more than with the
+old preset.
 
 ## Bandlimited oscillators
 
@@ -206,8 +318,15 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   Alt+drag to zoom y, double-click or right-click to reset, bounded zoom out.
 - **Units:** spawn targets follow instruments when they move or are pasted;
   new spectral units pick up the spectrum above them.
-- **Warnings:** spectral units in instruments with several voices, spectra
-  with several writers, and buffers or spectra used across threads.
+- **Buses:** `mcspread` gets a new bus, and new mc units the bus of the mc
+  unit above them; buses the tracker created are deleted with their last
+  unit. An instrument loaded from a preset or file gets its own buses when
+  its bus IDs are taken. The rack shows the peak level of each channel of
+  the bus after each mc unit. Presets: Reverb FDN Room, Hall, Ambient and
+  Plate.
+- **Warnings:** spectral units and mc units in instruments with several
+  voices, spectra with several writers, and buffers, spectra or buses used
+  across threads.
 - **Other:** no notes play while typing in text fields; recordings survive
   synth rebuilds; NaNs recorded into buffers are cleared.
 
@@ -319,6 +438,12 @@ songs that need any of it for x86.
 10. **Native bridge.** `MAX_VOICES` is 32 in the C header; `Polyphony` is a
    32-bit bitmask there.
 
+11. **mc units.** Tables and states as in the wasm player (see
+   [mc units](#mc-units)), and the units as in `vm/mc.go`, operation by
+   operation in float32. The x86 templates have no stubs for them, as for
+   the spectral units, so the x86 library does not assemble with
+   `AllFeatures`; the compiler refuses songs with mc units for x86.
+
 ## Known differences left
 
 - **Units the wasm player lacks:** `sync`, and sample oscillators (gm.dls).
@@ -332,6 +457,11 @@ songs that need any of it for x86.
     `vm/go_synth_test.go` skips them in the Go regression test.
   - `belleq`, `compressor` and `speed` also differ from x86 in places, as the
     wasm player always did.
+- **Stereo push in the wasm player:** it pushes a copy of the top of the
+  stack, the left signal, twice, so the copies are left and left, while the
+  Go synth and the x86 players copy the pair, left and right. `test_push_stereo` pops the copies, so it did not
+  show. Fixing it changes the players of songs with stereo pushes, so it is
+  left for a change of its own.
 - **CTest:** `tests/wasm_test_renderer.es6` never fails, because its
   `return 1` is inside an async function. The wasm-vs-x86 differences above
   went unnoticed there.

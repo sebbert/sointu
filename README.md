@@ -360,9 +360,43 @@ shows the curve as how far down the exponential each stage goes, from 0 dB
 (linear) to 72 dB at 128, where a release sounds like an exponential decay.
 The curve can be modulated.
 
+For reverbs and other multichannel effects, the mc units process a bus of 8
+channels in place, sample by sample. `mcspread` spreads a mono or stereo
+signal from the stack over a bus (the left signal to the even channels, the
+right to the odd ones, some with flipped polarity), replacing what it holds or,
+with `add`, adding to it, e.g. to send several instruments to one bus.
+`mcsum` sums the bus back to the stack, in stereo with `width`; the two
+together pass a signal through unchanged. In between:
+
+- `mcdelay` delays each channel by its own line. The lengths lie between
+  `size`·(1-`spread`) and `size` (in ms), at random by `seed`. `moddepth` and
+  `modrate` move them slowly, against ringing and for chorus. `decay` is the
+  reverb time: each line loses what makes a feedback loop through it decay by
+  60 dB in that time; `hfdecay` and `lfdecay` are the times above 3 kHz and
+  below 250 Hz relative to it. With `notetracking` the lengths follow the note
+  (resonators); with `allpass` each line is an allpass with coefficient
+  `apgain` instead, for diffusion without coloring.
+- `mcmix` mixes the channels without changing their energy: `hadamard` mixes
+  each into all the others, `householder` a little into each other (the
+  classic feedback matrix), `shuffle` permutes them and flips some, at random
+  by `seed`.
+- `mcfilter` filters every channel with a one-pole low-pass or high-pass.
+- `mcloop` adds what `mcloopend` stored in the previous sample, times
+  `feedback`: between them, the units form a feedback loop.
+
+A reverb is a diffuser, a few steps of `mcdelay` (without decay), `mcmix`
+`shuffle` and `mcmix` `hadamard` with shrinking sizes, whose output is also
+good early reflections, followed by a feedback delay network: `mcloop`,
+`mcdelay` with `decay`, `mcsum` for the tail, `mcmix` `householder`,
+`mcloopend`. The presets Reverb FDN Room, Hall, Ambient and Plate in UTIL are
+such chains. Like spectral units, mc units run only in the first voice of
+their instrument; in the tracker, `mcspread` creates a bus, which new mc units
+below it use, and the rack shows the level of each channel of the bus after
+each mc unit.
+
 `bufread`, `bufwrite`, `spawn`, `arg`, `window`, `ott`, the spectral units,
-bandlimited oscillators and curved envelopes are WebAssembly only for now;
-envelopes with `curve` 0 compile for x86 as before.
+the mc units, bandlimited oscillators and curved envelopes are WebAssembly only
+for now; envelopes with `curve` 0 compile for x86 as before.
 
 If you are looking for an easy way to compile an executable from a Sointu song
 (e.g. for a executable music compo), take a look at [NR4's Python-based
