@@ -115,6 +115,25 @@
 )
 {{- end}}
 
+{{- if .EnvelopeCurve}}
+
+;; $exp2m1f returns 2^y - 1, also for y near 0, where $exp2f would lose its
+;; digits: 2^i·(e^z - 1) + (2^i - 1), for i and z as in $exp2f, as exp2m1f in
+;; vm/mathf.go.
+(func $exp2m1f (param $y f32) (result f32) (local $i f32) (local $z f32) (local $p f32) (local $e f32)
+    (local.set $y (f32.min (select (local.get $y) (f32.const -126) (f32.gt (local.get $y) (f32.const -126))) (f32.const 126)))
+    (local.set $i (f32.nearest (local.get $y)))
+    (local.set $z (f32.mul (f32.sub (local.get $y) (local.get $i)) (f32.const 0.6931472)))
+    (local.set $p (f32.add (f32.mul (local.get $z) (f32.const 0.0013888889)) (f32.const 0.008333334)))
+    (local.set $p (f32.add (f32.mul (local.get $p) (local.get $z)) (f32.const 0.041666668)))
+    (local.set $p (f32.add (f32.mul (local.get $p) (local.get $z)) (f32.const 0.16666667)))
+    (local.set $p (f32.add (f32.mul (local.get $p) (local.get $z)) (f32.const 0.5)))
+    (local.set $p (f32.add (f32.mul (local.get $p) (local.get $z)) (f32.const 1)))
+    (local.set $e (f32.reinterpret_i32 (i32.shl (i32.add (i32.trunc_f32_s (local.get $i)) (i32.const 127)) (i32.const 23))))
+    (f32.add (f32.mul (f32.mul (local.get $p) (local.get $z)) (local.get $e)) (f32.sub (local.get $e) (f32.const 1)))
+)
+{{- end}}
+
 {{- if or (and (not .MathImports) (.HasOp "compressor")) (.HasOp "spfilter") (.HasOp "spcompress") (.HasOp "spcross")}}
 ;; $log2f, $exp2f, $powf and $sinTurns are the float32 math functions of the
 ;; player, computed like log2f, exp2f, powf and sinTurns in vm/mathf.go,
