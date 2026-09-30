@@ -166,6 +166,7 @@ type bytecodeBuilder struct {
 	voiceNo         int
 	delayIndices    [][]int
 	unitNo          int
+	featureSet      FeatureSet
 	Bytecode
 }
 
@@ -174,6 +175,7 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 		return nil, fmt.Errorf("Sointu does not support more than %v concurrent voices; patch uses %v", MAX_VOICES, patch.NumVoices())
 	}
 	b := newBytecodeBuilder(patch, bpm)
+	b.featureSet = featureSet
 	for instrIndex, instr := range patch {
 		if instr.NumVoices < 1 {
 			return nil, errors.New("Each instrument must have at least 1 voice")
@@ -459,12 +461,15 @@ func (b *bytecodeBuilder) operand(operands ...int) {
 	}
 }
 
-// defOperands appends the operands to the stream for all parameters that can be
-// modulated and set
+// defOperands appends the operands to the stream for the parameters that can
+// be modulated and set, as many as the feature set transforms: it leaves out
+// the optional parameters that the song does not use.
 func (b *bytecodeBuilder) defOperands(unit sointu.Unit) {
+	count := b.featureSet.TransformCount(unit.Type)
 	for _, v := range sointu.UnitTypes[unit.Type].Params {
-		if v.CanModulate && v.CanSet && !v.NoTransform {
+		if v.CanModulate && v.CanSet && !v.NoTransform && count > 0 {
 			b.Operands = append(b.Operands, byte(unit.Parameters[v.Name]))
+			count--
 		}
 	}
 }

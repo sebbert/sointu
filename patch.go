@@ -392,6 +392,9 @@ var UnitTypes = map[string]UnitType{
 			{Name: "sustain", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
 			{Name: "release", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return engineeringTime(math.Pow(2, 24*float64(v)/128) / 44100) }},
 			{Name: "gain", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
+			// curve must stay the last transformed parameter: songs that do not
+			// use it compile without it (see vm.NecessaryFeatures)
+			{Name: "curve", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: envelopeCurveDispFunc},
 		},
 		StackUse: stackUseSource,
 	},
@@ -848,6 +851,7 @@ var addedParameters = map[string]map[string]int{
 	"bufwrite":   {"pop": 1},
 	"oscillator": {"bandlimit": 0},            // naive waveforms
 	"spcompress": {"attack": 0, "release": 0}, // no smoothing
+	"envelope":   {"curve": 0},                // linear
 }
 
 // compile errors if interface is not implemented.
@@ -977,6 +981,18 @@ func compressorTimeDispFunc(v int) (string, string) {
 // ottGainDisplay shows the gain of a band of ott, 2^((v/128-0.5)·8): ±24 dB.
 func ottGainDisplay(v int) (string, string) {
 	return strconv.FormatFloat(toDecibel(math.Pow(2, (float64(v)/128-0.5)*8)), 'f', 1, 64), "dB"
+}
+
+// envelopeCurveDispFunc shows the curve of the envelope as the depth of the
+// exponential that each stage follows: a stage moves toward a target beyond
+// its end, and ends when the distance to the target has fallen by
+// 12·(v/128)² halvings, 72 dB at 128. 0 is linear.
+func envelopeCurveDispFunc(v int) (string, string) {
+	if v == 0 {
+		return "linear", ""
+	}
+	p := float64(v) / 128
+	return strconv.FormatFloat(12*p*p*20*math.Log10(2), 'g', 3, 64), "dB"
 }
 
 func engineeringTime(sec float64) (string, string) {

@@ -27,3 +27,9 @@ func (p *FeatureSetMacros) Mono(unitType string) bool {
 func (p *FeatureSetMacros) StereoAndMono(unitType string) bool {
 	return p.Stereo(unitType) && p.Mono(unitType)
 }
+
+// EnvelopeCurve is true when the envelopes of the song have the curve
+// parameter; otherwise the players leave the curved envelope out.
+func (p *FeatureSetMacros) EnvelopeCurve() bool {
+	return vm.TransformsParam(p.FeatureSet, "envelope", "curve")
+}

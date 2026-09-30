@@ -349,8 +349,20 @@ waveform still aliases, as does the curve of a very narrow sine. LFOs, gates
 and samples ignore `bandlimit`. The player includes the correction only if an
 oscillator uses it.
 
-`bufread`, `bufwrite`, `spawn`, `arg`, `window`, `ott`, the spectral units
-and bandlimited oscillators are WebAssembly only for now.
+The `envelope`'s `curve` bends its stages: 0 is linear, and above it the
+attack rises fast and slows toward the top, like a capacitor charging, while
+the decay and release fall fast and slow toward their end, like analog
+envelopes. Each stage then approaches a target beyond its end, e.g. above 1
+for the attack, and ends when it crosses its end; the closer the target, the
+more curved. The stages take as long as linear ones with the same `attack`,
+`decay` and `release`, so changing the curve keeps the timing. The tracker
+shows the curve as how far down the exponential each stage goes, from 0 dB
+(linear) to 72 dB at 128, where a release sounds like an exponential decay.
+The curve can be modulated.
+
+`bufread`, `bufwrite`, `spawn`, `arg`, `window`, `ott`, the spectral units,
+bandlimited oscillators and curved envelopes are WebAssembly only for now;
+envelopes with `curve` 0 compile for x86 as before.
 
 If you are looking for an easy way to compile an executable from a Sointu song
 (e.g. for a executable music compo), take a look at [NR4's Python-based

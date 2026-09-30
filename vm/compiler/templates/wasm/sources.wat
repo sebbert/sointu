@@ -30,28 +30,49 @@
 ;;   Stereo: push the envelope valeu on stack twice
 ;;-------------------------------------------------------------------------------
 (func $su_op_envelope (param $stereo i32) (local $state i32) (local $level f32) (local $delta f32)
+{{- if .EnvelopeCurve}} (local $curve f32){{end}}
     (if (i32.eqz (i32.load offset=4 (global.get $voice))) (then ;; if voice.sustain == 0
+{{- if .EnvelopeCurve}}
+        (if (i32.ne (i32.load (global.get $WRK)) (i32.const {{.InputNumber "envelope" "release"}})) (then
+            (f32.store offset=8 (global.get $WRK) (f32.load offset=4 (global.get $WRK))) ;; the level where the release starts
+        ))
+{{- end}}
         (i32.store (global.get $WRK) (i32.const {{.InputNumber "envelope" "release"}})) ;; set envelope state to release
     ))
     (local.set $state (i32.load (global.get $WRK)))
     (local.set $level (f32.load offset=4 (global.get $WRK)))
     (local.set $delta (call $nonLinearMap (local.get $state)))
+{{- if .EnvelopeCurve}}
+    (local.set $curve (f32.mul (f32.mul (call $input (i32.const {{.InputNumber "envelope" "curve"}})) (call $input (i32.const {{.InputNumber "envelope" "curve"}}))) (f32.const 12)))
+{{- end}}
     (if (local.get $state) (then
         (if (i32.eq (local.get $state) (i32.const 1))(then ;; state is 1 aka decay
+{{- if .EnvelopeCurve}}
+            (local.set $level (call $envelopeStep (local.get $level) (f32.neg (local.get $delta)) (f32.const 1) (call $input (i32.const 2)) (local.get $curve)))
+{{- else}}
             (local.set $level (f32.sub (local.get $level) (local.get $delta)))
+{{- end}}
             (if (f32.le (local.get $level) (call $input (i32.const 2)))(then
                 (local.set $level (call $input (i32.const 2)))
                 (local.set $state (i32.const {{.InputNumber "envelope" "sustain"}}))
             ))
         ))
         (if (i32.eq (local.get $state) (i32.const {{.InputNumber "envelope" "release"}}))(then ;; state is 3 aka release
+{{- if .EnvelopeCurve}}
+            (local.set $level (call $envelopeStep (local.get $level) (f32.neg (local.get $delta)) (f32.load offset=8 (global.get $WRK)) (f32.const 0) (local.get $curve)))
+{{- else}}
             (local.set $level (f32.sub (local.get $level) (local.get $delta)))
+{{- end}}
             (if (f32.le (local.get $level) (f32.const 0)) (then
                 (local.set $level (f32.const 0))
             ))
         ))
     )(else ;; the state is 0 aka attack
+{{- if .EnvelopeCurve}}
+        (local.set $level (call $envelopeStep (local.get $level) (local.get $delta) (f32.const 0) (f32.const 1) (local.get $curve)))
+{{- else}}
         (local.set $level (f32.add (local.get $level) (local.get $delta)))
+{{- end}}
         (if (f32.ge (local.get $level) (f32.const 1))(then
             (local.set $level (f32.const 1))
             (local.set $state (i32.const 1))
@@ -66,6 +87,27 @@
     ))
 {{- end}}
 )
+{{- if .EnvelopeCurve}}
+
+;; $envelopeStep moves the $level of an envelope stage from $start to $end by
+;; one sample, as envelopeStep in vm/go_synth.go: linearly by $delta when
+;; $curve is below 2^-20, otherwise with a one-pole filter toward a target
+;; beyond $end, end + (end-start)/(2^curve-1), so that the stage takes as long
+;; as the linear one.
+(func $envelopeStep (param $level f32) (param $delta f32) (param $start f32) (param $end f32) (param $curve f32) (result f32)
+    (if (result f32) (f32.lt (local.get $curve) (f32.const 0x1p-20)) (then
+        (f32.add (local.get $level) (local.get $delta))
+    )(else
+        (f32.add
+            (local.get $level)
+            (f32.mul
+                (f32.sub
+                    (local.get $level)
+                    (f32.add (f32.div (f32.sub (local.get $end) (local.get $start)) (call $exp2m1f (local.get $curve))) (local.get $end)))
+                (call $exp2m1f (f32.div (f32.mul (f32.neg (local.get $curve)) (f32.abs (local.get $delta))) (f32.abs (f32.sub (local.get $end) (local.get $start)))))))
+    ))
+)
+{{- end}}
 {{end}}
 
 
