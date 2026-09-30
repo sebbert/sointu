@@ -28,10 +28,10 @@ func TestOldBufreadPlaysForwards(t *testing.T) {
 	if reverse.Parameters["speed"] != 0 {
 		t.Errorf("a saved speed was changed: %v", reverse.Parameters)
 	}
-	var env sointu.Unit
-	yaml.Unmarshal([]byte("type: envelope\nparameters: {gain: 1}\n"), &env)
-	if len(env.Parameters) != 1 {
-		t.Errorf("parameters added to another unit type: %v", env.Parameters)
+	var other sointu.Unit
+	yaml.Unmarshal([]byte("type: noise\nparameters: {gain: 1}\n"), &other)
+	if len(other.Parameters) != 1 {
+		t.Errorf("parameters added to another unit type: %v", other.Parameters)
 	}
 }
 
