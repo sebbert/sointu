@@ -218,6 +218,11 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				if p["lfo"] == 1 {
 					flags += 0x08
 				}
+				if sointu.OscillatorBandlimited(unit) {
+					// the type bits are one-hot: gate (0x04) together with a
+					// waveform bit means a bandlimited waveform
+					flags += 0x04
+				}
 				flags += p["unison"]
 				b.op(opcode + p["stereo"])
 				b.operand(p["transpose"], p["detune"], p["phase"], color, p["shape"], p["gain"], flags)

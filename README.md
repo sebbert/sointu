@@ -334,8 +334,23 @@ A stereo `ott` uses the same gains on both channels. Unlike the OTT preset,
 it adds no fixed gain, so the output is often quieter than the input: raise
 the band gains, e.g. to about +10, +5.6 and +10 dB (91, 79 and 91).
 
-`bufread`, `bufwrite`, `spawn`, `arg`, `window`, `ott` and the spectral units are
-WebAssembly only for now.
+The naive waveforms of the `oscillator` alias at high pitches: their
+harmonics above half the sample rate fold back as inharmonic tones. With
+`bandlimit` on, the sine, trisaw and pulse waveforms are smoothed around their
+jumps and corners with polyBLEP and polyBLAMP, which lowers the aliasing by
+about 12 to 23 dB at 6 kHz, and softens the highest harmonics a little. The
+correction follows the actual phase advance of each sample, including
+frequency and phase modulation, and each unison voice separately. The pulse
+is corrected at both of its jumps; the trisaw at both corners, with `color`
+kept at least a sample away from 0 and 1, so that a saw's jump becomes a ramp
+of one sample; the sine with `color` below 1 at the corners where it starts
+and stops, with `color` at least a sample. The waveshaper (`shape`) after the
+waveform still aliases, as does the curve of a very narrow sine. LFOs, gates
+and samples ignore `bandlimit`. The player includes the correction only if an
+oscillator uses it.
+
+`bufread`, `bufwrite`, `spawn`, `arg`, `window`, `ott`, the spectral units
+and bandlimited oscillators are WebAssembly only for now.
 
 If you are looking for an easy way to compile an executable from a Sointu song
 (e.g. for a executable music compo), take a look at [NR4's Python-based

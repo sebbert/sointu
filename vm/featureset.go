@@ -127,6 +127,9 @@ func NecessaryFeaturesFor(patch sointu.Patch) NecessaryFeatures {
 			}
 			for _, paramType := range sointu.UnitTypes[unit.Type].Params {
 				v := unit.Parameters[paramType.Name]
+				if unit.Type == "oscillator" && paramType.Name == "bandlimit" && !sointu.OscillatorBandlimited(unit) {
+					v = 0 // ignored, so the player needs no code for it
+				}
 				key := paramKey{unit.Type, paramType.Name}
 				if features.supportsParamValue[key] == nil {
 					features.supportsParamValue[key] = map[int]bool{}

@@ -136,6 +136,9 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 		if unit.Type == "oscillator" && unit.Parameters["type"] != sointu.Sample && (up.Name == "samplestart" || up.Name == "loopstart" || up.Name == "looplength") {
 			continue // don't show the sample related params unless necessary
 		}
+		if unit.Type == "oscillator" && (unit.Parameters["type"] == sointu.Gate || unit.Parameters["type"] == sointu.Sample) && up.Name == "bandlimit" {
+			continue // gates and samples are not bandlimited
+		}
 		if unit.Type == "send" && up.Name == "port" {
 			continue
 		}

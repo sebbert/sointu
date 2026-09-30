@@ -110,6 +110,9 @@
 {{- if .SupportsModulation "oscillator" "frequency"}}
     (local $freqMod f32)
 {{- end}}
+{{- if .SupportsParamValue "oscillator" "bandlimit" 1}}
+    (local $dt f32) (local $dphase f32)
+{{- end}}
 {{- if .Stereo "oscillator"}}
     (local $WRK_stereostash i32)
     (local.set $WRK_stereostash (global.get $WRK))
@@ -119,6 +122,15 @@
     (f32.store offset={{.InputNumber "oscillator" "frequency" | mul 4 | add 32}} (global.get $WRK) (f32.const 0))
 {{- end}}
     (local.set $flags (call $scanOperand))
+{{- if .SupportsParamValue "oscillator" "bandlimit" 1}}
+    ;; the phase parameter of the previous sample is in port 7, which the
+    ;; oscillator has no input for
+    (local.set $dphase (f32.sub
+        (call $input (i32.const {{.InputNumber "oscillator" "phase"}}))
+        (f32.load offset=60 (global.get $WRK))
+    ))
+    (f32.store offset=60 (global.get $WRK) (call $input (i32.const {{.InputNumber "oscillator" "phase"}})))
+{{- end}}
     (local.set $detune (call $inputSigned (i32.const {{.InputNumber "oscillator" "detune"}})))
 {{- if .Stereo "oscillator"}}
     loop $stereoLoop
@@ -156,32 +168,44 @@
 {{- if .SupportsModulation "oscillator" "frequency"}}
                     (f32.add (local.get $freqMod))
 {{- end}}
+{{- if .SupportsParamValue "oscillator" "bandlimit" 1}}
+                    (local.tee $dt) ;; the phase advance, without the phase parameter
+{{- end}}
                     (f32.add (f32.load (global.get $WRK))) ;; add the current phase of the oscillator
                 )
                 (f32.floor (local.get $phase))
             )
         )
     )
+{{- if .SupportsParamValue "oscillator" "bandlimit" 1}}
+    ;; gate (0x04) with a waveform bit means bandlimited; dt is then the phase
+    ;; advance including the phase parameter, and 0 otherwise
+    (local.set $dt (select
+        (f32.min (f32.max (f32.abs (f32.add (local.get $dt) (local.get $dphase))) (f32.const 9.5367431640625e-7)) (f32.const 0.5))
+        (f32.const 0)
+        (i32.and (local.get $flags) (i32.const 0x04))
+    ))
+{{- end}}
     (f32.add (local.get $phase) (call $input (i32.const {{.InputNumber "oscillator" "phase"}})))
     (local.set $phase (f32.sub (local.tee $phase) (f32.floor (local.get $phase)))) ;; phase = phase mod 1.0
     (local.set $color (call $input (i32.const {{.InputNumber "oscillator" "color"}})))
 {{- if .SupportsParamValue "oscillator" "type" .Sine}}
     (if (i32.and (local.get $flags) (i32.const 0x40)) (then
-        (local.set $amplitude (call $oscillator_sine (local.get $phase) (local.get $color)))
+        (local.set $amplitude (call $oscillator_sine (local.get $phase) (local.get $color){{- if .SupportsParamValue "oscillator" "bandlimit" 1}} (local.get $dt){{end}}))
     ))
 {{- end}}
 {{- if .SupportsParamValue "oscillator" "type" .Trisaw}}
     (if (i32.and (local.get $flags) (i32.const 0x20)) (then
-        (local.set $amplitude (call $oscillator_trisaw (local.get $phase) (local.get $color)))
+        (local.set $amplitude (call $oscillator_trisaw (local.get $phase) (local.get $color){{- if .SupportsParamValue "oscillator" "bandlimit" 1}} (local.get $dt){{end}}))
     ))
 {{- end}}
 {{- if .SupportsParamValue "oscillator" "type" .Pulse}}
     (if (i32.and (local.get $flags) (i32.const 0x10)) (then
-        (local.set $amplitude (call $oscillator_pulse (local.get $phase) (local.get $color)))
+        (local.set $amplitude (call $oscillator_pulse (local.get $phase) (local.get $color){{- if .SupportsParamValue "oscillator" "bandlimit" 1}} (local.get $dt){{end}}))
     ))
 {{- end}}
 {{- if .SupportsParamValue "oscillator" "type" .Gate}}
-    (if (i32.and (local.get $flags) (i32.const 0x04)) (then
+    (if {{if .SupportsParamValue "oscillator" "bandlimit" 1}}(i32.eq (i32.and (local.get $flags) (i32.const 0x74)) (i32.const 0x04)){{else}}(i32.and (local.get $flags) (i32.const 0x04)){{end}} (then
         (local.set $amplitude (call $oscillator_gate (local.get $phase)))
         ;; wave shaping is skipped with gate
     )(else
@@ -226,17 +250,46 @@
 )
 
 {{- if .SupportsParamValue "oscillator" "type" .Pulse}}
-(func $oscillator_pulse (param $phase f32) (param $color f32) (result f32)
+(func $oscillator_pulse (param $phase f32) (param $color f32){{- if .SupportsParamValue "oscillator" "bandlimit" 1}} (param $dt f32){{end}} (result f32)
+{{- if .SupportsParamValue "oscillator" "bandlimit" 1}} (local $amplitude f32)
+    (if (f32.gt (local.get $dt) (f32.const 0)) (then
+        (local.set $color (f32.min (f32.max (local.get $color) (f32.const 0)) (f32.const 1)))
+    ))
+    (local.set $amplitude
+{{- end}}
     (select
         (f32.const -1)
         (f32.const 1)
         (f32.ge (local.get $phase) (local.get $color))
     )
+{{- if .SupportsParamValue "oscillator" "bandlimit" 1}}
+    )
+    (if (f32.gt (local.get $dt) (f32.const 0)) (then
+        (local.set $amplitude (f32.sub
+            (f32.add (local.get $amplitude) (call $polyblep (local.get $phase) (local.get $dt)))
+            (call $polyblep (call $wrap (f32.sub (local.get $phase) (local.get $color))) (local.get $dt))
+        ))
+    ))
+    (local.get $amplitude)
+{{- end}}
 )
 {{end}}
 
 {{- if .SupportsParamValue "oscillator" "type" .Sine}}
-(func $oscillator_sine (param $phase f32) (param $color f32) (result f32)
+(func $oscillator_sine (param $phase f32) (param $color f32){{- if .SupportsParamValue "oscillator" "bandlimit" 1}} (param $dt f32){{end}} (result f32)
+{{- if .SupportsParamValue "oscillator" "bandlimit" 1}} (local $h f32)
+    (if (f32.gt (local.get $dt) (f32.const 0)) (then
+        (local.set $color (f32.min (f32.max (local.get $color) (local.get $dt)) (f32.const 1)))
+        ;; the slope changes by ±2π/color at 0 and color
+        (local.set $h (f32.mul
+            (f32.div (f32.mul (local.get $dt) (f32.const 1.0471976)) (local.get $color))
+            (f32.sub
+                (call $polyblamp (local.get $phase) (local.get $dt))
+                (call $polyblamp (call $wrap (f32.sub (local.get $phase) (local.get $color))) (local.get $dt))
+            )
+        ))
+    ))
+{{- end}}
     (select
         (f32.const 0)
 {{- if .MathImports}}
@@ -252,11 +305,30 @@
 {{- end}}
         (f32.ge (local.get $phase) (local.get $color))
     )
+{{- if .SupportsParamValue "oscillator" "bandlimit" 1}}
+    (f32.add (local.get $h))
+{{- end}}
 )
 {{end}}
 
 {{- if .SupportsParamValue "oscillator" "type" .Trisaw}}
-(func $oscillator_trisaw (param $phase f32) (param $color f32) (result f32)
+(func $oscillator_trisaw (param $phase f32) (param $color f32){{- if .SupportsParamValue "oscillator" "bandlimit" 1}} (param $dt f32){{end}} (result f32)
+{{- if .SupportsParamValue "oscillator" "bandlimit" 1}} (local $h f32)
+    (if (f32.gt (local.get $dt) (f32.const 0)) (then
+        (local.set $color (f32.min (f32.max (local.get $color) (local.get $dt)) (f32.sub (f32.const 1) (local.get $dt))))
+        ;; the slope changes by ±2/(color·(1-color)) at 0 and color
+        (local.set $h (f32.mul
+            (f32.div
+                (f32.mul (local.get $dt) (f32.const 0.33333334))
+                (f32.mul (local.get $color) (f32.sub (f32.const 1) (local.get $color)))
+            )
+            (f32.sub
+                (call $polyblamp (local.get $phase) (local.get $dt))
+                (call $polyblamp (call $wrap (f32.sub (local.get $phase) (local.get $color))) (local.get $dt))
+            )
+        ))
+    ))
+{{- end}}
     (if (f32.ge (local.get $phase) (local.get $color)) (then
         (local.set $phase (f32.sub (f32.const 1) (local.get $phase)))
         (local.set $color (f32.sub (f32.const 1) (local.get $color)))
@@ -264,6 +336,44 @@
     (f32.div (local.get $phase) (local.get $color))
     (f32.mul (f32.const 2))
     (f32.sub (f32.const 1))
+{{- if .SupportsParamValue "oscillator" "bandlimit" 1}}
+    (f32.add (local.get $h))
+{{- end}}
+)
+{{end}}
+
+{{- if .SupportsParamValue "oscillator" "bandlimit" 1}}
+;; The corrections of the bandlimited oscillators for a discontinuity at phase
+;; 0, as in vm/go_synth.go. $polywindow is 1 - |d|/dt within dt of it, where d
+;; is the distance to it, and 0 further away.
+(func $polywindow (param $t f32) (param $dt f32) (result f32)
+    (f32.max
+        (f32.sub (f32.const 1) (f32.div
+            (f32.min (local.get $t) (f32.sub (f32.const 1) (local.get $t)))
+            (local.get $dt)
+        ))
+        (f32.const 0)
+    )
+)
+
+;; $polyblep corrects a step of +2: -(1-d/dt)² after it, (1-d/dt)² before
+(func $polyblep (param $t f32) (param $dt f32) (result f32) (local $y f32)
+    (local.set $y (call $polywindow (local.get $t) (local.get $dt)))
+    (f32.copysign
+        (f32.mul (local.get $y) (local.get $y))
+        (f32.sub (local.get $t) (f32.const 0.5))
+    )
+)
+
+;; $polyblamp is 6/dt times the correction for a corner where the slope
+;; increases by 1: (1-|d|/dt)³
+(func $polyblamp (param $t f32) (param $dt f32) (result f32) (local $y f32)
+    (local.set $y (call $polywindow (local.get $t) (local.get $dt)))
+    (f32.mul (f32.mul (local.get $y) (local.get $y)) (local.get $y))
+)
+
+(func $wrap (param $x f32) (result f32)
+    (f32.sub (local.get $x) (f32.floor (local.get $x)))
 )
 {{end}}
 

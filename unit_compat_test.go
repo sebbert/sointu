@@ -28,9 +28,19 @@ func TestOldBufreadPlaysForwards(t *testing.T) {
 	if reverse.Parameters["speed"] != 0 {
 		t.Errorf("a saved speed was changed: %v", reverse.Parameters)
 	}
-	var osc sointu.Unit
-	yaml.Unmarshal([]byte("type: oscillator\nparameters: {gain: 1}\n"), &osc)
-	if len(osc.Parameters) != 1 {
-		t.Errorf("parameters added to another unit type: %v", osc.Parameters)
+	var env sointu.Unit
+	yaml.Unmarshal([]byte("type: envelope\nparameters: {gain: 1}\n"), &env)
+	if len(env.Parameters) != 1 {
+		t.Errorf("parameters added to another unit type: %v", env.Parameters)
+	}
+}
+
+func TestOldOscillatorIsNotBandlimited(t *testing.T) {
+	var u sointu.Unit
+	if err := yaml.Unmarshal([]byte("type: oscillator\nparameters: {type: 2, gain: 128}\n"), &u); err != nil {
+		t.Fatal(err)
+	}
+	if b, ok := u.Parameters["bandlimit"]; !ok || b != 0 || sointu.OscillatorBandlimited(u) {
+		t.Errorf("got %v, want bandlimit 0 filled in", u.Parameters)
 	}
 }

@@ -573,6 +573,16 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 				unit.ports[6] = 0
 				detuneStereo := float32(params[1]*2) - 1
 				unison := flags & 3
+				// gate (0x04) with a waveform bit means bandlimited
+				gate := flags&0x74 == 0x04
+				bandlimit := flags&0x04 == 0x04 && !gate
+				// the phase parameter of the previous sample is in port 7,
+				// which the oscillator has no input for
+				var dPhase float32
+				if bandlimit {
+					dPhase = params[2] - unit.ports[7]
+					unit.ports[7] = params[2]
+				}
 				for i := 0; i < channels; i++ {
 					detune := detuneStereo
 					var output float32
@@ -591,31 +601,26 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 						} else {
 							omega = float32(omega * 0.000038) // pretty random scaling constant to get LFOs into reasonable range. Historical reasons, goes all the way back to 4klang
 						}
-						phase := float32(omega+freqMod) + unit.state[k]
+						advance := omega + freqMod
+						phase := advance + unit.state[k]
 						phase -= floor32(phase)
 						unit.state[k] = phase
 						phase += params[2]
 						phase -= floor32(phase)
 						color := params[3]
+						var dt float32 // the phase advance of this sample, 0 when not bandlimited
+						if bandlimit {
+							dt = min(max(abs32(advance+dPhase), minBandlimitDt), 0.5)
+						}
 						var amplitude float32
 						switch {
 						case flags&0x40 == 0x40: // Sine
-							if phase < color {
-								amplitude = sinTurns(phase / color)
-							}
+							amplitude = oscillatorSine(phase, color, dt)
 						case flags&0x20 == 0x20: // Trisaw
-							if phase >= color {
-								phase = 1 - phase
-								color = 1 - color
-							}
-							amplitude = float32(float32(phase/color)*2) - 1
+							amplitude = oscillatorTrisaw(phase, color, dt)
 						case flags&0x10 == 0x10: // Pulse
-							if phase >= color {
-								amplitude = -1
-							} else {
-								amplitude = 1
-							}
-						case flags&0x4 == 0x4: // Gate
+							amplitude = oscillatorPulse(phase, color, dt)
+						case gate:
 							gateBits := int32(operandsAtTransform[4])<<8 | int32(operandsAtTransform[3])
 							x := float32(gateBits >> (int32(float32(phase*16)+0.5) & 15) & 1)
 							// the smoothed gate is 4 floats after the phase,
@@ -624,7 +629,7 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 							amplitude = float32(float32(*g-x)*0.99609375) + x
 							*g = amplitude
 						}
-						if flags&0x4 == 0 {
+						if !gate {
 							amplitude = waveshape(amplitude, params[4])
 						}
 						output += float32(amplitude * params[5])
@@ -1177,6 +1182,84 @@ func waveshape(value, amount float32) float32 {
 
 // floor32 returns the largest integer at most x.
 func floor32(x float32) float32 { return float32(math.Floor(float64(x))) }
+
+func abs32(x float32) float32 { return math.Float32frombits(math.Float32bits(x) &^ (1 << 31)) }
+
+// minBandlimitDt is the smallest phase advance the bandlimited oscillators
+// use, which keeps their corrections finite when the oscillator stops.
+const minBandlimitDt = 9.5367431640625e-7 // 2^-20
+
+// The oscillator waveforms, as in the wasm player. With dt > 0, the phase
+// advance of the sample, they are bandlimited: polyBLEP smooths the jumps of
+// the pulse, polyBLAMP the corners of the trisaw and of the sine with color
+// < 1. Their color is then kept where the corrections stay bounded: at least
+// dt from 0 and 1 for the trisaw (a saw's jump becomes a ramp of one
+// sample), at least dt and at most 1 for the sine, from 0 to 1 for the pulse.
+
+func oscillatorSine(phase, color, dt float32) float32 {
+	var h float32
+	if dt > 0 {
+		color = min(max(color, dt), 1)
+		// the slope changes by ±2π/color at 0 and color
+		h = float32(float32(dt*1.0471976)/color) * float32(polyBLAMP(phase, dt)-polyBLAMP(wrap(phase-color), dt))
+	}
+	var amplitude float32
+	if phase < color {
+		amplitude = sinTurns(phase / color)
+	}
+	return amplitude + h
+}
+
+func oscillatorTrisaw(phase, color, dt float32) float32 {
+	var h float32
+	if dt > 0 {
+		color = min(max(color, dt), 1-dt)
+		// the slope changes by ±2/(color·(1-color)) at 0 and color
+		h = float32(float32(dt*0.33333334)/float32(color*(1-color))) * float32(polyBLAMP(phase, dt)-polyBLAMP(wrap(phase-color), dt))
+	}
+	if phase >= color {
+		phase = 1 - phase
+		color = 1 - color
+	}
+	return float32(float32(float32(phase/color)*2)-1) + h
+}
+
+func oscillatorPulse(phase, color, dt float32) float32 {
+	var amplitude float32 = 1
+	if dt > 0 {
+		color = min(max(color, 0), 1)
+	}
+	if phase >= color {
+		amplitude = -1
+	}
+	if dt > 0 {
+		amplitude = (amplitude + polyBLEP(phase, dt)) - polyBLEP(wrap(phase-color), dt)
+	}
+	return amplitude
+}
+
+func wrap(x float32) float32 { return x - floor32(x) }
+
+// polyWindow is 1 - |d|/dt within dt of a discontinuity at phase 0, where d
+// is the distance to it, and 0 further away.
+func polyWindow(t, dt float32) float32 { return max(1-min(t, 1-t)/dt, 0) }
+
+// polyBLEP is the correction for a step of +2 at phase 0: -(1-d/dt)² after
+// it and (1-d/dt)² before.
+func polyBLEP(t, dt float32) float32 {
+	y := polyWindow(t, dt)
+	if t < 0.5 {
+		return -float32(y * y)
+	}
+	return float32(y * y)
+}
+
+// polyBLAMP is 6/dt times the correction for a corner at phase 0 where the
+// slope increases by 1: (1-|d|/dt)³.
+func polyBLAMP(t, dt float32) float32 {
+	y := polyWindow(t, dt)
+	return float32(float32(y*y) * y)
+}
 
 // unitFloat returns the kth float of the unit: its state, then its ports.
 func unitFloat(u *unit, k int) *float32 {

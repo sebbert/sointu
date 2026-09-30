@@ -424,6 +424,12 @@ var UnitTypes = map[string]UnitType{
 			{Name: "type", MinValue: int(Sine), Default: int(Sine), MaxValue: int(Sample), CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"sine", "trisaw", "pulse", "gate", "sample"})},
 			{Name: "lfo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "unison", MinValue: 0, MaxValue: 3, CanSet: true, CanModulate: false},
+			// bandlimit reduces the aliasing of the sine, trisaw and pulse
+			// waveforms with polyBLEP and polyBLAMP, keeping the trisaw's
+			// color a sample from 0 and 1 and the sine's in [dt, 1]. The
+			// waveshaper still aliases. LFOs ignore it; see
+			// OscillatorBandlimited.
+			{Name: "bandlimit", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "samplestart", MinValue: 0, MaxValue: 1720329, CanSet: true, CanModulate: false},
 			{Name: "loopstart", MinValue: 0, MaxValue: 65535, CanSet: true, CanModulate: false},
 			{Name: "looplength", MinValue: 0, MaxValue: 65535, CanSet: true, CanModulate: false},
@@ -840,6 +846,7 @@ func stackUseEffect(u *Unit) StackUse {
 var addedParameters = map[string]map[string]int{
 	"bufread":    {"speed": 128}, // forwards at the normal speed
 	"bufwrite":   {"pop": 1},
+	"oscillator": {"bandlimit": 0},            // naive waveforms
 	"spcompress": {"attack": 0, "release": 0}, // no smoothing
 }
 
@@ -1004,6 +1011,19 @@ const (
 	Gate   = iota
 	Sample = iota
 )
+
+// OscillatorBandlimited reports whether an oscillator unit uses its bandlimit
+// parameter: only sine, trisaw and pulse oscillators that are not LFOs do.
+func OscillatorBandlimited(u Unit) bool {
+	if u.Type != "oscillator" || u.Parameters["bandlimit"] != 1 || u.Parameters["lfo"] == 1 {
+		return false
+	}
+	switch u.Parameters["type"] {
+	case Sine, Trisaw, Pulse:
+		return true
+	}
+	return false
+}
 
 // UnitNames is a list of all the names of units, sorted
 // alphabetically.
