@@ -225,8 +225,11 @@ WebAssembly example:
 
 ```
 sointu-compile -arch=wasm tests/test_chords.yml
-wat2wasm --enable-annotations test_chords.wat
+wat2wasm test_chords.wat
 ```
+
+(Older wabt versions, which don't enable annotations by default, need
+`wat2wasm --enable-annotations` for songs with samples.)
 
 The wasm player computes its math (2^x, sin, pow) itself in float32, exactly
 like the Go synth of the tracker, so a compiled song sounds exactly like it
@@ -240,7 +243,8 @@ with the `bufread` unit (WebAssembly only for now). The compiler encodes each
 sample with its encoding preset using [ffmpeg](https://ffmpeg.org/), found
 through `-ffmpeg`, `$SOINTU_FFMPEG`, PATH or the usual Homebrew and MacPorts
 directories, and stores the encoded samples in `sointu.buffer` custom sections
-of the module; hence `--enable-annotations`. The page decodes them with the
+of the module, written as annotations, which older wabt versions only
+read with `--enable-annotations`. The page decodes them with the
 browser's `decodeAudioData` before instantiating the module, and passes the
 audio to the player through the `s.b` import; see
 [the example](examples/code/wasm/index.html). Songs without samples need

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/vsariola/sointu"
@@ -180,7 +181,7 @@ func renderWasm(t *testing.T, node, wat2wasm string, song sointu.Song, encoded m
 	}
 	watFile, wasmFile := filepath.Join(dir, "song.wat"), filepath.Join(dir, "song.wasm")
 	os.WriteFile(watFile, []byte(files[".wat"]), 0o644)
-	if out, err := exec.Command(wat2wasm, "--enable-annotations", "-o", wasmFile, watFile).CombinedOutput(); err != nil {
+	if out, err := exec.Command(wat2wasm, wat2wasmArgs(wat2wasm, "-o", wasmFile, watFile)...).CombinedOutput(); err != nil {
 		t.Fatalf("wat2wasm failed: %v\n%s", err, out)
 	}
 	runner, outFile := filepath.Join(dir, "runner.js"), filepath.Join(dir, "out.raw")
@@ -323,7 +324,7 @@ func TestBufreadWasmInBrowser(t *testing.T) {
 			}
 			watFile, wasmFile := filepath.Join(dir, "song.wat"), filepath.Join(dir, "song.wasm")
 			os.WriteFile(watFile, []byte(files[".wat"]), 0o644)
-			if out, err := exec.Command(wat2wasm, "--enable-annotations", "-o", wasmFile, watFile).CombinedOutput(); err != nil {
+			if out, err := exec.Command(wat2wasm, wat2wasmArgs(wat2wasm, "-o", wasmFile, watFile)...).CombinedOutput(); err != nil {
 				t.Fatalf("wat2wasm failed: %v\n%s", err, out)
 			}
 			out, err := exec.Command(node, renderer, wasmFile, expected, "--tolerance", fmt.Sprint(tc.tolerance)).CombinedOutput()
@@ -333,4 +334,19 @@ func TestBufreadWasmInBrowser(t *testing.T) {
 			}
 		})
 	}
+}
+
+var wat2wasmAnnotations = sync.OnceValue(func() bool {
+	out, _ := exec.Command("wat2wasm", "--help").CombinedOutput()
+	return strings.Contains(string(out), "--enable-annotations")
+})
+
+// wat2wasmArgs returns args for wat2wasm, with --enable-annotations first if
+// this wat2wasm has it: the custom sections of samples need annotations, which
+// newer wabt versions enable by default and no longer have the flag for.
+func wat2wasmArgs(wat2wasm string, args ...string) []string {
+	if wat2wasmAnnotations() {
+		return append([]string{"--enable-annotations"}, args...)
+	}
+	return args
 }

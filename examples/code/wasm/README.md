@@ -4,8 +4,11 @@ To generate the .wasm file:
 
 ```
 sointu-compile -o . -arch=wasm tests/test_chords.yml
-wat2wasm --enable-annotations test_chords.wat
+wat2wasm test_chords.wat
 ```
+
+With older wabt versions, which don't enable annotations by default, add
+`--enable-annotations` for songs with samples.
 
 To run the example:
 
