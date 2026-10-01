@@ -1,0 +1,118 @@
+name: Global mastering reverb
+numvoices: 1
+units:
+    - id: 1
+      parameters: {}
+      comment: 'Global mastering with reverb - Global mastering, and before it the aux signal through the Reverb module. Set this preset as last instrument. The reverb uses mc units: Go synth and wasm player only.'
+    - type: in
+      id: 2
+      parameters: {channel: 2, stereo: 1}
+      comment: The aux signal the instruments send, with outaux or aux
+    - type: module
+      id: 3
+      parameters: {module: 1}
+      comment: 'The Reverb module: its parameters are size, decay, highs, lows, predelay, mod, highcut and lowcut'
+    - type: out
+      id: 4
+      parameters: {gain: 128, stereo: 1}
+      comment: The level of the reverb, into the mix that is mastered below
+    - type: in
+      id: 1170
+      parameters: {channel: 0, stereo: 1}
+    - type: filter
+      id: 1171
+      parameters: {bandpass: -1, frequency: 128, highpass: 0, lowpass: 1, resonance: 128, stereo: 1}
+      comment: Limit highs
+    - type: filter
+      id: 1166
+      parameters: {bandpass: 1, frequency: 10, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+      comment: Low cut
+    - type: compressor
+      id: 1167
+      parameters: {attack: 42, invgain: 89, ratio: 92, release: 42, stereo: 1, threshold: 83}
+    - type: mulp
+      id: 1168
+      parameters: {stereo: 1}
+    - type: out
+      id: 1172
+      parameters: {gain: 116, stereo: 1}
+      comment: Master gain
+modules:
+    - id: 1
+      name: Reverb
+      comment: 'Stereo reverb, wet only: low and high cut, predelay, a diffuser of four steps for the early reflections, and a feedback delay network of 8 lines for the tail. Uses mc units: Go synth and wasm player only.'
+      inputs: 2
+      params:
+        - {name: size, default: 64}
+        - {name: decay, default: 90}
+        - {name: highs, default: 48}
+        - {name: lows, default: 72}
+        - {name: predelay, default: 13}
+        - {name: mod, default: 24}
+        - {name: highcut, default: 98}
+        - {name: lowcut, default: 56}
+      units:
+        - type: mcspread
+          parameters: {add: 0, bus: 1, gain: 76, stereo: 1}
+          comment: The stereo input on the 8 channels of the bus; gain is the level of the reverb
+        - type: mcfilter
+          parameters: {bus: 1, frequency: 37, type: 1}
+          bind: {frequency: {p: 8, min: 0, max: 85}}
+          comment: Low cut
+        - type: mcfilter
+          parameters: {bus: 1, frequency: 115, type: 0}
+          bind: {frequency: {p: 7, min: 72, max: 128}}
+          comment: High cut
+        - type: mcdelay
+          parameters: {allpass: 0, apgain: 80, bus: 1, decay: 0, hfdecay: 64, lfdecay: 64, moddepth: 0, modrate: 64, notetracking: 0, seed: 0, size: 204, spread: 0}
+          bind: {size: {p: 5, min: 1, max: 2000}}
+          comment: 'Predelay: all 8 lines of the same length'
+        - type: mcdelay
+          parameters: {allpass: 0, apgain: 80, bus: 1, decay: 0, hfdecay: 64, lfdecay: 64, moddepth: 0, modrate: 64, notetracking: 0, seed: 1, size: 400, spread: 128}
+          bind: {size: {p: 1, min: 100, max: 700}}
+          comment: 'Diffuser: each step delays the channels by random amounts up to its size, shuffles and mixes them'
+        - type: mcmix
+          parameters: {bus: 1, seed: 1, type: 2}
+        - type: mcmix
+          parameters: {bus: 1, seed: 0, type: 0}
+        - type: mcdelay
+          parameters: {allpass: 0, apgain: 80, bus: 1, decay: 0, hfdecay: 64, lfdecay: 64, moddepth: 0, modrate: 64, notetracking: 0, seed: 2, size: 200, spread: 128}
+          bind: {size: {p: 1, min: 50, max: 350}}
+        - type: mcmix
+          parameters: {bus: 1, seed: 2, type: 2}
+        - type: mcmix
+          parameters: {bus: 1, seed: 0, type: 0}
+        - type: mcdelay
+          parameters: {allpass: 0, apgain: 80, bus: 1, decay: 0, hfdecay: 64, lfdecay: 64, moddepth: 0, modrate: 64, notetracking: 0, seed: 3, size: 100, spread: 128}
+          bind: {size: {p: 1, min: 25, max: 175}}
+        - type: mcmix
+          parameters: {bus: 1, seed: 3, type: 2}
+        - type: mcmix
+          parameters: {bus: 1, seed: 0, type: 0}
+        - type: mcdelay
+          parameters: {allpass: 0, apgain: 80, bus: 1, decay: 0, hfdecay: 64, lfdecay: 64, moddepth: 0, modrate: 64, notetracking: 0, seed: 4, size: 50, spread: 128}
+          bind: {size: {p: 1, min: 12, max: 88}}
+        - type: mcmix
+          parameters: {bus: 1, seed: 4, type: 2}
+        - type: mcmix
+          parameters: {bus: 1, seed: 0, type: 0}
+        - type: mcsum
+          parameters: {bus: 1, gain: 52, stereo: 1, width: 80}
+          comment: 'Early reflections: the diffused input'
+        - type: mcloop
+          parameters: {bus: 1, feedback: 128}
+          comment: 'Feedback delay network: 8 delay lines mixed back into each other'
+        - type: mcdelay
+          parameters: {allpass: 0, apgain: 80, bus: 1, decay: 90, hfdecay: 48, lfdecay: 72, moddepth: 24, modrate: 56, notetracking: 0, seed: 7, size: 1600, spread: 77}
+          bind: {decay: 2, hfdecay: 3, lfdecay: 4, moddepth: 6, size: {p: 1, min: 400, max: 2800}}
+          comment: decay is the reverb time (0 holds the sound); highs and lows are the times of the highs and lows relative to it; mod moves the lines against ringing
+        - type: mcsum
+          parameters: {bus: 1, gain: 64, stereo: 1, width: 96}
+          comment: The tail
+        - type: mcmix
+          parameters: {bus: 1, seed: 0, type: 1}
+        - type: mcloopend
+          parameters: {bus: 1}
+        - type: addp
+          parameters: {stereo: 1}
+          comment: Early reflections plus the tail

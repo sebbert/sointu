@@ -538,6 +538,36 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   (UTIL) is the aux signal through it: `in` from aux, the module unit, `out`.
   The preset carries the module, the same as the module preset, so a song
   gets it once.
+- **Global mastering presets** (UTIL), next to upstream's Global mastering,
+  which is unchanged:
+  - Global mastering reverb: the aux signal through the Reverb module, then
+    Global mastering as it is.
+  - Global mastering 2, for loud music with a clean bass: a low cut of
+    12 dB per octave at 27 Hz, a compressor (about 4.6:1 above -6 dB, 10 ms
+    attack, 150 ms release, +7.5 dB makeup), and a `clip` at full scale. It
+    uses only units that the x86 players have.
+  - Global mastering 2 reverb: the reverb, then Global mastering 2.
+
+  Why a second version: measured with sines and a test mix (bass, saw
+  chords, noise snare), Global mastering does this:
+  - Its "Limit highs" filter (low-pass minus band-pass at the top
+    frequency) raises the highs: +2 dB at 3.5 kHz, +6 dB at 10 kHz, +9 dB
+    at 20 kHz, relative to 1 kHz.
+  - Its low cut (high-pass plus band-pass) raises the bass by 3 dB around
+    40 to 55 Hz and cuts only below about 20 Hz.
+  - Its compressor releases in 5 ms, so its gain follows the waveform of a
+    bass note: a 55 Hz sine comes out with 4.5 % distortion.
+  - Nothing limits the peaks: the test mix peaks 6 dB higher after it than
+    before, so a mix that just reaches full scale is clipped by whatever
+    plays it.
+
+  Global mastering 2 is flat from 30 Hz up, gives the same sine 0.3 %
+  distortion, and never exceeds full scale. On the test mix it is 2 to 3 dB
+  louder (RMS) than Global mastering followed by a clip, for a mix peaking
+  at -2 to +1 dB, clipping 1 to 3 % of the samples. Its slow release can be
+  heard as pumping with a loud kick; `release` and `invgain` of the
+  compressor are the two values to tune. All of this is measured, not
+  judged by ear.
 
   | Parameter | Default | Sets |
   |---|---|---|

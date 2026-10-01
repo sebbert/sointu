@@ -1,0 +1,28 @@
+name: Global mastering 2
+numvoices: 1
+units:
+    - id: 1
+      parameters: {}
+      comment: 'Global mastering 2 - set this preset as last instrument, load reverbs before this. For loud music with a clean bass: unlike Global mastering it leaves the highs and the bass as they are, compresses harder with a slow release, so that bass notes are not distorted, and clips the peaks at full scale.'
+    - type: in
+      id: 10
+      parameters: {channel: 0, stereo: 1}
+    - type: filter
+      id: 11
+      parameters: {bandpass: 0, frequency: 8, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+      comment: Low cut, 12 dB per octave below 27 Hz
+    - type: compressor
+      id: 12
+      parameters: {attack: 47, invgain: 54, ratio: 100, release: 68, stereo: 1, threshold: 64}
+      comment: 'Loudness: about 4.6:1 above -6 dB, 10 ms attack and 150 ms release, +7.5 dB makeup (invgain). A shorter release is louder and distorts the bass more'
+    - type: mulp
+      id: 13
+      parameters: {stereo: 1}
+    - type: clip
+      id: 14
+      parameters: {stereo: 1}
+      comment: The peaks that the attack lets through are clipped at full scale
+    - type: out
+      id: 15
+      parameters: {gain: 128, stereo: 1}
+      comment: Master gain

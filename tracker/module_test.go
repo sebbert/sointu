@@ -880,3 +880,56 @@ func TestGlobalReverbPreset(t *testing.T) {
 		t.Errorf("adding the module preset Reverb after the preset Global reverb: %d modules, want %d", len(m.d.Song.Modules), n)
 	}
 }
+
+// Every preset that the tracker comes with and that carries the Reverb
+// module carries it as the module preset Reverb has it; and the Global
+// presets are complete instruments: they expand and encode.
+func TestGlobalPresets(t *testing.T) {
+	m, _ := newModuleTestModel(t)
+	m.modulePresetPath = t.TempDir()
+	m.loadModulePresets()
+	var reverb *sointu.Module
+	for i := range m.modulePresets {
+		if p := &m.modulePresets[i]; p.name == "Reverb" {
+			reverb = &p.modules[len(p.modules)-1]
+		}
+	}
+	if reverb == nil {
+		t.Fatal("no module preset Reverb")
+	}
+	want := map[string]int{"Global reverb": 1, "Global mastering": 0, "Global mastering reverb": 1, "Global mastering 2": 0, "Global mastering 2 reverb": 1}
+	for i := range m.presetData.presets {
+		p := &m.presetData.presets[i]
+		if p.user {
+			continue
+		}
+		for j := range p.modules {
+			if mod := &p.modules[j]; mod.Name == "Reverb" && moduleKey(mod) != moduleKey(reverb) {
+				t.Errorf("the Reverb module of the preset %s differs from the module preset Reverb", p.instr.Name)
+			}
+		}
+		modules, ok := want[p.instr.Name]
+		if !ok {
+			continue
+		}
+		delete(want, p.instr.Name)
+		if len(p.modules) != modules {
+			t.Errorf("the preset %s has %d modules, want %d", p.instr.Name, len(p.modules), modules)
+		}
+		song := sointu.Song{BPM: 120, RowsPerBeat: 4, Patch: sointu.Patch{p.instr.Copy()}, Modules: p.modules.Copy()}
+		song, x := song.Expand()
+		if len(x.Problems) > 0 {
+			t.Errorf("the preset %s: problems expanding it: %v", p.instr.Name, x.Problems)
+		}
+		if _, err := vm.NewBytecode(song.Patch, vm.AllFeatures{}, song.BPM); err != nil {
+			t.Errorf("the preset %s does not encode: %v", p.instr.Name, err)
+		}
+		// the last unit sends the result out
+		if last := song.Patch[0].Units[len(song.Patch[0].Units)-1]; last.Type != "out" {
+			t.Errorf("the preset %s ends in %s, want out", p.instr.Name, last.Type)
+		}
+	}
+	for name := range want {
+		t.Errorf("no preset %s", name)
+	}
+}
