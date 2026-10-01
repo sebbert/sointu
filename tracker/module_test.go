@@ -3,6 +3,8 @@ package tracker
 import (
 	"bytes"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -614,6 +616,52 @@ func TestModulePresets(t *testing.T) {
 	other.Module().Presets().SetValue(0)
 	if len(other.d.Song.Modules) != 2 {
 		t.Errorf("loading the preset again: %v modules", len(other.d.Song.Modules))
+	}
+	// saving over a preset asks first
+	file := filepath.Join(dir, "outer.yml")
+	before, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Module().Comment().SetValue("changed")
+	m.Module().SavePreset().Do()
+	if now, _ := os.ReadFile(file); m.Dialog() != OverwriteModulePresetDialog || m.Module().AskedPreset() != "outer" || !bytes.Equal(now, before) {
+		t.Fatalf("saving over the preset: dialog %v about %q, file changed: %v", m.Dialog(), m.Module().AskedPreset(), !bytes.Equal(now, before))
+	}
+	m.CancelDialog().Do()
+	if now, _ := os.ReadFile(file); m.Dialog() != NoDialog || !bytes.Equal(now, before) {
+		t.Errorf("after cancelling: dialog %v, file changed: %v", m.Dialog(), !bytes.Equal(now, before))
+	}
+	m.Module().SavePreset().Do()
+	m.Module().OverwritePreset().Do()
+	if now, _ := os.ReadFile(file); m.Dialog() != NoDialog || !strings.Contains(string(now), "comment: changed") {
+		t.Errorf("after saving over it: dialog %v, file:\n%s", m.Dialog(), now)
+	}
+	// a module with another name is saved without asking
+	m.Module().Name().SetValue("second")
+	m.Module().SavePreset().Do()
+	presets = m.Module().Presets()
+	if r := presets.Range(); m.Dialog() != NoDialog || r.Max != 1 || presets.StringOf(1) != "second" {
+		t.Fatalf("after saving a second preset: dialog %v, presets %v", m.Dialog(), r)
+	}
+	// deleting a preset asks first
+	deletion := m.Module().DeletePresets()
+	if deletion.StringOf(0) != "Delete outer" || m.Module().ConfirmDeletePreset().Enabled() {
+		t.Errorf("the deletions: %q", deletion.StringOf(0))
+	}
+	deletion.SetValue(0)
+	if _, err := os.Stat(file); m.Dialog() != DeleteModulePresetDialog || m.Module().AskedPreset() != "outer" || err != nil {
+		t.Fatalf("deleting the preset: dialog %v about %q, file: %v", m.Dialog(), m.Module().AskedPreset(), err)
+	}
+	m.CancelDialog().Do()
+	if _, err := os.Stat(file); err != nil || m.Module().Presets().Range().Max != 1 {
+		t.Errorf("after cancelling the file is gone: %v", err)
+	}
+	m.Module().DeletePresets().SetValue(0)
+	m.Module().ConfirmDeletePreset().Do()
+	presets = m.Module().Presets()
+	if _, err := os.Stat(file); !os.IsNotExist(err) || m.Dialog() != NoDialog || presets.Range().Max != 0 || presets.StringOf(0) != "second" {
+		t.Errorf("after deleting: file %v, dialog %v, presets %v", err, m.Dialog(), presets.Range())
 	}
 }
 

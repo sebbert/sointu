@@ -81,6 +81,9 @@ type (
 		// or, if it is empty, from the user's configuration directory
 		modulePresets    []modulePreset
 		modulePresetPath string
+		// modulePresetAsked is the name of the module preset that the dialog
+		// asks about: the one to delete, or to save over
+		modulePresetAsked string
 
 		// onChange, when set, is called after each change to the model data,
 		// e.g. to tell a plugin host that its project has unsaved changes
@@ -204,6 +207,8 @@ const (
 	License
 	DeleteUserPresetDialog
 	OverwriteUserPresetDialog
+	DeleteModulePresetDialog
+	OverwriteModulePresetDialog
 )
 
 const (

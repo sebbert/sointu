@@ -22,6 +22,11 @@ import (
 // SOINTU_TEST_SCREENSHOTS set to a directory, it also draws each step into a
 // PNG there.
 func TestModulesTabLayout(t *testing.T) {
+	// the module presets go to a directory of the test
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", home)
+	t.Setenv("AppData", home)
 	broker := tracker.NewBroker()
 	model := tracker.NewModel(broker, []sointu.Synther{vm.GoSynther{}}, tracker.NullMIDIContext{}, "")
 	defer model.Close()
@@ -133,4 +138,25 @@ func TestModulesTabLayout(t *testing.T) {
 		}
 	}
 	frame("10-example-all-unfolded")
+	// saving over a module preset and deleting one ask first
+	model.Instrument().Tab().SetValue(int(tracker.InstrumentModulesTab))
+	model.Module().SavePreset().Do()
+	if model.Dialog() != tracker.NoDialog || model.Module().Presets().Range().Max != 0 {
+		t.Fatalf("after saving a module preset: dialog %v, %v presets", model.Dialog(), model.Module().Presets().Range().Max+1)
+	}
+	model.Module().SavePreset().Do()
+	if model.Dialog() != tracker.OverwriteModulePresetDialog {
+		t.Fatalf("saving over a module preset shows dialog %v", model.Dialog())
+	}
+	frame("11-overwrite-module-preset")
+	model.CancelDialog().Do()
+	model.Module().DeletePresets().SetValue(0)
+	if model.Dialog() != tracker.DeleteModulePresetDialog {
+		t.Fatalf("deleting a module preset shows dialog %v", model.Dialog())
+	}
+	frame("12-delete-module-preset")
+	model.Module().ConfirmDeletePreset().Do()
+	if model.Dialog() != tracker.NoDialog || model.Module().Presets().Range().Max != -1 {
+		t.Errorf("after deleting the module preset: dialog %v, %v presets", model.Dialog(), model.Module().Presets().Range().Max+1)
+	}
 }

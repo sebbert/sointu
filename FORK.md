@@ -523,7 +523,9 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
     `innerBinding` in `tracker/params.go` (the bound parameters).
 - **Module presets:** the Presets menu of the Modules tab saves the selected
   module, with the modules it uses, as a file in `sointu/modules` of the
-  user's configuration directory, and adds a saved one to the song.
+  user's configuration directory, adds a saved one to the song, and deletes
+  one (`Delete <name>`). Saving over a preset with the same name and
+  deleting one ask first, like the instrument presets do.
 - **Files:** instrument files, presets and the units and instruments on the
   clipboard carry the modules they use. Loading them does not add a module
   that the song already has with the same name and the same content (apart
