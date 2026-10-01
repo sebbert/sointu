@@ -267,26 +267,34 @@ func (s *ScrollTable) command(gtx C, e key.Event, p image.Point) {
 		stepX = 1e6
 		stepY = 1e6
 	}
+	// selecting with shift, the cursor of a table whose rows are not its
+	// elements stays among the elements
+	move := func(dx, dy int) bool {
+		if e.Modifiers.Contain(key.ModShift) && s.Table.ExtendCursor(dx, dy) {
+			return true
+		}
+		return s.Table.MoveCursor(dx, dy)
+	}
 	switch e.Name {
 	case key.NameDeleteBackward, key.NameDeleteForward:
 		s.Table.Clear()
 		return
 	case key.NameUpArrow:
-		if !s.Table.MoveCursor(0, -stepY) && stepY == 1 && p.Y > 0 {
+		if !move(0, -stepY) && stepY == 1 && p.Y > 0 {
 			s.ColTitleList.Focus()
 		}
 	case key.NameDownArrow:
-		s.Table.MoveCursor(0, stepY)
+		move(0, stepY)
 	case key.NameLeftArrow:
-		if !s.Table.MoveCursor(-stepX, 0) && stepX == 1 && p.X > 0 {
+		if !move(-stepX, 0) && stepX == 1 && p.X > 0 {
 			s.RowTitleList.Focus()
 		}
 	case key.NameRightArrow:
-		s.Table.MoveCursor(stepX, 0)
+		move(stepX, 0)
 	case key.NamePageUp:
-		s.Table.MoveCursor(0, -max(s.RowTitleList.List.Position.Count-3, 8))
+		move(0, -max(s.RowTitleList.List.Position.Count-3, 8))
 	case key.NamePageDown:
-		s.Table.MoveCursor(0, max(s.RowTitleList.List.Position.Count-3, 8))
+		move(0, max(s.RowTitleList.List.Position.Count-3, 8))
 	case key.NameHome:
 		s.Table.SetCursorX(0)
 	case key.NameEnd:

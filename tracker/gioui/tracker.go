@@ -392,6 +392,18 @@ func (t *Tracker) showDialog(gtx C) {
 			DialogBtn("Cancel", t.CancelDialog()),
 		)
 		dialog.Layout(gtx)
+	case tracker.DeleteModulePresetDialog:
+		dialog := MakeDialog(t.Theme, t.DialogState, "Delete module preset?", "Delete the module preset "+t.Module().AskedPreset()+"?\nThis cannot be undone.",
+			DialogBtn("Delete", t.Module().ConfirmDeletePreset()),
+			DialogBtn("Cancel", t.CancelDialog()),
+		)
+		dialog.Layout(gtx)
+	case tracker.OverwriteModulePresetDialog:
+		dialog := MakeDialog(t.Theme, t.DialogState, "Overwrite module preset?", "Save over the module preset "+t.Module().AskedPreset()+"?",
+			DialogBtn("Save", t.Module().OverwritePreset()),
+			DialogBtn("Cancel", t.CancelDialog()),
+		)
+		dialog.Layout(gtx)
 	}
 }
 

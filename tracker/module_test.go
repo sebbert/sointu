@@ -3,6 +3,8 @@ package tracker
 import (
 	"bytes"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -399,7 +401,7 @@ func TestUnfold(t *testing.T) {
 	if a, b, c := after(3), after(4), after(5); a != 1 || b != 2 || c != 1 {
 		t.Errorf("signals after the inner units: %v %v %v", a, b, c)
 	}
-	// with the value of the module unit, bound, and not to be changed
+	// with the value of the module unit, bound
 	var detune Parameter
 	for x := 0; x < params.RowWidth(4); x++ {
 		if p := params.Item(Point{x, 4}); p.Name() == "detune" {
@@ -409,28 +411,25 @@ func TestUnfold(t *testing.T) {
 	if name, ok := detune.Bound(); detune.Value() != 99 || !ok || name != "detune" {
 		t.Errorf("the detune of the inner unit is %v, bound to %q", detune.Value(), name)
 	}
-	if detune.SetValue(5) || m.d.Song.Modules[0].Units[1].Parameters["detune"] == 5 {
-		t.Errorf("a parameter of an inner unit could be changed")
-	}
-	// the cursor skips the inner units
+	// the cursor goes through the inner units
 	if units.Selected() != 2 {
 		t.Fatalf("the module unit is on row %v", units.Selected())
 	}
 	units.SetSelected(units.Selected() + 1)
-	if m.d.UnitIndex != 3 || units.Selected() != 7 {
-		t.Errorf("down from the module unit: unit %v, row %v", m.d.UnitIndex, units.Selected())
+	if m.d.UnitIndex != 0 || units.Selected() != 3 || len(m.d.UnitPath) != 1 {
+		t.Errorf("down from the module unit: unit %v, row %v, inside %v", m.d.UnitIndex, units.Selected(), m.d.UnitPath)
+	}
+	units.SetSelected(7)
+	if m.d.UnitIndex != 3 || units.Selected() != 7 || len(m.d.UnitPath) != 0 {
+		t.Errorf("on the out: unit %v, row %v, inside %v", m.d.UnitIndex, units.Selected(), m.d.UnitPath)
 	}
 	units.SetSelected(units.Selected() - 1)
-	if m.d.UnitIndex != 2 || units.Selected() != 2 {
-		t.Errorf("up from the out: unit %v, row %v", m.d.UnitIndex, units.Selected())
-	}
-	units.SetSelected(5) // clicking an inner unit selects its module unit
-	if m.d.UnitIndex != 2 {
-		t.Errorf("selecting an inner unit selected unit %v", m.d.UnitIndex)
+	if m.d.UnitIndex != 3 || units.Selected() != 6 || len(m.d.UnitPath) != 1 {
+		t.Errorf("up from the out: unit %v, row %v, inside %v", m.d.UnitIndex, units.Selected(), m.d.UnitPath)
 	}
 	params.SetCursor(Point{0, 2})
 	params.MoveCursor(0, 1)
-	if c := params.Cursor(); c.Y != 7 || m.d.UnitIndex != 3 {
+	if c := params.Cursor(); c.Y != 3 || m.d.UnitIndex != 0 || len(m.d.UnitPath) != 1 {
 		t.Errorf("the cursor moved down to row %v, unit %v", c.Y, m.d.UnitIndex)
 	}
 	// moving, copying and deleting work on the units
@@ -617,6 +616,52 @@ func TestModulePresets(t *testing.T) {
 	other.Module().Presets().SetValue(0)
 	if len(other.d.Song.Modules) != 2 {
 		t.Errorf("loading the preset again: %v modules", len(other.d.Song.Modules))
+	}
+	// saving over a preset asks first
+	file := filepath.Join(dir, "outer.yml")
+	before, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Module().Comment().SetValue("changed")
+	m.Module().SavePreset().Do()
+	if now, _ := os.ReadFile(file); m.Dialog() != OverwriteModulePresetDialog || m.Module().AskedPreset() != "outer" || !bytes.Equal(now, before) {
+		t.Fatalf("saving over the preset: dialog %v about %q, file changed: %v", m.Dialog(), m.Module().AskedPreset(), !bytes.Equal(now, before))
+	}
+	m.CancelDialog().Do()
+	if now, _ := os.ReadFile(file); m.Dialog() != NoDialog || !bytes.Equal(now, before) {
+		t.Errorf("after cancelling: dialog %v, file changed: %v", m.Dialog(), !bytes.Equal(now, before))
+	}
+	m.Module().SavePreset().Do()
+	m.Module().OverwritePreset().Do()
+	if now, _ := os.ReadFile(file); m.Dialog() != NoDialog || !strings.Contains(string(now), "comment: changed") {
+		t.Errorf("after saving over it: dialog %v, file:\n%s", m.Dialog(), now)
+	}
+	// a module with another name is saved without asking
+	m.Module().Name().SetValue("second")
+	m.Module().SavePreset().Do()
+	presets = m.Module().Presets()
+	if r := presets.Range(); m.Dialog() != NoDialog || r.Max != 1 || presets.StringOf(1) != "second" {
+		t.Fatalf("after saving a second preset: dialog %v, presets %v", m.Dialog(), r)
+	}
+	// deleting a preset asks first
+	deletion := m.Module().DeletePresets()
+	if deletion.StringOf(0) != "Delete outer" || m.Module().ConfirmDeletePreset().Enabled() {
+		t.Errorf("the deletions: %q", deletion.StringOf(0))
+	}
+	deletion.SetValue(0)
+	if _, err := os.Stat(file); m.Dialog() != DeleteModulePresetDialog || m.Module().AskedPreset() != "outer" || err != nil {
+		t.Fatalf("deleting the preset: dialog %v about %q, file: %v", m.Dialog(), m.Module().AskedPreset(), err)
+	}
+	m.CancelDialog().Do()
+	if _, err := os.Stat(file); err != nil || m.Module().Presets().Range().Max != 1 {
+		t.Errorf("after cancelling the file is gone: %v", err)
+	}
+	m.Module().DeletePresets().SetValue(0)
+	m.Module().ConfirmDeletePreset().Do()
+	presets = m.Module().Presets()
+	if _, err := os.Stat(file); !os.IsNotExist(err) || m.Dialog() != NoDialog || presets.Range().Max != 0 || presets.StringOf(0) != "second" {
+		t.Errorf("after deleting: file %v, dialog %v, presets %v", err, m.Dialog(), presets.Range())
 	}
 }
 

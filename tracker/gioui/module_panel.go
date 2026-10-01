@@ -197,17 +197,21 @@ func (mp *ModulePanel) layout(gtx C) D {
 	mp.smallIcons(t, &addBtn.IconButton, &addBtn.DisabledStyle)
 	mp.smallIcons(t, &deleteBtn.IconButton, &deleteBtn.DisabledStyle)
 	mp.smallIcons(t, &addParamBtn.IconButton, &addParamBtn.DisabledStyle)
-	// the module presets: saving the selected module as one, and adding one
-	// to the song
+	// the module presets: saving the selected module as one, adding one to
+	// the song, and deleting one
 	presets := func(gtx C) D {
 		btn := MenuBtn(mp.presetsMenu, mp.presetsBtn, "Presets").
 			WithBtnStyle(&t.Theme.Button.Text).WithPopupStyle(&t.Theme.Popup.ContextMenu).
-			WithTip("Module presets: save the selected\nmodule, or add one to the song")
-		return btn.Layout(gtx,
+			WithTip("Module presets: save the selected\nmodule, add one to the song,\nor delete one")
+		children := []MenuChild{
 			ActionMenuChild(t.Module().SavePreset(), "Save module as preset", "", icons.ContentSave),
 			DividerMenuChild(),
 			IntMenuChild(t.Module().Presets(), icons.ContentAdd),
-		)
+		}
+		if r := t.Module().DeletePresets().Range(); r.Max >= r.Min {
+			children = append(children, DividerMenuChild(), IntMenuChild(t.Module().DeletePresets(), icons.ActionDelete))
+		}
+		return btn.Layout(gtx, children...)
 	}
 	numParams := t.Module().NumParams()
 	// the parts under the list, which scroll: the module, a heading and

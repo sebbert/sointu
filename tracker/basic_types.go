@@ -159,6 +159,16 @@ func (v Int) Value() int {
 	return v.value.Value()
 }
 
+// Enabled tells if the value can be set: true unless the underlying
+// IntValue implements Enabler and says otherwise.
+func (v Int) Enabled() bool {
+	if v.value == nil {
+		return false
+	}
+	e, ok := v.value.(Enabler)
+	return !ok || e.Enabled()
+}
+
 func (v Int) Values(yield func(int, string) bool) {
 	r := v.Range()
 	for i := r.Min; i <= r.Max; i++ {
@@ -232,9 +242,43 @@ type (
 		Marshal(r Range) ([]byte, error)
 		Unmarshal([]byte) (r Range, err error)
 	}
+
+	// rowListData is implemented by a list whose rows are not its
+	// elements, e.g. the rows of the unit editor, some of which are inner
+	// units of module units. elements returns the list of the elements that
+	// are moved, deleted, copied and pasted, with a selection of its own,
+	// extendSelection moves the cursor by delta elements, leaving the other
+	// end of the selection where it is, and selectAll selects the elements.
+	rowListData interface {
+		elements() List
+		extendSelection(delta int)
+		selectAll()
+	}
 )
 
 func MakeList(data ListData) List { return List{data} }
+
+// SelectAll selects all the elements of the list: of a list whose rows are
+// not its elements, the elements that the cursor is among.
+func (l List) SelectAll() {
+	if r, ok := l.data.(rowListData); ok {
+		r.selectAll()
+		return
+	}
+	l.SetSelected(0)
+	l.SetSelected2(l.Count() - 1)
+}
+
+// ExtendSelection moves the cursor of a list whose rows are not its elements
+// by delta elements, leaving the other end of the selection where it is. For
+// other lists it returns false: the cursor is then moved with SetSelected.
+func (l List) ExtendSelection(delta int) bool {
+	if r, ok := l.data.(rowListData); ok {
+		r.extendSelection(delta)
+		return true
+	}
+	return false
+}
 
 func (l List) Selected() int          { return max(min(l.data.Selected(), l.data.Count()-1), 0) }
 func (l List) Selected2() int         { return max(min(l.data.Selected2(), l.data.Count()-1), 0) }
@@ -245,6 +289,9 @@ func (l List) Count() int             { return l.data.Count() }
 // MoveElements moves the selected elements in a list by delta. The list must
 // implement the MutableListData interface.
 func (v List) MoveElements(delta int) bool {
+	if r, ok := v.data.(rowListData); ok {
+		return r.elements().MoveElements(delta)
+	}
 	s, ok := v.data.(MutableListData)
 	if !ok {
 		return false
@@ -266,6 +313,9 @@ func (v List) MoveElements(delta int) bool {
 // DeleteElements deletes the selected elements in a list. The list must
 // implement the MutableListData interface.
 func (v List) DeleteElements(backwards bool) bool {
+	if r, ok := v.data.(rowListData); ok {
+		return r.elements().DeleteElements(backwards)
+	}
 	d, ok := v.data.(MutableListData)
 	if !ok {
 		return false
@@ -291,6 +341,9 @@ func (v List) DeleteElements(backwards bool) bool {
 // the MutableListData interface. Returns the copied data, marshaled into byte
 // slice, and true if successful.
 func (v List) CopyElements() ([]byte, bool) {
+	if r, ok := v.data.(rowListData); ok {
+		return r.elements().CopyElements()
+	}
 	m, ok := v.data.(MutableListData)
 	if !ok {
 		return nil, false
@@ -310,6 +363,9 @@ func (v List) CopyElements() ([]byte, bool) {
 // byte slice. The list must implement the MutableListData interface. Returns
 // true if successful.
 func (v List) PasteElements(data []byte) (ok bool) {
+	if r, ok := v.data.(rowListData); ok {
+		return r.elements().PasteElements(data)
+	}
 	m, ok := v.data.(MutableListData)
 	if !ok {
 		return false
@@ -326,6 +382,9 @@ func (v List) PasteElements(data []byte) (ok bool) {
 }
 
 func (v List) Mutable() bool {
+	if r, ok := v.data.(rowListData); ok {
+		return r.elements().Mutable()
+	}
 	_, ok := v.data.(MutableListData)
 	return ok
 }
@@ -502,6 +561,18 @@ func (r *Rect) Limit(width, height int) {
 	if r.BottomRight.Y >= height {
 		r.BottomRight.Y = height - 1
 	}
+}
+
+// ExtendCursor moves the cursor of a table whose rows are not its elements
+// by dx columns and dy elements, leaving the other end of the selection
+// where it is. For other tables it returns false: the cursor is then moved
+// with MoveCursor.
+func (v Table) ExtendCursor(dx, dy int) bool {
+	if r, ok := v.TableData.(interface{ extendCursor(dx, dy int) }); ok {
+		r.extendCursor(dx, dy)
+		return true
+	}
+	return false
 }
 
 func (v Table) Range() (rect Rect) {

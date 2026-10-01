@@ -17,19 +17,35 @@ func (m *Model) Params() *ParamModel { return (*ParamModel)(m) }
 
 type ParamModel Model
 
-// Wires returns the wires of the current instrument, telling which parameters
-// are connected to which.
+// Wires returns the wires of the unit editor, telling which parameters are
+// connected to which: those of the root units, and under the unfolded module
+// units, those between the units of their modules.
 func (m *ParamModel) Wires(yield func(wire Wire) bool) {
-	d := (*Model)(m).derivedUnits()
-	if d == nil {
-		return
-	}
-	for _, wire := range d.wires {
-		wire.Highlight = (wire.FromSet && m.d.UnitIndex == wire.From) || (wire.ToSet && m.d.UnitIndex == wire.To.Y && m.d.ParamIndex == wire.To.X)
-		// the wires are between units; the unit editor draws rows
-		wire.From, wire.To.Y = (*Model)(m).rowOfUnit(wire.From), (*Model)(m).rowOfUnit(wire.To.Y)
-		if !yield(wire) {
-			return
+	c := (*Model)(m).rows()
+	cursor := m.Cursor()
+	for _, l := range c.lists {
+		d := (*Model)(m).derivedOf(l.module)
+		if d == nil {
+			continue
+		}
+		for _, wire := range d.wires {
+			// the wires are between units; the unit editor draws rows
+			if wire.FromSet {
+				if wire.From >= len(l.rows) {
+					continue
+				}
+				wire.From = l.rows[wire.From]
+			}
+			if wire.ToSet {
+				if wire.To.Y >= len(l.rows) {
+					continue
+				}
+				wire.To.Y = l.rows[wire.To.Y]
+			}
+			wire.Highlight = (wire.FromSet && cursor.Y == wire.From) || (wire.ToSet && cursor == wire.To)
+			if !yield(wire) {
+				return
+			}
 		}
 	}
 }
@@ -104,44 +120,27 @@ func (pt *ParamModel) Cursor2() Point {
 }
 func (pt *ParamModel) SetCursor(p Point) {
 	pt.d.ParamIndex = max(min(p.X, pt.Width()-1), 0)
-	pt.d.UnitIndex = (*Model)(pt).unitOfRow(max(min(p.Y, pt.Height()-1), 0), false)
+	(*Model)(pt).selectRow(p.Y)
 }
 func (pt *ParamModel) SetCursor2(p Point) {
 	pt.d.ParamIndex = max(min(p.X, pt.Width()-1), 0)
-	pt.d.UnitIndex2 = (*Model)(pt).unitOfRow(max(min(p.Y, pt.Height()-1), 0), false)
+	pt.d.UnitIndex2 = (*Model)(pt).unitNearRow(p.Y)
 }
 func (pt *ParamModel) Width() int {
-	d := (*Model)(pt).derivedUnits()
-	if d == nil {
+	if _, ok := (*Model)(pt).root(); !ok {
 		return 0
 	}
 	// TODO: we hack the +1 so that we always have one extra cell to draw the
 	// comments. Refactor the gioui side so that we can specify the width and
 	// height regardless of the underlying table size
-	width := d.paramsWidth
-	if (*Model)(pt).unfold() {
-		units := (*Model)(pt).units()
-		for i := range units {
-			if e := (*Model)(pt).innerUnitsOf(&units[i]); e != nil {
-				width = max(width, e.paramsWidth)
-			}
-		}
-	}
-	return width + 1
+	return (*Model)(pt).rows().paramsWidth + 1
 }
 func (pt *ParamModel) RowWidth(y int) int {
-	d := (*Model)(pt).derivedUnits()
-	unit, e, i, ok := (*Model)(pt).rowAt(y)
-	if d == nil || !ok {
+	c := (*Model)(pt).rows()
+	if y < 0 || y >= len(c.rows) {
 		return 0
 	}
-	if e != nil {
-		return len(e.params[i])
-	}
-	if unit >= len(d.params) {
-		return 0
-	}
-	return len(d.params[unit])
+	return len(c.rows[y].params)
 }
 func (pt *ParamModel) Height() int { return (*Model)(pt).numRows() }
 func (pt *ParamModel) MoveCursor(dx, dy int) (ok bool) {
@@ -149,48 +148,45 @@ func (pt *ParamModel) MoveCursor(dx, dy int) (ok bool) {
 	p.X += dx
 	p.Y += dy
 	pt.SetCursor(p)
-	if dy > 0 {
-		// moving down goes past the inner units of a module unit
-		pt.d.UnitIndex = (*Model)(pt).unitOfRow(max(min(p.Y, pt.Height()-1), 0), true)
-		if _, e, _, _ := (*Model)(pt).rowAt(p.Y); e != nil {
-			return true
-		}
-	}
 	return p == pt.Cursor()
 }
+
+// extendCursor moves the cursor by dx parameters and dy units among the
+// units being edited, past the inner units of the module units among them.
+func (pt *ParamModel) extendCursor(dx, dy int) {
+	pt.d.ParamIndex = max(min(pt.d.ParamIndex+dx, pt.Width()-1), 0)
+	pt.d.UnitIndex = clamp(pt.d.UnitIndex+dy, 0, max(len((*Model)(pt).units())-1, 0))
+}
 func (pt *ParamModel) Item(p Point) Parameter {
-	d := (*Model)(pt).derivedUnits()
-	unit, e, i, ok := (*Model)(pt).rowAt(p.Y)
-	if d == nil || !ok || p.X < 0 {
+	c := (*Model)(pt).rows()
+	if p.Y < 0 || p.Y >= len(c.rows) || p.X < 0 || p.X >= len(c.rows[p.Y].params) {
 		return Parameter{}
 	}
-	if e != nil { // an inner unit: it cannot be changed
-		if p.X >= len(e.params[i]) {
-			return Parameter{}
-		}
-		return e.params[i][p.X]
-	}
-	if unit >= len(d.params) || p.X >= len(d.params[unit]) {
+	return c.rows[p.Y].params[p.X]
+}
+
+// selected returns the parameter at p if its unit is one of the units being
+// edited: a selection from a module unit to the unit after it leaves the
+// inner units of the module unit alone.
+func (pt *ParamModel) selected(p Point) Parameter {
+	if !(*Model)(pt).rowInScope(p.Y) {
 		return Parameter{}
 	}
-	return d.params[unit][p.X]
+	return pt.Item(p)
 }
 func (pt *ParamModel) clear(p Point) {
-	q := pt.Item(p)
+	q := pt.selected(p)
 	q.Reset()
 }
 func (pt *ParamModel) set(p Point, value int) {
-	q := pt.Item(p)
+	q := pt.selected(p)
 	q.SetValue(value)
 }
 func (pt *ParamModel) add(rect Rect, delta int, largeStep bool) (ok bool) {
 	for y := rect.TopLeft.Y; y <= rect.BottomRight.Y; y++ {
 		for x := rect.TopLeft.X; x <= rect.BottomRight.X; x++ {
 			p := Point{x, y}
-			q := pt.Item(p)
-			if q.inner != nil {
-				continue // the units a module unit stands for cannot be changed
-			}
+			q := pt.selected(p)
 			if !q.Add(delta, largeStep) {
 				return false
 			}
@@ -245,7 +241,7 @@ func (pt *ParamModel) unmarshalAtCursor(data []byte) (ret bool) {
 		for j, q := range table.Params[i] {
 			x := i + pt.Cursor().X
 			y := j + pt.Cursor().Y
-			p := pt.Item(Point{x, y})
+			p := pt.selected(Point{x, y})
 			ret = p.SetValue(q) || ret
 		}
 	}
@@ -269,7 +265,7 @@ func (pt *ParamModel) unmarshalRange(rect Rect, data []byte) (ret bool) {
 			if len(table.Params[0]) < height {
 				return false
 			}
-			p := pt.Item(Point{x + rect.TopLeft.X, y + rect.TopLeft.Y})
+			p := pt.selected(Point{x + rect.TopLeft.X, y + rect.TopLeft.Y})
 			ret = p.SetValue(table.Params[x][y]) || ret
 		}
 	}
@@ -297,11 +293,9 @@ type (
 		// parameter of its module with something bound to it: see
 		// moduleArg
 		arg *moduleArg
-		// inner is set for a parameter of an inner unit, innerIndex its index
-		// among them: a unit that a module unit stands for, which cannot
-		// be changed
-		inner      *innerUnits
-		innerIndex int
+		// through is set for a bound parameter of an inner unit: it has the
+		// value that the module unit above it gives it, see innerBinding
+		through *innerBinding
 	}
 
 	parameterVtable interface {
@@ -383,6 +377,9 @@ func (p *Parameter) Value() int {
 	if p.vtable == nil {
 		return 0
 	}
+	if p.through != nil {
+		p.through.refresh(p)
+	}
 	return p.vtable.Value(p)
 }
 func (p *Parameter) Port() (int, bool) {
@@ -392,7 +389,7 @@ func (p *Parameter) Port() (int, bool) {
 	return p.port - 1, true
 }
 func (p *Parameter) SetValue(value int) bool {
-	if p.vtable == nil || p.inner != nil {
+	if p.vtable == nil {
 		return false
 	}
 	r := p.Range()
@@ -400,12 +397,18 @@ func (p *Parameter) SetValue(value int) bool {
 	if value == p.Value() || value < r.Min || value > r.Max {
 		return false
 	}
+	if p.through != nil {
+		// the value was set in the stand-in unit: the module unit that the
+		// unit is an inner unit of gets it
+		defer p.m.change("InnerBoundParameter", PatchChange, MinorChange)()
+		defer p.through.store(p)
+	}
 	if p.arg != nil {
 		// the value was set in the stand-in unit: the module unit gets it
 		defer p.m.change("ModuleArgParameter"+p.arg.key(), PatchChange, MinorChange)()
 		defer p.arg.store(p)
 	}
-	if _, ok := p.Bound(); ok {
+	if _, ok := p.Bound(); ok && p.through == nil {
 		// the value of a bound parameter is the default of the parameter
 		// of the module
 		unit, name, _ := p.bindTarget()
@@ -422,6 +425,8 @@ func (p *Parameter) bindTarget() (unit *sointu.Unit, name string, ok bool) {
 	switch {
 	case p.unit == nil || p.vtable == nil:
 		return nil, "", false
+	case p.through != nil:
+		return p.through.unit, p.through.name, true
 	case p.arg != nil:
 		return p.arg.call, p.arg.key(), true
 	case p.up != nil:
@@ -435,6 +440,9 @@ func (p *Parameter) bindTarget() (unit *sointu.Unit, name string, ok bool) {
 func (p *Parameter) Add(delta int, snapToGrid bool) bool {
 	if p.vtable == nil {
 		return false
+	}
+	if p.through != nil && p.through.binding.Scaled {
+		return p.through.step(p, delta, snapToGrid)
 	}
 	if s, ok := p.vtable.(parameterStepper); ok {
 		return p.SetValue(s.Step(p, delta, snapToGrid))
@@ -541,7 +549,11 @@ func (p *Parameter) Hint() ParameterHint {
 	return hint
 }
 func (p *Parameter) Reset() {
-	if p.vtable == nil || p.inner != nil {
+	if p.vtable == nil {
+		return
+	}
+	if p.through != nil {
+		p.through.reset(p)
 		return
 	}
 	if p.arg != nil {
@@ -1071,20 +1083,176 @@ func (p *Parameter) Bound() (name string, ok bool) {
 	if !ok {
 		return "", false
 	}
-	if p.inner != nil {
-		return p.inner.bound(p.m, p.innerIndex, key)
-	}
 	b, ok := unit.Bind[key]
 	if !ok {
 		return "", false
 	}
-	k := b.Param
-	if i := p.m.d.ModuleIndex; p.m.editingModule() && i >= 0 && i < len(p.m.d.Song.Modules) {
-		if mp, ok := p.m.d.Song.Modules.Param(i, k); ok {
+	module, found := 0, false
+	if p.through != nil {
+		module, found = p.through.module, true
+	} else {
+		module, found = p.m.moduleOf(unit)
+	}
+	if found {
+		if mp, ok := p.m.d.Song.Modules.Param(module, b.Param); ok {
 			return mp.Name, true
 		}
 	}
-	return sointu.ModuleParamName(k), true
+	return sointu.ModuleParamName(b.Param), true
+}
+
+// innerBinding is what gives a bound parameter of an inner unit of a module
+// unit the value that the module unit gives it, instead of the default of
+// the module that it has in the module. The Parameter is that of a stand-in
+// unit: a copy of the unit, holding that value. Its vtable works on the
+// stand-in, and after a change the module unit gets the value, through the
+// binding, like when its own parameter is changed. The module is left as it
+// is.
+type innerBinding struct {
+	unit    *sointu.Unit   // the unit of the module
+	standIn *sointu.Unit   // the copy of it
+	name    string         // what of it is bound: see sointu.Unit.BoundValue
+	binding sointu.Binding // to which parameter of the module
+	module  int            // the index of the module
+	// calls are the module units that the unit is inside, from the
+	// outermost: the last one uses the module. root is the index of the
+	// module that the first one is a unit of, or -1 if it is a unit of an
+	// instrument.
+	calls []*sointu.Unit
+	root  int
+}
+
+// argValue returns the value that parameter k (from 1) of the module of the
+// last of the module units has: what the module unit sets it to, or the
+// default of the module, or if the module unit is an inner unit and binds it
+// to a parameter of its own module, what the module unit before it gives
+// that one. Song.Expand gives the same.
+func (m *Model) argValue(calls []*sointu.Unit, k int) int {
+	call, key := calls[len(calls)-1], sointu.ModuleParamName(k)
+	if b, ok := call.Bind[key]; ok && len(calls) > 1 {
+		return b.Map(m.argValue(calls[:len(calls)-1], b.Param))
+	}
+	if v, ok := call.Parameters[key]; ok {
+		return v
+	}
+	if i, ok := m.d.Song.Modules.Find(call.Parameters["module"]); ok {
+		if mp, ok := m.d.Song.Modules.Param(i, k); ok {
+			return mp.Default
+		}
+	}
+	return 0
+}
+
+// setArgValue sets the value that argValue returns, like changing the
+// parameter of the last of the module units on its own row: if it is bound
+// in turn, the module unit before it gets the value, or on the Modules tab,
+// the default of the module being edited there.
+func (m *Model) setArgValue(root int, calls []*sointu.Unit, k, value int) {
+	call, key := calls[len(calls)-1], sointu.ModuleParamName(k)
+	if b, ok := call.Bind[key]; ok {
+		if len(calls) > 1 {
+			m.setArgValue(root, calls[:len(calls)-1], b.Param, b.Unmap(value))
+			return
+		}
+		if root >= 0 && root < len(m.d.Song.Modules) {
+			m.setModuleDefault(root, b.Param, b.Unmap(value))
+			return
+		}
+	}
+	call.Parameters[key] = value
+}
+
+// value returns the value that the bound parameter gets.
+func (t *innerBinding) value(m *Model) int {
+	v := t.binding.Map(m.argValue(t.calls, t.binding.Param))
+	if p, ok := sointu.BindableParam(t.unit.Type, t.name); ok && t.unit.Type != "module" {
+		v = min(max(v, p.MinValue), max(p.MaxValue, p.MinValue))
+	}
+	return v
+}
+
+// refresh gives the stand-in the value that the bound parameter gets now.
+func (t *innerBinding) refresh(p *Parameter) {
+	v := t.value(p.m)
+	t.standIn.SetBoundValue(t.name, v)
+	if p.arg != nil { // a parameter of a module unit, on a stand-in of its own
+		p.unit.SetBoundValue(p.arg.name, v)
+	}
+}
+
+// store gives the module unit the value of the stand-in.
+func (t *innerBinding) store(p *Parameter) {
+	p.m.setArgValue(t.root, t.calls, t.binding.Param, t.binding.Unmap(t.standIn.BoundValue(t.name)))
+	t.refresh(p)
+}
+
+// step changes the parameter of the module by delta instead of the bound
+// parameter: with a scaled binding, a step of the bound parameter may be
+// less than a step of the parameter of the module.
+func (t *innerBinding) step(p *Parameter, delta int, large bool) bool {
+	old := min(max(p.m.argValue(t.calls, t.binding.Param), 0), 128)
+	value := old + delta
+	if large {
+		value = roundToGrid(value, 8, delta > 0)
+	}
+	value = min(max(value, 0), 128)
+	if value == old {
+		return false
+	}
+	defer p.m.change("InnerBoundParameter", PatchChange, MinorChange)()
+	p.m.setArgValue(t.root, t.calls, t.binding.Param, value)
+	t.refresh(p)
+	return true
+}
+
+// reset gives the parameter of the module its default again.
+func (t *innerBinding) reset(p *Parameter) {
+	mp, ok := p.m.d.Song.Modules.Param(t.module, t.binding.Param)
+	if !ok {
+		return
+	}
+	defer p.m.change("ResetInnerBoundParameter", PatchChange, MinorChange)()
+	p.m.setArgValue(t.root, t.calls, t.binding.Param, mp.Default)
+	t.refresh(p)
+}
+
+// innerParams returns the parameters of an inner unit of a module unit: the
+// parameters src of the unit of the module, but for the bound ones, which
+// have the values that the module units give them.
+func (m *Model) innerParams(src []Parameter, u *sointu.Unit, module, root int, calls []*sointu.Unit) []Parameter {
+	var ret []Parameter
+	for x := range src {
+		unit, name, ok := src[x].bindTarget()
+		if !ok || unit != u {
+			continue
+		}
+		b, ok := u.Bind[name]
+		if !ok {
+			continue
+		}
+		if up, ok := sointu.BindableParam(u.Type, name); !ok || !up.CanSet {
+			continue // only a port
+		}
+		standIn := new(sointu.Unit)
+		*standIn = u.Copy()
+		standIn.Bind = nil
+		t := &innerBinding{unit: u, standIn: standIn, name: name, binding: b, module: module, calls: calls, root: root}
+		standIn.SetBoundValue(name, t.value(m))
+		for _, p := range m.deriveParams(standIn, nil) {
+			if _, n, ok := p.bindTarget(); ok && n == name {
+				if ret == nil {
+					ret = slices.Clone(src)
+				}
+				p.through, p.port = t, src[x].port
+				ret[x] = p
+				break
+			}
+		}
+	}
+	if ret == nil {
+		return src
+	}
+	return ret
 }
 
 // moduleParameter vtable: the module that a module unit stands for. Its
@@ -1102,7 +1270,8 @@ func (b *moduleParameter) SetValue(p *Parameter, v int) bool {
 	if v < 0 || v > len(mods) {
 		return false
 	}
-	if v > 0 && p.m.wouldUseItself(mods[v-1].ID) {
+	// a module cannot use itself: not the module that the unit is a unit of
+	if module, ok := p.m.moduleOf(p.unit); v > 0 && ok && p.m.usesModule(mods[v-1].ID, module) {
 		p.m.Alerts().Add("A module cannot use itself", Warning)
 		return false
 	}

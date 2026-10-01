@@ -118,6 +118,7 @@ func (v *instrumentTab) SetValue(value int) bool {
 		// the unit editor now shows other units: those of the selected
 		// module on the Modules tab, of the selected instrument elsewhere
 		v.d.UnitIndex, v.d.UnitIndex2, v.d.ParamIndex = 0, 0, 0
+		(*Model)(v).leaveModuleUnits()
 		v.d.UnitSearching = false
 		v.d.UnitSearchString = ""
 		v.d.SendSource = 0
@@ -136,6 +137,9 @@ func (v *instrumentList) Selected() int          { return v.d.InstrIndex }
 func (v *instrumentList) Selected2() int         { return v.d.InstrIndex2 }
 func (v *instrumentList) SetSelected2(value int) { v.d.InstrIndex2 = value }
 func (v *instrumentList) SetSelected(value int) {
+	if !(*Model)(v).editingModule() && v.d.InstrIndex != value {
+		(*Model)(v).leaveModuleUnits() // the unit editor shows the units of the instrument
+	}
 	v.d.InstrIndex = value
 	v.d.UnitIndex = 0
 	v.d.UnitIndex2 = 0

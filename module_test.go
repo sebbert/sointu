@@ -529,3 +529,40 @@ func TestExpandScaledBindings(t *testing.T) {
 		t.Errorf("the bindings after a round trip: %+v (%v)", back.Bind, err)
 	}
 }
+
+// TestModulePortsAndSendToPorts checks what the tracker uses to re-point the
+// sends to a module unit when the units of its module take its place.
+func TestModulePortsAndSendToPorts(t *testing.T) {
+	mod := sointu.Module{ID: 1, Params: []sointu.ModuleParam{{Name: "a"}, {Name: "b"}}, Units: []sointu.Unit{
+		{Type: "filter", ID: 1, Parameters: sointu.ParamMap{"frequency": 40}, Bind: map[string]sointu.Binding{
+			"frequency": {Param: 1}, "resonance": {Param: 1, Scaled: true, Min: 0, Max: 64}}},
+		{Type: "module", ID: 2, Parameters: sointu.ParamMap{"module": 9}, Bind: map[string]sointu.Binding{"p2": {Param: 1}}},
+		{Type: "oscillator", ID: 3, Disabled: true, Bind: map[string]sointu.Binding{"detune": {Param: 1}}},
+	}}
+	ports := mod.Ports([]int{11, 12, 13})
+	frequency, resonance := sointu.PortOf("filter", "frequency"), sointu.PortOf("filter", "resonance")
+	want := []sointu.PortTarget{{Unit: 11, Port: frequency, Scale: 1}, {Unit: 11, Port: resonance, Scale: 0.5}, {Unit: 12, Port: 1, Scale: 1}}
+	if !reflect.DeepEqual(ports[0], want) || ports[1] != nil {
+		t.Fatalf("the ports are %+v, want %+v", ports, want)
+	}
+	send := sointu.MakeUnit("send")
+	send.ID = 5
+	send.Parameters["amount"], send.Parameters["sendpop"], send.Parameters["port"] = 96, 1, 0
+	out := sointu.SendToPorts(send, &ports)
+	if len(out) != 3 {
+		t.Fatalf("the send became %v units", len(out))
+	}
+	for i, w := range []struct{ id, target, port, amount, pop int }{
+		{5, 11, frequency, 96, 0}, {0, 11, resonance, 80, 0}, {0, 12, 1, 96, 1},
+	} {
+		p := out[i].Parameters
+		if out[i].Type != "send" || out[i].ID != w.id || p["target"] != w.target || p["port"] != w.port || p["amount"] != w.amount || p["sendpop"] != w.pop {
+			t.Errorf("unit %v: %+v, want %+v", i, out[i], w)
+		}
+	}
+	// a send to a port that modulates nothing: a pop if it pops
+	send.Parameters["port"] = 1
+	if out := sointu.SendToPorts(send, &ports); len(out) != 1 || out[0].Type != "pop" {
+		t.Errorf("a popping send to nothing became %+v", out)
+	}
+}

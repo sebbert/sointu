@@ -16,6 +16,7 @@ import (
 
 type modulePreset struct {
 	name    string
+	file    string
 	modules sointu.Modules
 }
 
@@ -55,25 +56,60 @@ func (m *Model) loadModulePresets() {
 			continue
 		}
 		name := filenameToInstrumentName(strings.TrimSuffix(e.Name(), ".yml"))
-		m.modulePresets = append(m.modulePresets, modulePreset{name: name, modules: file.Modules})
+		m.modulePresets = append(m.modulePresets, modulePreset{name: name, file: filepath.Join(dir, e.Name()), modules: file.Modules})
 	}
 	sort.Slice(m.modulePresets, func(i, j int) bool { return m.modulePresets[i].name < m.modulePresets[j].name })
 }
 
 // SavePreset returns an Action to save the selected module as a module
-// preset, with the modules that it uses. A preset with the same name is
-// replaced.
+// preset, with the modules that it uses. If there is a preset with the same
+// name, it shows a dialog asking whether to save over it, like saving an
+// instrument preset does.
 func (m *ModuleModel) SavePreset() Action { return MakeAction((*saveModulePreset)(m)) }
 
 type saveModulePreset ModuleModel
 
+// file returns the file of the preset of the selected module, and its name.
+func (m *saveModulePreset) file() (path, name string, ok bool) {
+	mod := (*ModuleModel)(m).selected()
+	if mod == nil {
+		return "", "", false
+	}
+	dir, ok := (*Model)(m).modulePresetDir()
+	name = instrumentNameToFilename(moduleTitle(mod))
+	if !ok || name == "" {
+		return "", "", false
+	}
+	return filepath.Join(dir, name+".yml"), filenameToInstrumentName(name), true
+}
 func (m *saveModulePreset) Enabled() bool { return (*ModuleModel)(m).selected() != nil }
 func (m *saveModulePreset) Do() {
+	path, name, ok := m.file()
+	if !ok {
+		(*Model)(m).Alerts().Add("The module preset could not be saved", Error)
+		return
+	}
+	if _, err := os.Stat(path); err == nil {
+		m.modulePresetAsked = name
+		m.dialog = OverwriteModulePresetDialog
+		return
+	}
+	(*ModuleModel)(m).OverwritePreset().Do()
+}
+
+// OverwritePreset returns an Action to save the selected module as a module
+// preset, replacing a preset with the same name.
+func (m *ModuleModel) OverwritePreset() Action { return MakeAction((*overwriteModulePreset)(m)) }
+
+type overwriteModulePreset ModuleModel
+
+func (m *overwriteModulePreset) Enabled() bool { return (*ModuleModel)(m).selected() != nil }
+func (m *overwriteModulePreset) Do() {
 	model := (*Model)(m)
+	m.dialog = NoDialog
 	mod := (*ModuleModel)(m).selected()
-	dir, ok := model.modulePresetDir()
-	name := instrumentNameToFilename(moduleTitle(mod))
-	if !ok || name == "" {
+	path, name, ok := (*saveModulePreset)(m).file()
+	if !ok {
 		model.Alerts().Add("The module preset could not be saved", Error)
 		return
 	}
@@ -85,16 +121,74 @@ func (m *saveModulePreset) Do() {
 	}
 	data, err := yaml.Marshal(struct{ Modules sointu.Modules }{mods})
 	if err == nil {
-		if err = os.MkdirAll(dir, 0755); err == nil {
-			err = os.WriteFile(filepath.Join(dir, name+".yml"), data, 0644)
+		if err = os.MkdirAll(filepath.Dir(path), 0755); err == nil {
+			err = os.WriteFile(path, data, 0644)
 		}
 	}
 	if err != nil {
 		model.Alerts().Add("The module preset could not be saved: "+err.Error(), Error)
 		return
 	}
-	model.Alerts().Add("Module saved as the preset "+filenameToInstrumentName(name), Info)
+	model.Alerts().Add("Module saved as the preset "+name, Info)
 	model.loadModulePresets()
+}
+
+// AskedPreset returns the name of the module preset that the dialog asks
+// about: the one to delete, or to save over.
+func (m *ModuleModel) AskedPreset() string { return m.modulePresetAsked }
+
+// DeletePresets returns an Int of the module presets, to choose one to
+// delete: setting it shows a dialog asking whether to delete the preset,
+// like deleting an instrument preset does. Its value is -1: none is the
+// current one.
+func (m *ModuleModel) DeletePresets() Int { return MakeInt((*modulePresetDeletion)(m)) }
+
+type modulePresetDeletion ModuleModel
+
+func (v *modulePresetDeletion) Value() int { return -1 }
+func (v *modulePresetDeletion) Range() RangeInclusive {
+	return RangeInclusive{0, len(v.modulePresets) - 1}
+}
+func (v *modulePresetDeletion) StringOf(i int) string {
+	if i < 0 || i >= len(v.modulePresets) {
+		return ""
+	}
+	return "Delete " + v.modulePresets[i].name
+}
+func (v *modulePresetDeletion) SetValue(i int) bool {
+	if i < 0 || i >= len(v.modulePresets) {
+		return false
+	}
+	v.modulePresetAsked = v.modulePresets[i].name
+	v.dialog = DeleteModulePresetDialog
+	return true
+}
+
+// ConfirmDeletePreset returns an Action to delete the module preset that
+// DeletePresets asked about.
+func (m *ModuleModel) ConfirmDeletePreset() Action { return MakeAction((*deleteModulePreset)(m)) }
+
+type deleteModulePreset ModuleModel
+
+func (m *deleteModulePreset) preset() (modulePreset, bool) {
+	for _, p := range m.modulePresets {
+		if p.name == m.modulePresetAsked {
+			return p, true
+		}
+	}
+	return modulePreset{}, false
+}
+func (m *deleteModulePreset) Enabled() bool {
+	_, ok := m.preset()
+	return ok && m.dialog == DeleteModulePresetDialog
+}
+func (m *deleteModulePreset) Do() {
+	m.dialog = NoDialog
+	p, _ := m.preset()
+	if err := os.Remove(p.file); err != nil {
+		(*Model)(m).Alerts().Add("The module preset could not be deleted: "+err.Error(), Error)
+	}
+	(*Model)(m).loadModulePresets()
 }
 
 // Presets returns an Int of the module presets, to choose one from: setting
@@ -126,7 +220,10 @@ func (v *modulePresetChoice) SetValue(i int) bool {
 	ids := m.importModules(mods)
 	if index, ok := m.d.Song.Modules.Find(ids[mods[len(mods)-1].ID]); ok {
 		m.d.ModuleIndex = index
-		m.d.UnitIndex, m.d.UnitIndex2, m.d.ParamIndex = 0, 0, 0
+		if m.editingModule() {
+			m.d.UnitIndex, m.d.UnitIndex2, m.d.ParamIndex = 0, 0, 0
+			m.leaveModuleUnits()
+		}
 	}
 	return true
 }

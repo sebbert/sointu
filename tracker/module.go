@@ -3,6 +3,7 @@ package tracker
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 
 	"github.com/vsariola/sointu"
@@ -22,20 +23,13 @@ type ModuleModel Model
 // on the Modules tab.
 func (m *Model) editingModule() bool { return m.d.InstrumentTab == InstrumentModulesTab }
 
-// unitsPtr returns the units that the unit editor shows: those of the
-// selected module on the Modules tab, otherwise those of the selected
-// instrument. It returns nil if there is no such module or instrument.
+// unitsPtr returns the units being edited: those of the selected module on
+// the Modules tab, otherwise those of the selected instrument, or with the
+// cursor on an inner unit of a module unit, those of its module (see
+// rows.go). It returns nil if there is no such module or instrument.
 func (m *Model) unitsPtr() *[]sointu.Unit {
-	if m.editingModule() {
-		if i := m.d.ModuleIndex; i >= 0 && i < len(m.d.Song.Modules) {
-			return &m.d.Song.Modules[i].Units
-		}
-		return nil
-	}
-	if i := m.d.InstrIndex; i >= 0 && i < len(m.d.Song.Patch) {
-		return &m.d.Song.Patch[i].Units
-	}
-	return nil
+	list, _, _ := m.scope()
+	return list
 }
 
 func (m *Model) units() []sointu.Unit {
@@ -49,20 +43,6 @@ func (m *Model) units() []sointu.Unit {
 func (m *Model) selectedUnit() *sointu.Unit {
 	if units := m.units(); m.d.UnitIndex >= 0 && m.d.UnitIndex < len(units) {
 		return &units[m.d.UnitIndex]
-	}
-	return nil
-}
-
-// derivedUnits returns the derived data of the units being edited, or nil.
-func (m *Model) derivedUnits() *derivedInstrument {
-	if m.editingModule() {
-		if i := m.d.ModuleIndex; i >= 0 && i < len(m.derived.modules) && i < len(m.d.Song.Modules) {
-			return &m.derived.modules[i]
-		}
-		return nil
-	}
-	if i := m.d.InstrIndex; i >= 0 && i < len(m.derived.patch) && i < len(m.d.Song.Patch) {
-		return &m.derived.patch[i]
 	}
 	return nil
 }
@@ -107,33 +87,6 @@ func (m *Model) runPatch() sointu.Patch {
 	}
 	song, _ := m.d.Song.Expand()
 	return song.Patch
-}
-
-// playedUnitID returns the ID that unit i of the units being edited has in
-// the synth. A unit of a module is in the synth once for every module unit
-// using the module, with other IDs: the first copy in the selected
-// instrument is returned, or else the first one in the song, or 0.
-func (m *Model) playedUnitID(i int) int {
-	units := m.units()
-	if i < 0 || i >= len(units) {
-		return 0
-	}
-	id := units[i].ID
-	if !m.editingModule() || id == 0 || m.expansion == nil {
-		return id
-	}
-	module := m.d.Song.Modules[m.d.ModuleIndex].ID
-	best, bestHere := 0, false
-	for copyID, e := range m.expansion.Units {
-		if e.Body != id || e.Module != module {
-			continue
-		}
-		here := e.Instrument == m.d.InstrIndex
-		if best == 0 || here && !bestHere || here == bestHere && copyID < best {
-			best, bestHere = copyID, here
-		}
-	}
-	return best
 }
 
 // fixModules keeps the modules valid, after every change of the patch: their
@@ -190,10 +143,14 @@ func (m *Model) fixModules() {
 // wouldUseItself reports whether a unit of the units being edited using the
 // module with the given ID would make a module use itself.
 func (m *Model) wouldUseItself(id int) bool {
-	if !m.editingModule() || m.d.ModuleIndex < 0 || m.d.ModuleIndex >= len(m.d.Song.Modules) {
-		return false
-	}
-	edited := m.d.Song.Modules[m.d.ModuleIndex].ID
+	module, ok := m.scopeModule()
+	return ok && m.usesModule(id, module)
+}
+
+// usesModule reports whether the module with the given ID is the module
+// with the given index, or uses it.
+func (m *Model) usesModule(id, module int) bool {
+	edited := m.d.Song.Modules[module].ID
 	return id == edited || m.d.Song.Modules.Uses(id, edited)
 }
 
@@ -311,6 +268,9 @@ func (m *Model) addModule() int {
 	m.d.Song.Modules, _ = Insert(m.d.Song.Modules, i, mod)
 	m.d.ModuleIndex = i
 	m.d.UnitIndex, m.d.UnitIndex2, m.d.ParamIndex = 0, 0, 0
+	if m.editingModule() {
+		m.leaveModuleUnits()
+	}
 	return i
 }
 
@@ -388,6 +348,15 @@ func moduleKey(mod *sointu.Module) string {
 		u := &c.Units[i]
 		if u.Type == "send" {
 			u.Parameters["target"] = ids[u.Parameters["target"]] // 0 if outside the module
+		}
+		if u.Type != "module" {
+			// a parameter that a unit does not have is 0: reading a unit
+			// from a file or the clipboard adds some of them
+			for name, value := range u.Parameters {
+				if value == 0 {
+					delete(u.Parameters, name)
+				}
+			}
 		}
 		for _, name := range unitBufferParams(u.Type) {
 			id := u.Parameters[name]
@@ -549,10 +518,14 @@ func (v *moduleList) SetSelected(value int) {
 	if v.d.ModuleIndex == value {
 		return
 	}
+	if (*Model)(v).editingModule() {
+		// the unit editor shows the units of the module
+		v.d.UnitIndex, v.d.UnitIndex2, v.d.ParamIndex = 0, 0, 0
+		(*Model)(v).leaveModuleUnits()
+		v.d.UnitSearching = false
+		v.d.UnitSearchString = ""
+	}
 	v.d.ModuleIndex = value
-	v.d.UnitIndex, v.d.UnitIndex2, v.d.ParamIndex = 0, 0, 0
-	v.d.UnitSearching = false
-	v.d.UnitSearchString = ""
 }
 func (v *moduleList) Move(r Range, delta int) (ok bool) {
 	mods := v.d.Song.Modules
@@ -994,12 +967,12 @@ type moduleParamBound struct {
 // cursor returns the unit and the name of the parameter under the cursor,
 // if it can be bound.
 func (v moduleParamBound) cursor() (*sointu.Unit, string, bool) {
-	if !v.Editing() || v.selected() == nil {
-		return nil, "", false
+	if _, _, depth := (*Model)(v.ModuleModel).scope(); !v.Editing() || v.selected() == nil || depth > 0 {
+		return nil, "", false // an inner unit is not a unit of the selected module
 	}
 	p := (*Model)(v.ModuleModel).Params().Item((*Model)(v.ModuleModel).Params().Cursor())
 	unit, name, ok := p.bindTarget()
-	if !ok || p.inner != nil || !sointu.CanBind(unit.Type, name) {
+	if !ok || !sointu.CanBind(unit.Type, name) {
 		return nil, "", false
 	}
 	return unit, name, true
@@ -1027,25 +1000,126 @@ func (v moduleParamBound) SetValue(val bool) {
 		delete(unit.Bind, name)
 		return
 	}
-	_, _, hadSource := m.d.Song.Modules.ParamSource(m.d.ModuleIndex, v.k)
+	m.bindParam(m.d.ModuleIndex, unit, name, v.k)
+}
+
+// bindParam binds what the name stands for (see sointu.Unit.BoundValue) of a
+// unit of the module with the given index to parameter k (from 1) of the
+// module.
+func (m *Model) bindParam(module int, unit *sointu.Unit, name string, k int) {
+	_, _, hadSource := m.d.Song.Modules.ParamSource(module, k)
 	if unit.Bind == nil {
 		unit.Bind = map[string]sointu.Binding{}
 	}
-	unit.Bind[name] = sointu.Binding{Param: v.k}
-	if !hadSource {
-		// the first parameter bound to it: its value becomes the default,
-		// and its range the range
-		m.setModuleDefault(m.d.ModuleIndex, v.k, unit.BoundValue(name))
-	} else {
-		m.setModuleDefault(m.d.ModuleIndex, v.k, v.selected().Params[v.k-1].Default)
+	unit.Bind[name] = sointu.Binding{Param: k}
+	if hadSource {
+		m.setModuleDefault(module, k, m.d.Song.Modules[module].Params[k-1].Default)
+		return
 	}
+	// the first parameter bound to it: its value becomes the default, and
+	// its range the range
+	value := unit.BoundValue(name)
+	if _, set := unit.Parameters[name]; !set && unit.Type == "module" {
+		// a module unit that does not set the parameter of its module has
+		// the default of that module
+		if i, ok := m.d.Song.Modules.Find(unit.Parameters["module"]); ok {
+			if mp, ok := m.d.Song.Modules.Param(i, moduleParamNumber(name)); ok {
+				value = mp.Default
+			}
+		}
+	}
+	m.setModuleDefault(module, k, value)
+}
+
+// Binding returns an Int representing the parameter of the module that the
+// parameter under the cursor of the unit editor is bound to, while the units
+// of a module are being edited, also as inner units of a module unit: 0 for
+// none, and one more than the module has parameters for a new parameter,
+// named after the parameter under the cursor. Setting it binds the
+// parameter, so that every module unit using the module sets it, or unbinds
+// it.
+func (m *ParamModel) Binding() Int { return MakeInt((*paramBinding)(m)) }
+
+type paramBinding ParamModel
+
+// target returns the index of the module being edited, the unit and what of
+// it is under the cursor, if it can be bound.
+func (v *paramBinding) target() (module int, unit *sointu.Unit, name string, ok bool) {
+	m := (*Model)(v)
+	module, ok = m.scopeModule()
+	if !ok {
+		return 0, nil, "", false
+	}
+	p := (*ParamModel)(v).Item((*ParamModel)(v).Cursor())
+	unit, name, ok = p.bindTarget()
+	if !ok || !sointu.CanBind(unit.Type, name) {
+		return 0, nil, "", false
+	}
+	if owner, found := m.moduleOf(unit); !found || owner != module {
+		return 0, nil, "", false
+	}
+	return module, unit, name, true
+}
+func (v *paramBinding) Enabled() bool {
+	_, _, _, ok := v.target()
+	return ok
+}
+func (v *paramBinding) Value() int {
+	module, unit, name, ok := v.target()
+	if !ok {
+		return 0
+	}
+	if b, bound := unit.Bind[name]; bound && b.Param >= 1 && b.Param <= len(v.d.Song.Modules[module].Params) {
+		return b.Param
+	}
+	return 0
+}
+func (v *paramBinding) Range() RangeInclusive {
+	module, _, _, ok := v.target()
+	if !ok {
+		return RangeInclusive{}
+	}
+	return RangeInclusive{0, min(len(v.d.Song.Modules[module].Params)+1, sointu.MaxModuleParams)}
+}
+func (v *paramBinding) StringOf(k int) string {
+	module, _, _, ok := v.target()
+	switch {
+	case !ok || k <= 0:
+		return "not bound"
+	case k > len(v.d.Song.Modules[module].Params):
+		return "new parameter"
+	}
+	mp, _ := v.d.Song.Modules.Param(module, k)
+	return mp.Name
+}
+func (v *paramBinding) SetValue(k int) bool {
+	module, unit, name, ok := v.target()
+	if !ok {
+		return false
+	}
+	m := (*Model)(v)
+	defer m.change("BindModuleParam", PatchChange, MajorChange)()
+	if k <= 0 {
+		delete(unit.Bind, name)
+		return true
+	}
+	mod := &v.d.Song.Modules[module]
+	if k > len(mod.Params) {
+		p := (*ParamModel)(v).Item((*ParamModel)(v).Cursor())
+		mod.Params = append(mod.Params, sointu.ModuleParam{Name: p.vtable.Name(&p)})
+		k = len(mod.Params)
+	}
+	m.bindParam(module, unit, name, k)
+	return true
 }
 
 // Actions on the units that involve modules
 
 // MakeModule returns an Action to make a module of the selected units: they
 // become the units of a new module, and a module unit using it takes their
-// place.
+// place. A send from outside them to one of them can only reach the module
+// unit: the parameter that it modulates becomes a parameter of the module,
+// and the send goes to that port of the module unit.
 func (m *UnitModel) MakeModule() Action { return MakeAction((*makeModule)(m)) }
 
 type makeModule UnitModel
@@ -1080,8 +1154,118 @@ func (m *makeModule) Do() {
 	call.ID = model.maxID() + 1
 	rest := append([]sointu.Unit{call}, (*list)[r.End:]...)
 	*list = append((*list)[:r.Start:r.Start], rest...)
+	sends := model.sendsTo(units) // before the units are in the song again, as the units of the module
 	m.d.Song.Modules = append(m.d.Song.Modules, mod)
+	model.repointToModuleUnit(sends, len(m.d.Song.Modules)-1, &call)
 	m.d.UnitIndex, m.d.UnitIndex2, m.d.ParamIndex = r.Start, r.Start, 0
+}
+
+// sendTo is a send of the song to one of some units: the send, where it is,
+// for telling the user, and the index of the unit that it targets.
+type sendTo struct {
+	send   *sointu.Unit
+	where  string
+	target int
+}
+
+// sendsTo returns the sends of the song that target one of the units.
+func (m *Model) sendsTo(units []sointu.Unit) (ret []sendTo) {
+	targets := map[int]int{}
+	for i, u := range units {
+		if u.ID != 0 {
+			targets[u.ID] = i
+		}
+	}
+	find := func(list []sointu.Unit, name string) {
+		for i := range list {
+			if target, ok := targets[list[i].Parameters["target"]]; ok && list[i].Type == "send" {
+				ret = append(ret, sendTo{&list[i], fmt.Sprintf("send #%d of %s", i, name), target})
+			}
+		}
+	}
+	for i := range m.d.Song.Patch {
+		find(m.d.Song.Patch[i].Units, "instrument "+m.d.Song.Patch[i].Name)
+	}
+	for i := range m.d.Song.Modules {
+		find(m.d.Song.Modules[i].Units, "module "+moduleTitle(&m.d.Song.Modules[i]))
+	}
+	return ret
+}
+
+// paramAtPort returns the name that the parameter of a unit with the given
+// port is bound by.
+func (m *Model) paramAtPort(u *sointu.Unit, port int) (name string, ok bool) {
+	if port < 0 {
+		return "", false
+	}
+	if u.Type == "module" {
+		i, found := m.d.Song.Modules.Find(u.Parameters["module"])
+		return sointu.ModuleParamName(port + 1), found && port < len(m.d.Song.Modules[i].Params) && port < sointu.MaxModuleParams
+	}
+	for _, p := range sointu.UnitTypes[u.Type].Params {
+		if !p.CanModulate {
+			continue
+		}
+		if port == 0 {
+			return p.Name, sointu.CanBind(u.Type, p.Name)
+		}
+		port--
+	}
+	return "", false
+}
+
+// repointToModuleUnit makes sends that target units of the module with the
+// given index, from outside it, target the module unit call instead: the
+// parameter that a send modulates is bound to a parameter of the module, to
+// a new one unless it is bound already, and the send goes to that port of
+// the module unit. A stereo send needs two parameters of the module next to
+// each other, for the two ports that it modulates. A send for which the
+// module has no parameter left stays as it is, and the user is told.
+func (m *Model) repointToModuleUnit(sends []sendTo, module int, call *sointu.Unit) {
+	mod := &m.d.Song.Modules[module]
+	type port struct{ unit, port int }
+	bound := map[port]int{} // the parameter of the module, from 1
+	bind := func(p port, name string) {
+		mod.Params = append(mod.Params, sointu.ModuleParam{Name: name})
+		bound[p] = len(mod.Params)
+		m.bindParam(module, &mod.Units[p.unit], name, len(mod.Params))
+	}
+	repoint := func(s sendTo, stereo bool) {
+		p := port{s.target, s.send.Parameters["port"]}
+		name, ok := m.paramAtPort(&mod.Units[p.unit], p.port)
+		if !ok {
+			return // it modulated nothing
+		}
+		next := port{p.unit, p.port + 1}
+		nextName, pair := m.paramAtPort(&mod.Units[p.unit], next.port)
+		pair = pair && stereo
+		k, has := bound[p]
+		switch k2, has2 := bound[next]; {
+		case has && (!pair || has2 && k2 == k+1):
+		case !has && !pair && len(mod.Params) < sointu.MaxModuleParams:
+			bind(p, name)
+		case !has && pair && !has2 && len(mod.Params)+1 < sointu.MaxModuleParams:
+			bind(p, name)
+			bind(next, nextName)
+		case has && pair && !has2 && k == len(mod.Params) && k < sointu.MaxModuleParams:
+			bind(next, nextName)
+		default:
+			m.Alerts().Add(fmt.Sprintf("The %s still targets a unit of the new module: the module has no parameter left for it", s.where), Warning)
+			return
+		}
+		s.send.Parameters["target"], s.send.Parameters["port"] = call.ID, bound[p]-1
+	}
+	// the stereo sends first: they need parameters next to each other
+	for _, stereo := range []bool{true, false} {
+		for _, s := range sends {
+			if (s.send.Parameters["stereo"]&1 == 1) == stereo {
+				repoint(s, stereo)
+			}
+		}
+	}
+	for k := range mod.Params {
+		call.Parameters[sointu.ModuleParamName(k+1)] = mod.Params[k].Default
+	}
 }
 
 // selectedModuleUnit returns the selected unit and the index of its module,
@@ -1097,8 +1281,10 @@ func (m *Model) selectedModuleUnit() (*sointu.Unit, int, bool) {
 
 // InlineModule returns an Action to replace the selected module unit with
 // copies of the units of its module, with the values the module unit gives
-// their bound parameters. Sends to the module unit are left without a
-// target.
+// their bound parameters. A send to the module unit goes to the parameters
+// that its port modulated, as when the song is played (sointu.SendToPorts):
+// it becomes a send to each of them. A send to a port that modulated nothing
+// is left without a target.
 func (m *UnitModel) InlineModule() Action { return MakeAction((*inlineModule)(m)) }
 
 type inlineModule UnitModel
@@ -1111,6 +1297,7 @@ func (m *inlineModule) Do() {
 	model := (*Model)(m)
 	defer model.change("InlineModule", PatchChange, MajorChange)()
 	call, index, _ := model.selectedModuleUnit()
+	_, inModule := model.scopeModule()
 	mod := &m.d.Song.Modules[index]
 	units := make([]sointu.Unit, 0, len(mod.Units))
 	for _, u := range mod.Units {
@@ -1122,7 +1309,7 @@ func (m *inlineModule) Do() {
 			if !ok {
 				continue
 			}
-			if outer, ok := call.Bind[sointu.ModuleParamName(k)]; ok && model.editingModule() {
+			if outer, ok := call.Bind[sointu.ModuleParamName(k)]; ok && inModule {
 				// bound to the module being edited instead, through both
 				// bindings
 				through := sointu.Binding{Param: outer.Param}
@@ -1158,11 +1345,62 @@ func (m *inlineModule) Do() {
 	}
 	model.assignUnitIDs(units) // also moves the sends between them
 	model.assignBuses(units)
+	ids := make([]int, len(units))
+	for j := range units {
+		ids[j] = units[j].ID
+	}
+	ports, callID := mod.Ports(ids), call.ID
 	list := model.unitsPtr()
 	i := m.d.UnitIndex
 	rest := append(units, (*list)[i+1:]...)
 	*list = append((*list)[:i:i], rest...)
-	m.d.UnitIndex2 = i + max(len(units)-1, 0)
+	if callID != 0 {
+		model.repointFromModuleUnit(callID, &ports)
+	}
+	// the units are selected; sends before them may have become several
+	list = model.unitsPtr()
+	if len(ids) > 0 {
+		i = max(slices.IndexFunc(*list, func(u sointu.Unit) bool { return u.ID == ids[0] }), 0)
+	}
+	m.d.UnitIndex, m.d.UnitIndex2 = i, i+max(len(units)-1, 0)
+}
+
+// repointFromModuleUnit replaces the sends of the song to the module unit
+// with the given ID, which is gone, with sends to what its ports modulated.
+func (m *Model) repointFromModuleUnit(id int, ports *sointu.ModulePorts) {
+	replace := func(list *[]sointu.Unit) {
+		var out []sointu.Unit
+		for j, u := range *list {
+			if u.Type != "send" || u.Parameters["target"] != id {
+				if out != nil {
+					out = append(out, u)
+				}
+				continue
+			}
+			if out == nil {
+				out = append(make([]sointu.Unit, 0, len(*list)), (*list)[:j]...)
+			}
+			sends := sointu.SendToPorts(u, ports)
+			if !slices.ContainsFunc(sends, func(s sointu.Unit) bool { return s.Type == "send" }) {
+				u.Parameters["target"] = 0 // it modulated nothing: it stays, without a target
+				out = append(out, u)
+				continue
+			}
+			for k := range sends {
+				sends[k].Disabled = u.Disabled
+			}
+			out = append(out, sends...)
+		}
+		if out != nil {
+			*list = out
+		}
+	}
+	for i := range m.d.Song.Patch {
+		replace(&m.d.Song.Patch[i].Units)
+	}
+	for i := range m.d.Song.Modules {
+		replace(&m.d.Song.Modules[i].Units)
+	}
 }
 
 // UniqueModule returns an Action to give the selected module unit a copy of
@@ -1190,20 +1428,29 @@ func (m *uniqueModule) Do() {
 }
 
 // OpenModule returns an Action to show the module of the selected module
-// unit on the Modules tab.
+// unit on the Modules tab, or with the cursor on an inner unit that is no
+// module unit, the module that the cursor is in.
 func (m *UnitModel) OpenModule() Action { return MakeAction((*openModule)(m)) }
 
 type openModule UnitModel
 
+func (m *openModule) module() (int, bool) {
+	if _, index, ok := (*Model)(m).selectedModuleUnit(); ok {
+		return index, true
+	}
+	_, module, depth := (*Model)(m).scope()
+	return module, depth > 0
+}
 func (m *openModule) Enabled() bool {
-	_, _, ok := (*Model)(m).selectedModuleUnit()
+	_, ok := m.module()
 	return ok
 }
 func (m *openModule) Do() {
-	_, index, _ := (*Model)(m).selectedModuleUnit()
+	index, _ := m.module()
 	m.d.InstrumentTab = InstrumentModulesTab
 	m.d.ModuleIndex = index
 	m.d.UnitIndex, m.d.UnitIndex2, m.d.ParamIndex = 0, 0, 0
+	(*Model)(m).leaveModuleUnits()
 	m.d.UnitSearching = false
 }
 

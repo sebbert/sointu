@@ -280,8 +280,7 @@ func (e *DragList) command(gtx layout.Context, k key.Event) {
 			}
 			return
 		case "A":
-			e.TrackerList.SetSelected(0)
-			e.TrackerList.SetSelected2(e.TrackerList.Count() - 1)
+			e.TrackerList.SelectAll()
 			return
 		}
 	}
@@ -314,7 +313,7 @@ func (e *DragList) command(gtx layout.Context, k key.Event) {
 	}
 	if k.Modifiers.Contain(key.ModShortcut) {
 		e.TrackerList.MoveElements(delta)
-	} else {
+	} else if !k.Modifiers.Contain(key.ModShift) || !e.TrackerList.ExtendSelection(delta) {
 		e.TrackerList.SetSelected(e.TrackerList.Selected() + delta)
 		if !k.Modifiers.Contain(key.ModShift) {
 			e.TrackerList.SetSelected2(e.TrackerList.Selected())

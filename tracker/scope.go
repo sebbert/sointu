@@ -70,7 +70,7 @@ func (s *scopeTriggerChannel) StringOf(value int) string {
 func (s *ScopeModel) Waveform() RingBuffer[[2]float32] { return s.scopeData.waveForm }
 
 func (s *ScopeModel) Envelope() (Envelope, bool) {
-	unit := (*Model)(s).selectedUnit()
+	unit := (*Model)(s).selectedAsPlayed()
 	if unit == nil || unit.Type != "envelope" {
 		return Envelope{}, false
 	}

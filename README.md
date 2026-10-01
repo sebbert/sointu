@@ -402,7 +402,8 @@ module, which the parameters of its units are bound to; sends to the module
 unit modulate them. Modules are expanded before the song is played or
 compiled, so they cost nothing in the player: the units of each module unit
 count towards the units of its instrument. In the tracker, the Modules tab
-edits them; see [FORK.md](FORK.md#modules).
+edits them, and so do the units shown under an unfolded module unit; see
+[FORK.md](FORK.md#modules).
 
 `bufread`, `bufwrite`, `spawn`, `arg`, `window`, `ott`, the spectral units,
 the mc units, bandlimited oscillators and curved envelopes are WebAssembly only

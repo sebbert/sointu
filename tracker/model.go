@@ -3,6 +3,7 @@ package tracker
 import (
 	"encoding/json"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/vsariola/sointu"
@@ -41,6 +42,12 @@ type (
 		// ModuleIndex is the selected module, whose units the unit editor
 		// shows on the Modules tab
 		ModuleIndex int
+		// UnitPath tells which units are being edited when the cursor of the
+		// unit editor is on an inner unit of an unfolded module unit: the IDs
+		// of the module units that the cursor is inside, from the outermost.
+		// UnitIndex and UnitIndex2 are then indices of the units of the
+		// module of the last one. See rows.go.
+		UnitPath []int `json:",omitempty"`
 	}
 
 	Model struct {
@@ -64,16 +71,19 @@ type (
 		// expansion tells how the module units were expanded for the song
 		// that the player last got
 		expansion *sointu.Expansion
-		// expanded is the patch of that song. Under the unfolded module
-		// units, the unit editor shows the units that they stand for, kept
-		// in innerCache
-		expanded   sointu.Patch
-		innerCache innerCache
+		// expanded is the patch of that song: the units that are played
+		// for the inner units of the unfolded module units
+		expanded sointu.Patch
+		// rowCache holds the rows of the unit editor
+		rowCache rowCache
 
 		// modulePresets are the module presets, read from modulePresetPath
 		// or, if it is empty, from the user's configuration directory
 		modulePresets    []modulePreset
 		modulePresetPath string
+		// modulePresetAsked is the name of the module preset that the dialog
+		// asks about: the one to delete, or to save over
+		modulePresetAsked string
 
 		// onChange, when set, is called after each change to the model data,
 		// e.g. to tell a plugin host that its project has unsaved changes
@@ -197,6 +207,8 @@ const (
 	License
 	DeleteUserPresetDialog
 	OverwriteUserPresetDialog
+	DeleteModulePresetDialog
+	OverwriteModulePresetDialog
 )
 
 const (
@@ -353,14 +365,12 @@ func (m *Model) change(kind string, t ChangeType, severity ChangeSeverity) func(
 				m.d.InstrIndex = clamp(m.d.InstrIndex, 0, len(m.d.Song.Patch)-1)
 				m.d.InstrIndex2 = clamp(m.d.InstrIndex2, 0, len(m.d.Song.Patch)-1)
 				m.d.ModuleIndex = clamp(m.d.ModuleIndex, 0, len(m.d.Song.Modules)-1)
-				unitCount := len(m.units())
-				m.d.UnitIndex = clamp(m.d.UnitIndex, 0, unitCount-1)
-				m.d.UnitIndex2 = clamp(m.d.UnitIndex2, 0, unitCount-1)
 				m.d.UnitSearching = false // if we change anything in the patch, reset the unit searching
 				m.d.UnitSearchString = ""
 				m.d.SendSource = 0
 				TrySend(m.broker.ToPlayer, any(m.playerSong().Patch))
 			}
+			m.fixScope() // e.g. the module unit that the cursor was inside was folded
 			if m.changeType&BPMChange != 0 {
 				TrySend(m.broker.ToPlayer, any(BPMMsg{m.d.Song.BPM}))
 				m.Scope().updateBufferLength()
@@ -477,6 +487,7 @@ func (d *modelData) Copy() modelData {
 	ret := *d
 	ret.Song = d.Song.Copy()
 	ret.MIDIBindings = d.MIDIBindings.Copy()
+	ret.UnitPath = slices.Clone(d.UnitPath)
 	return ret
 }
 

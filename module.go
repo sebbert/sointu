@@ -598,7 +598,7 @@ func (s *Song) Expand() (Song, *Expansion) {
 	if !s.HasModules() {
 		return *s, exp
 	}
-	e := expander{song: s, exp: exp, ports: map[int]*[MaxModuleParams][]portTarget{}, bodyIDs: map[int]int{}}
+	e := expander{song: s, exp: exp, ports: map[int]*ModulePorts{}, bodyIDs: map[int]int{}}
 	exp.Units, exp.Buffers = map[int]ExpandedUnit{}, map[int]int{}
 	for _, instr := range s.Patch {
 		for _, u := range instr.Units {
@@ -660,105 +660,165 @@ func (s *Song) Expand() (Song, *Expansion) {
 			if out == nil {
 				out = append(make([]Unit, 0, len(units)), units[:j]...)
 			}
-			// the targets of each channel: a stereo send also modulates
-			// the next port, with the signal below the top of the stack
-			stereo := u.Parameters["stereo"]&1 == 1
-			var targets, below []portTarget
-			if port := u.Parameters["port"]; port >= 0 && port < MaxModuleParams {
-				targets = ports[port]
-				if stereo && port+1 < MaxModuleParams {
-					below = ports[port+1]
-				}
-			}
-			pop := u.Parameters["sendpop"] == 1
-			sent := 0
-			send := func(t portTarget, stereo, pop bool) {
-				c := u.Copy()
-				if sent > 0 {
-					c.ID = 0
-				}
-				sent++
-				c.Parameters["target"], c.Parameters["port"] = t.unit, t.port
-				if t.scale != 1 {
-					// a scaled binding: the send modulates that much less,
-					// to the nearest amount there is
-					amount := 64 + int(math.Round(float64(c.Parameters["amount"]-64)*t.scale))
-					c.Parameters["amount"] = min(max(amount, 0), 128)
-				}
-				c.Parameters["sendpop"] = 0
-				if pop {
-					c.Parameters["sendpop"] = 1
-				}
-				if _, ok := c.Parameters["stereo"]; ok || stereo {
-					c.Parameters["stereo"] = 0
-					if stereo {
-						c.Parameters["stereo"] = 1
-					}
-				}
-				out = append(out, c)
-			}
-			if stereo {
-				// where the two ports are bound to two ports next to each
-				// other of one unit, e.g. the left and right of a receive,
-				// a stereo send does it
-				var pairs, top, rest []portTarget
-				paired := make([]bool, len(below))
-				for _, t := range targets {
-					found := false
-					for j, b := range below {
-						if !paired[j] && !found && b.unit == t.unit && b.port == t.port+1 && b.scale == t.scale {
-							paired[j], found = true, true
-						}
-					}
-					if found {
-						pairs = append(pairs, t)
-					} else {
-						top = append(top, t)
-					}
-				}
-				for j, b := range below {
-					if !paired[j] {
-						rest = append(rest, b)
-					}
-				}
-				alone := len(top) == 0 && len(rest) == 0
-				for k, t := range pairs {
-					send(t, true, pop && alone && k == len(pairs)-1)
-				}
-				if alone && len(pairs) > 0 {
-					continue
-				}
-				// the others as mono sends of each channel: the top one,
-				// then, swapped to the top, the one below
-				for _, t := range top {
-					send(t, false, false)
-				}
-				if len(rest) > 0 {
-					out = append(out, MakeUnit("xch"))
-					for _, t := range rest {
-						send(t, false, false)
-					}
-					out = append(out, MakeUnit("xch"))
-				}
-				if pop {
-					p := MakeUnit("pop")
-					p.Parameters["stereo"] = 1
-					out = append(out, p)
-				}
-				continue
-			}
-			for k, t := range targets {
-				send(t, false, pop && k == len(targets)-1)
-			}
-			if len(targets) == 0 && pop {
-				out = append(out, MakeUnit("pop"))
-			}
+			out = append(out, SendToPorts(u, ports)...)
 		}
 		if out != nil {
 			ret.Patch[i].Units = out
 		}
 	}
 	return ret, exp
+}
+
+// SendToPorts returns the units that a send to a module unit becomes once
+// the units of its module have taken the place of the module unit. ports
+// are the parameters that each port of the module unit modulates: those
+// bound to the parameter of the module with that number.
+//
+// The send becomes a send to each of the parameters of its port, only the
+// last one popping, with its amount times the scale of the parameter; the
+// first one keeps its ID, the others have none. Without any, a popping send
+// becomes a pop, and another send nothing. A stereo send also modulates the
+// parameters of the next port with its other channel: where the two ports
+// modulate two ports next to each other of one unit, by the same scale, it
+// stays a stereo send; the others become mono sends of each channel, with an
+// xch before and after those of the second, and a pop.
+func SendToPorts(u Unit, ports *ModulePorts) (out []Unit) {
+	// the targets of each channel: a stereo send also modulates the next
+	// port, with the signal below the top of the stack
+	stereo := u.Parameters["stereo"]&1 == 1
+	var targets, below []PortTarget
+	if port := u.Parameters["port"]; port >= 0 && port < MaxModuleParams {
+		targets = ports[port]
+		if stereo && port+1 < MaxModuleParams {
+			below = ports[port+1]
+		}
+	}
+	pop := u.Parameters["sendpop"] == 1
+	sent := 0
+	send := func(t PortTarget, stereo, pop bool) {
+		c := u.Copy()
+		if sent > 0 {
+			c.ID = 0
+		}
+		sent++
+		c.Parameters["target"], c.Parameters["port"] = t.Unit, t.Port
+		if t.Scale != 1 {
+			// a scaled binding: the send modulates that much less, to the
+			// nearest amount there is
+			amount := 64 + int(math.Round(float64(c.Parameters["amount"]-64)*t.Scale))
+			c.Parameters["amount"] = min(max(amount, 0), 128)
+		}
+		c.Parameters["sendpop"] = 0
+		if pop {
+			c.Parameters["sendpop"] = 1
+		}
+		if _, ok := c.Parameters["stereo"]; ok || stereo {
+			c.Parameters["stereo"] = 0
+			if stereo {
+				c.Parameters["stereo"] = 1
+			}
+		}
+		out = append(out, c)
+	}
+	if !stereo {
+		for k, t := range targets {
+			send(t, false, pop && k == len(targets)-1)
+		}
+		if len(targets) == 0 && pop {
+			out = append(out, MakeUnit("pop"))
+		}
+		return out
+	}
+	// where the two ports are bound to two ports next to each other of one
+	// unit, e.g. the left and right of a receive, a stereo send does it
+	var pairs, top, rest []PortTarget
+	paired := make([]bool, len(below))
+	for _, t := range targets {
+		found := false
+		for j, b := range below {
+			if !paired[j] && !found && b.Unit == t.Unit && b.Port == t.Port+1 && b.Scale == t.Scale {
+				paired[j], found = true, true
+			}
+		}
+		if found {
+			pairs = append(pairs, t)
+		} else {
+			top = append(top, t)
+		}
+	}
+	for j, b := range below {
+		if !paired[j] {
+			rest = append(rest, b)
+		}
+	}
+	alone := len(top) == 0 && len(rest) == 0
+	for k, t := range pairs {
+		send(t, true, pop && alone && k == len(pairs)-1)
+	}
+	if alone && len(pairs) > 0 {
+		return out
+	}
+	// the others as mono sends of each channel: the top one, then, swapped
+	// to the top, the one below
+	for _, t := range top {
+		send(t, false, false)
+	}
+	if len(rest) > 0 {
+		out = append(out, MakeUnit("xch"))
+		for _, t := range rest {
+			send(t, false, false)
+		}
+		out = append(out, MakeUnit("xch"))
+	}
+	if pop {
+		p := MakeUnit("pop")
+		p.Parameters["stereo"] = 1
+		out = append(out, p)
+	}
+	return out
+}
+
+// PortOf returns the number of the port of the named parameter of a unit of
+// the given type, which the sends to the unit use: the number of parameters
+// that can be modulated before it.
+func PortOf(unitType, param string) int {
+	port := 0
+	for _, q := range UnitTypes[unitType].Params {
+		if q.Name == param {
+			break
+		}
+		if q.CanModulate {
+			port++
+		}
+	}
+	return port
+}
+
+// Ports returns what the ports of a module unit using the module modulate
+// once the units of the module have taken its place, without expanding the
+// module units among them: the bound parameters of the units, and for a
+// module unit among them, its ports. ids are the IDs that the units have
+// there; disabled units, and units without an ID, are no targets.
+func (m *Module) Ports(ids []int) (ports ModulePorts) {
+	for i := range m.Units {
+		u := &m.Units[i]
+		if u.Disabled || i >= len(ids) || ids[i] == 0 {
+			continue
+		}
+		for _, p := range u.BindableParams() {
+			b, ok := u.Bind[p.Name]
+			if !ok || b.Param < 1 || b.Param > MaxModuleParams || !CanBind(u.Type, p.Name) {
+				continue
+			}
+			switch k := moduleParamIndex(p.Name); {
+			case u.Type == "module" && k > 0:
+				ports[b.Param-1] = append(ports[b.Param-1], PortTarget{ids[i], k - 1, b.Scale()})
+			case u.Type != "module" && p.CanModulate:
+				ports[b.Param-1] = append(ports[b.Param-1], PortTarget{ids[i], PortOf(u.Type, p.Name), b.Scale()})
+			}
+		}
+	}
+	return ports
 }
 
 type (
@@ -771,7 +831,7 @@ type (
 		// ports are the parameters that each module unit's ports modulate,
 		// by the ID of the module unit (of its copy, for module units in
 		// modules)
-		ports map[int]*[MaxModuleParams][]portTarget
+		ports map[int]*ModulePorts
 		// bodyIDs maps the IDs of the units of the modules to their module
 		bodyIDs map[int]int
 		// owned maps the IDs of the buffers that belong to a module to the
@@ -784,13 +844,17 @@ type (
 		call, instr int
 	}
 
-	// portTarget is a modulated parameter: the ID of the unit, the number
+	// PortTarget is a modulated parameter: the ID of the unit, the number
 	// of the port, and how much the parameter changes with the parameter
 	// of the module unit (Binding.Scale, through all the modules)
-	portTarget struct {
-		unit, port int
-		scale      float64
+	PortTarget struct {
+		Unit, Port int
+		Scale      float64
 	}
+
+	// ModulePorts are the parameters that each port of a module unit
+	// modulates: the port k-1 those bound to parameter k of its module.
+	ModulePorts [MaxModuleParams][]PortTarget
 )
 
 func (e *expander) problem(format string, args ...any) {
@@ -853,9 +917,9 @@ func (e *expander) instantiate(units []Unit, call *Unit, id int, path []int) []U
 		}
 	}
 	path = append(path, mod.ID)
-	var ports *[MaxModuleParams][]portTarget
+	var ports *ModulePorts
 	if id != 0 {
-		ports = new([MaxModuleParams][]portTarget)
+		ports = new(ModulePorts)
 		e.ports[id] = ports
 	}
 	// the buffers of the module: the first module unit to use them takes
@@ -966,7 +1030,7 @@ func (e *expander) instantiate(units []Unit, call *Unit, id int, path []int) []U
 				if innerPorts := e.ports[inner]; innerPorts != nil {
 					for j, p := range bound {
 						for _, t := range innerPorts[moduleParamIndex(p.Name)-1] {
-							t.scale *= scales[j] // through both bindings
+							t.Scale *= scales[j] // through both bindings
 							ports[boundTo[j]-1] = append(ports[boundTo[j]-1], t)
 						}
 					}
@@ -982,16 +1046,7 @@ func (e *expander) instantiate(units []Unit, call *Unit, id int, path []int) []U
 				if c.ID == 0 {
 					c.ID = newID(u) // so that sends can find it
 				}
-				port := 0
-				for _, q := range UnitTypes[c.Type].Params {
-					if q.Name == p.Name {
-						break
-					}
-					if q.CanModulate {
-						port++
-					}
-				}
-				ports[boundTo[j]-1] = append(ports[boundTo[j]-1], portTarget{c.ID, port, scales[j]})
+				ports[boundTo[j]-1] = append(ports[boundTo[j]-1], PortTarget{c.ID, PortOf(c.Type, p.Name), scales[j]})
 			}
 		}
 		units = append(units, c)
