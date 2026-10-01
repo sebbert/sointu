@@ -8,6 +8,7 @@ import (
 	"gioui.org/f32"
 	"gioui.org/io/event"
 	"gioui.org/io/input"
+	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -168,53 +169,70 @@ func TestZoomScrollLimits(t *testing.T) {
 	}
 }
 
-// The tracker's scroll handler covers the window with a wide range, below
-// everything else: it must get only what the handlers above it leave.
-func TestZoomScrollLeavesScrollToHandlersAbove(t *testing.T) {
+// The tracker's scroll handler covers everything else: it must take all of
+// the scroll while the modifier is held and none of it otherwise, and let
+// the other pointer events through.
+func TestZoomScrollTakesScrollWithModifier(t *testing.T) {
 	wide := pointer.ScrollRange{Min: -1e6, Max: 1e6}
-	tests := []struct {
-		name          string
-		list          pointer.ScrollRange // of the handler above
-		scroll        float32
-		above, bottom float32 // what they should get
-	}{
-		{"list that can scroll", wide, 300, 300, 0},
-		{"list near its end", pointer.ScrollRange{Min: -1e6, Max: 100}, 300, 100, 200},
-		{"list at its end", pointer.ScrollRange{Min: -1e6}, 300, 0, 300},
-		{"list at its end, other way", pointer.ScrollRange{Min: -1e6}, -300, -300, 0},
-	}
-	for _, tt := range tests {
+	for _, modifier := range []bool{false, true} {
 		var r input.Router
 		var ops op.Ops
-		var bottom, above int // the tags
-		bottomFilter := pointer.Filter{Target: &bottom, Kinds: pointer.Scroll, ScrollY: wide}
-		aboveFilter := pointer.Filter{Target: &above, Kinds: pointer.Scroll, ScrollY: tt.list}
+		var top, list int // the tags
+		topFilter := pointer.Filter{Target: &top, Kinds: pointer.Scroll, ScrollY: zoomScrollRange(modifier)}
+		listFilter := pointer.Filter{Target: &list, Kinds: pointer.Scroll | pointer.Press, ScrollY: wide}
 		window := clip.Rect(image.Rect(0, 0, 200, 200)).Push(&ops)
-		event.Op(&ops, &bottom)
-		list := clip.Rect(image.Rect(50, 50, 150, 150)).Push(&ops)
-		event.Op(&ops, &above)
-		list.Pop()
+		area := clip.Rect(image.Rect(50, 50, 150, 150)).Push(&ops)
+		event.Op(&ops, &list)
+		area.Pop()
+		pass := pointer.PassOp{}.Push(&ops)
+		area = clip.Rect(image.Rect(0, 0, 200, 200)).Push(&ops)
+		event.Op(&ops, &top)
+		area.Pop()
+		pass.Pop()
 		window.Pop()
-		r.Event(bottomFilter)
-		r.Event(aboveFilter)
+		r.Event(topFilter)
+		r.Event(listFilter)
 		r.Frame(&ops)
-		r.Queue(pointer.Event{Kind: pointer.Scroll, Source: pointer.Mouse, Position: f32.Pt(100, 100), Scroll: f32.Pt(0, tt.scroll)})
-		scrolled := func(f pointer.Filter) (sum float32) {
+		var mods key.Modifiers
+		if modifier {
+			mods = key.ModShortcut
+		}
+		r.Queue(
+			pointer.Event{Kind: pointer.Scroll, Source: pointer.Mouse, Position: f32.Pt(100, 100), Scroll: f32.Pt(0, 300), Modifiers: mods},
+			pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, Buttons: pointer.ButtonPrimary, Position: f32.Pt(100, 100)},
+		)
+		events := func(f pointer.Filter) (scrolled float32, scrolls, presses int, held bool) {
 			for {
 				e, ok := r.Event(f)
 				if !ok {
-					return sum
+					return
 				}
-				if e, ok := e.(pointer.Event); ok && e.Kind == pointer.Scroll {
-					sum += e.Scroll.Y
+				if e, ok := e.(pointer.Event); ok {
+					switch e.Kind {
+					case pointer.Scroll:
+						scrolled += e.Scroll.Y
+						scrolls++
+						held = e.Modifiers.Contain(key.ModShortcut)
+					case pointer.Press:
+						presses++
+					}
 				}
 			}
 		}
-		if got := scrolled(aboveFilter); got != tt.above {
-			t.Errorf("%v: the handler above got %v, want %v", tt.name, got, tt.above)
+		want := float32(0)
+		if modifier {
+			want = 300
 		}
-		if got := scrolled(bottomFilter); got != tt.bottom {
-			t.Errorf("%v: the handler below got %v, want %v", tt.name, got, tt.bottom)
+		// the top handler gets the event without the modifier too, with no
+		// distance: the tracker reads the modifier from it
+		if got, n, _, held := events(topFilter); got != want || n != 1 || held != modifier {
+			t.Errorf("modifier %v: the top handler got %v in %d events, modifier %v, want %v in 1", modifier, got, n, held, want)
 		}
+		if got, _, presses, _ := events(listFilter); got != 300-want || presses != 1 {
+			t.Errorf("modifier %v: the list got %v and %d presses, want %v and 1", modifier, got, presses, 300-want)
+		}
+	}
+	if zoomModifierKey("darwin") != key.NameCommand || zoomModifierKey("windows") != key.NameCtrl || zoomModifierKey("linux") != key.NameCtrl {
+		t.Errorf("wrong key for the modifier")
 	}
 }

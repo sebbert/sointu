@@ -3,6 +3,7 @@ package gioui
 import (
 	"time"
 
+	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 )
 
@@ -29,8 +30,11 @@ import (
 // handlers under the pointer from the topmost down. Each takes what fits
 // the ScrollRange of its filter and leaves the rest for the next one, so a
 // range of -1 to 1 turned every event into a whole unit. The tracker's
-// handler is the lowest one: a wide range takes nothing from the lists,
-// parameters and plots above it, and it gets only what they leave.
+// handler is the topmost one, so that Ctrl/Cmd+scroll zooms wherever the
+// pointer is: its range is wide while the modifier is held, taking the
+// scroll from the lists, parameters and plots below it, and empty otherwise,
+// leaving all of it to them. The range is set before the event arrives, so
+// the tracker follows the key of the modifier (zoomModifierKey).
 const (
 	// zoomScrollDp is how far to scroll for one step of ZoomFactors, where
 	// the distance is known. The steps are 0.2 apart on average on the log
@@ -50,6 +54,24 @@ const (
 	// ten tenths of a step make a step.
 	zoomScrollSlack = 1e-3
 )
+
+// zoomScrollRange returns the scroll range of the tracker's handler: all of
+// the scroll while the modifier is held, none of it otherwise.
+func zoomScrollRange(modifier bool) pointer.ScrollRange {
+	if modifier {
+		return pointer.ScrollRange{Min: -1e6, Max: 1e6}
+	}
+	return pointer.ScrollRange{}
+}
+
+// zoomModifierKey returns the key of key.ModShortcut on the platform goos
+// (runtime.GOOS).
+func zoomModifierKey(goos string) key.Name {
+	if goos == "darwin" || goos == "ios" {
+		return key.NameCommand
+	}
+	return key.NameCtrl
+}
 
 // zoomScrollSteps returns how many steps of ZoomFactors the scroll event is
 // worth, on the platform goos (runtime.GOOS): positive zooms in. pxPerDp is
