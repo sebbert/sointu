@@ -752,3 +752,176 @@
     (global.set $limiterWRK (i32.add (global.get $limiterWRK) (i32.const 4112)))
 )
 {{end}}
+
+{{- if .HasOp "softclip"}}
+;;-------------------------------------------------------------------------------
+;;   SOFTCLIP opcode: clipper with a soft knee
+;;-------------------------------------------------------------------------------
+;;   Mono:   x   ->  softclip(x*drive)
+;;   Stereo: l r ->  softclip(l*drive) softclip(r*drive)
+;;   With the operand 1, at twice the sample rate: the state of the unit is
+;;   then the four allpasses of the half-band filters, for each channel.
+;;   Matches softclip and softclipOversampled in vm/shaping.go, where they
+;;   are explained.
+;;-------------------------------------------------------------------------------
+(func $su_op_softclip (param $stereo i32) (local $drive f32)
+{{- if .SoftclipOversample}} (local $over i32){{end}}
+    (local.set $drive (f32.add (f32.const 1) (f32.mul (f32.const 7) (call $input (i32.const {{.InputNumber "softclip" "drive"}})))))
+{{- if .SoftclipOversample}}
+    (local.set $over (call $scanOperand))
+    (f32.store (global.get $sp) (call $softclipOver (f32.mul (call $peek) (local.get $drive)) (global.get $WRK) (local.get $over)))
+{{- else}}
+    (f32.store (global.get $sp) (call $softclip (f32.mul (call $peek) (local.get $drive))))
+{{- end}}
+{{- if .Stereo "softclip"}}
+    (if (local.get $stereo) (then
+{{- if .SoftclipOversample}}
+        (f32.store offset=4 (global.get $sp) (call $softclipOver (f32.mul (call $peek2) (local.get $drive)) (i32.add (global.get $WRK) (i32.const 16)) (local.get $over)))
+{{- else}}
+        (f32.store offset=4 (global.get $sp) (call $softclip (f32.mul (call $peek2) (local.get $drive))))
+{{- end}}
+    ))
+{{- end}}
+)
+
+;; $softclip leaves $x up to the knee, bends it from there to full scale,
+;; reached at 2 - knee, and keeps it there
+(func $softclip (param $x f32) (result f32) (local $a f32) (local $knee f32) (local $t f32)
+    (local.set $knee (call $input (i32.const {{.InputNumber "softclip" "knee"}})))
+    (local.set $a (f32.abs (local.get $x)))
+    (if (f32.gt (local.get $a) (local.get $knee)) (then
+        (if (f32.ge (local.get $a) (f32.sub (f32.const 2) (local.get $knee))) (then
+            (local.set $a (f32.const 1))
+        )(else
+            (local.set $t (f32.sub (local.get $a) (local.get $knee)))
+            (local.set $a (f32.sub (local.get $a) (f32.div
+                (f32.mul (local.get $t) (local.get $t))
+                (f32.mul (f32.const 4) (f32.sub (f32.const 1) (local.get $knee)))
+            )))
+        ))
+    ))
+    (f32.copysign (local.get $a) (local.get $x))
+)
+{{- if .SoftclipOversample}}
+
+;; $softclipOver is $softclip, at twice the sample rate if $over: the two
+;; allpasses of the half-band filter give two samples for $x, and the same
+;; two, crossed, the average of the two after the clipper. Their states are
+;; at $s.
+(func $softclipOver (param $x f32) (param $s i32) (param $over i32) (result f32)
+    (if (i32.eqz (local.get $over)) (then
+        (return (call $softclip (local.get $x)))
+    ))
+    (call $allpass (i32.add (local.get $s) (i32.const 12))
+        (call $softclip (call $allpass (local.get $s) (local.get $x) (f32.const 0.19104233)))
+        (f32.const 0.66083542)
+    )
+    (local.set $x (call $softclip (call $allpass (i32.add (local.get $s) (i32.const 4)) (local.get $x) (f32.const 0.66083542))))
+    (f32.add (call $allpass (i32.add (local.get $s) (i32.const 8)) (local.get $x) (f32.const 0.19104233)))
+    (f32.mul (f32.const 0.5))
+)
+
+;; $allpass is a first-order allpass with the coefficient $a and the state at $s
+(func $allpass (param $s i32) (param $x f32) (param $a f32) (result f32) (local $y f32)
+    (local.set $y (f32.add (f32.mul (local.get $a) (local.get $x)) (f32.load (local.get $s))))
+    (f32.store (local.get $s) (f32.sub (local.get $x) (f32.mul (local.get $a) (local.get $y))))
+    (local.get $y)
+)
+{{- end}}
+{{end}}
+
+{{- if .HasOp "width"}}
+;;-------------------------------------------------------------------------------
+;;   WIDTH opcode: scale the side signal of a stereo signal
+;;-------------------------------------------------------------------------------
+;;   Stereo: l r ->  m+s m-s, where m = (l+r)/2 and s = (l-r)/2 * 2*width,
+;;           after a high-pass at lowcut, whose low and band are the state.
+;;   Matches width in vm/shaping.go.
+;;-------------------------------------------------------------------------------
+(func $su_op_width (param $stereo i32) (local $mid f32) (local $side f32)
+{{- if .WidthLowcut}} (local $freq2 f32) (local $low f32){{end}}
+    (local.set $mid (f32.mul (f32.add (call $peek) (call $peek2)) (f32.const 0.5)))
+    (local.set $side (f32.mul (f32.sub (call $peek) (call $peek2)) (f32.const 0.5)))
+{{- if .WidthLowcut}}
+    (local.set $freq2 (f32.mul
+        (call $input (i32.const {{.InputNumber "width" "lowcut"}}))
+        (call $input (i32.const {{.InputNumber "width" "lowcut"}}))
+    ))
+    (local.set $low (f32.add (f32.load (global.get $WRK)) (f32.mul (local.get $freq2) (f32.load offset=4 (global.get $WRK)))))
+    (local.set $side (f32.sub
+        (f32.sub (local.get $side) (local.get $low))
+        (f32.mul (f32.const 1.4142135) (f32.load offset=4 (global.get $WRK)))
+    ))
+    (f32.store offset=4 (global.get $WRK) (f32.add (f32.load offset=4 (global.get $WRK)) (f32.mul (local.get $freq2) (local.get $side))))
+    (f32.store (global.get $WRK) (local.get $low))
+{{- end}}
+    (local.set $side (f32.mul (local.get $side) (f32.add
+        (call $input (i32.const {{.InputNumber "width" "width"}}))
+        (call $input (i32.const {{.InputNumber "width" "width"}}))
+    )))
+    (f32.store (global.get $sp) (f32.add (local.get $mid) (local.get $side)))
+    (f32.store offset=4 (global.get $sp) (f32.sub (local.get $mid) (local.get $side)))
+)
+{{end}}
+
+{{- if .HasOp "ladder"}}
+;;-------------------------------------------------------------------------------
+;;   LADDER opcode: low-pass of 24 dB per octave with resonance and drive
+;;-------------------------------------------------------------------------------
+;;   Mono:   x   ->  filtered(x)
+;;   Stereo: l r ->  filtered(l) filtered(r)
+;;   The state of the unit is the four low-passes. Matches ladder in
+;;   vm/shaping.go, where it is explained.
+;;-------------------------------------------------------------------------------
+(func $su_op_ladder (param $stereo i32) (local $g f32) (local $g2 f32) (local $k f32) (local $x f32) (local $y f32) (local $i i32)
+{{- if .Stereo "ladder"}}
+    (call $stereoHelper (local.get $stereo) (i32.const {{div (.GetOp "ladder") 2}}))
+{{- end}}
+    (local.set $g (f32.min
+        (f32.mul
+            (call $input (i32.const {{.InputNumber "ladder" "frequency"}}))
+            (call $input (i32.const {{.InputNumber "ladder" "frequency"}}))
+        )
+        (f32.const 0.99)
+    ))
+    (local.set $k (f32.mul (f32.const 4.5) (call $input (i32.const {{.InputNumber "ladder" "resonance"}}))))
+    ;; the gain, and the feedback against half of the input
+    (local.set $x (f32.mul
+{{- if .LadderDrive}}
+        (f32.mul (call $pop) (f32.add (f32.const 1) (f32.mul (f32.const 7) (call $input (i32.const {{.InputNumber "ladder" "drive"}})))))
+{{- else}}
+        (call $pop)
+{{- end}}
+        (f32.add (f32.const 1) (f32.mul (f32.const 0.5) (local.get $k)))
+    ))
+    ;; the output without the saturator: the input through the low-passes, over 1 + k·g⁴
+    (local.set $y (local.get $x))
+    (loop $estimate
+        (local.set $y (f32.add
+            (f32.mul (local.get $y) (local.get $g))
+            (f32.mul (f32.sub (f32.const 1) (local.get $g)) (f32.load (i32.add (global.get $WRK) (local.get $i))))
+        ))
+        (br_if $estimate (i32.lt_u (local.tee $i (i32.add (local.get $i) (i32.const 4))) (i32.const 16)))
+    )
+    (local.set $g2 (f32.mul (local.get $g) (local.get $g)))
+    (local.set $x (f32.sub (local.get $x) (f32.mul (local.get $k) (f32.div
+        (local.get $y)
+        (f32.add (f32.const 1) (f32.mul (local.get $k) (f32.mul (local.get $g2) (local.get $g2))))
+    ))))
+    ;; the saturator
+    (local.set $x (call $clip (f32.mul (local.get $x) (f32.const 0.6666667))))
+    (local.set $x (f32.mul
+        (f32.sub (local.get $x) (f32.mul (f32.mul (f32.mul (local.get $x) (local.get $x)) (local.get $x)) (f32.const 0.33333334)))
+        (f32.const 1.5)
+    ))
+    ;; the low-passes; $y is the change of each, $i its offset from the last
+    (local.set $i (i32.const 0))
+    (loop $poles
+        (local.set $y (f32.mul (local.get $g) (f32.sub (local.get $x) (f32.load (i32.add (global.get $WRK) (local.get $i))))))
+        (local.set $x (f32.add (local.get $y) (f32.load (i32.add (global.get $WRK) (local.get $i)))))
+        (f32.store (i32.add (global.get $WRK) (local.get $i)) (f32.add (local.get $x) (local.get $y)))
+        (br_if $poles (i32.lt_u (local.tee $i (i32.add (local.get $i) (i32.const 4))) (i32.const 16)))
+    )
+    (call $push (local.get $x))
+)
+{{end}}

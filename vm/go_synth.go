@@ -808,6 +808,24 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 			case opOtt:
 				ott(&otts[0], &params, channels, stack)
 				otts = otts[1:]
+			case opSoftclip:
+				var oversample byte
+				oversample, operands = operands[0], operands[1:]
+				drive := float32(1 + float32(7*params[0]))
+				for i := range channels {
+					x := float32(stack[l-1-i] * drive)
+					if oversample != 0 {
+						stack[l-1-i] = softclipOversampled(unit.state[4*i:4*i+4], x, params[1])
+					} else {
+						stack[l-1-i] = softclip(x, params[1])
+					}
+				}
+			case opWidth:
+				stack[l-1], stack[l-2] = width(&unit.state, stack[l-1], stack[l-2], params[0], params[1])
+			case opLadder:
+				for i := range channels {
+					stack[l-1-i] = ladder(unit.state[4*i:4*i+4], stack[l-1-i], params[0], params[1], params[2])
+				}
 			case opLimiter:
 				var lookahead byte
 				lookahead, operands = operands[0], operands[1:]

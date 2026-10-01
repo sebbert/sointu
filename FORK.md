@@ -66,6 +66,9 @@ All of these are Go and wasm only.
 | `spcross`, `spcomb` | Cross-synthesis/vocoder with another spectrum; resonances at the harmonics of up to 8 notes held in another instrument |
 | `ott` | A three-band upward and downward compressor, like Ableton's OTT preset: crossovers at 88.3 Hz and 2.5 kHz, `depth`, `time`, `upward`, `downward`, a gain per band |
 | `limiter` | A lookahead peak limiter: `threshold`, `release`, `lookahead` (0 to 11.5 ms, which is how late its output is), and `drive`, a gain before it of up to 18 dB that costs nothing in songs that do not use it. See [limiter](#limiter) |
+| `softclip` | A clipper with a soft knee, a saturator that leaves the signal as it is below `knee`: `drive` (up to 18 dB), `knee`, and `oversample`, which clips at twice the sample rate against aliasing and costs nothing in songs that do not use it. See [softclip, width and ladder](#softclip-width-and-ladder) |
+| `width` | Stereo width: scales the side signal (0 mono, 64 as it is, 128 double), with `lowcut`, a high-pass on the side signal that makes the bass mono and costs nothing in songs that do not use it |
+| `ladder` | A low-pass of 24 dB per octave with resonance up to self-oscillation, like a Moog ladder: `frequency`, `resonance`, and `drive` into its saturator, up to 18 dB, that costs nothing in songs that do not use it |
 | `mcspread`, `mcsum` | Spread a mono or stereo signal over a bus of 8 channels (replacing or adding), and sum it back (with `width`) |
 | `mcdelay`, `mcmix`, `mcfilter`, `mcloop`, `mcloopend` | Change a bus in place every sample: a delay line per channel (seeded lengths, modulation, note tracking, allpass, per-band decay), orthogonal mixes (Hadamard, Householder, seeded shuffle), one-pole filters, and a feedback loop. See [mc units](#mc-units) |
 
@@ -227,6 +230,65 @@ player, `GoSynth.limiters`, `Patch.NumLimiters()` of them. They are not
 cleared when a note is triggered. Without limiters, nothing of it is in the
 player. Tests: `vm/limiter_test.go` and `vm/compiler/wasm_limiter_test.go`
 (the wasm player renders it like the Go synth, with and without drive).
+
+## softclip, width and ladder
+
+Three units for shaping a signal, in `vm/shaping.go`. Their state fits in
+the unit. They are tuned by measurement, not by ear.
+
+`softclip` multiplies the signal by `drive` (1 + 7·drive, up to 18 dB) and
+clips it with a knee: up to the level `knee` it passes as it is, from there
+it bends, |y| = |x| - (|x| - knee)² / (4·(1 - knee)), and at 2 - knee it
+reaches full scale with no slope left and stays there. `knee` 128 is the
+`clip` unit, `knee` 0 bends from silence. Unlike `distort`, a signal below
+the knee is not changed at all, so on a bus or the master it only acts on
+the peaks.
+
+With `oversample` 1 it clips at twice the sample rate. The half-band filter
+is two first-order allpasses, (A0(z²) + z⁻¹·A1(z²))/2 with the coefficients
+0.19104233 and 0.66083542: flat to 15.4 kHz, 44 dB down from 28.7 kHz. The
+two allpasses give two samples for each input sample; after the clipper the
+same two, crossed, give the average. A signal below the knee comes out
+through A0·A1, an allpass: every frequency keeps its level, the phases
+shift. Measured on a 5 kHz tone clipped hard at +12 dB, the overtones that
+fold back to 9.1 and 0.9 kHz drop from -20 and -26 dB to -47 and -51 dB;
+the one that folds to 19.1 kHz from -14 to -28 dB, as the filter is not
+steep there. Peaks can exceed full scale a little after the filter (up to
+about 2 dB on such a signal): put a `clip` after it where nothing may.
+`oversample` is an operand after the transformed parameters, and it and
+the code are only in songs with such a softclip (`SoftclipOversample`). The
+state is the four allpasses for each channel.
+
+`width` splits left and right into mid, (l + r)/2, and side, (l - r)/2,
+multiplies the side by 2·width and puts them back: 0 is mono, 64 leaves the
+signal, 128 doubles the side. `lowcut` is a high-pass on the side signal
+before that, a state-variable filter like the `filter` unit's with the same
+frequencies and Q 0.707: below it the signal becomes mono (measured with
+`lowcut` 17, about 120 Hz: the side of a 40 Hz tone 19 dB down, of a 2 kHz
+tone unchanged). The unit takes and leaves a stereo signal; it has no
+`stereo` parameter. `lowcut` is optional like `drive` of the limiter
+(`WidthLowcut`).
+
+`ladder` is four one-pole low-passes in a row with the output fed back into
+the input, 4.5·resonance times, through a saturator, 1.5·(u - u³/3) for
+u = x/1.5 clipped to ±1. The low-passes are trapezoidal,
+y = G·x + (1 - G)·s with G = frequency² (at most 0.99), which puts the
+cutoff at atan(G/(1 - G))/π·44100 Hz: 223 Hz at 16, 4.5 kHz at 64,
+12.8 kHz at 96. The feedback has no delay: the output the ladder would have
+without the saturator, L(x)/(1 + k·G⁴) with L(x) the input through the four
+low-passes, is computed first and subtracted from the input. So the
+resonance sits at the cutoff and is equally strong at every cutoff, which
+it is not with the usual one sample of delay in the loop; from `resonance`
+114 the filter oscillates by itself, at a level of about 0.2. The feedback
+is taken against half of the input, so the bass drops by at most 4.6 dB
+with the resonance instead of 14.8 dB. `drive` (1 + 7·drive) pushes the
+input into the saturator; it is optional (`LadderDrive`). A signal at full
+scale is already bent by the saturator at `drive` 0: a sine of level 0.5
+gets about 1 % of third harmonic.
+
+Tests: `vm/shaping_test.go` and `vm/compiler/wasm_shaping_test.go` (the wasm
+player renders them like the Go synth, with and without the optional
+parts, which are only in the players of songs that use them).
 
 ## mc units
 
@@ -764,6 +826,15 @@ songs that need any of it for x86.
    lookahead is an operand byte after the transformed parameters, and its
    last transformed parameter, `drive`, is only there in songs that use it.
    The x86 template has a stub; the compiler refuses limiter for x86.
+
+   `softclip`, `width` and `ladder` keep their state in the unit, as in
+   `vm/shaping.go`: the four allpasses of an oversampled softclip at
+   floats 0 to 3 for the left channel and 4 to 7 for the right, the low and
+   band of the lowcut of width at floats 0 and 1, the four low-passes of a
+   ladder at floats 0 to 3 and 4 to 7. softclip has an operand byte after
+   the transformed parameters in songs with an oversampled softclip; the
+   lowcut of width and the drive of ladder are only there in songs that use
+   them. The x86 template has stubs; the compiler refuses the units for x86.
 
 9. **Bandlimited oscillators.** Flags 0x04 with 0x40, 0x20 or 0x10 mean
    bandlimited, so the gate test becomes flags & 0x74 == 0x04. Keep the

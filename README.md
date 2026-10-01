@@ -341,6 +341,16 @@ turning the gain down ahead of a peak, by delaying the signal by `lookahead`
 come out a few tenths of a dB above it, so put a `clip` after it where nothing
 may exceed full scale. A stereo `limiter` uses the same gain on both channels.
 
+`softclip` is a clipper with a soft knee: the signal, times `drive` (up to
+18 dB), passes as it is up to `knee` and bends from there to full scale.
+`knee` 128 is a hard clip. With `oversample` it clips at twice the sample
+rate, which keeps most of the overtones it makes from folding back as
+aliases. `width` scales the side signal of a stereo signal (0 is mono, 64
+leaves it, 128 doubles it); its `lowcut` makes the signal mono below a
+frequency, to keep the bass in the middle. `ladder` is a low-pass of 24 dB
+per octave with `resonance` up to self-oscillation and `drive` into its
+saturator, like the transistor ladder of a Moog.
+
 The naive waveforms of the `oscillator` alias at high pitches: their
 harmonics above half the sample rate fold back as inharmonic tones. With
 `bandlimit` on, the sine, trisaw and pulse waveforms are smoothed around their
@@ -412,7 +422,8 @@ count towards the units of its instrument. In the tracker, the Modules tab
 edits them, and so do the units shown under an unfolded module unit; see
 [FORK.md](FORK.md#modules).
 
-`bufread`, `bufwrite`, `spawn`, `arg`, `window`, `ott`, `limiter`, the spectral units,
+`bufread`, `bufwrite`, `spawn`, `arg`, `window`, `ott`, `limiter`, `softclip`,
+`width`, `ladder`, the spectral units,
 the mc units, bandlimited oscillators and curved envelopes are WebAssembly only
 for now; envelopes with `curve` 0 compile for x86 as before.
 

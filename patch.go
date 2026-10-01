@@ -346,6 +346,74 @@ var UnitTypes = map[string]UnitType{
 		},
 		StackUse: stackUseEffect,
 	},
+	"softclip": {
+		// softclip is a clipper with a soft knee: a saturator that leaves
+		// the signal as it is below the knee. The signal, times drive
+		// (1 + 7·drive, up to 18 dB), passes unchanged up to the level
+		// knee, bends from there to full scale, which it reaches at 2 - knee
+		// with no slope left, and stays there: for |x| between knee and
+		// 2 - knee, |y| = |x| - (|x| - knee)² / (4·(1 - knee)). knee 128 is
+		// a hard clip like the clip unit; knee 0 bends from the start. With
+		// oversample 1 it clips at twice the sample rate, between two
+		// half-band filters made of allpasses, which keeps most of the
+		// overtones above 22 kHz from folding back into the audible range;
+		// the levels stay, the phases do not. Songs with no such softclip
+		// compile without it.
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "drive", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: driveDisplay},
+			{Name: "knee", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB"
+			}},
+			{Name: "oversample", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+		},
+		StackUse: stackUseEffect,
+	},
+	"width": {
+		// width changes the width of a stereo signal: it scales the side
+		// signal (left - right)/2 by 2·width and leaves the mid signal
+		// (left + right)/2. Width 0 is mono, 64 leaves the signal as it is,
+		// 128 doubles the side. lowcut is a high-pass on the side signal, a
+		// state-variable filter like the filter unit's with the same
+		// frequencies, Q 0.707: below it the signal becomes mono, which
+		// keeps the bass in the middle. Songs that leave lowcut at 0 and do
+		// not modulate it compile without it.
+		Params: []UnitParameter{
+			{Name: "width", MinValue: 0, Default: 64, Neutral: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v * 100 / 64), "%" }},
+			{Name: "lowcut", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				freq := float64(v) / 128
+				return strconv.FormatFloat(math.Asin(freq*freq/2)/math.Pi*44100, 'f', 0, 64), "Hz"
+			}},
+		},
+		StackUse: func(u *Unit) StackUse {
+			return StackUse{Inputs: [][]int{{0, 1}, {0, 1}}, Modifies: []bool{true, true}, NumOutputs: 2}
+		},
+	},
+	"ladder": {
+		// ladder is a low-pass of 24 dB per octave with resonance, like the
+		// transistor ladder of a Moog: four one-pole low-passes in a row
+		// with the output fed back into the input, 4.5·resonance times,
+		// through a saturator that keeps it from growing without bound. The
+		// feedback has no delay, so the resonance is at the cutoff and
+		// equally strong for every cutoff; from resonance 114 it oscillates
+		// by itself. The low-passes are y = G·x + (1 - G)·s with
+		// G = frequency², which puts the cutoff at
+		// atan(G/(1 - G))/π·44100 Hz. The input is the signal times drive
+		// (1 + 7·drive, up to 18 dB), which pushes it into the saturator.
+		// The feedback is taken against half of the input, so that the bass
+		// does not drop as much with the resonance. Songs that leave drive
+		// at 0 and do not modulate it compile without it.
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "frequency", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				g := min(float64(v)*float64(v)/(128*128), 0.99)
+				return strconv.FormatFloat(math.Atan(g/(1-g))/math.Pi*44100, 'f', 0, 64), "Hz"
+			}},
+			{Name: "resonance", MinValue: 0, Default: 32, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v * 100 / 128), "%" }},
+			{Name: "drive", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: driveDisplay},
+		},
+		StackUse: stackUseEffect,
+	},
 	"limiter": {
 		// limiter is a lookahead peak limiter: it keeps the signal below
 		// threshold, with one gain for both channels in stereo. It follows
@@ -374,9 +442,7 @@ var UnitTypes = map[string]UnitType{
 			{Name: "lookahead", MinValue: 0, Default: 32, MaxValue: LimiterLookaheadMax, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
 				return strconv.FormatFloat(float64(LimiterLookahead(v))/44.1, 'f', 1, 64), "ms"
 			}},
-			{Name: "drive", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
-				return strconv.FormatFloat(toDecibel(1+7*float64(v)/128), 'f', 1, 64), "dB"
-			}},
+			{Name: "drive", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: driveDisplay},
 		},
 		StackUse: stackUseEffect,
 	},
@@ -1246,6 +1312,12 @@ func compressorTimeDispFunc(v int) (string, string) {
 	alpha := math.Pow(2, -24*float64(v)/128) // alpha is the "smoothing factor" of first order low pass iir
 	sec := -1 / (44100 * math.Log(1-alpha))  // from smoothing factor to time constant, https://en.wikipedia.org/wiki/Exponential_smoothing
 	return engineeringTime(sec)
+}
+
+// driveDisplay shows the gain of the drive of limiter, softclip and ladder,
+// 1 + 7·v/128: up to 18 dB.
+func driveDisplay(v int) (string, string) {
+	return strconv.FormatFloat(toDecibel(1+7*float64(v)/128), 'f', 1, 64), "dB"
 }
 
 // ottGainDisplay shows the gain of a band of ott, 2^((v/128-0.5)·8): ±24 dB.

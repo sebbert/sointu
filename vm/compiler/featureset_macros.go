@@ -34,6 +34,25 @@ func (p *FeatureSetMacros) LimiterDrive() bool {
 	return vm.TransformsParam(p.FeatureSet, "limiter", "drive")
 }
 
+// SoftclipOversample is true when a softclip unit of the song oversamples;
+// otherwise the players leave the oversampling and its operand out.
+func (p *FeatureSetMacros) SoftclipOversample() bool {
+	return p.SupportsParamValue("softclip", "oversample", 1)
+}
+
+// WidthLowcut is true when the width units of the song have the lowcut
+// parameter; otherwise the players leave the high-pass on the side signal
+// out.
+func (p *FeatureSetMacros) WidthLowcut() bool {
+	return vm.TransformsParam(p.FeatureSet, "width", "lowcut")
+}
+
+// LadderDrive is true when the ladder filters of the song have the drive
+// parameter; otherwise the players leave the gain before the filter out.
+func (p *FeatureSetMacros) LadderDrive() bool {
+	return vm.TransformsParam(p.FeatureSet, "ladder", "drive")
+}
+
 // EnvelopeCurve is true when the envelopes of the song have the curve
 // parameter; otherwise the players leave the curved envelope out.
 func (p *FeatureSetMacros) EnvelopeCurve() bool {

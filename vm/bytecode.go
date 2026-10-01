@@ -363,6 +363,12 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				b.op(opcode + p["stereo"])
 				b.defOperands(unit)
 				b.operand(unit.Parameters["channel"])
+			case "softclip":
+				b.op(opcode + p["stereo"])
+				b.defOperands(unit)
+				if featureSet.SupportsParamValue("softclip", "oversample", 1) {
+					b.operand(p["oversample"] & 1) // songs with no oversampled softclip do without
+				}
 			case "limiter":
 				b.op(opcode + p["stereo"])
 				b.defOperands(unit)

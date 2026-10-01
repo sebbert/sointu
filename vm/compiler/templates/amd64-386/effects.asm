@@ -509,3 +509,30 @@ su_op_compressor_mono:
 {{.Func "su_op_limiter" "Opcode"}}
     ret
 {{end}}
+
+
+{{- if .HasOp "softclip"}}
+;-------------------------------------------------------------------------------
+;   SOFTCLIP opcode: not supported on x86 yet; leaves the signal unchanged
+;-------------------------------------------------------------------------------
+{{.Func "su_op_softclip" "Opcode"}}
+    ret
+{{end}}
+
+
+{{- if .HasOp "width"}}
+;-------------------------------------------------------------------------------
+;   WIDTH opcode: not supported on x86 yet; leaves the signal unchanged
+;-------------------------------------------------------------------------------
+{{.Func "su_op_width" "Opcode"}}
+    ret
+{{end}}
+
+
+{{- if .HasOp "ladder"}}
+;-------------------------------------------------------------------------------
+;   LADDER opcode: not supported on x86 yet; leaves the signal unchanged
+;-------------------------------------------------------------------------------
+{{.Func "su_op_ladder" "Opcode"}}
+    ret
+{{end}}
