@@ -143,19 +143,33 @@ func (m *Model) marshalVoices(r Range) (data []byte, err error) {
 	if !ok {
 		return nil, fmt.Errorf("marshalVoiceRange: slicing tracks failed")
 	}
+	lists := make([][]sointu.Unit, len(patch))
+	for i := range patch {
+		lists[i] = patch[i].Units
+	}
 	return yaml.Marshal(struct {
-		Patch  sointu.Patch
-		Tracks []sointu.Track
-	}{patch, tracks})
+		Patch   sointu.Patch
+		Tracks  []sointu.Track
+		Modules sointu.Modules `yaml:",omitempty"` // the modules that the instruments use
+	}{patch, tracks, m.modulesUsedBy(lists...)})
 }
 
 func (m *Model) unmarshalVoices(voiceIndex int, data []byte, instruments, tracks bool) (instrRange, trackRange Range, ok bool) {
 	var d struct {
-		Patch  sointu.Patch
-		Tracks []sointu.Track
+		Patch   sointu.Patch
+		Tracks  []sointu.Track
+		Modules sointu.Modules
 	}
 	if err := yaml.Unmarshal(data, &d); err != nil {
 		return Range{}, Range{}, false
+	}
+	if instruments && len(d.Modules) > 0 {
+		defer m.change("unmarshalVoices", PatchChange, MajorChange)()
+		lists := make([][]sointu.Unit, len(d.Patch))
+		for i := range d.Patch {
+			lists[i] = d.Patch[i].Units
+		}
+		m.importModules(d.Modules, lists...)
 	}
 	return m.addVoices(voiceIndex, d.Patch, d.Tracks, instruments, tracks)
 }

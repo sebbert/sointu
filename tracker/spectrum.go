@@ -98,14 +98,13 @@ func (m *SpectrumModel) Enabled() Bool { return MakeBoolFromPtr(&m.specAnEnabled
 // BiquadCoeffs returns the biquad filter coefficients of the currently selected
 // filter or belleq, to plot its frequency response on top of the spectrum.
 func (m *SpectrumModel) BiquadCoeffs() (coeffs BiquadCoeffs, ok bool) {
-	i := m.d.InstrIndex
-	u := m.d.UnitIndex
-	if i < 0 || i >= len(m.d.Song.Patch) || u < 0 || u >= len(m.d.Song.Patch[i].Units) {
+	unit := (*Model)(m).selectedUnit()
+	if unit == nil {
 		return BiquadCoeffs{}, false
 	}
-	switch m.d.Song.Patch[i].Units[u].Type {
+	switch unit.Type {
 	case "filter":
-		p := m.d.Song.Patch[i].Units[u].Parameters
+		p := unit.Parameters
 		f := float32(p["frequency"]) / 128
 		f *= f
 		r := float32(p["resonance"]) / 128
@@ -139,9 +138,9 @@ func (m *SpectrumModel) BiquadCoeffs() (coeffs BiquadCoeffs, ok bool) {
 		b2 += float32(p["highpass"])
 		return BiquadCoeffs{a0: a0, a1: a1, a2: a2, b0: b0, b1: b1, b2: b2}, true
 	case "belleq":
-		f := float32(m.d.Song.Patch[i].Units[u].Parameters["frequency"]) / 128
-		band := float32(m.d.Song.Patch[i].Units[u].Parameters["bandwidth"]) / 128
-		gain := float32(m.d.Song.Patch[i].Units[u].Parameters["gain"]) / 128
+		f := float32(unit.Parameters["frequency"]) / 128
+		band := float32(unit.Parameters["bandwidth"]) / 128
+		gain := float32(unit.Parameters["gain"]) / 128
 		omega0 := 2 * f * f
 		alpha := float32(math.Sin(float64(omega0))) * 2 * band
 		A := float32(math.Pow(2, float64(gain-.5)*6.643856189774724))

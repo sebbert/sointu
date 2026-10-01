@@ -20,11 +20,11 @@ type ParamModel Model
 // Wires returns the wires of the current instrument, telling which parameters
 // are connected to which.
 func (m *ParamModel) Wires(yield func(wire Wire) bool) {
-	i := m.d.InstrIndex
-	if i < 0 || i >= len(m.derived.patch) {
+	d := (*Model)(m).derivedUnits()
+	if d == nil {
 		return
 	}
-	for _, wire := range m.derived.patch[i].wires {
+	for _, wire := range d.wires {
 		wire.Highlight = (wire.FromSet && m.d.UnitIndex == wire.From) || (wire.ToSet && m.d.UnitIndex == wire.To.Y && m.d.ParamIndex == wire.To.X)
 		if !yield(wire) {
 			return
@@ -71,12 +71,12 @@ func (s chooseSendTarget) Do() {
 	if sourceID <= 0 || s.ID <= 0 || s.Port < 0 || s.Port > 7 {
 		return
 	}
-	si, su, err := s.d.Song.Patch.FindUnit(sourceID)
-	if err != nil {
+	source := s.d.Song.FindUnit(sourceID)
+	if source == nil || source.Disabled {
 		return
 	}
-	s.d.Song.Patch[si].Units[su].Parameters["target"] = s.ID
-	s.d.Song.Patch[si].Units[su].Parameters["port"] = s.Port
+	source.Parameters["target"] = s.ID
+	source.Parameters["port"] = s.Port
 }
 
 // paramsColumns
@@ -103,19 +103,21 @@ func (pt *ParamModel) SetCursor2(p Point) {
 	pt.d.UnitIndex2 = max(min(p.Y, pt.Height()-1), 0)
 }
 func (pt *ParamModel) Width() int {
-	if pt.d.InstrIndex < 0 || pt.d.InstrIndex >= len(pt.derived.patch) {
+	d := (*Model)(pt).derivedUnits()
+	if d == nil {
 		return 0
 	}
 	// TODO: we hack the +1 so that we always have one extra cell to draw the
 	// comments. Refactor the gioui side so that we can specify the width and
 	// height regardless of the underlying table size
-	return pt.derived.patch[pt.d.InstrIndex].paramsWidth + 1
+	return d.paramsWidth + 1
 }
 func (pt *ParamModel) RowWidth(y int) int {
-	if pt.d.InstrIndex < 0 || pt.d.InstrIndex >= len(pt.derived.patch) || y < 0 || y >= len(pt.derived.patch[pt.d.InstrIndex].params) {
+	d := (*Model)(pt).derivedUnits()
+	if d == nil || y < 0 || y >= len(d.params) {
 		return 0
 	}
-	return len(pt.derived.patch[pt.d.InstrIndex].params[y])
+	return len(d.params[y])
 }
 func (pt *ParamModel) Height() int { return (*Model)(pt).Unit().List().Count() }
 func (pt *ParamModel) MoveCursor(dx, dy int) (ok bool) {
@@ -126,10 +128,11 @@ func (pt *ParamModel) MoveCursor(dx, dy int) (ok bool) {
 	return p == pt.Cursor()
 }
 func (pt *ParamModel) Item(p Point) Parameter {
-	if pt.d.InstrIndex < 0 || pt.d.InstrIndex >= len(pt.derived.patch) || p.Y < 0 || p.Y >= len(pt.derived.patch[pt.d.InstrIndex].params) || p.X < 0 || p.X >= len(pt.derived.patch[pt.d.InstrIndex].params[p.Y]) {
+	d := (*Model)(pt).derivedUnits()
+	if d == nil || p.Y < 0 || p.Y >= len(d.params) || p.X < 0 || p.X >= len(d.params[p.Y]) {
 		return Parameter{}
 	}
-	return pt.derived.patch[pt.d.InstrIndex].params[p.Y][p.X]
+	return d.params[p.Y][p.X]
 }
 func (pt *ParamModel) clear(p Point) {
 	q := pt.Item(p)
@@ -269,6 +272,11 @@ type (
 	// chain of mc units on it, so that it cannot be none.
 	bufferParameter      struct{ spectrum, bus, writer bool }
 	spawnTargetParameter struct{}
+	// moduleParameter is the module of a module unit, and
+	// moduleArgParameter a parameter of the module (Parameter.index, from
+	// 1), which the unit sets
+	moduleParameter      struct{}
+	moduleArgParameter   struct{}
 	spawnRateParameter   struct{ namedParameter }
 	bufferFrameParameter struct{ namedParameter }
 
@@ -313,6 +321,12 @@ func (p *Parameter) SetValue(value int) bool {
 	if value == p.Value() || value < r.Min || value > r.Max {
 		return false
 	}
+	if _, ok := p.Bound(); ok {
+		// the value of a bound parameter is the default of the parameter
+		// of the module
+		defer p.m.change("BoundParameter", PatchChange, MinorChange)()
+		defer p.m.syncBoundDefault(p.unit, p.up.Name)
+	}
 	return p.vtable.SetValue(p, value)
 }
 func (p *Parameter) Add(delta int, snapToGrid bool) bool {
@@ -336,6 +350,9 @@ func (p *Parameter) Neutral() int {
 	if p.vtable == nil {
 		return 0
 	}
+	if a, ok := p.vtable.(*moduleArgParameter); ok {
+		return a.param(p).Neutral
+	}
 	if p.up != nil {
 		return p.up.Neutral
 	}
@@ -357,11 +374,20 @@ func (p *Parameter) Hint() ParameterHint {
 	if p.vtable == nil {
 		return ParameterHint{}
 	}
-	return p.vtable.Hint(p)
+	hint := p.vtable.Hint(p)
+	if name, ok := p.Bound(); ok {
+		// the module units set it; the value is the default of the module
+		hint.Label = "← " + name + ": " + hint.Label
+	}
+	return hint
 }
 func (p *Parameter) Reset() {
 	if p.vtable == nil {
 		return
+	}
+	if _, ok := p.Bound(); ok {
+		defer p.m.change("BoundParameter", PatchChange, MinorChange)()
+		defer p.m.syncBoundDefault(p.unit, p.up.Name)
 	}
 	p.vtable.Reset(p)
 }
@@ -864,4 +890,133 @@ func (b *bufferFrameParameter) Hint(p *Parameter) ParameterHint {
 }
 func (b *bufferFrameParameter) RoundToGrid(p *Parameter, val int, up bool) int {
 	return roundToGrid(val, 441, up) // 10 ms
+}
+
+// Bound returns the name of the parameter of the module that the parameter
+// is bound to, if it is a parameter of a unit of a module and bound.
+func (p *Parameter) Bound() (name string, ok bool) {
+	if p.unit == nil || p.up == nil || p.vtable == nil {
+		return "", false
+	}
+	k, ok := p.unit.Bind[p.up.Name]
+	if !ok {
+		return "", false
+	}
+	if i := p.m.d.ModuleIndex; p.m.editingModule() && i >= 0 && i < len(p.m.d.Song.Modules) {
+		if mp, ok := p.m.d.Song.Modules.Param(i, k); ok {
+			return mp.Name, true
+		}
+	}
+	return sointu.ModuleParamName(k), true
+}
+
+// moduleParameter vtable: the module that a module unit stands for. Its
+// values are 0 for none and i+1 for the i-th module of the song; the unit
+// stores the ID of the module.
+
+func (b *moduleParameter) Value(p *Parameter) int {
+	if i, ok := p.m.d.Song.Modules.Find(p.unit.Parameters["module"]); ok {
+		return i + 1
+	}
+	return 0
+}
+func (b *moduleParameter) SetValue(p *Parameter, v int) bool {
+	mods := p.m.d.Song.Modules
+	if v < 0 || v > len(mods) {
+		return false
+	}
+	if v > 0 && p.m.wouldUseItself(mods[v-1].ID) {
+		p.m.Alerts().Add("A module cannot use itself", Warning)
+		return false
+	}
+	defer p.m.change("ModuleParameter", PatchChange, MajorChange)()
+	if v == 0 {
+		p.unit.Parameters["module"] = 0
+		return true
+	}
+	// the parameters of the new module start from its defaults
+	u := mods.MakeModuleUnit(v - 1)
+	for k := 1; k <= sointu.MaxModuleParams; k++ {
+		delete(p.unit.Parameters, sointu.ModuleParamName(k))
+		delete(p.unit.Bind, sointu.ModuleParamName(k))
+	}
+	for name, value := range u.Parameters {
+		p.unit.Parameters[name] = value
+	}
+	return true
+}
+func (b *moduleParameter) Range(p *Parameter) RangeInclusive {
+	return RangeInclusive{Min: 0, Max: len(p.m.d.Song.Modules)}
+}
+func (b *moduleParameter) Type(p *Parameter) ParameterType { return ChoiceParameter }
+func (b *moduleParameter) Name(p *Parameter) string        { return "module" }
+func (b *moduleParameter) StringOf(p *Parameter, v int) string {
+	if mods := p.m.d.Song.Modules; v > 0 && v <= len(mods) {
+		return moduleTitle(&mods[v-1])
+	}
+	if p.unit.Parameters["module"] != 0 && v == b.Value(p) {
+		return "missing"
+	}
+	return "none"
+}
+func (b *moduleParameter) Hint(p *Parameter) ParameterHint {
+	v := b.Value(p)
+	return ParameterHint{b.StringOf(p, v), v > 0}
+}
+func (b *moduleParameter) RoundToGrid(p *Parameter, val int, up bool) int { return val }
+func (b *moduleParameter) Reset(p *Parameter)                             {}
+
+// moduleArgParameter vtable: a parameter of the module of a module unit.
+// Its name, range and display are those of the parameter of the module; a
+// unit that does not set it has the default of the module.
+
+func (b *moduleArgParameter) param(p *Parameter) sointu.UnitParameter {
+	if i, ok := p.m.d.Song.Modules.Find(p.unit.Parameters["module"]); ok {
+		if ret, ok := p.m.d.Song.Modules.Param(i, p.index); ok {
+			return ret
+		}
+	}
+	return sointu.UnitParameter{Name: sointu.ModuleParamName(p.index)}
+}
+func (b *moduleArgParameter) Value(p *Parameter) int {
+	mp := b.param(p)
+	if v, ok := p.unit.Parameters[p.up.Name]; ok {
+		return min(max(v, mp.MinValue), max(mp.MaxValue, mp.MinValue))
+	}
+	return mp.Default
+}
+func (b *moduleArgParameter) SetValue(p *Parameter, v int) bool {
+	defer p.m.change("ModuleArgParameter"+p.up.Name, PatchChange, MinorChange)()
+	p.unit.Parameters[p.up.Name] = v
+	return true
+}
+func (b *moduleArgParameter) Range(p *Parameter) RangeInclusive {
+	mp := b.param(p)
+	return RangeInclusive{Min: mp.MinValue, Max: max(mp.MaxValue, mp.MinValue)}
+}
+func (b *moduleArgParameter) Type(p *Parameter) ParameterType {
+	mp := b.param(p)
+	if !mp.CanSet {
+		return NoParameter // only a port
+	}
+	if mp.MinValue >= -1 && mp.MaxValue <= 1 {
+		return BoolParameter
+	}
+	return IntegerParameter
+}
+func (b *moduleArgParameter) Name(p *Parameter) string { return b.param(p).Name }
+func (b *moduleArgParameter) Hint(p *Parameter) ParameterHint {
+	mp, val := b.param(p), b.Value(p)
+	if mp.DisplayFunc != nil {
+		valueInUnits, units := mp.DisplayFunc(val)
+		return ParameterHint{fmt.Sprintf("%s %s", valueInUnits, units), true}
+	}
+	return ParameterHint{strconv.Itoa(val), true}
+}
+func (b *moduleArgParameter) RoundToGrid(p *Parameter, val int, up bool) int {
+	return roundToGrid(val, 8, up)
+}
+func (b *moduleArgParameter) Reset(p *Parameter) {
+	defer p.m.change("ResetModuleArgParameter", PatchChange, MinorChange)()
+	p.unit.Parameters[p.up.Name] = b.param(p).Default
 }

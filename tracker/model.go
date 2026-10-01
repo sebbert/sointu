@@ -38,6 +38,9 @@ type (
 		BufferIndex             int
 		PresetSearchString      string
 		MIDIBindings            MIDIBindings
+		// ModuleIndex is the selected module, whose units the unit editor
+		// shows on the Modules tab
+		ModuleIndex int
 	}
 
 	Model struct {
@@ -52,6 +55,10 @@ type (
 		spectra       map[SpectrumSource]SpectrumMsg
 		spectrumWatch []SpectrumSource
 		spectrumAsked map[SpectrumSource]time.Time
+
+		// expansion tells how the module units were expanded for the song
+		// that the player last got
+		expansion *sointu.Expansion
 
 		// onChange, when set, is called after each change to the model data,
 		// e.g. to tell a plugin host that its project has unsaved changes
@@ -182,6 +189,7 @@ const (
 	InstrumentPresetsTab
 	InstrumentCommentTab
 	InstrumentBuffersTab
+	InstrumentModulesTab
 	NumInstrumentTabs
 )
 
@@ -211,7 +219,7 @@ func NewModel(broker *Broker, synthers []sointu.Synther, midiContext MIDIContext
 			}
 		}
 	}
-	TrySend(broker.ToPlayer, any(m.d.Song.Copy())) // we should be non-blocking in the constructor
+	TrySend(broker.ToPlayer, any(m.playerSong())) // we should be non-blocking in the constructor
 	m.scopeData = scopeData{lengthInBeats: 4}
 	m.Scope().updateBufferLength()
 	m.updateDeriveData(SongChange)
@@ -321,20 +329,19 @@ func (m *Model) change(kind string, t ChangeType, severity ChangeSeverity) func(
 			if m.changeType&PatchChange != 0 {
 				m.fixIDCollisions()
 				m.fixUnitParams()
+				m.fixModules()
 				m.fixSpectrumBuffers()
 				m.fixBuses()
 				m.d.InstrIndex = clamp(m.d.InstrIndex, 0, len(m.d.Song.Patch)-1)
 				m.d.InstrIndex2 = clamp(m.d.InstrIndex2, 0, len(m.d.Song.Patch)-1)
-				unitCount := 0
-				if m.d.InstrIndex >= 0 && m.d.InstrIndex < len(m.d.Song.Patch) {
-					unitCount = len(m.d.Song.Patch[m.d.InstrIndex].Units)
-				}
+				m.d.ModuleIndex = clamp(m.d.ModuleIndex, 0, len(m.d.Song.Modules)-1)
+				unitCount := len(m.units())
 				m.d.UnitIndex = clamp(m.d.UnitIndex, 0, unitCount-1)
 				m.d.UnitIndex2 = clamp(m.d.UnitIndex2, 0, unitCount-1)
 				m.d.UnitSearching = false // if we change anything in the patch, reset the unit searching
 				m.d.UnitSearchString = ""
 				m.d.SendSource = 0
-				TrySend(m.broker.ToPlayer, any(m.d.Song.Patch.Copy()))
+				TrySend(m.broker.ToPlayer, any(m.playerSong().Patch))
 			}
 			if m.changeType&BPMChange != 0 {
 				TrySend(m.broker.ToPlayer, any(BPMMsg{m.d.Song.BPM}))
@@ -457,8 +464,8 @@ func (d *modelData) Copy() modelData {
 
 func (m *Model) maxID() int {
 	maxID := 0
-	for _, instr := range m.d.Song.Patch {
-		for _, unit := range instr.Units {
+	for units := range m.d.Song.UnitLists() {
+		for _, unit := range units {
 			if unit.ID > maxID {
 				maxID = unit.ID
 			}
@@ -469,8 +476,8 @@ func (m *Model) maxID() int {
 
 func (m *Model) maxIDandUsed() (maxID int, usedIDs map[int]bool) {
 	usedIDs = make(map[int]bool)
-	for _, instr := range m.d.Song.Patch {
-		for _, unit := range instr.Units {
+	for units := range m.d.Song.UnitLists() {
+		for _, unit := range units {
 			usedIDs[unit.ID] = true
 			if maxID < unit.ID {
 				maxID = unit.ID
@@ -525,20 +532,20 @@ func rewriteSendTargets(units []sointu.Unit, rewrites map[int]int) {
 }
 
 func (m *Model) fixIDCollisions() {
-	// loop over all instruments and units and check if two units have the same
-	// ID. If so, give the later units new IDs. Units without an ID (0), e.g.
-	// in hand-written songs, get one too, without a warning.
+	// loop over all instruments, modules and units and check if two units
+	// have the same ID. If so, give the later units new IDs. Units without an
+	// ID (0), e.g. in hand-written songs, get one too, without a warning.
 	usedIDs := map[int]bool{}
 	needsFix, collided := false, false
 	maxID := 0
-	for i, instr := range m.d.Song.Patch {
-		for j, unit := range instr.Units {
+	for units := range m.d.Song.UnitLists() {
+		for j, unit := range units {
 			if unit.ID == 0 {
 				needsFix = true
 				continue
 			}
 			if usedIDs[unit.ID] {
-				m.d.Song.Patch[i].Units[j].ID = 0
+				units[j].ID = 0
 				needsFix, collided = true, true
 			}
 			if unit.ID > maxID {
@@ -551,11 +558,11 @@ func (m *Model) fixIDCollisions() {
 		if collided {
 			m.Alerts().AddNamed("IDCollision", "Some units had duplicate IDs, they were fixed", Error)
 		}
-		for i, instr := range m.d.Song.Patch {
-			for j, unit := range instr.Units {
+		for units := range m.d.Song.UnitLists() {
+			for j, unit := range units {
 				if unit.ID == 0 {
 					maxID++
-					m.d.Song.Patch[i].Units[j].ID = maxID
+					units[j].ID = maxID
 				}
 			}
 		}
@@ -580,6 +587,9 @@ func (m *Model) fixUnitParams() {
 	for i := range m.d.Song.Patch {
 		fixed = RemoveUnusedUnitParameters(&m.d.Song.Patch[i]) || fixed
 	}
+	for i := range m.d.Song.Modules {
+		fixed = removeUnusedUnitParameters(m.d.Song.Modules[i].Units) || fixed
+	}
 	if fixed {
 		m.Alerts().AddNamed("InvalidUnitParameters", "Some units had invalid parameters, they were removed", Error)
 	}
@@ -588,8 +598,12 @@ func (m *Model) fixUnitParams() {
 // RemoveUnusedUnitParameters removes any parameters from the instrument that are not valid for the unit type.
 // It returns true if any parameters were removed.
 func RemoveUnusedUnitParameters(instr *sointu.Instrument) bool {
+	return removeUnusedUnitParameters(instr.Units)
+}
+
+func removeUnusedUnitParameters(units []sointu.Unit) bool {
 	fixed := false
-	for _, unit := range instr.Units {
+	for _, unit := range units {
 		for paramName := range unit.Parameters {
 			if !validParameters[unit.Type][paramName] {
 				delete(unit.Parameters, paramName)

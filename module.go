@@ -2,6 +2,7 @@ package sointu
 
 import (
 	"fmt"
+	"iter"
 	"strconv"
 )
 
@@ -356,6 +357,40 @@ func bufferParams(unitType string) []string {
 		return p
 	}
 	return BusParams(unitType)
+}
+
+// UnitLists returns the units of every instrument of the song, and then of
+// every module. The slices share the units with the song, so the units can
+// be changed through them.
+func (s *Song) UnitLists() iter.Seq[[]Unit] {
+	return func(yield func([]Unit) bool) {
+		for i := range s.Patch {
+			if !yield(s.Patch[i].Units) {
+				return
+			}
+		}
+		for i := range s.Modules {
+			if !yield(s.Modules[i].Units) {
+				return
+			}
+		}
+	}
+}
+
+// FindUnit returns the unit with the given ID among the units of the
+// instruments and the modules, or nil.
+func (s *Song) FindUnit(id int) *Unit {
+	if id == 0 {
+		return nil
+	}
+	for units := range s.UnitLists() {
+		for i := range units {
+			if units[i].ID == id {
+				return &units[i]
+			}
+		}
+	}
+	return nil
 }
 
 // HasModules reports whether the song has module units to expand.
