@@ -332,10 +332,13 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   semitones when it follows the note (large steps: octaves) and whole
   milliseconds when it is fixed (large steps: 10 ms). The `free` switch of
   the unit gives every value again, shown as stored and stepped as before.
-  It is a setting of the tracker, off for every unit of a loaded song, and
-  not part of the song: the stored values mean what they did. A value that
-  is not on the grid shows as it is (50, or 25.3 for milliseconds) and stays
-  until it is edited. The hint adds beats, rows and milliseconds, and tells
+  It is a setting of the tracker, not part of the song: the stored values
+  mean what they did. A unit starts free if any of its times is not on the
+  grid (a loaded song or preset, a pasted unit, a reverb preset of the
+  unit), so that a step does not move the time to the grid; after that the
+  switch changes only by hand. With the switch off, a value that is not on
+  the grid shows as it is (50, or 25.3 for milliseconds) and stays until it
+  is edited. The hint adds beats, rows and milliseconds, and tells
   when the tempo makes a delay longer than the longest delay line.
 - **Warnings:** spectral units and mc units in instruments with several
   voices, spectra with several writers, and buffers, spectra or buses used

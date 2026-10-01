@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/vsariola/sointu"
 )
 
 // The delay times of a delay unit are edited on a grid of the values a user
@@ -13,6 +15,11 @@ import (
 // tempo, semitones when it follows the note and whole milliseconds when it is
 // fixed. The values stored in the unit are the same either way: 1/48 beats
 // when following the tempo, samples otherwise.
+//
+// A unit starts free if it has a delay time that is not on the grid, so that
+// a step does not move the time to the grid: this is decided once, when the
+// unit is first seen (loaded with a song or a preset, pasted or added) and
+// when a reverb preset sets its times. After that only the user changes it.
 
 const (
 	delayFixed = iota // the values of the notetracking parameter of a delay
@@ -74,14 +81,30 @@ func init() {
 
 // delayGridOf returns the grid of the delay times of the unit of the
 // parameter.
-func delayGridOf(p *Parameter) *delayGrid {
-	switch p.unit.Parameters["notetracking"] {
+func delayGridOf(p *Parameter) *delayGrid { return delayGridOfUnit(p.unit) }
+
+func delayGridOfUnit(unit *sointu.Unit) *delayGrid {
+	switch unit.Parameters["notetracking"] {
 	case delayPitch:
 		return &delayGrids[delayPitch]
 	case delayBPM:
 		return &delayGrids[delayBPM]
 	}
 	return &delayGrids[delayFixed]
+}
+
+// delayOffGrid tells if any delay time of the delay unit is not on its grid.
+func delayOffGrid(unit *sointu.Unit) bool {
+	g := delayGridOfUnit(unit)
+	return slices.ContainsFunc(unit.VarArgs, func(v int) bool { return !g.contains(v) })
+}
+
+// setDelayFree sets if the delay times of the delay unit are edited freely.
+func (m *Model) setDelayFree(unit *sointu.Unit, free bool) {
+	if m.delayFree == nil {
+		m.delayFree = make(map[int]bool)
+	}
+	m.delayFree[unit.ID] = free
 }
 
 func (g *delayGrid) contains(value int) bool {
@@ -331,7 +354,8 @@ func (d *delayTimeParameter) Hint(p *Parameter) ParameterHint {
 
 // delayFreeParameter vtable: whether the delay times of a delay unit can take
 // any value, instead of the values of their grid. It is a setting of the
-// tracker, not of the song: the times are stored the same either way.
+// tracker, not of the song: the times are stored the same either way. See
+// updateParams for how it starts.
 
 func (d *delayFreeParameter) Value(p *Parameter) int {
 	if p.m.delayFree[p.unit.ID] {
@@ -340,14 +364,7 @@ func (d *delayFreeParameter) Value(p *Parameter) int {
 	return 0
 }
 func (d *delayFreeParameter) SetValue(p *Parameter, v int) bool {
-	if p.m.delayFree == nil {
-		p.m.delayFree = make(map[int]bool)
-	}
-	if v == 1 {
-		p.m.delayFree[p.unit.ID] = true
-	} else {
-		delete(p.m.delayFree, p.unit.ID)
-	}
+	p.m.setDelayFree(p.unit, v == 1)
 	return true
 }
 func (d *delayFreeParameter) Range(p *Parameter) RangeInclusive {

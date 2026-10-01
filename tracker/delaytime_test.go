@@ -244,14 +244,82 @@ func TestDelayTimePerLine(t *testing.T) {
 	addTestUnit(m, "delay")
 	_, free := delayTimes(m)
 	free.SetValue(1)
-	if _, other := delayTimesOf(m, 2); len(m.delayFree) != 1 || !m.delayFree[unit().ID] || free.Value() != 1 || other.Name() != "free" || other.Value() != 0 {
+	if _, other := delayTimesOf(m, 2); len(m.delayFree) != 2 || !m.delayFree[unit().ID] || free.Value() != 1 || other.Name() != "free" || other.Value() != 0 {
 		t.Errorf("free units %v, want only %d", m.delayFree, unit().ID)
 	}
 	// and is forgotten with its unit, so that a new unit with its ID starts on the grid
 	m.d.UnitIndex, m.d.UnitIndex2 = 1, 1
 	m.Unit().Delete().Do()
-	if len(m.delayFree) != 0 || m.d.Song.Patch[0].Units[1].Type != "delay" {
-		t.Errorf("free units %v after deleting the unit, want none", m.delayFree)
+	if _, free := delayTimes(m); len(m.delayFree) != 1 || free.Value() != 0 || m.d.Song.Patch[0].Units[1].Type != "delay" {
+		t.Errorf("free units %v after deleting the unit, want only the other, on the grid", m.delayFree)
+	}
+}
+
+// A delay unit starts free if it has a time that is not on the grid; after
+// that the switch changes only when the user changes it.
+func TestDelayTimeStartsFree(t *testing.T) {
+	m, unit := delayTestModel(t)
+	if _, free := delayTimes(m); free.Value() != 0 {
+		t.Errorf("a new delay unit is free")
+	}
+	// load simulates loading a song: the units are seen for the first time
+	load := func(tracking int, times ...int) {
+		func() {
+			defer m.change("Test", PatchChange, MajorChange)()
+			unit().Parameters["stereo"] = 0
+			unit().Parameters["notetracking"] = tracking
+			unit().VarArgs = times
+			m.delayFree = nil
+		}()
+	}
+	for _, c := range []struct {
+		tracking int
+		times    []int
+		free     int
+	}{
+		{delayBPM, []int{48, 36, 16}, 0},
+		{delayBPM, []int{48, 50}, 1},
+		{delayFixed, []int{1103, 4410}, 0},
+		{delayFixed, []int{1116}, 1},
+		{delayPitch, []int{10787, 5394}, 0},
+		{delayPitch, []int{10000}, 1},
+	} {
+		load(c.tracking, c.times...)
+		if _, free := delayTimes(m); free.Value() != c.free {
+			t.Errorf("tracking %d, times %v: free %d, want %d", c.tracking, c.times, free.Value(), c.free)
+		}
+	}
+	// stepping a free time onto the grid does not switch the grid on
+	load(delayBPM, 47)
+	times, _ := delayTimes(m)
+	times[0].Add(1, false)
+	if _, free := delayTimes(m); unit().VarArgs[0] != 48 || free.Value() != 1 {
+		t.Errorf("after a step: time %d, free %d, want 48 and free", unit().VarArgs[0], free.Value())
+	}
+	// and a time set off the grid does not switch it off
+	load(delayBPM, 48)
+	_, free := delayTimes(m)
+	free.SetValue(1)
+	times, _ = delayTimes(m)
+	times[0].Add(2, false)
+	free.SetValue(0)
+	if _, free := delayTimes(m); unit().VarArgs[0] != 50 || free.Value() != 0 {
+		t.Errorf("time %d, free %d, want 50 on the grid", unit().VarArgs[0], free.Value())
+	}
+	// a reverb preset sets times that are not whole milliseconds
+	load(delayBPM, 48)
+	for x := 0; x < m.Params().RowWidth(1); x++ {
+		if p := m.Params().Item(Point{x, 1}); p.Name() == "reverb" {
+			p.SetValue(1)
+		}
+	}
+	times, free = delayTimes(m)
+	if len(times) != 16 || free.Value() != 1 {
+		t.Fatalf("reverb preset: %d times, free %d, want 16 and free", len(times), free.Value())
+	}
+	times[0].Add(1, false)
+	if got := unit().VarArgs[0]; got != 1117 {
+		t.Errorf("a step from 1116 samples gives %d, want 1117", got)
 	}
 }
 

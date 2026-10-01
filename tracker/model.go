@@ -46,8 +46,9 @@ type (
 
 		trackerHidden bool
 
-		// delayFree are the IDs of the delay units whose delay times are
-		// edited freely instead of on a grid; see delayFreeParameter
+		// delayFree tells, by the ID of every delay unit, if its delay
+		// times are edited freely instead of on a grid; see
+		// delayFreeParameter
 		delayFree map[int]bool
 
 		// spectra are the latest spectra of the sources in spectrumWatch,

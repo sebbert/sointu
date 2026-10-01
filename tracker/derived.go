@@ -101,11 +101,19 @@ func (m *Model) buildInstrumentTitles() {
 
 func (m *Model) updateParams() {
 	for id := range m.delayFree { // forget the units that are gone
-		if _, _, err := m.d.Song.Patch.FindUnit(id); err != nil {
+		if i, u, err := m.d.Song.Patch.FindUnit(id); err != nil || m.d.Song.Patch[i].Units[u].Type != "delay" {
 			delete(m.delayFree, id)
 		}
 	}
 	for i, instr := range m.d.Song.Patch {
+		for u := range instr.Units {
+			// a delay unit seen for the first time: loaded, pasted or added
+			if unit := &instr.Units[u]; unit.Type == "delay" {
+				if _, ok := m.delayFree[unit.ID]; !ok {
+					m.setDelayFree(unit, delayOffGrid(unit))
+				}
+			}
+		}
 		setSliceLength(&m.derived.patch[i].params, len(instr.Units))
 		paramsWidth, previews := 0, false
 		for u := range instr.Units {

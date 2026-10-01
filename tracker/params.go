@@ -670,6 +670,7 @@ func (r *reverbParameter) SetValue(p *Parameter, v int) bool {
 	p.unit.Parameters["notetracking"] = 0
 	p.unit.VarArgs = make([]int, len(entry.varArgs))
 	copy(p.unit.VarArgs, entry.varArgs)
+	p.m.setDelayFree(p.unit, delayOffGrid(p.unit)) // the times of the presets are not whole milliseconds
 	return true
 }
 func (r *reverbParameter) Range(p *Parameter) RangeInclusive {
