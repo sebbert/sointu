@@ -473,13 +473,44 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
 - **Unfolding:** a module unit is like a section that can be collapsed: the
   chevron on its row in the unit list and the rack, or in the footer
   (Ctrl+Alt+G), unfolds it. Its inner units then follow it, set into the
-  rack, darker and faint: the units that it stands for, as the synth runs
-  them, with the values it gives the bound parameters and with their
-  previews. The signals run through the module unit into them; those only
-  passing by stay bright. They cannot be changed or selected: the cursor
-  moves past them. Which module units are unfolded is saved with the song
-  (`unfolded` of the unit, a hint like `mute` of an instrument). The footer
-  shows how many of the 63 units the instrument has once expanded.
+  rack, darker and indented: the units of its module, as they are in the
+  module. A module unit among them can be unfolded in turn. The signals run
+  through the module unit into them; those only passing by stay bright.
+  Which module units are unfolded is saved with the song (`unfolded` of the
+  unit, a hint like `mute` of an instrument). The footer shows how many of
+  the 63 units the instrument has once expanded.
+- **Editing inner units:** the cursor goes through the inner units like
+  through any other row, and what is done there is done to the module, so to
+  every module unit using it: changing parameters by mouse or keyboard,
+  adding, deleting, moving, disabling, copying and pasting units, changing
+  their type and comment, making a module of them. The footer then says
+  `editing module <name>, used N×`, and the rows showing that module have a
+  line down their left edge, also under other module units using it.
+  - A parameter bound to a parameter of the module shows the value that the
+    module unit above gives it, and changing it changes that value of the
+    module unit, through the binding, like turning the knob on the row of
+    the module unit: the module and the other module units stay as they are.
+    With a scaled binding, a step is a step of the parameter of the module.
+    On the Modules tab, where the module unit is a unit of the module being
+    edited and its parameter may be bound too, it changes what the knob of
+    the module unit changes there: the default.
+  - `Bind` in the footer binds the parameter under the cursor to a
+    parameter of the module, or to a new one named after it, or unbinds it.
+  - A selection stays in one list of units: the units of the instrument, or
+    the inner units of one module unit. Shift+arrows from a module unit go
+    past its inner units; moving out of the list without Shift leaves the
+    selection behind. Delete deletes inner units, never the module unit that
+    the cursor is inside, and leaves the last inner unit: a module is
+    emptied on the Modules tab.
+  - Ctrl+Alt+G on an inner unit folds the module unit that the cursor is
+    inside, and Ctrl+Shift+G shows its module on the Modules tab.
+  - Previews, spectra and the curves of the selected filter or envelope are
+    those of the unit played for the module unit above. If a module unit
+    uses a module more than once through other modules, they are those of
+    the first copy.
+  - `tracker/rows.go`: the rows, `modelData.UnitPath` (the module units that
+    the cursor is inside) and `Model.scope` (the units being edited);
+    `innerBinding` in `tracker/params.go` (the bound parameters).
 - **Module presets:** the Presets menu of the Modules tab saves the selected
   module, with the modules it uses, as a file in `sointu/modules` of the
   user's configuration directory, and adds a saved one to the song.

@@ -126,7 +126,10 @@ func (v *modulePresetChoice) SetValue(i int) bool {
 	ids := m.importModules(mods)
 	if index, ok := m.d.Song.Modules.Find(ids[mods[len(mods)-1].ID]); ok {
 		m.d.ModuleIndex = index
-		m.d.UnitIndex, m.d.UnitIndex2, m.d.ParamIndex = 0, 0, 0
+		if m.editingModule() {
+			m.d.UnitIndex, m.d.UnitIndex2, m.d.ParamIndex = 0, 0, 0
+			m.leaveModuleUnits()
+		}
 	}
 	return true
 }

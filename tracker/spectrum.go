@@ -98,7 +98,7 @@ func (m *SpectrumModel) Enabled() Bool { return MakeBoolFromPtr(&m.specAnEnabled
 // BiquadCoeffs returns the biquad filter coefficients of the currently selected
 // filter or belleq, to plot its frequency response on top of the spectrum.
 func (m *SpectrumModel) BiquadCoeffs() (coeffs BiquadCoeffs, ok bool) {
-	unit := (*Model)(m).selectedUnit()
+	unit := (*Model)(m).selectedAsPlayed()
 	if unit == nil {
 		return BiquadCoeffs{}, false
 	}

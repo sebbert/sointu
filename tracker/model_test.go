@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"slices"
 	"testing"
 
 	"github.com/vsariola/sointu"
@@ -48,6 +49,7 @@ func (s *modelFuzzState) Iterate(yield func(string, func(p string, t *testing.T)
 	s.IterateInt("ModuleParamDefault", s.model.Module().ParamDefault(1), yield, seed)
 	s.IterateInt("ModuleBindingAt0", s.model.Module().BindingAt(1, false), yield, seed)
 	s.IterateInt("ModuleBindingAt128", s.model.Module().BindingAt(1, true), yield, seed)
+	s.IterateInt("ParamBinding", s.model.Params().Binding(), yield, seed)
 	// Lists
 	s.IterateList("Instruments", s.model.Instrument().List(), yield, seed)
 	s.IterateList("Units", s.model.Unit().List(), yield, seed)
@@ -110,6 +112,54 @@ func (s *modelFuzzState) Iterate(yield func(string, func(p string, t *testing.T)
 	s.IterateAction("UniqueModule", s.model.Unit().UniqueModule(), yield, seed)
 	s.IterateAction("OpenModule", s.model.Unit().OpenModule(), yield, seed)
 	yield("SetUnitTypeModule", func(p string, t *testing.T) { s.model.Unit().SetType("module") })
+	yield("SetUnitTypeGain", func(p string, t *testing.T) { s.model.Unit().SetType("gain") })
+	yield("ToggleUnfold", func(p string, t *testing.T) { s.model.Unit().ToggleUnfold(seed % 12).Do() })
+	yield("UnitDisabled", func(p string, t *testing.T) { s.model.Unit().Disabled().Toggle() })
+	yield("UnitComment", func(p string, t *testing.T) { s.model.Unit().Comment().SetValue(fmt.Sprintf("%d", seed)) })
+	yield("UnitRows", func(p string, t *testing.T) {
+		// every row has a unit, and the cursor is on one of the units
+		// being edited
+		l, params := s.model.Unit().List(), s.model.Params()
+		for i := range l.Count() {
+			if item := s.model.Unit().Item(i); item.Inner != (item.Depth > 0) {
+				t.Errorf("Path: %s row %d: %+v", p, i, item)
+			}
+			for x := range params.RowWidth(i) {
+				q := params.Item(tracker.Point{X: x, Y: i})
+				if r := q.Range(); q.Type() != tracker.NoParameter && r.Max >= r.Min && (q.Value() < r.Min || q.Value() > r.Max) {
+					t.Errorf("Path: %s row %d parameter %d (%s) value %d out of range [%d,%d]", p, i, x, q.Name(), q.Value(), r.Min, r.Max)
+				}
+				q.Hint()
+				q.Bound()
+			}
+		}
+		if c := l.Count(); c > 0 && !s.model.Unit().Item(l.Selected()).Selectable {
+			t.Errorf("Path: %s the cursor is on row %d, not one of the units being edited", p, l.Selected())
+		}
+	})
+	yield("ParamBindNew", func(p string, t *testing.T) {
+		b := s.model.Params().Binding()
+		b.SetValue(b.Range().Max)
+	})
+	yield("ParamUnbind", func(p string, t *testing.T) { s.model.Params().Binding().SetValue(0) })
+	yield("InnerParam.Set", func(p string, t *testing.T) {
+		// like the mouse: any parameter on any row, also not under the cursor
+		params := s.model.Params()
+		if h := params.Height(); h > 0 {
+			y := seed % h
+			if w := params.RowWidth(y); w > 0 {
+				q := params.Item(tracker.Point{X: (seed >> 4) % w, Y: y})
+				switch seed % 3 {
+				case 0:
+					q.SetValue(q.Range().Min + (seed>>8)%(max(q.Range().Max-q.Range().Min, 0)+1))
+				case 1:
+					q.Add(seed%5-2, seed%2 == 0)
+				default:
+					q.Reset()
+				}
+			}
+		}
+	})
 	// Tables
 	s.IterateTable("Order", s.model.Order().Table(), yield, seed)
 	s.IterateTable("Notes", s.model.Note().Table(), yield, seed)
@@ -205,6 +255,17 @@ func (s *modelFuzzState) IterateList(name string, l tracker.List, yield func(str
 			}
 		}
 	})
+	yield(name+".Next", func(p string, t *testing.T) { // like the arrow keys
+		l.SetSelected(l.Selected() + 1)
+		l.SetSelected2(l.Selected())
+	})
+	yield(name+".Prev", func(p string, t *testing.T) {
+		l.SetSelected(l.Selected() - 1)
+		l.SetSelected2(l.Selected())
+	})
+	yield(name+".ExtendSelection", func(p string, t *testing.T) {
+		l.ExtendSelection(seed%5 - 2)
+	})
 	yield(name+".MoveElements", func(p string, t *testing.T) {
 		l.MoveElements(seed%2*2 - 1)
 	})
@@ -248,6 +309,13 @@ func (s *modelFuzzState) IterateTable(name string, table tracker.Table, yield fu
 	yield(name+".MoveCursor", func(p string, t *testing.T) {
 		table.MoveCursor(seed%2*2-1, seed%2*2-1)
 	})
+	yield(name+".CursorRight", func(p string, t *testing.T) {
+		table.MoveCursor(1, 0)
+		table.SetCursor2(table.Cursor())
+	})
+	yield(name+".ExtendCursor", func(p string, t *testing.T) {
+		table.ExtendCursor(seed%3-1, seed%5-2)
+	})
 	yield(name+".Copy", func(p string, t *testing.T) {
 		s.clipboard, _ = table.Copy()
 	})
@@ -265,12 +333,73 @@ func (s *modelFuzzState) IterateTable(name string, table tracker.Table, yield fu
 	})
 }
 
+// fuzzStep is an operation of FuzzModel by its name, with a seed that ok
+// accepts, if it is set: the operations take their arguments from the seed.
+type fuzzStep struct {
+	name string
+	ok   func(seed int) bool
+}
+
+// fuzzSeed returns the input of FuzzModel that does the steps.
+func fuzzSeed(f *testing.F, steps ...fuzzStep) []byte {
+	broker := tracker.NewBroker()
+	model := tracker.NewModel(broker, []sointu.Synther{vm.GoSynther{}}, tracker.NullMIDIContext{}, "")
+	defer model.Close()
+	state := modelFuzzState{model: model}
+	var names []string
+	state.Iterate(func(n string, _ func(p string, t *testing.T)) bool {
+		names = append(names, n)
+		return true
+	}, 0)
+	var ret []byte
+	for _, step := range steps {
+		index := slices.Index(names, step.name)
+		if index < 0 {
+			f.Fatalf("FuzzModel has no operation %v", step.name)
+		}
+		seed := index
+		for step.ok != nil && !step.ok(seed) && seed >= 0 {
+			if seed += len(names); seed > 1<<24 {
+				seed = -1 // there is none for this number of operations: without the step
+			}
+		}
+		if seed >= 0 {
+			ret = binary.AppendVarint(ret, int64(seed))
+		}
+	}
+	return ret
+}
+
+// innerUnitsSeed is an input of FuzzModel that makes a module of a unit of
+// the first instrument, unfolds the module unit, and with the cursor on its
+// inner units, changes their parameters, binds one, and adds, moves, copies,
+// pastes and deletes units of the module, also in a module of the module.
+func innerUnitsSeed(f *testing.F) []byte {
+	var steps []fuzzStep
+	for _, name := range []string{
+		"AddUnitAfter.Do", "SetUnitTypeGain", "MakeModule.Do", "Unfold.Toggle", "UnitRows",
+		"Units.Next", "UnitRows", "Params.CursorRight", "Params.Add", "Params.Clear", "Params.Fill", "InnerParam.Set",
+		"ParamBindNew", "UnitRows", "Params.Add", "Params.Clear", "InnerParam.Set", "Undo.Do", "Redo.Do", "ParamUnbind", "ParamBindNew",
+		"AddUnitAfter.Do", "SetUnitTypeGain", "UnitDisabled", "UnitComment", "Units.MoveElements",
+		"Units.CopyElements", "Units.PasteElements", "UnitRows", "Units.ExtendSelection", "Params.ExtendCursor",
+		"MakeModule.Do", "Unfold.Toggle", "Units.Next", "UnitRows", "InnerParam.Set", "Params.CursorRight", "ParamBindNew", "Params.Add",
+		"AddUnitAfter.Do", "SetUnitTypeModule", "UnitRows", "Unfold.Toggle", "UnitRows", "InlineModule.Do", "UnitRows",
+		"Units.Next", "DeleteUnit.Do", "DeleteUnit.Do", "DeleteUnit.Do", "DeleteUnit.Do", "Units.DeleteElementsForward", "UnitRows",
+		"Undo.Do", "Undo.Do", "UnitRows", "Units.Prev", "Units.Prev", "Units.Prev", "UniqueModule.Do", "ToggleUnfold", "UnitRows",
+		"Units.Next", "OpenModule.Do", "UnitRows", "Units.Next", "Unfold.Toggle", "Units.Next", "InnerParam.Set", "UnitRows",
+	} {
+		steps = append(steps, fuzzStep{name: name})
+	}
+	return fuzzSeed(f, steps...)
+}
+
 func FuzzModel(f *testing.F) {
 	seed := make([]byte, 1)
 	for i := range seed {
 		seed[i] = byte(i)
 	}
 	f.Add(seed)
+	f.Add(innerUnitsSeed(f))
 	f.Fuzz(func(t *testing.T, slice []byte) {
 		reader := bytes.NewReader(slice)
 		synthers := []sointu.Synther{vm.GoSynther{}}

@@ -30,22 +30,16 @@ type addUnit struct {
 func (a addUnit) Do() {
 	m := (*Model)(a.Model)
 	defer m.change("AddUnitAction", PatchChange, MajorChange)()
-	if m.editingModule() {
-		if m.unitsPtr() == nil { // no modules, add one
-			m.addModule()
-		}
-		if len(m.units()) > 0 && !a.Before {
-			m.d.UnitIndex++
-		}
-	} else if len(m.d.Song.Patch) == 0 { // no instruments, add one
+	switch {
+	case m.editingModule() && m.unitsPtr() == nil: // no modules, add one
+		m.addModule()
+	case !m.editingModule() && len(m.d.Song.Patch) == 0: // no instruments, add one
 		instr := sointu.Instrument{NumVoices: 1}
 		instr.Units = make([]sointu.Unit, 0, 1)
 		m.d.Song.Patch = append(m.d.Song.Patch, instr)
 		m.d.UnitIndex = 0
-	} else {
-		if !a.Before {
-			m.d.UnitIndex++
-		}
+	case len(m.units()) > 0 && !a.Before:
+		m.d.UnitIndex++
 	}
 	if !m.editingModule() {
 		m.d.InstrIndex = max(min(m.d.InstrIndex, len(m.d.Song.Patch)-1), 0)
@@ -71,9 +65,14 @@ func (m *UnitModel) Delete() Action { return MakeAction((*deleteUnit)(m)) }
 type deleteUnit UnitModel
 
 func (m *deleteUnit) Enabled() bool {
-	// an instrument keeps at least one unit; a module can be emptied
-	n := len((*Model)(m).units())
-	return n > 1 || n == 1 && (*Model)(m).editingModule()
+	// an instrument keeps at least one unit; a module can be emptied, but
+	// only on the Modules tab: an unfolded module unit keeps an inner unit
+	// for the cursor to be on
+	list, module, depth := (*Model)(m).scope()
+	if list == nil {
+		return false
+	}
+	return len(*list) > 1 || len(*list) == 1 && module >= 0 && depth == 0
 }
 func (m *deleteUnit) Do() {
 	defer (*Model)(m).change("DeleteUnitAction", PatchChange, MajorChange)()
@@ -218,70 +217,66 @@ func (m *unitDisabled) Enabled() bool {
 }
 
 // Item returns information about the unit on the given row of the unit
-// editor: a unit being edited, or an inner unit of a module unit.
+// editor: a root unit, or an inner unit of a module unit.
 func (v *UnitModel) Item(row int) UnitListItem {
-	units := (*Model)(v).units()
-	index, e, i, ok := (*Model)(v).rowAt(row)
-	if !ok || index >= len(units) {
+	m := (*Model)(v)
+	u, r, ok := m.rowUnit(row)
+	if !ok {
 		return UnitListItem{}
 	}
-	signals := Rail{}
-	if d := (*Model)(v).derivedUnits(); d != nil && index < len(d.rails) {
-		signals = d.rails[index]
+	c := m.rows()
+	ret := UnitListItem{
+		Title:      m.unitTitle(u),
+		Type:       u.Type,
+		Comment:    u.Comment,
+		Disabled:   u.Disabled,
+		Inner:      r.depth > 0,
+		Depth:      r.depth,
+		First:      r.depth > 0 && r.index == 0,
+		Last:       r.depth > 0 && (row+1 >= len(c.rows) || c.rows[row+1].depth < r.depth),
+		Selectable: r.list == c.scope,
+		Outer:      r.outer,
+		Stack:      r.signals.StackAfter(),
+		Signals:    r.signals,
 	}
-	if e != nil {
-		// its signals are on top of those passing the module unit
-		u := &e.units[i]
-		return UnitListItem{
-			Title:    (*Model)(v).unitTitle(u),
-			Type:     u.Type,
-			Comment:  u.Comment,
-			Disabled: u.Disabled,
-			Inner:    true,
-			Outer:    signals.PassThrough,
-			Stack:    signals.PassThrough + e.before[i] + e.uses[i].NumOutputs,
-			First:    i == 0,
-			Last:     i == len(e.units)-1,
-			Signals:  Rail{PassThrough: signals.PassThrough + e.before[i], StackUse: e.uses[i], Send: !u.Disabled && u.Type == "send"},
+	if scope := c.lists[c.scope]; scope.parent >= 0 && r.depth > 0 {
+		ret.Edited = r.module == scope.module // also under other module units using the module
+	}
+	if mod, ok := v.d.Song.Modules.Find(u.Parameters["module"]); ok && u.Type == "module" {
+		ret.Module, ret.Unfolded = true, u.Unfolded
+		if row+1 < len(c.rows) && c.rows[row+1].parent == row {
+			// unfolded, its inner units show what it does with the signals:
+			// its inputs pass on to them, and they leave its outputs
+			ret.Signals = Rail{PassThrough: r.signals.PassThrough + max(v.d.Song.Modules[mod].Inputs, 0)}
 		}
 	}
-	unit := units[index]
-	mod, isModule := v.d.Song.Modules.Find(unit.Parameters["module"])
-	isModule = isModule && unit.Type == "module"
-	stack := signals.StackAfter()
-	if isModule && (*Model)(v).innerUnitsOf(&units[index]) != nil {
-		// unfolded, its inner units show what it does with the signals:
-		// its inputs pass on to them, and they leave its outputs
-		signals = Rail{PassThrough: signals.PassThrough + max(v.d.Song.Modules[mod].Inputs, 0)}
-	}
-	return UnitListItem{
-		Stack:    stack,
-		Module:   isModule,
-		Unfolded: isModule && unit.Unfolded,
-		Title:    (*Model)(v).unitTitle(&unit),
-		Type:     unit.Type,
-		Comment:  unit.Comment,
-		Disabled: unit.Disabled,
-		Signals:  signals,
-	}
+	return ret
 }
 
 // UnitListItem is a unit in the unit list. Title is its type, or for a
-// module unit, the name of its module. Inner is true for a unit that the
-// module unit above it stands for, which cannot be changed.
+// module unit, the name of its module. Inner is true for an inner unit: a
+// unit of the module of the module unit above it, and Depth tells how many
+// module units it is inside.
 //
 // Module is true for a module unit with a module, which can be unfolded, and
 // Unfolded if it is: its signals then pass on to its inner units, which
-// show what it does with them. First and Last are true for the first and the last of
-// the inner units of a module unit.
+// show what it does with them. First and Last are true for the first inner
+// unit of a module unit and for the last row under one.
+//
+// Selectable is true for the units being edited, the ones in the list of
+// units that the cursor is in: a selection is among them. Edited is true
+// for the inner units showing the module that the cursor is in, also under
+// other module units: they all change with it.
 type UnitListItem struct {
 	Type, Title, Comment string
 	Disabled             bool
 	Inner, First, Last   bool
+	Depth                int
 	Module, Unfolded     bool
+	Selectable, Edited   bool
 	Signals              Rail
 	Stack                int // the number of signals on the stack after the unit
-	Outer                int // for an inner unit, the signals passing by its module unit
+	Outer                int // for an inner unit, the signals passing by the outermost module unit it is inside
 }
 
 // Type returns the type of the currently selected unit.
@@ -333,8 +328,8 @@ func (m *UnitModel) SetType(t string) {
 
 // List returns a List of the rows of the unit editor: the units of the
 // selected instrument, or of the selected module on the Modules tab, and
-// with Unfold, the inner units of the module units among them, which cannot be
-// selected. It implements the ListData & MutableListData interfaces.
+// with Unfold, the inner units of the module units among them. Its elements
+// are the units being edited: see rows.go.
 func (m *UnitModel) List() List { return List{(*unitRows)(m)} }
 
 type unitList UnitModel
@@ -368,6 +363,9 @@ func (v *unitList) Delete(r Range) (ok bool) {
 	if list == nil {
 		return false
 	}
+	if _, _, depth := m.scope(); depth > 0 && r.Len() >= len(*list) {
+		return false // an unfolded module unit keeps an inner unit: see deleteUnit
+	}
 	*list = append((*list)[:r.Start], (*list)[r.End:]...)
 	return true
 }
@@ -386,7 +384,7 @@ func (v *unitList) Marshal(r Range) ([]byte, error) {
 		return nil, errors.New("UnitListView.marshal: no instruments")
 	}
 	units := m.units()[r.Start:r.End]
-	if !m.editingModule() {
+	if _, ok := m.scopeModule(); !ok {
 		units = withoutBindings(units)
 	}
 	ret, err := yaml.Marshal(unitClipboard{Units: units, Modules: m.modulesUsedBy(units)})
@@ -411,6 +409,12 @@ func (v *unitList) Unmarshal(data []byte) (r Range, err error) {
 	}
 	m.importModules(pastedUnits.Modules, pastedUnits.Units)
 	list = m.unitsPtr() // importing modules may have moved them
+	for i := range pastedUnits.Units {
+		if u := &pastedUnits.Units[i]; u.Type == "module" && m.wouldUseItself(u.Parameters["module"]) {
+			u.Parameters["module"] = 0
+			m.Alerts().Add("A module cannot use itself", Warning)
+		}
+	}
 	m.assignUnitIDs(pastedUnits.Units)
 	sel := v.Selected()
 	var ok bool
@@ -421,53 +425,85 @@ func (v *unitList) Unmarshal(data []byte) (r Range, err error) {
 	return Range{sel, sel + len(pastedUnits.Units)}, nil
 }
 
-// RailError returns the first error of the signal rails. Its UnitIndex is -1
-// unless the unit is one of the units being edited.
+// RailError returns the first error of the signal rails. Its UnitIndex is
+// the row of the unit in the unit editor, or -1 if it is not shown there.
 func (s *UnitModel) RailError() RailError {
 	ret := s.derived.railError
-	if m := (*Model)(s); ret.Err != nil && (m.editingModule() != (ret.Module > 0) ||
-		m.editingModule() && ret.Module-1 != m.d.ModuleIndex || !m.editingModule() && ret.InstrIndex != m.d.InstrIndex) {
-		ret.UnitIndex = -1
-	} else if ret.UnitIndex >= 0 {
-		ret.UnitIndex = (*Model)(s).rowOfUnit(ret.UnitIndex) // the unit editor shows rows
+	if ret.Err == nil || ret.UnitIndex < 0 {
+		return ret
 	}
+	module := ret.Module - 1
+	if module < 0 && ret.InstrIndex != s.d.InstrIndex {
+		ret.UnitIndex = -1
+		return ret
+	}
+	c := (*Model)(s).rows()
+	for _, l := range c.lists {
+		if l.module == module && ret.UnitIndex < len(l.rows) {
+			ret.UnitIndex = l.rows[ret.UnitIndex]
+			return ret
+		}
+	}
+	ret.UnitIndex = -1
 	return ret
 }
 
-func (s *UnitModel) RailWidth() int {
-	m := (*Model)(s)
-	d := m.derivedUnits()
-	if d == nil {
-		return 0
+func (s *UnitModel) RailWidth() int { return (*Model)(s).rows().railWidth }
+
+// playedUnit returns the unit that the synth runs for the unit on a row of
+// the unit editor, or nil if it runs none. A unit of a module is in the
+// synth once for every module unit using the module, with other IDs: for an
+// inner unit, it is the copy made for the module unit above it, and for a
+// unit of the module on the Modules tab, the first copy in the selected
+// instrument, or else the first one in the song. If a module unit uses a
+// module more than once, through other modules, it is the first copy.
+func (m *Model) playedUnit(row int) *sointu.Unit {
+	u, r, ok := m.rowUnit(row)
+	if !ok || u.ID == 0 || u.Disabled {
+		return nil
 	}
-	width := d.railWidth
-	if m.unfold() {
-		units := m.units()
-		for i := range units {
-			if e := m.innerUnitsOf(&units[i]); e != nil && i < len(d.rails) {
-				width = max(width, d.rails[i].PassThrough+e.width)
-			}
+	if r.module < 0 {
+		return u
+	}
+	if m.expansion == nil {
+		return nil
+	}
+	module := m.d.Song.Modules[r.module].ID
+	best, bestInstr, bestHere := 0, 0, false
+	for id, e := range m.expansion.Units {
+		if e.Body != u.ID || e.Module != module {
+			continue
+		}
+		here := e.Instrument == m.d.InstrIndex
+		if r.call != 0 && (!here || e.Call != r.call) {
+			continue
+		}
+		if best == 0 || here && !bestHere || here == bestHere && id < best {
+			best, bestInstr, bestHere = id, e.Instrument, here
 		}
 	}
-	return width
+	if best == 0 || bestInstr >= len(m.expanded) {
+		return nil
+	}
+	units := m.expanded[bestInstr].Units
+	for i := range units {
+		if units[i].ID == best {
+			return &units[i]
+		}
+	}
+	return nil
 }
 
-// rowUnit returns the unit on a row of the unit editor: a unit being
-// edited, or an inner unit. played is the ID that the unit has in the synth, or
-// 0 if it is not in the synth.
-func (m *Model) rowUnit(row int) (u *sointu.Unit, played int, ok bool) {
-	units := m.units()
-	index, e, i, ok := m.rowAt(row)
-	if !ok || index >= len(units) {
-		return nil, 0, false
-	}
-	if e != nil {
-		if e.source[i].Body != 0 { // a unit of the synth
-			played = e.units[i].ID
+// selectedAsPlayed returns the selected unit as it is played: for an inner
+// unit of a module unit, the bound parameters have the values that the
+// module unit gives them.
+func (m *Model) selectedAsPlayed() *sointu.Unit {
+	if _, _, depth := m.scope(); depth > 0 {
+		if u := m.playedUnit(m.rowOfUnit(m.d.UnitIndex)); u != nil {
+			return u
 		}
-		return &e.units[i], played, true
 	}
-	return &units[index], m.playedUnitID(index), true
+	return m.selectedUnit()
 }
 
 func (e *RailError) Error() string { return e.Err.Error() }
@@ -477,17 +513,28 @@ func (s *Rail) StackAfter() int { return s.PassThrough + s.StackUse.NumOutputs }
 // Spectrum returns the spectrum as the unit on row i of the unit editor, a
 // spectral unit, last left it, as BufferModel.SpectrumOf.
 func (m *UnitModel) Spectrum(i int) ([]float32, int) {
-	_, id, _ := (*Model)(m).rowUnit(i)
-	if id == 0 {
+	u := (*Model)(m).playedUnit(i)
+	if u == nil {
 		return nil, 0
 	}
-	return (*Model)(m).spectrumOf(SpectrumSource{Unit: id})
+	return (*Model)(m).spectrumOf(SpectrumSource{Unit: u.ID})
+}
+
+// previewUnit returns the unit whose buffer or bus the preview of row i
+// shows: the unit that the synth runs for the row, as each module unit has
+// buffers of its own and gives the bound ones, or else the unit on the row.
+func (m *Model) previewUnit(i int) (*sointu.Unit, bool) {
+	if u := m.playedUnit(i); u != nil {
+		return u, true
+	}
+	u, _, ok := m.rowUnit(i)
+	return u, ok
 }
 
 // Bus returns the ID of the bus of unit i of the selected instrument, if it
 // is an mc unit, whose preview shows the levels of its bus.
 func (m *UnitModel) Bus(i int) (id int, ok bool) {
-	u, _, ok := (*Model)(m).rowUnit(i)
+	u, ok := (*Model)(m).previewUnit(i)
 	if !ok {
 		return 0, false
 	}
@@ -500,7 +547,7 @@ func (m *UnitModel) Bus(i int) (id int, ok bool) {
 // Buffer returns the ID of the buffer that unit i of the selected instrument
 // plays, writes or holds its spectrum in, and whether it is a spectrum.
 func (m *UnitModel) Buffer(i int) (id int, spectrum, ok bool) {
-	u, _, ok := (*Model)(m).rowUnit(i)
+	u, ok := (*Model)(m).previewUnit(i)
 	if !ok {
 		return 0, false, false
 	}

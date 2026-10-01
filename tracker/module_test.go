@@ -399,7 +399,7 @@ func TestUnfold(t *testing.T) {
 	if a, b, c := after(3), after(4), after(5); a != 1 || b != 2 || c != 1 {
 		t.Errorf("signals after the inner units: %v %v %v", a, b, c)
 	}
-	// with the value of the module unit, bound, and not to be changed
+	// with the value of the module unit, bound
 	var detune Parameter
 	for x := 0; x < params.RowWidth(4); x++ {
 		if p := params.Item(Point{x, 4}); p.Name() == "detune" {
@@ -409,28 +409,25 @@ func TestUnfold(t *testing.T) {
 	if name, ok := detune.Bound(); detune.Value() != 99 || !ok || name != "detune" {
 		t.Errorf("the detune of the inner unit is %v, bound to %q", detune.Value(), name)
 	}
-	if detune.SetValue(5) || m.d.Song.Modules[0].Units[1].Parameters["detune"] == 5 {
-		t.Errorf("a parameter of an inner unit could be changed")
-	}
-	// the cursor skips the inner units
+	// the cursor goes through the inner units
 	if units.Selected() != 2 {
 		t.Fatalf("the module unit is on row %v", units.Selected())
 	}
 	units.SetSelected(units.Selected() + 1)
-	if m.d.UnitIndex != 3 || units.Selected() != 7 {
-		t.Errorf("down from the module unit: unit %v, row %v", m.d.UnitIndex, units.Selected())
+	if m.d.UnitIndex != 0 || units.Selected() != 3 || len(m.d.UnitPath) != 1 {
+		t.Errorf("down from the module unit: unit %v, row %v, inside %v", m.d.UnitIndex, units.Selected(), m.d.UnitPath)
+	}
+	units.SetSelected(7)
+	if m.d.UnitIndex != 3 || units.Selected() != 7 || len(m.d.UnitPath) != 0 {
+		t.Errorf("on the out: unit %v, row %v, inside %v", m.d.UnitIndex, units.Selected(), m.d.UnitPath)
 	}
 	units.SetSelected(units.Selected() - 1)
-	if m.d.UnitIndex != 2 || units.Selected() != 2 {
-		t.Errorf("up from the out: unit %v, row %v", m.d.UnitIndex, units.Selected())
-	}
-	units.SetSelected(5) // clicking an inner unit selects its module unit
-	if m.d.UnitIndex != 2 {
-		t.Errorf("selecting an inner unit selected unit %v", m.d.UnitIndex)
+	if m.d.UnitIndex != 3 || units.Selected() != 6 || len(m.d.UnitPath) != 1 {
+		t.Errorf("up from the out: unit %v, row %v, inside %v", m.d.UnitIndex, units.Selected(), m.d.UnitPath)
 	}
 	params.SetCursor(Point{0, 2})
 	params.MoveCursor(0, 1)
-	if c := params.Cursor(); c.Y != 7 || m.d.UnitIndex != 3 {
+	if c := params.Cursor(); c.Y != 3 || m.d.UnitIndex != 0 || len(m.d.UnitPath) != 1 {
 		t.Errorf("the cursor moved down to row %v, unit %v", c.Y, m.d.UnitIndex)
 	}
 	// moving, copying and deleting work on the units

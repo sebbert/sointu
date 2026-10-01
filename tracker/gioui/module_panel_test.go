@@ -110,4 +110,27 @@ func TestModulesTabLayout(t *testing.T) {
 	model.Unit().List().SetSelected(1)
 	model.Unit().Unfold().SetValue(true)
 	frame("8-example-unfolded-with-input")
+	// the cursor on an inner unit: the units of the module are edited there
+	model.Unit().List().SetSelected(model.Unit().List().Selected() + 2)
+	model.Unit().List().SetSelected2(model.Unit().List().Selected())
+	if name, _, ok := model.Unit().InModule(); !ok || name == "" {
+		t.Fatal("the cursor is not on an inner unit")
+	}
+	model.Params().SetCursor(tracker.Point{X: 1, Y: model.Params().Cursor().Y})
+	frame("9-example-cursor-on-inner-unit")
+	// a module used twice: the lead of the first instrument
+	model.Instrument().List().SetSelected(0)
+	rows := model.Unit().List()
+	for i := 0; i < rows.Count(); i++ {
+		if item := model.Unit().Item(i); item.Module && !item.Unfolded {
+			model.Unit().ToggleUnfold(i).Do()
+		}
+	}
+	for i := 0; i < rows.Count(); i++ {
+		if model.Unit().Item(i).Inner {
+			model.Params().SetCursor(tracker.Point{X: 0, Y: i + 1})
+			break
+		}
+	}
+	frame("10-example-all-unfolded")
 }

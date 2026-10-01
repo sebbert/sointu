@@ -154,10 +154,10 @@ func (m *Model) busUsed(id int) bool {
 // the selected instrument, an mc unit, in the last report of the player, or
 // nil. While it is being called, the player keeps reporting them.
 func (m *UnitModel) Levels(i int) []float32 {
-	_, id, _ := (*Model)(m).rowUnit(i)
-	if id == 0 {
+	u := (*Model)(m).playedUnit(i)
+	if u == nil {
 		return nil
 	}
-	mags, _ := (*Model)(m).spectrumOf(SpectrumSource{Unit: id, Levels: true})
+	mags, _ := (*Model)(m).spectrumOf(SpectrumSource{Unit: u.ID, Levels: true})
 	return mags
 }

@@ -66,6 +66,7 @@ type (
 // init / update methods
 
 func (m *Model) updateDeriveData(changeType ChangeType) {
+	m.rowCache.valid = false
 	if changeType&BufferChange != 0 {
 		m.syncBuffers()
 	}

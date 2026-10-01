@@ -505,6 +505,9 @@ func (m *MIDIModel) selectedParam() (MIDIParam, bool) {
 	if !ok {
 		return MIDIParam{}, false
 	}
+	if _, _, err := m.d.Song.Patch.FindUnit(unit.ID); err != nil {
+		return MIDIParam{}, false // a unit of a module: controllers only reach the units of the instruments
+	}
 	r := item.Range()
 	value := MIDIParam{
 		Id:    unit.ID,
