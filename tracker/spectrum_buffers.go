@@ -67,7 +67,7 @@ func (m *Model) fixSpectrumBuffers() {
 // written by more than one unit.
 func (m *Model) warnSpectral() {
 	writers := map[int]int{}
-	for i, instr := range m.d.Song.Patch {
+	for i, instr := range m.runPatch() {
 		for _, u := range instr.Units {
 			if u.Disabled || len(sointu.SpectrumBufferParams(u.Type)) == 0 {
 				continue

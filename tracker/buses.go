@@ -92,7 +92,7 @@ func (m *Model) assignBuses(units []sointu.Unit) {
 // warnBuses warns about mc units in instruments with more than one voice,
 // which run only in the first one.
 func (m *Model) warnBuses() {
-	for i, instr := range m.d.Song.Patch {
+	for i, instr := range m.runPatch() {
 		if instr.NumVoices <= 1 {
 			continue
 		}

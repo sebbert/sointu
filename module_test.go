@@ -355,3 +355,27 @@ func TestModuleYAML(t *testing.T) {
 		t.Errorf("a song without modules mentions them:\n%s", out)
 	}
 }
+
+func TestExpandPortOnlyBinding(t *testing.T) {
+	// the inputs of a receive can only be modulated: bound to a parameter of
+	// the module, a send to the module unit reaches the receive
+	m := sointu.Module{ID: 1, Params: []sointu.ModuleParam{{Name: "in"}}, Units: []sointu.Unit{
+		bound(unit("receive", 0, nil), map[string]int{"left": 1}),
+	}}
+	s := song(sointu.Modules{m}, unit("noise", 0, nil), unit("send", 0, map[string]int{"target": 3, "port": 0, "sendpop": 1}), call(3, 1), unit("out", 0, nil))
+	got, exp := s.Expand()
+	noProblems(t, exp)
+	u := got.Patch[0].Units
+	if s := summary(u); s != "noise send receive out" {
+		t.Fatalf("got %v", s)
+	}
+	if u[2].ID == 0 || u[1].Parameters["target"] != u[2].ID || u[1].Parameters["port"] != 0 {
+		t.Errorf("the send goes to %v port %v, the receive is %v", u[1].Parameters["target"], u[1].Parameters["port"], u[2].ID)
+	}
+	if _, ok := u[2].Parameters["left"]; ok {
+		t.Errorf("the receive got a value for its input")
+	}
+	if p, _ := s.Modules.Param(0, 1); p.CanSet || !p.CanModulate {
+		t.Errorf("the parameter of the module: %+v", p)
+	}
+}

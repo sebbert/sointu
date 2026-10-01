@@ -99,6 +99,16 @@ func (m *Model) playerSong() sointu.Song {
 	return song.Copy()
 }
 
+// runPatch returns the patch as the synth runs it, with the module units
+// replaced by the units of their modules, for checking it.
+func (m *Model) runPatch() sointu.Patch {
+	if !m.d.Song.HasModules() {
+		return m.d.Song.Patch
+	}
+	song, _ := m.d.Song.Expand()
+	return song.Patch
+}
+
 // playedUnitID returns the ID that unit i of the units being edited has in
 // the synth. A unit of a module is in the synth once for every module unit
 // using the module, with other IDs: the first copy in the selected

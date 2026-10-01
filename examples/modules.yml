@@ -1,0 +1,91 @@
+bpm: 120
+rowsperbeat: 4
+score:
+    tracks:
+        - numvoices: 2
+          order: [0]
+          patterns: [[60, 1, 67, 1, 0, 1, 55, 1, 1, 72, 1, 0, 1, 1, 1, 1]]
+    rowsperpattern: 16
+    length: 1
+patch:
+    - name: lead
+      numvoices: 2
+      units:
+        - type: oscillator
+          parameters: {color: 128, detune: 64, gain: 128, lfo: 1, shape: 64, transpose: 70, type: 0}
+        - type: send
+          parameters: {amount: 96, port: 0, sendpop: 1, target: 5}
+        - type: module
+          id: 5
+          parameters: {module: 2, p1: 40, p2: 70}
+        - type: pan
+          parameters: {panning: 40}
+        - type: outaux
+          parameters: {auxgain: 128, outgain: 64, stereo: 1}
+    - name: reverb
+      numvoices: 1
+      units:
+        - type: in
+          parameters: {channel: 2, stereo: 1}
+        - type: module
+          parameters: {module: 3}
+        - type: xch
+          parameters: {}
+        - type: module
+          parameters: {module: 3}
+        - type: out
+          parameters: {gain: 128, stereo: 1}
+buffers:
+    - id: 1
+      name: Bus 1
+      channels: 8
+      bus: true
+      auto: true
+modules:
+    - id: 1
+      name: saws
+      comment: two detuned saws
+      params:
+        - name: detune
+        - name: color
+      units:
+        - type: oscillator
+          parameters: {color: 64, detune: 64, gain: 128, shape: 64, transpose: 64, type: 1}
+          bind: {color: 2, detune: 1}
+        - type: oscillator
+          parameters: {color: 100, detune: 50, gain: 128, shape: 64, transpose: 64, type: 1}
+        - type: addp
+          parameters: {}
+    - id: 2
+      name: voice
+      params:
+        - name: cutoff
+        - name: detune
+      units:
+        - type: envelope
+          parameters: {attack: 40, decay: 70, gain: 128, release: 70, sustain: 60}
+        - type: module
+          parameters: {module: 1, p1: 0, p2: 32}
+          bind: {p1: 2}
+        - type: mulp
+          parameters: {}
+        - type: filter
+          parameters: {frequency: 64, lowpass: 1, resonance: 50}
+          bind: {frequency: 1}
+    - id: 3
+      name: verb
+      comment: a small feedback delay network on a bus of its own
+      inputs: 1
+      units:
+        - type: mcspread
+          parameters: {bus: 1, gain: 80, stereo: 0}
+        - type: mcloop
+          parameters: {bus: 1, feedback: 110}
+        - type: mcdelay
+          parameters: {apgain: 80, bus: 1, decay: 60, hfdecay: 64, lfdecay: 64, modrate: 64, size: 300, spread: 64}
+        - type: mcmix
+          parameters: {bus: 1, type: 1}
+        - type: mcloopend
+          parameters: {bus: 1}
+        - type: mcsum
+          parameters: {bus: 1, gain: 64, stereo: 0, width: 64}

@@ -496,7 +496,9 @@ func (m *midiUnbindAll) Do() {
 func (m *MIDIModel) selectedParam() (MIDIParam, bool) {
 	point := (*Model)(m).Params().Table().Cursor()
 	item := (*Model)(m).Params().Item(point)
-	if _, ok := item.vtable.(*namedParameter); !ok {
+	switch item.vtable.(type) {
+	case *namedParameter, *moduleArgParameter:
+	default:
 		return MIDIParam{}, false
 	}
 	r := item.Range()
