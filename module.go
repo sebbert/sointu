@@ -418,7 +418,7 @@ func (s *Song) Expand() (Song, *Expansion) {
 	e.findOwnedBuffers()
 	ret := *s
 	ret.Modules = nil
-	ret.Buffers = append(Buffers{}, s.Buffers...)
+	ret.Buffers = s.Buffers[:len(s.Buffers):len(s.Buffers)] // clones are appended to a copy
 	e.buffers = &ret.Buffers
 	ret.Patch = make(Patch, len(s.Patch))
 	for i, instr := range s.Patch {
