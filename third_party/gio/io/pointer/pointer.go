@@ -36,6 +36,14 @@ type Event struct {
 	Position f32.Point
 	// Scroll is the scroll amount, if any.
 	Scroll f32.Point
+	// Notch reports that a Scroll event is one notch of a mouse wheel
+	// whose distance is not in pixels: the platform counts rows, scaled
+	// by how fast the wheel turns. Only the macOS backend sets it.
+	Notch bool
+	// Momentum reports that a Scroll event is the momentum of a gesture
+	// that has ended: the scrolling that goes on after the fingers have
+	// left the trackpad. Only the macOS backend sets it.
+	Momentum bool
 	// Modifiers is the set of active modifiers when
 	// the mouse button was pressed.
 	Modifiers key.Modifiers

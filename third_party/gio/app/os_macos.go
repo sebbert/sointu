@@ -704,7 +704,7 @@ func gio_onText(h C.uintptr_t, cstr C.CFTypeRef) {
 }
 
 //export gio_onMouse
-func gio_onMouse(h C.uintptr_t, evt C.CFTypeRef, cdir C.int, cbtn C.NSInteger, x, y, dx, dy C.CGFloat, ti C.double, mods C.NSUInteger) {
+func gio_onMouse(h C.uintptr_t, evt C.CFTypeRef, cdir C.int, cbtn C.NSInteger, x, y, dx, dy C.CGFloat, notch, momentum C.int, ti C.double, mods C.NSUInteger) {
 	w := windowFor(h)
 	t := time.Duration(float64(ti)*float64(time.Second) + .5)
 	xf, yf := float32(x)*w.scale, float32(y)*w.scale
@@ -749,6 +749,8 @@ func gio_onMouse(h C.uintptr_t, evt C.CFTypeRef, cdir C.int, cbtn C.NSInteger, x
 		Buttons:   w.pointerBtns,
 		Position:  pos,
 		Scroll:    f32.Point{X: dxf, Y: dyf},
+		Notch:     notch != 0,
+		Momentum:  momentum != 0,
 		Modifiers: convertMods(mods),
 	})
 }

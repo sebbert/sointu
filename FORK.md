@@ -29,7 +29,8 @@ changes to the sound are fine, as long as both stay in sync.
   top keeps it above other windows; the setting is saved in the user's
   `preferences.yml`.
 - Vendored: Gio (`third_party/gio`, macOS plugin window and event loop fixes,
-  `TopMost` on Windows and turning it off),
+  `TopMost` on Windows and turning it off, `pointer.Event.Notch` for the
+  notches of a mouse wheel on macOS),
   vst2 (`third_party/vst2`, `Host.UpdateDisplay`), CLAP headers.
 
 ## Song format
@@ -404,6 +405,24 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   its bus IDs are taken. The rack shows the peak level of each channel of
   the bus after each mc unit. Presets: Reverb FDN Room, Hall, Ambient and
   Plate.
+- **Delay times:** the `delay` unit's delay times are on a grid, and show
+  its values by name: note lengths when the delay follows the tempo (1/8,
+  1/8D dotted, 1/8T triplet, from 1/128T to 2/1D; large steps move between
+  the straight notes), semitones when it follows the note (large steps:
+  octaves) and whole milliseconds when it is fixed (large steps: 10 ms).
+  Note lengths are chosen from a dropdown, or stepped by keys; semitones and
+  milliseconds are a knob that moves over the grid by keys, wheel or drag.
+  The `rate` knob of a `spawn` unit in sync mode names the straight note
+  lengths in the same way (1/8 at 72; large steps move between them). The `free` switch of
+  the unit gives every value again, shown as stored and stepped as before.
+  It is a setting of the tracker, not part of the song: the stored values
+  mean what they did. A unit starts free if any of its times is not on the
+  grid (a loaded song or preset, a pasted unit, a reverb preset of the
+  unit), so that a step does not move the time to the grid; after that the
+  switch changes only by hand. With the switch off, a value that is not on
+  the grid shows as it is (50, or 25.3 for milliseconds) and stays until it
+  is edited. The hint adds beats, rows and milliseconds, and tells
+  when the tempo makes a delay longer than the longest delay line.
 - **Warnings:** spectral units and mc units in instruments with several
   voices, spectra with several writers, and buffers, spectra or buses used
   across threads.
@@ -431,6 +450,14 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   clipboard carry the modules they use. Loading them does not add a module
   that the song already has with the same name and the same content (apart
   from IDs); another module with a taken name gets a number added.
+- **UI zoom:** Ctrl/Cmd+scroll zooms by the distance scrolled: a step for
+  every 50 dp on a trackpad, and for every notch of a mouse wheel
+  (`zoom_scroll.go`). Before, every scroll event was a step, which on macOS
+  went through the whole range in a short swipe. It zooms wherever the
+  pointer is, also over lists and knobs, which scrolled or stepped instead
+  before. The momentum of a trackpad gesture does not zoom. The vendored Gio
+  has two additions for this: `pointer.Event.Notch` and `.Momentum`, set by
+  the macOS backend.
 - **Other:** no notes play while typing in text fields; recordings survive
   synth rebuilds; NaNs recorded into buffers are cleared.
 

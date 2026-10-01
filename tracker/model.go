@@ -49,6 +49,11 @@ type (
 
 		trackerHidden bool
 
+		// delayFree tells, by the ID of every delay unit, if its delay
+		// times are edited freely instead of on a grid; see
+		// delayFreeParameter
+		delayFree map[int]bool
+
 		// spectra are the latest spectra of the sources in spectrumWatch,
 		// which the player reports while the GUI asks for them, last at
 		// spectrumAsked
@@ -322,6 +327,8 @@ func (m *Model) change(kind string, t ChangeType, severity ChangeSeverity) func(
 				// the change was cancelled or put the song in invalid state, so we don't save it
 				m.d = m.undoStack[len(m.undoStack)-1]
 				m.undoStack = m.undoStack[:len(m.undoStack)-1]
+				// the derived data points to the song that was dropped
+				m.updateDeriveData(m.changeType)
 				return
 			}
 			m.d.ChangedSinceSave = true

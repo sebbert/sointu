@@ -46,6 +46,8 @@ type (
 		// plotZoomModifier is true while Alt is held, which makes scrolling
 		// over plots zoom them
 		plotZoomModifier bool
+		// zoomScroll adds up the Ctrl/Cmd+scrolling that zooms the UI
+		zoomScroll zoomScroll
 
 		DialogState *DialogState
 
@@ -186,7 +188,8 @@ func (t *Tracker) Main() {
 					break F // this window is done, we need to create a new one
 				case app.ConfigEvent:
 					if !e.Config.Focused {
-						t.plotZoomModifier = false // Alt is not released in another window
+						t.plotZoomModifier = false  // Alt is not released in another window
+						t.zoomScroll = zoomScroll{} // nor is Ctrl/Cmd
 					}
 				case app.FrameEvent:
 					if onTop != t.preferences.Window.AlwaysOnTop {
@@ -257,11 +260,11 @@ func titleFromPath(path string, unsaved bool) string {
 func (t *Tracker) Layout(gtx layout.Context) {
 	t.textFocused = false
 	zoomFactor := ZoomFactors[t.Zoom]
+	pxPerDp := gtx.Metric.PxPerDp // of the display, without the zoom
 	gtx.Metric.PxPerDp *= zoomFactor
 	gtx.Metric.PxPerSp *= zoomFactor
 	defer clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Push(gtx.Ops).Pop()
 	paint.Fill(gtx.Ops, t.Theme.Material.Bg)
-	event.Op(gtx.Ops, t) // area for capturing scroll events
 
 	if t.Play().TrackerHidden().Value() {
 		t.layoutTop(gtx)
@@ -274,6 +277,13 @@ func (t *Tracker) Layout(gtx layout.Context) {
 	alerts := Alerts(t.Alerts(), t.Theme, t.PopupAlert)
 	alerts.Layout(gtx)
 	t.showDialog(gtx)
+	// The area for capturing scroll events covers everything else, and lets
+	// the other pointer events through. See zoom_scroll.go.
+	pass := pointer.PassOp{}.Push(gtx.Ops)
+	area := clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Push(gtx.Ops)
+	event.Op(gtx.Ops, t)
+	area.Pop()
+	pass.Pop()
 	// this is the top level input handler for the whole app
 	// it handles all the global key events and clipboard events
 	// we need to tell gio that we handle tabs too; otherwise
@@ -283,7 +293,7 @@ func (t *Tracker) Layout(gtx layout.Context) {
 			key.Filter{Name: "", Optional: key.ModAlt | key.ModCommand | key.ModShift | key.ModShortcut | key.ModSuper},
 			key.Filter{Name: key.NameTab, Optional: key.ModShift | key.ModShortcut},
 			transfer.TargetFilter{Target: t, Type: "application/text"},
-			pointer.Filter{Target: t, Kinds: pointer.Scroll, ScrollY: pointer.ScrollRange{Min: -1, Max: 1}},
+			pointer.Filter{Target: t, Kinds: pointer.Scroll, ScrollY: zoomScrollRange(t.zoomScroll.Taking(gtx.Now))},
 		)
 		if !ok {
 			break
@@ -292,8 +302,10 @@ func (t *Tracker) Layout(gtx layout.Context) {
 		case pointer.Event:
 			switch e.Kind {
 			case pointer.Scroll:
-				if e.Modifiers.Contain(key.ModShortcut) {
-					t.Zoom = min(max(t.Zoom-int(e.Scroll.Y), 0), len(ZoomFactors)-1)
+				// Without the modifier, the scroll went on to the handlers
+				// below this one; see zoom_scroll.go.
+				if n := t.zoomScroll.Scroll(runtime.GOOS, e, pxPerDp, gtx.Now); n != 0 {
+					t.Zoom = zoomBy(t.Zoom, n)
 					t.Alerts().AddNamed("ZoomFactor", fmt.Sprintf("%.0f%%", ZoomFactors[t.Zoom]*100), tracker.Info)
 				}
 			}
@@ -301,10 +313,16 @@ func (t *Tracker) Layout(gtx layout.Context) {
 			if e.Name == key.NameAlt {
 				t.plotZoomModifier = e.State == key.Press
 			}
+			if e.Name == zoomModifierKey(runtime.GOOS) {
+				t.zoomScroll.SetModifier(e.State == key.Press)
+			}
 			t.KeyEvent(e, gtx)
 		case transfer.DataEvent:
 			t.Song().Read(e.Open())
 		}
+	}
+	if at, ok := t.zoomScroll.Expires(); ok {
+		gtx.Execute(op.InvalidateCmd{At: at}) // to stop taking the scroll then
 	}
 	// if no-one else handled the note events, we handle them here
 	for len(t.midiMsgs) > 0 {

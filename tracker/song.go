@@ -148,6 +148,7 @@ func (m *SongModel) completeAction(checkSave bool) {
 
 func (m *SongModel) reset() {
 	m.d.Song = defaultSong.Copy()
+	m.delayFree = nil
 	for _, instr := range m.d.Song.Patch {
 		(*Model)(m).assignUnitIDs(instr.Units)
 	}
@@ -235,6 +236,7 @@ func (m *SongModel) Read(r io.ReadCloser) {
 	}
 	f := (*Model)(m).change("LoadSong", SongChange, MajorChange)
 	m.d.Song = song
+	m.delayFree = nil
 	if f, ok := r.(*os.File); ok {
 		m.d.FilePath = f.Name()
 		// when the song is loaded from a file, we are quite confident that the file is persisted and thus

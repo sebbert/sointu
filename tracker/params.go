@@ -194,9 +194,11 @@ func (pt *ParamModel) add(rect Rect, delta int, largeStep bool) (ok bool) {
 			if !q.Add(delta, largeStep) {
 				return false
 			}
+			// a setting of the tracker alone is no change of the song
+			ok = ok || !q.trackerSetting()
 		}
 	}
-	return true
+	return ok
 }
 
 type paramsTable struct {
@@ -309,11 +311,35 @@ type (
 		RoundToGrid(*Parameter, int, bool) int
 	}
 
+	// optional interfaces of the vtables
+
+	// parameterStepper replaces how Add steps the parameter: it returns the
+	// value delta steps from the current one.
+	parameterStepper interface {
+		Step(p *Parameter, delta int, large bool) int
+	}
+	// parameterScaler gives the knob of the parameter a scale that is not
+	// linear in its value.
+	parameterScaler interface {
+		Position(p *Parameter, value int) float32
+		Dragged(p *Parameter, start int, amount float32) int
+	}
+	// parameterLabeler names the value of the parameter on its knob.
+	parameterLabeler interface {
+		Label(p *Parameter) string
+	}
+	// parameterChooser gives the choices of a ChoiceParameter, when they
+	// are not the values of its range.
+	parameterChooser interface {
+		Choices(p *Parameter) IntValue
+	}
+
 	// different parameter vtables to handle different types of parameters.
 	// Casting struct{} to interface does not cause allocations.
 	namedParameter      struct{}
 	delayTimeParameter  struct{}
 	delayLinesParameter struct{}
+	delayFreeParameter  struct{}
 	gmDlsEntryParameter struct{}
 	reverbParameter     struct{}
 	// bufferParameter is a parameter referring to a buffer, audio,
@@ -382,11 +408,52 @@ func (p *Parameter) Add(delta int, snapToGrid bool) bool {
 	if p.vtable == nil {
 		return false
 	}
+	if s, ok := p.vtable.(parameterStepper); ok {
+		return p.SetValue(s.Step(p, delta, snapToGrid))
+	}
 	newVal := p.Value() + delta
 	if snapToGrid && p.vtable != nil {
 		newVal = p.vtable.RoundToGrid(p, newVal, delta > 0)
 	}
 	return p.SetValue(newVal)
+}
+
+// trackerSetting tells if the parameter is a setting of the tracker, not
+// stored in the song: changing it is not undone, and does not make the song
+// changed.
+func (p *Parameter) trackerSetting() bool {
+	_, ok := p.vtable.(*delayFreeParameter)
+	return ok
+}
+
+// Label returns the text shown on the knob of the parameter: its value, or
+// what the value is called.
+func (p *Parameter) Label() string {
+	if l, ok := p.vtable.(parameterLabeler); ok {
+		return l.Label(p)
+	}
+	return strconv.Itoa(p.Value())
+}
+
+// Position returns where a value lies on the scale of the knob of the
+// parameter, 0 being the minimum and 1 the maximum.
+func (p *Parameter) Position(value int) float32 {
+	if s, ok := p.vtable.(parameterScaler); ok {
+		return s.Position(p, value)
+	}
+	r := p.Range()
+	return float32(value-r.Min) / float32(r.Max-r.Min)
+}
+
+// Dragged returns the value that dragging the knob of the parameter leads to,
+// from the value start by amount of its scale: 1 is from the minimum to the
+// maximum. The value is not limited to the range.
+func (p *Parameter) Dragged(start int, amount float32) int {
+	if s, ok := p.vtable.(parameterScaler); ok {
+		return s.Dragged(p, start, amount)
+	}
+	r := p.Range()
+	return int(float32(start) + amount*float32(r.Max-r.Min))
 }
 
 func (p *Parameter) Range() RangeInclusive {
@@ -443,7 +510,22 @@ func (p *Parameter) Reset() {
 
 // Int returns the parameter as an Int, with the value names of choice
 // parameters, e.g. for showing the choices in a menu.
-func (p Parameter) Int() Int { return MakeInt(parameterInt{p}) }
+func (p Parameter) Int() Int {
+	if c, ok := p.vtable.(parameterChooser); ok {
+		return MakeInt(c.Choices(&p))
+	}
+	return MakeInt(parameterInt{p})
+}
+
+// ChoiceLabel returns the text shown on the button of a choice parameter,
+// which opens the menu of its choices, and the hint to show as its tip, if
+// the two are not the same.
+func (p *Parameter) ChoiceLabel() (label, tip string) {
+	if l, ok := p.vtable.(parameterLabeler); ok {
+		return l.Label(p), p.Hint().Label
+	}
+	return p.Hint().Label, ""
+}
 
 type parameterInt struct{ p Parameter }
 
@@ -595,8 +677,7 @@ func init() {
 	slices.Sort(delayBpmTrackGrid)
 }
 
-func (d *delayTimeParameter) Type(p *Parameter) ParameterType { return IntegerParameter }
-func (d *delayTimeParameter) Name(p *Parameter) string        { return "delaytime" }
+func (d *delayTimeParameter) Name(p *Parameter) string { return "delaytime" }
 func (d *delayTimeParameter) Value(p *Parameter) int {
 	if p.index < 0 || p.index >= len(p.unit.VarArgs) {
 		return 1
@@ -609,53 +690,10 @@ func (d *delayTimeParameter) SetValue(p *Parameter, v int) bool {
 	return true
 }
 func (d *delayTimeParameter) Range(p *Parameter) RangeInclusive {
-	if p.unit.Parameters["notetracking"] == 2 {
-		return RangeInclusive{Min: 1, Max: 576}
+	if p.unit.Parameters["notetracking"] == delayBPM {
+		return RangeInclusive{Min: 1, Max: delayBPMMax}
 	}
-	return RangeInclusive{Min: 1, Max: 65535}
-}
-func (d *delayTimeParameter) Hint(p *Parameter) ParameterHint {
-	val := d.Value(p)
-	var text string
-	switch p.unit.Parameters["notetracking"] {
-	default:
-	case 0:
-		text = fmt.Sprintf("%.3f rows", float32(val)/float32(p.m.d.Song.SamplesPerRow()))
-	case 1:
-		relPitch := float64(val) / 10787
-		semitones := -math.Log2(relPitch) * 12
-		text = fmt.Sprintf("%.3f st", semitones)
-	case 2:
-		k := 0
-		v := val
-		for v&1 == 0 {
-			v >>= 1
-			k++
-		}
-		switch v {
-		case 1:
-			if k <= 7 {
-				text = fmt.Sprintf(" (1/%d triplet)", 1<<(7-k))
-			}
-		case 3:
-			if k <= 6 {
-				text = fmt.Sprintf(" (1/%d)", 1<<(6-k))
-			}
-		case 9:
-			if k <= 5 {
-				text = fmt.Sprintf(" (1/%d dotted)", 1<<(5-k))
-			}
-		}
-		text = fmt.Sprintf("%.3f beats%s", float32(val)/48.0, text)
-	}
-	if p.unit.Parameters["stereo"] == 1 {
-		if p.index < len(p.unit.VarArgs)/2 {
-			text += " R"
-		} else {
-			text += " L"
-		}
-	}
-	return ParameterHint{text, true}
+	return RangeInclusive{Min: 1, Max: delaySamplesMax}
 }
 func (d *delayTimeParameter) RoundToGrid(p *Parameter, val int, up bool) int {
 	switch p.unit.Parameters["notetracking"] {
@@ -736,6 +774,7 @@ func (r *reverbParameter) SetValue(p *Parameter, v int) bool {
 	p.unit.Parameters["notetracking"] = 0
 	p.unit.VarArgs = make([]int, len(entry.varArgs))
 	copy(p.unit.VarArgs, entry.varArgs)
+	p.m.setDelayFree(p.unit, delayOffGrid(p.unit)) // the times of the presets are not whole milliseconds
 	return true
 }
 func (r *reverbParameter) Range(p *Parameter) RangeInclusive {
@@ -905,17 +944,48 @@ func (b *spawnTargetParameter) Reset(p *Parameter) {
 }
 
 // spawnRateParameter vtable: the rate of a spawn unit, shown in spawns per
-// beat in sync mode.
+// beat in sync mode, and as the note length between the spawns where it is
+// one.
+
+// spawnNoteLength returns the note length between the spawns of a spawn unit
+// in sync mode, if it is one: the rate doubles every 8 steps, so every 8th
+// value is a straight note, a quarter note at 64. Dotted notes and triplets
+// fall between the values.
+func spawnNoteLength(rate int) (string, bool) {
+	if rate%8 != 0 {
+		return "", false
+	}
+	if k := rate/8 - 6; k >= 0 { // the whole note is at 48
+		return fmt.Sprintf("1/%d", 1<<k), true
+	} else {
+		return fmt.Sprintf("%d/1", 1<<-k), true
+	}
+}
+
+func (b *spawnRateParameter) Label(p *Parameter) string {
+	if p.unit.Parameters["mode"] == sointu.SpawnModeSync {
+		if name, ok := spawnNoteLength(p.Value()); ok {
+			return name
+		}
+	}
+	return strconv.Itoa(p.Value())
+}
 
 func (b *spawnRateParameter) Hint(p *Parameter) ParameterHint {
 	if p.unit.Parameters["mode"] != sointu.SpawnModeSync {
 		return b.namedParameter.Hint(p)
 	}
 	perBeat := sointu.SpawnsPerBeat(float64(p.Value()) / 128)
+	var text string
 	if perBeat >= 1 {
-		return ParameterHint{fmt.Sprintf("%s per beat", strconv.FormatFloat(perBeat, 'g', 3, 64)), true}
+		text = fmt.Sprintf("%s per beat", strconv.FormatFloat(perBeat, 'g', 3, 64))
+	} else {
+		text = fmt.Sprintf("every %s beats", strconv.FormatFloat(1/perBeat, 'g', 3, 64))
 	}
-	return ParameterHint{fmt.Sprintf("every %s beats", strconv.FormatFloat(1/perBeat, 'g', 3, 64)), true}
+	if name, ok := spawnNoteLength(p.Value()); ok {
+		text = name + ": " + text
+	}
+	return ParameterHint{text, true}
 }
 
 // bufferFrameParameter vtable: a position in frames in the buffer played by a

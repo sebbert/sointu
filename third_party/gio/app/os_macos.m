@@ -64,14 +64,18 @@ __attribute__ ((visibility ("hidden"))) CALayer *gio_layerFactory(BOOL presentWi
 
 static void handleMouse(GioView *view, NSEvent *event, int typ, CGFloat dx, CGFloat dy) {
 	NSPoint p = [view convertPoint:[event locationInWindow] fromView:nil];
+	int notch = 0;
 	if (!event.hasPreciseScrollingDeltas) {
 		// dx and dy are in rows and columns.
 		dx *= 10;
 		dy *= 10;
+		notch = typ == MOUSE_SCROLL;
 	}
+	// The scrolling that goes on after the fingers have left the trackpad.
+	int momentum = typ == MOUSE_SCROLL && event.momentumPhase != NSEventPhaseNone;
 	// Origin is in the lower left corner. Convert to upper left.
 	CGFloat height = view.bounds.size.height;
-	gio_onMouse(view.handle, (__bridge CFTypeRef)event, typ, event.buttonNumber, p.x, height - p.y, dx, dy, [event timestamp], [event modifierFlags]);
+	gio_onMouse(view.handle, (__bridge CFTypeRef)event, typ, event.buttonNumber, p.x, height - p.y, dx, dy, notch, momentum, [event timestamp], [event modifierFlags]);
 }
 
 @implementation GioView
