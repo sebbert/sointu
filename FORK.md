@@ -28,7 +28,8 @@ changes to the sound are fine, as long as both stay in sync.
   top keeps it above other windows; the setting is saved in the user's
   `preferences.yml`.
 - Vendored: Gio (`third_party/gio`, macOS plugin window and event loop fixes,
-  `TopMost` on Windows and turning it off),
+  `TopMost` on Windows and turning it off, `pointer.Event.Notch` for the
+  notches of a mouse wheel on macOS),
   vst2 (`third_party/vst2`, `Host.UpdateDisplay`), CLAP headers.
 
 ## Song format
@@ -327,6 +328,10 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
 - **Warnings:** spectral units and mc units in instruments with several
   voices, spectra with several writers, and buffers, spectra or buses used
   across threads.
+- **UI zoom:** Ctrl/Cmd+scroll zooms by the distance scrolled: a step for
+  every 50 dp on a trackpad, and for every notch of a mouse wheel
+  (`zoom_scroll.go`). Before, every scroll event was a step, which on macOS
+  went through the whole range in a short swipe.
 - **Other:** no notes play while typing in text fields; recordings survive
   synth rebuilds; NaNs recorded into buffers are cleared.
 
