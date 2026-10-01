@@ -100,6 +100,11 @@ func (m *Model) buildInstrumentTitles() {
 }
 
 func (m *Model) updateParams() {
+	for id := range m.delayFree { // forget the units that are gone
+		if _, _, err := m.d.Song.Patch.FindUnit(id); err != nil {
+			delete(m.delayFree, id)
+		}
+	}
 	for i, instr := range m.d.Song.Patch {
 		setSliceLength(&m.derived.patch[i].params, len(instr.Units))
 		paramsWidth, previews := 0, false
@@ -199,7 +204,8 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 		}
 		ret = append(ret,
 			Parameter{m: m, unit: unit, vtable: &reverbParameter{}},
-			Parameter{m: m, unit: unit, vtable: &delayLinesParameter{}})
+			Parameter{m: m, unit: unit, vtable: &delayLinesParameter{}},
+			Parameter{m: m, unit: unit, vtable: &delayFreeParameter{}})
 		for i := range unit.VarArgs {
 			ret = append(ret, Parameter{m: m, unit: unit, index: i, vtable: &delayTimeParameter{}})
 		}

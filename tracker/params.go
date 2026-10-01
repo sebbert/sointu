@@ -257,11 +257,30 @@ type (
 		RoundToGrid(*Parameter, int, bool) int
 	}
 
+	// optional interfaces of the vtables
+
+	// parameterStepper replaces how Add steps the parameter: it returns the
+	// value delta steps from the current one.
+	parameterStepper interface {
+		Step(p *Parameter, delta int, large bool) int
+	}
+	// parameterScaler gives the knob of the parameter a scale that is not
+	// linear in its value.
+	parameterScaler interface {
+		Position(p *Parameter, value int) float32
+		Dragged(p *Parameter, start int, amount float32) int
+	}
+	// parameterLabeler names the value of the parameter on its knob.
+	parameterLabeler interface {
+		Label(p *Parameter) string
+	}
+
 	// different parameter vtables to handle different types of parameters.
 	// Casting struct{} to interface does not cause allocations.
 	namedParameter      struct{}
 	delayTimeParameter  struct{}
 	delayLinesParameter struct{}
+	delayFreeParameter  struct{}
 	gmDlsEntryParameter struct{}
 	reverbParameter     struct{}
 	// bufferParameter is a parameter referring to a buffer, audio,
@@ -319,11 +338,44 @@ func (p *Parameter) Add(delta int, snapToGrid bool) bool {
 	if p.vtable == nil {
 		return false
 	}
+	if s, ok := p.vtable.(parameterStepper); ok {
+		return p.SetValue(s.Step(p, delta, snapToGrid))
+	}
 	newVal := p.Value() + delta
 	if snapToGrid && p.vtable != nil {
 		newVal = p.vtable.RoundToGrid(p, newVal, delta > 0)
 	}
 	return p.SetValue(newVal)
+}
+
+// Label returns the text shown on the knob of the parameter: its value, or
+// what the value is called.
+func (p *Parameter) Label() string {
+	if l, ok := p.vtable.(parameterLabeler); ok {
+		return l.Label(p)
+	}
+	return strconv.Itoa(p.Value())
+}
+
+// Position returns where a value lies on the scale of the knob of the
+// parameter, 0 being the minimum and 1 the maximum.
+func (p *Parameter) Position(value int) float32 {
+	if s, ok := p.vtable.(parameterScaler); ok {
+		return s.Position(p, value)
+	}
+	r := p.Range()
+	return float32(value-r.Min) / float32(r.Max-r.Min)
+}
+
+// Dragged returns the value that dragging the knob of the parameter leads to,
+// from the value start by amount of its scale: 1 is from the minimum to the
+// maximum. The value is not limited to the range.
+func (p *Parameter) Dragged(start int, amount float32) int {
+	if s, ok := p.vtable.(parameterScaler); ok {
+		return s.Dragged(p, start, amount)
+	}
+	r := p.Range()
+	return int(float32(start) + amount*float32(r.Max-r.Min))
 }
 
 func (p *Parameter) Range() RangeInclusive {
@@ -534,53 +586,10 @@ func (d *delayTimeParameter) SetValue(p *Parameter, v int) bool {
 	return true
 }
 func (d *delayTimeParameter) Range(p *Parameter) RangeInclusive {
-	if p.unit.Parameters["notetracking"] == 2 {
-		return RangeInclusive{Min: 1, Max: 576}
+	if p.unit.Parameters["notetracking"] == delayBPM {
+		return RangeInclusive{Min: 1, Max: delayBPMMax}
 	}
-	return RangeInclusive{Min: 1, Max: 65535}
-}
-func (d *delayTimeParameter) Hint(p *Parameter) ParameterHint {
-	val := d.Value(p)
-	var text string
-	switch p.unit.Parameters["notetracking"] {
-	default:
-	case 0:
-		text = fmt.Sprintf("%.3f rows", float32(val)/float32(p.m.d.Song.SamplesPerRow()))
-	case 1:
-		relPitch := float64(val) / 10787
-		semitones := -math.Log2(relPitch) * 12
-		text = fmt.Sprintf("%.3f st", semitones)
-	case 2:
-		k := 0
-		v := val
-		for v&1 == 0 {
-			v >>= 1
-			k++
-		}
-		switch v {
-		case 1:
-			if k <= 7 {
-				text = fmt.Sprintf(" (1/%d triplet)", 1<<(7-k))
-			}
-		case 3:
-			if k <= 6 {
-				text = fmt.Sprintf(" (1/%d)", 1<<(6-k))
-			}
-		case 9:
-			if k <= 5 {
-				text = fmt.Sprintf(" (1/%d dotted)", 1<<(5-k))
-			}
-		}
-		text = fmt.Sprintf("%.3f beats%s", float32(val)/48.0, text)
-	}
-	if p.unit.Parameters["stereo"] == 1 {
-		if p.index < len(p.unit.VarArgs)/2 {
-			text += " R"
-		} else {
-			text += " L"
-		}
-	}
-	return ParameterHint{text, true}
+	return RangeInclusive{Min: 1, Max: delaySamplesMax}
 }
 func (d *delayTimeParameter) RoundToGrid(p *Parameter, val int, up bool) int {
 	switch p.unit.Parameters["notetracking"] {
