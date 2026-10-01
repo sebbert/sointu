@@ -238,15 +238,23 @@ func (v *UnitModel) Item(row int) UnitListItem {
 			Comment:  u.Comment,
 			Disabled: u.Disabled,
 			Inner:    true,
+			Stack:    signals.PassThrough + e.before[i] + e.uses[i].NumOutputs,
 			First:    i == 0,
 			Last:     i == len(e.units)-1,
 			Signals:  Rail{PassThrough: signals.PassThrough + e.before[i], StackUse: e.uses[i], Send: !u.Disabled && u.Type == "send"},
 		}
 	}
 	unit := units[index]
-	_, isModule := v.d.Song.Modules.Find(unit.Parameters["module"])
+	mod, isModule := v.d.Song.Modules.Find(unit.Parameters["module"])
 	isModule = isModule && unit.Type == "module"
+	stack := signals.StackAfter()
+	if isModule && (*Model)(v).innerUnitsOf(&units[index]) != nil {
+		// unfolded, its inner units show what it does with the signals:
+		// its inputs pass on to them, and they leave its outputs
+		signals = Rail{PassThrough: signals.PassThrough + max(v.d.Song.Modules[mod].Inputs, 0)}
+	}
 	return UnitListItem{
+		Stack:    stack,
 		Module:   isModule,
 		Unfolded: isModule && v.unfolded[unit.ID],
 		Title:    (*Model)(v).unitTitle(&unit),
@@ -262,7 +270,8 @@ func (v *UnitModel) Item(row int) UnitListItem {
 // module unit above it stands for, which cannot be changed.
 //
 // Module is true for a module unit with a module, which can be unfolded, and
-// Unfolded if it is; First and Last are true for the first and the last of
+// Unfolded if it is: its signals then pass on to its inner units, which
+// show what it does with them. First and Last are true for the first and the last of
 // the inner units of a module unit.
 type UnitListItem struct {
 	Type, Title, Comment string
@@ -270,6 +279,7 @@ type UnitListItem struct {
 	Inner, First, Last   bool
 	Module, Unfolded     bool
 	Signals              Rail
+	Stack                int // the number of signals on the stack after the unit
 }
 
 // Type returns the type of the currently selected unit.

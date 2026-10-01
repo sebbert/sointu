@@ -27,6 +27,9 @@ type (
 		Style  *RailStyle
 		Signal tracker.Rail
 		Height unit.Dp
+		// Faint draws the signals half transparent, for the inner units
+		// of a module unit
+		Faint bool
 	}
 )
 
@@ -43,6 +46,10 @@ func (s RailWidget) Layout(gtx C) D {
 	h := gtx.Dp(s.Height)
 	if s.Signal.PassThrough == 0 && len(s.Signal.StackUse.Inputs) == 0 && s.Signal.StackUse.NumOutputs == 0 {
 		return D{Size: image.Pt(sw, h)}
+	}
+	lineColor, portColor := s.Style.Color, s.Style.PortColor
+	if s.Faint {
+		lineColor.A, portColor.A = uint8(int(lineColor.A)*2/5), uint8(int(portColor.A)*2/5)
 	}
 	lw := gtx.Dp(s.Style.LineWidth)
 	pd := gtx.Dp(s.Style.PortDiameter)
@@ -82,7 +89,7 @@ func (s RailWidget) Layout(gtx C) D {
 		path.LineTo(f32.Pt(x, float32(h)))
 	}
 	// Signal paths finished
-	paint.FillShape(gtx.Ops, s.Style.Color,
+	paint.FillShape(gtx.Ops, lineColor,
 		clip.Stroke{
 			Path:  path.End(),
 			Width: float32(lw),
@@ -99,7 +106,7 @@ func (s RailWidget) Layout(gtx C) D {
 		circle.ArcTo(f, f, float32(2*math.Pi))
 	}
 	p := clip.Outline{Path: circle.End()}.Op().Push(gtx.Ops)
-	paint.ColorOp{Color: s.Style.PortColor}.Add(gtx.Ops)
+	paint.ColorOp{Color: portColor}.Add(gtx.Ops)
 	paint.PaintOp{}.Add(gtx.Ops)
 	p.Pop()
 	return D{Size: image.Pt(sw, h)}

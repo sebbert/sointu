@@ -104,4 +104,9 @@ func TestModulesTabLayout(t *testing.T) {
 	model.Unit().List().SetSelected(2)
 	model.Unit().Unfold().SetValue(true)
 	frame("7-example-unfolded")
+	// a module with an input: the signals pass through the module unit
+	model.Instrument().List().SetSelected(1)
+	model.Unit().List().SetSelected(1)
+	model.Unit().Unfold().SetValue(true)
+	frame("8-example-unfolded-with-input")
 }

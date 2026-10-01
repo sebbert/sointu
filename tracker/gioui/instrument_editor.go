@@ -154,7 +154,7 @@ func (ul *InstrumentEditor) layoutList(gtx C) D {
 				return Label(t.Theme, &l, text).Layout(gtx)
 			}
 		}
-		stackText := strconv.FormatInt(int64(u.Signals.StackAfter()), 10)
+		stackText := strconv.FormatInt(int64(u.Stack), 10)
 		commentLabel := Label(t.Theme, &t.Theme.InstrumentEditor.UnitList.Comment, u.Comment)
 		stackLabel := Label(t.Theme, &t.Theme.InstrumentEditor.UnitList.Stack, stackText)
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
@@ -366,6 +366,7 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 		}
 		item := t.Unit().Item(y)
 		sr := Rail(t.Theme, item.Signals)
+		sr.Faint = item.Inner // like the rest of the row
 		label := Label(t.Theme, &t.Theme.UnitEditor.UnitList.Name, item.Title)
 		switch {
 		case item.Disabled, item.Inner:

@@ -383,6 +383,14 @@ func TestUnfold(t *testing.T) {
 	if got := strings.Join(types, " "); got != "oscillator send Module envelope oscillator mulp filter out" {
 		t.Errorf("rows: %v", got)
 	}
+	// unfolded, the module unit passes its signals on to its inner units,
+	// which leave its output
+	if head := m.Unit().Item(2); head.Signals.StackUse.NumOutputs != 0 || head.Signals.PassThrough != 0 || head.Stack != 1 || !head.Unfolded {
+		t.Errorf("the unfolded module unit: %+v", head)
+	}
+	if last := m.Unit().Item(6); last.Stack != 1 || !last.Last {
+		t.Errorf("the last inner unit: %+v", last)
+	}
 	// the signals of the inner units: envelope 1, oscillator 2, mulp 1
 	after := func(row int) int {
 		signals := m.Unit().Item(row).Signals
