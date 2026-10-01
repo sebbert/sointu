@@ -263,6 +263,7 @@ func (s *modelFuzzState) IterateList(name string, l tracker.List, yield func(str
 		l.SetSelected(l.Selected() - 1)
 		l.SetSelected2(l.Selected())
 	})
+	yield(name+".SelectAll", func(p string, t *testing.T) { l.SelectAll() })
 	yield(name+".ExtendSelection", func(p string, t *testing.T) {
 		l.ExtendSelection(seed%5 - 2)
 	})

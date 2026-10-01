@@ -280,8 +280,7 @@ func (e *DragList) command(gtx layout.Context, k key.Event) {
 			}
 			return
 		case "A":
-			e.TrackerList.SetSelected(0)
-			e.TrackerList.SetSelected2(e.TrackerList.Count() - 1)
+			e.TrackerList.SelectAll()
 			return
 		}
 	}

@@ -3,6 +3,8 @@ package tracker
 import (
 	"strings"
 	"testing"
+
+	"github.com/vsariola/sointu"
 )
 
 // newInlineTestModel returns the test model with its module used by two
@@ -223,6 +225,11 @@ func TestInnerUnitsStructure(t *testing.T) {
 	if units.Selected2() != 6 {
 		t.Errorf("selecting down to the last row ends on row %v", units.Selected2())
 	}
+	// selecting all selects the inner units
+	selectRow(m, 5)
+	if units.SelectAll(); units.Selected() != 3 || units.Selected2() != 6 || len(m.d.UnitPath) != 1 {
+		t.Errorf("after selecting all: rows %v to %v", units.Selected(), units.Selected2())
+	}
 	// the last inner unit cannot be deleted: the cursor would be on the
 	// module unit, and the next delete would delete that
 	selectRow(m, 3)
@@ -371,5 +378,58 @@ func TestInnerUnitsOfInnerUnits(t *testing.T) {
 	selectRow(m, 5)
 	if u := m.playedUnit(5); u == nil || u.ID != patch[0].Units[3].ID || u.Parameters["detune"] != 55 {
 		t.Errorf("the unit played for the inner oscillator: %+v, want %v", u, patch[0].Units[3].ID)
+	}
+}
+
+// TestInnerBoundChoice checks a bound parameter that is a choice, a bus: the
+// inner unit shows the bus of the module unit, and choosing another one
+// gives it to the module unit.
+func TestInnerBoundChoice(t *testing.T) {
+	m, broker := newModuleTestModel(t)
+	m.Instrument().Tab().SetValue(int(InstrumentModulesTab))
+	m.Module().Add().Do()
+	m.Unit().Add(false).Do()
+	m.Unit().SetType("mcspread")
+	own := m.d.Song.Modules[0].Units[0].Parameters["bus"]
+	func() {
+		defer m.change("Test", PatchChange, MajorChange)()
+		m.d.Song.Buffers = append(m.d.Song.Buffers, sointu.Buffer{ID: 50, Name: "Other bus", Channels: sointu.MCChannels, Bus: true})
+	}()
+	m.Module().AddParam().Do()
+	bindParam(t, m, 0, "bus", 1)
+	m.Instrument().Tab().SetValue(int(InstrumentEditorTab))
+	m.Unit().List().SetSelected(2)
+	m.Unit().Add(false).Do()
+	m.Unit().SetType("module")
+	row := m.Unit().List().Selected()
+	m.Unit().Unfold().SetValue(true)
+	if item := m.Unit().Item(row + 1); !item.Inner || item.Type != "mcspread" {
+		t.Fatalf("the row under the module unit: %+v", item)
+	}
+	drainPlayer(broker)
+	bus := paramNamed(t, m, row+1, "bus")
+	if name, ok := bus.Bound(); bus.Type() != ChoiceParameter || !ok || name != "p1" || bus.Hint().Label == "" {
+		t.Fatalf("the bus of the inner unit: type %v, bound %v to %q", bus.Type(), ok, name)
+	}
+	choices := bus.Int()
+	if choices.StringOf(2) != "Other bus" || !choices.SetValue(2) {
+		t.Fatalf("the choices of the bus: %q", choices.StringOf(2))
+	}
+	if got := m.d.Song.Patch[0].Units[row].Parameters["p1"]; got != 50 {
+		t.Errorf("the module unit has the bus %v, want 50", got)
+	}
+	if got := m.d.Song.Modules[0].Units[0].Parameters["bus"]; got != own || m.d.Song.Modules[0].Params[0].Default != own {
+		t.Errorf("the module changed: bus %v, default %v, was %v", got, m.d.Song.Modules[0].Params[0].Default, own)
+	}
+	if got := playerPatch(t, broker)[0].Units[row].Parameters["bus"]; got != 50 {
+		t.Errorf("the player got the bus %v, want 50", got)
+	}
+	bus = paramNamed(t, m, row+1, "bus")
+	if bus.Value() != 2 {
+		t.Errorf("the inner unit shows bus %v, want 2", bus.Value())
+	}
+	// the preview of the inner unit is of the bus that is played
+	if id, ok := m.Unit().Bus(row + 1); !ok || id != 50 {
+		t.Errorf("the preview shows bus %v", id)
 	}
 }

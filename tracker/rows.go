@@ -472,3 +472,9 @@ func (v *unitRows) SetSelected2(row int) { v.d.UnitIndex2 = (*Model)(v).unitNear
 func (v *unitRows) extendSelection(delta int) {
 	v.units().SetSelected(clamp(v.d.UnitIndex+delta, 0, max(v.units().Count()-1, 0)))
 }
+
+// selectAll selects the units being edited.
+func (v *unitRows) selectAll() {
+	v.units().SetSelected(0)
+	v.units().SetSelected2(max(v.units().Count()-1, 0))
+}

@@ -247,15 +247,27 @@ type (
 	// elements, e.g. the rows of the unit editor, some of which are inner
 	// units of module units. elements returns the list of the elements that
 	// are moved, deleted, copied and pasted, with a selection of its own,
-	// and extendSelection moves the cursor by delta elements, leaving the
-	// other end of the selection where it is.
+	// extendSelection moves the cursor by delta elements, leaving the other
+	// end of the selection where it is, and selectAll selects the elements.
 	rowListData interface {
 		elements() List
 		extendSelection(delta int)
+		selectAll()
 	}
 )
 
 func MakeList(data ListData) List { return List{data} }
+
+// SelectAll selects all the elements of the list: of a list whose rows are
+// not its elements, the elements that the cursor is among.
+func (l List) SelectAll() {
+	if r, ok := l.data.(rowListData); ok {
+		r.selectAll()
+		return
+	}
+	l.SetSelected(0)
+	l.SetSelected2(l.Count() - 1)
+}
 
 // ExtendSelection moves the cursor of a list whose rows are not its elements
 // by delta elements, leaving the other end of the selection where it is. For

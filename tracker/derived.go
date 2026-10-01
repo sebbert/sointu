@@ -426,8 +426,8 @@ func (m *Model) updateWires() {
 		d := &m.derived.modules[i]
 		d.wires = d.wires[:0]
 		for u, unit := range mod.Units {
-			if unit.Disabled || unit.Type != "send" {
-				continue
+			if unit.Disabled || unit.Type != "send" || unit.Parameters["target"] == 0 {
+				continue // a send without a target has no wire
 			}
 			wire := Wire{From: u, FromSet: true, Hint: "To a unit outside the module"}
 			for tU, target := range mod.Units {
