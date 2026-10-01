@@ -4,7 +4,6 @@ import (
 	"image"
 	"image/color"
 	"math"
-	"strconv"
 
 	"gioui.org/f32"
 	"gioui.org/gesture"
@@ -221,15 +220,13 @@ func (k *KnobWidget) Layout(gtx C) D {
 			k.State.dragStartVal = k.Value.Value()
 		case pointer.Drag:
 			// update the value based on the drag amount
-			m := k.Value.Range()
 			d := p.Position.Sub(k.State.dragStartPt)
 			speed := gtx.Dp(512)
 			if p.Modifiers.Contain(key.ModCtrl) {
 				speed = gtx.Dp(128)
 			}
 			amount := float32(d.X-d.Y) / float32(speed)
-			newValue := int(float32(k.State.dragStartVal) + amount*float32(m.Max-m.Min))
-			k.Value.SetValue(newValue)
+			k.Value.SetValue(k.Value.Dragged(k.State.dragStartVal, amount))
 			k.State.tipArea.Appear(gtx.Now)
 		}
 	}
@@ -245,10 +242,9 @@ func (k *KnobWidget) Layout(gtx C) D {
 	}
 	d := gtx.Dp(k.Style.Diameter)
 	knob := func(gtx C) D {
-		m := k.Value.Range()
-		amount := float32(k.Value.Value()-m.Min) / float32(m.Max-m.Min)
+		amount := k.Value.Position(k.Value.Value())
 		sw := gtx.Dp(k.Style.StrokeWidth)
-		middle := float32(k.Value.Neutral()-m.Min) / float32(m.Max-m.Min)
+		middle := k.Value.Position(k.Value.Neutral())
 		pos := max(amount, middle)
 		neg := min(amount, middle)
 		if middle > 0 {
@@ -266,7 +262,7 @@ func (k *KnobWidget) Layout(gtx C) D {
 		k.strokeIndicator(gtx, amount)
 		return D{Size: image.Pt(d, d)}
 	}
-	label := Label(k.Theme, &k.Style.Value, strconv.Itoa(k.Value.Value()))
+	label := Label(k.Theme, &k.Style.Value, k.Value.Label())
 	w := func(gtx C) D {
 		return layout.Stack{Alignment: layout.Center}.Layout(gtx,
 			layout.Stacked(knob),
