@@ -147,9 +147,11 @@ exactly the same players as before. The `module` unit has no opcode
   each of them, only the last one popping, and each of those sends counts as
   a unit. With nothing bound that can be modulated, a popping send becomes a
   `pop`. A stereo send also modulates the parameters of the next module
-  parameter with its other channel; as those need not be next to each other
-  in one unit, it becomes mono sends of the top signal, an `xch`, mono sends
-  of the other signal, an `xch`, and a stereo `pop` if it pops. A parameter
+  parameter with its other channel. Where the two module parameters are
+  bound to two ports next to each other of one unit, like `left` and `right`
+  of a `receive`, it stays one stereo send. The others become mono sends of
+  the top signal, an `xch`, mono sends of the other signal, an `xch`, and a
+  stereo `pop` if it pops. A parameter
   that can only be modulated, like the inputs of `receive`, can be bound
   too: signals then reach the module through sends.
 - **Buffers.** A buffer that the tracker created (`Auto`: spectra and buses)

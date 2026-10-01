@@ -392,19 +392,18 @@ func TestExpandStereoSend(t *testing.T) {
 	got, exp := s.Expand()
 	noProblems(t, exp)
 	u := got.Patch[0].Units
-	want := "oscillator oscillator send:stereo=0:sendpop=0:amount=90 xch send:stereo=0:sendpop=0:amount=90 send:stereo=0:sendpop=0:amount=90 xch pop:stereo=1 noise filter gain out"
+	// the frequency and the resonance of the filter are ports next to each
+	// other: a stereo send; the gain gets the signal below on its own
+	want := "oscillator oscillator send:stereo=1:sendpop=0:amount=90 xch send:stereo=0:sendpop=0:amount=90 xch pop:stereo=1 noise filter gain out"
 	if s := summary(u, "stereo", "sendpop", "amount"); s != want {
 		t.Fatalf("got  %v\nwant %v", s, want)
 	}
-	filter, gain := u[9], u[10]
+	filter, gain := u[8], u[9]
 	if p := u[2].Parameters; p["target"] != filter.ID || p["port"] != 0 {
-		t.Errorf("the send of the top signal goes to %v port %v", p["target"], p["port"])
+		t.Errorf("the stereo send goes to %v port %v", p["target"], p["port"])
 	}
-	if p := u[4].Parameters; p["target"] != filter.ID || p["port"] != 1 {
-		t.Errorf("the first send of the signal below goes to %v port %v", p["target"], p["port"])
-	}
-	if p := u[5].Parameters; p["target"] != gain.ID || p["port"] != 0 {
-		t.Errorf("the second send of the signal below goes to %v port %v", p["target"], p["port"])
+	if p := u[4].Parameters; p["target"] != gain.ID || p["port"] != 0 {
+		t.Errorf("the send of the signal below goes to %v port %v", p["target"], p["port"])
 	}
 }
 
@@ -428,5 +427,33 @@ func TestExpandDelayTimes(t *testing.T) {
 	}
 	if !sointu.CanBind("delay", "delaytime3") || sointu.CanBind("filter", "delaytime1") || sointu.CanBind("delay", "delaytime0") {
 		t.Errorf("CanBind is wrong for delay times")
+	}
+}
+
+func TestExpandStereoSendToPair(t *testing.T) {
+	// two ports of the module bound to the left and right of a receive: a
+	// stereo send to the module unit stays one stereo send
+	m := sointu.Module{ID: 1, Params: []sointu.ModuleParam{{Name: "left"}, {Name: "right"}}, Units: []sointu.Unit{
+		bound(unit("receive", 0, map[string]int{"stereo": 1}), map[string]int{"left": 1, "right": 2}),
+	}}
+	lfo := unit("oscillator", 0, map[string]int{"lfo": 1})
+	send := unit("send", 6, map[string]int{"target": 7, "port": 0, "stereo": 1, "sendpop": 1, "amount": 90})
+	s := song(sointu.Modules{m}, lfo, lfo, send, call(7, 1), unit("out", 0, map[string]int{"stereo": 1}))
+	got, exp := s.Expand()
+	noProblems(t, exp)
+	u := got.Patch[0].Units
+	if s, want := summary(u, "stereo", "sendpop", "amount"), "oscillator oscillator send:stereo=1:sendpop=1:amount=90 receive:stereo=1 out:stereo=1"; s != want {
+		t.Fatalf("got  %v\nwant %v", s, want)
+	}
+	if p := u[2].Parameters; p["target"] != u[3].ID || p["port"] != 0 || u[2].ID != 6 {
+		t.Errorf("the send %v goes to %v port %v, the receive is %v", u[2].ID, p["target"], p["port"], u[3].ID)
+	}
+	// with another parameter bound to the first port, that one gets a mono send
+	m.Units = append(m.Units, bound(unit("gain", 0, nil), map[string]int{"gain": 1}))
+	s = song(sointu.Modules{m}, lfo, lfo, send, call(7, 1), unit("out", 0, map[string]int{"stereo": 1}))
+	got, exp = s.Expand()
+	noProblems(t, exp)
+	if s, want := summary(got.Patch[0].Units, "stereo", "sendpop"), "oscillator oscillator send:stereo=1:sendpop=0 send:stereo=0:sendpop=0 pop:stereo=1 receive:stereo=1 gain out:stereo=1"; s != want {
+		t.Errorf("got  %v\nwant %v", s, want)
 	}
 }
