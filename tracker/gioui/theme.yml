@@ -278,6 +278,7 @@ disabledknob:
 signalrail:
   color: *secondarycolor
   signalwidth: 10
+  minsignals: 6
   linewidth: 2
   portdiameter: 8
   portcolor: *primarycolor

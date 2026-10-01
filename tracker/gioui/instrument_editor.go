@@ -62,6 +62,7 @@ type (
 
 		searching tracker.Bool
 		previews  []Clickable // of the units' buffers, by unit
+		railLane  RailLane
 	}
 )
 
@@ -348,7 +349,7 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 	cellWidth := gtx.Dp(t.Theme.UnitEditor.Width)
 	cellHeight := gtx.Dp(t.Theme.UnitEditor.Height)
 	rowTitleLabelWidth := gtx.Dp(t.Theme.UnitEditor.UnitList.LabelWidth)
-	rowTitleSignalWidth := gtx.Dp(t.Theme.SignalRail.SignalWidth) * t.Unit().RailWidth()
+	rowTitleSignalWidth := pe.railWidth(gtx)
 	rowTitleWidth := rowTitleLabelWidth + rowTitleSignalWidth
 	signalError := t.Unit().RailError()
 	columnTitleHeight := gtx.Dp(0)
@@ -469,6 +470,30 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 	pe.drawSignals(gtx, rowTitleWidth)
 	dims := table.Layout(gtx, cell, coltitle, rowtitle, nil, nil)
 	return dims
+}
+
+// railWidth returns the width of the signal rails of the rack, in pixels: see
+// RailLane.
+func (pe *InstrumentEditor) railWidth(gtx C) int {
+	t := TrackerFromContext(gtx)
+	// the units being edited: those of an instrument or a module, which
+	// have no identity of their own, so also by the ID of the first unit.
+	// An instrument added or loaded in the place of another has other units
+	type units struct {
+		module      bool
+		index, unit int
+	}
+	first := t.Params().Item(tracker.Point{})
+	key := units{index: t.Instrument().List().Selected(), unit: first.UnitID()}
+	if t.Module().Editing() {
+		key.module, key.index = true, t.Module().List().Selected()
+	}
+	signals := max(t.Unit().RailWidth(), t.Theme.SignalRail.MinSignals)
+	width, widening := pe.railLane.Update(gtx.Now, key, signals, gtx.Dp(t.Theme.SignalRail.SignalWidth))
+	if widening {
+		gtx.Execute(op.InvalidateCmd{})
+	}
+	return width
 }
 
 func (pe *InstrumentEditor) drawSignals(gtx C, rowTitleWidth int) {
