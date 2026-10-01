@@ -58,6 +58,7 @@ func (s *modelFuzzState) Iterate(yield func(string, func(p string, t *testing.T)
 	s.IterateList("PresetDirs", s.model.Preset().DirList(), yield, seed)
 	s.IterateList("PresetResults", s.model.Preset().SearchResultList(), yield, seed)
 	s.IterateList("Modules", s.model.Module().List(), yield, seed)
+	s.IterateList("PeekUnits", s.model.Peek().Units().List(), yield, seed)
 	// Bools
 	s.IterateBool("Panic", s.model.Play().Panicked(), yield, seed)
 	s.IterateBool("Recording", s.model.Play().IsRecording(), yield, seed)
@@ -68,6 +69,7 @@ func (s *modelFuzzState) Iterate(yield func(string, func(p string, t *testing.T)
 	s.IterateBool("UniquePatterns", s.model.Note().UniquePatterns(), yield, seed)
 	s.IterateBool("LinkInstrTrack", s.model.Track().LinkInstrument(), yield, seed)
 	s.IterateBool("ModuleParamBound1", s.model.Module().ParamBound(1), yield, seed)
+	s.IterateBool("PeekShow", s.model.Peek().Show(), yield, seed)
 	s.IterateBool("ModuleParamBound2", s.model.Module().ParamBound(2), yield, seed)
 	// Strings
 	s.IterateString("FilePath", s.model.Song().FilePath(), yield, seed)
@@ -113,6 +115,7 @@ func (s *modelFuzzState) Iterate(yield func(string, func(p string, t *testing.T)
 	s.IterateTable("Order", s.model.Order().Table(), yield, seed)
 	s.IterateTable("Notes", s.model.Note().Table(), yield, seed)
 	s.IterateTable("Params", s.model.Params().Table(), yield, seed)
+	s.IterateTable("PeekParams", s.model.Peek().Params().Table(), yield, seed)
 	// File reading
 	if s.file != nil {
 		yield("ReadSong", func(p string, t *testing.T) {

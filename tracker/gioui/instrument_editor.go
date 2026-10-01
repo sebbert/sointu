@@ -57,6 +57,40 @@ type (
 
 		searching tracker.Bool
 		previews  []Clickable // of the units' buffers, by unit
+
+		// the rack of the units that the selected module unit stands for
+		peekTable      *ScrollTable
+		peekParameters [][]*ParamState
+		peekPreviews   []Clickable
+		peekBtn        *Clickable
+		peek           *tracker.PeekModel
+	}
+
+	// rackView is what a rack shows, and its state: the units being edited,
+	// or with peek, read only, the units that the selected module unit
+	// stands for.
+	rackView struct {
+		table    *ScrollTable
+		states   *[][]*ParamState
+		previews *[]Clickable
+		units    rackUnits
+		params   rackParams
+		peek     bool
+	}
+
+	rackUnits interface {
+		Item(i int) tracker.UnitListItem
+		RailWidth() int
+		Buffer(i int) (id int, spectrum, ok bool)
+		Bus(i int) (id int, ok bool)
+		Spectrum(i int) ([]float32, int)
+		Levels(i int) []float32
+	}
+
+	rackParams interface {
+		Cursor() tracker.Point
+		Item(p tracker.Point) tracker.Parameter
+		RowWidth(y int) int
 	}
 )
 
@@ -79,6 +113,10 @@ func NewInstrumentEditor(m *tracker.Model) *InstrumentEditor {
 		inlineModuleBtn: new(Clickable),
 		uniqueModuleBtn: new(Clickable),
 		openModuleBtn:   new(Clickable),
+
+		peekTable: NewScrollTable(m.Peek().Params().Table(), m.Peek().Params().Columns(), m.Peek().Units().List()),
+		peekBtn:   new(Clickable),
+		peek:      m.Peek(),
 	}
 	ret.caser = cases.Title(language.English)
 	ret.copyHint = makeHint("Copy unit", " (%s)", "Copy")
@@ -103,7 +141,11 @@ func (ie *InstrumentEditor) Tags(level int, yield TagYieldFunc) bool {
 	if ie.searching.Value() {
 		return ret && yield(level, ie.searchList)
 	}
-	return ret && yield(level+1, ie.paramTable.RowTitleList) && yield(level, ie.paramTable) && yield(level+1, &ie.commentEditor.widgetEditor)
+	ret = ret && yield(level+1, ie.paramTable.RowTitleList) && yield(level, ie.paramTable) && yield(level+1, &ie.commentEditor.widgetEditor)
+	if ie.peek.Visible() {
+		return ret && yield(level+1, ie.peekTable.RowTitleList) && yield(level, ie.peekTable)
+	}
+	return ret
 }
 
 func (ul *InstrumentEditor) layoutList(gtx C) D {
@@ -310,34 +352,64 @@ func (pe *InstrumentEditor) ChooseUnitType(t *Tracker) {
 	}
 }
 
+// layoutRack lays out the rack of the units being edited, and under it, read
+// only, the units that the selected module unit stands for.
 func (pe *InstrumentEditor) layoutRack(gtx C) D {
+	t := TrackerFromContext(gtx)
+	main := rackView{table: pe.paramTable, states: &pe.Parameters, previews: &pe.previews, units: t.Unit(), params: t.Params()}
+	if !t.Peek().Visible() {
+		return pe.layoutRackOf(gtx, main)
+	}
+	peek := rackView{table: pe.peekTable, states: &pe.peekParameters, previews: &pe.peekPreviews, units: t.Peek().Units(), params: t.Peek().Params(), peek: true}
+	title := func(gtx C) D {
+		gtx.Constraints.Min.X = gtx.Constraints.Max.X
+		paint.FillShape(gtx.Ops, t.Theme.UnitEditor.Divider, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, 1)}.Op())
+		text := "The units of " + t.Peek().Title() + ", as this module unit runs them (read only)"
+		if t.Module().Editing() {
+			text = "The units of " + t.Peek().Title() + " (read only)"
+		}
+		return layout.UniformInset(unit.Dp(4)).Layout(gtx, Label(t.Theme, &t.Theme.InstrumentEditor.UnitList.Comment, text).Layout)
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Flexed(0.5, func(gtx C) D { return pe.layoutRackOf(gtx, main) }),
+		layout.Rigid(title),
+		layout.Flexed(0.5, func(gtx C) D { return pe.layoutRackOf(gtx, peek) }),
+	)
+}
+
+// layoutRackOf lays out a rack: a row for each unit, with its signals, its
+// name and its parameters.
+func (pe *InstrumentEditor) layoutRackOf(gtx C, r rackView) D {
 	defer clip.Rect(image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Constraints.Max.Y)).Push(gtx.Ops).Pop()
 	t := TrackerFromContext(gtx)
 	// create enough parameter widget to match the number of parameters
-	width := pe.paramTable.Table.Width()
-	for len(pe.Parameters) < pe.paramTable.Table.Height() {
-		pe.Parameters = append(pe.Parameters, make([]*ParamState, 0))
+	width := r.table.Table.Width()
+	for len(*r.states) < r.table.Table.Height() {
+		*r.states = append(*r.states, make([]*ParamState, 0))
 	}
 	cellWidth := gtx.Dp(t.Theme.UnitEditor.Width)
 	cellHeight := gtx.Dp(t.Theme.UnitEditor.Height)
 	rowTitleLabelWidth := gtx.Dp(t.Theme.UnitEditor.UnitList.LabelWidth)
-	rowTitleSignalWidth := gtx.Dp(t.Theme.SignalRail.SignalWidth) * t.Unit().RailWidth()
+	rowTitleSignalWidth := gtx.Dp(t.Theme.SignalRail.SignalWidth) * r.units.RailWidth()
 	rowTitleWidth := rowTitleLabelWidth + rowTitleSignalWidth
 	signalError := t.Unit().RailError()
+	if r.peek {
+		signalError = tracker.RailError{}
+	}
 	columnTitleHeight := gtx.Dp(0)
-	for i := range pe.Parameters {
-		for len(pe.Parameters[i]) < width {
-			pe.Parameters[i] = append(pe.Parameters[i], &ParamState{tipArea: TipArea{ExitDuration: time.Second * 2}})
+	for i := range *r.states {
+		for len((*r.states)[i]) < width {
+			(*r.states)[i] = append((*r.states)[i], &ParamState{tipArea: TipArea{ExitDuration: time.Second * 2}})
 		}
 	}
 	coltitle := func(gtx C, x int) D {
 		return D{Size: image.Pt(cellWidth, columnTitleHeight)}
 	}
 	rowtitle := func(gtx C, y int) D {
-		if y < 0 || y >= len(pe.Parameters) {
+		if y < 0 || y >= len(*r.states) {
 			return D{}
 		}
-		item := t.Unit().Item(y)
+		item := r.units.Item(y)
 		sr := Rail(t.Theme, item.Signals)
 		label := Label(t.Theme, &t.Theme.UnitEditor.UnitList.Name, item.Title)
 		switch {
@@ -354,32 +426,32 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 		return D{Size: image.Pt(rowTitleWidth, cellHeight)}
 	}
 	cell := func(gtx C, x, y int) D {
-		cursor := t.Model.Params().Cursor()
+		cursor := r.params.Cursor()
 		gtx.Constraints = layout.Exact(image.Pt(cellWidth, cellHeight))
 		point := tracker.Point{X: x, Y: y}
-		if y < 0 || y >= len(pe.Parameters) || x < 0 || x >= len(pe.Parameters[y]) {
+		if y < 0 || y >= len(*r.states) || x < 0 || x >= len((*r.states)[y]) {
 			return D{}
 		}
-		selection := pe.paramTable.Table.Range()
+		selection := r.table.Table.Range()
 		if selection.Contains(point) {
 			color := t.Theme.Selection.Inactive
-			if gtx.Focused(pe.paramTable) {
+			if gtx.Focused(r.table) {
 				color = t.Theme.Selection.Active
 			}
 			if point == cursor {
 				color = t.Theme.Cursor.Inactive
-				if gtx.Focused(pe.paramTable) {
+				if gtx.Focused(r.table) {
 					color = t.Theme.Cursor.Active
 				}
 			}
 			paint.FillShape(gtx.Ops, color, clip.Rect{Min: image.Pt(0, 0), Max: image.Pt(gtx.Constraints.Min.X, gtx.Constraints.Min.Y)}.Op())
 		}
 
-		param := t.Model.Params().Item(point)
-		paramStyle := Param(param, t.Theme, pe.Parameters[y][x], pe.paramTable.Table.Cursor() == point, t.Unit().Item(y).Disabled)
+		param := r.params.Item(point)
+		paramStyle := Param(param, t.Theme, (*r.states)[y][x], r.table.Table.Cursor() == point, r.units.Item(y).Disabled)
 		paramStyle.Layout(gtx)
-		if x == t.Model.Params().RowWidth(y) {
-			if y == cursor.Y {
+		if x == r.params.RowWidth(y) {
+			if y == cursor.Y && !r.peek {
 				return layout.W.Layout(gtx, func(gtx C) D {
 					for pe.commentEditor.Update(gtx, t.Unit().Comment()) != EditorEventNone {
 						t.FocusPrev(gtx, false)
@@ -389,7 +461,7 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 					return pe.commentEditor.Layout(gtx, t.Unit().Comment(), t.Theme, &t.Theme.InstrumentEditor.UnitComment, "---")
 				})
 			} else {
-				comment := t.Unit().Item(y).Comment
+				comment := r.units.Item(y).Comment
 				if comment != "" {
 					style := t.Theme.InstrumentEditor.UnitComment.AsLabelStyle()
 					label := Label(t.Theme, &style, comment)
@@ -404,22 +476,24 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 		return D{Size: image.Pt(gtx.Constraints.Max.X, gtx.Constraints.Max.Y)}
 
 	}
-	table := FilledScrollTable(t.Theme, pe.paramTable)
+	table := FilledScrollTable(t.Theme, r.table)
 	table.RowTitleWidth = gtx.Metric.PxToDp(rowTitleWidth)
 	table.ColumnTitleHeight = 0
 	table.CellWidth = t.Theme.UnitEditor.Width
 	table.CellHeight = t.Theme.UnitEditor.Height
 	if t.preferences.Rack.BufferPreviews {
 		table.RowOverlay = func(gtx C, y int) {
-			if id, ok := t.Unit().Bus(y); ok {
-				pe.layoutBusPreview(gtx, y, id)
-			} else if id, spectrum, ok := t.Unit().Buffer(y); ok {
-				pe.layoutUnitPreview(gtx, y, id, spectrum)
+			if id, ok := r.units.Bus(y); ok {
+				pe.layoutBusPreview(gtx, r, y, id)
+			} else if id, spectrum, ok := r.units.Buffer(y); ok {
+				pe.layoutUnitPreview(gtx, r, y, id, spectrum)
 			}
 		}
 	}
-	pe.drawBackGround(gtx)
-	pe.drawSignals(gtx, rowTitleWidth)
+	pe.drawBackGround(gtx, r)
+	if !r.peek {
+		pe.drawSignals(gtx, rowTitleWidth)
+	}
 	dims := table.Layout(gtx, cell, coltitle, rowtitle, nil, nil)
 	return dims
 }
@@ -449,11 +523,11 @@ func (pe *InstrumentEditor) drawSignals(gtx C, rowTitleWidth int) {
 	}
 }
 
-func (pe *InstrumentEditor) drawBackGround(gtx C) {
+func (pe *InstrumentEditor) drawBackGround(gtx C, r rackView) {
 	t := TrackerFromContext(gtx)
-	rowP := pe.paramTable.RowTitleList.List.Position
+	rowP := r.table.RowTitleList.List.Position
 	defer op.Offset(image.Pt(0, -rowP.Offset)).Push(gtx.Ops).Pop()
-	for range pe.paramTable.RowTitleList.List.Position.Count + 1 {
+	for range r.table.RowTitleList.List.Position.Count + 1 {
 		paint.FillShape(gtx.Ops, t.Theme.UnitEditor.Divider, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, 1)}.Op())
 		op.Offset(image.Pt(0, gtx.Dp(t.Theme.UnitEditor.Height))).Add(gtx.Ops)
 	}
@@ -549,6 +623,7 @@ func (pe *InstrumentEditor) layoutFooter(gtx C) D {
 	openModuleBtn := ActionIconBtn(t.Unit().OpenModule(), t.Theme, pe.openModuleBtn, icons.ActionOpenInNew, pe.openModuleHint)
 	inlineModuleBtn := ActionIconBtn(t.Unit().InlineModule(), t.Theme, pe.inlineModuleBtn, icons.NavigationUnfoldMore, "Replace the module unit with\nthe units of its module")
 	uniqueModuleBtn := ActionIconBtn(t.Unit().UniqueModule(), t.Theme, pe.uniqueModuleBtn, icons.CommunicationCallSplit, "Give the module unit a copy\nof its module of its own")
+	peekBtn := ToggleIconBtn(t.Peek().Show(), t.Theme, pe.peekBtn, icons.ActionVisibilityOff, icons.ActionVisibility, "Show the units that\nthe module unit stands for", "Hide the units that\nthe module unit stands for")
 	// what the units come to: of an instrument, the units it has once its
 	// module units are expanded; of a module, its inputs and outputs
 	status := func(gtx C) D {
@@ -581,6 +656,7 @@ func (pe *InstrumentEditor) layoutFooter(gtx C) D {
 			layout.Rigid(openModuleBtn.Layout),
 			layout.Rigid(inlineModuleBtn.Layout),
 			layout.Rigid(uniqueModuleBtn.Layout),
+			layout.Rigid(peekBtn.Layout),
 		)
 	}
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,

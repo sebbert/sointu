@@ -14,12 +14,12 @@ import (
 // what its buffer holds: the waveform of an audio buffer, with its write head
 // and the notes playing it, or a spectrum as the spectral unit left it.
 // Clicking it shows the buffer in the Buffers tab.
-func (pe *InstrumentEditor) layoutUnitPreview(gtx C, y, id int, spectrum bool) {
+func (pe *InstrumentEditor) layoutUnitPreview(gtx C, r rackView, y, id int, spectrum bool) {
 	t := TrackerFromContext(gtx)
-	for len(pe.previews) <= y {
-		pe.previews = append(pe.previews, Clickable{})
+	for len(*r.previews) <= y {
+		*r.previews = append(*r.previews, Clickable{})
 	}
-	click := &pe.previews[y]
+	click := &(*r.previews)[y]
 	for click.Clicked(gtx) {
 		t.Buffer().Show(id).Do()
 	}
@@ -40,7 +40,7 @@ func (pe *InstrumentEditor) layoutUnitPreview(gtx C, y, id int, spectrum bool) {
 		}
 	}
 	if spectrum {
-		mags, n := t.Unit().Spectrum(y)
+		mags, n := r.units.Spectrum(y)
 		if n == 0 { // the unit has not processed a spectrum yet
 			mags, n = t.Buffer().SpectrumOf(id)
 		}
@@ -78,12 +78,12 @@ const busLevelDbMin = -60
 // channels (summed to the left) in the color of the left channel and the odd
 // ones in the color of the right one. Clicking it shows the bus in the
 // Buffers tab.
-func (pe *InstrumentEditor) layoutBusPreview(gtx C, y, id int) {
+func (pe *InstrumentEditor) layoutBusPreview(gtx C, r rackView, y, id int) {
 	t := TrackerFromContext(gtx)
-	for len(pe.previews) <= y {
-		pe.previews = append(pe.previews, Clickable{})
+	for len(*r.previews) <= y {
+		*r.previews = append(*r.previews, Clickable{})
 	}
-	click := &pe.previews[y]
+	click := &(*r.previews)[y]
 	for click.Clicked(gtx) {
 		t.Buffer().Show(id).Do()
 	}
@@ -96,7 +96,7 @@ func (pe *InstrumentEditor) layoutBusPreview(gtx C, y, id int) {
 	defer op.Offset(image.Pt(gtx.Constraints.Max.X-width+inset, inset)).Push(gtx.Ops).Pop()
 	defer clip.UniformRRect(image.Rectangle{Max: s}, gtx.Dp(4)).Push(gtx.Ops).Pop()
 	paint.Fill(gtx.Ops, t.Theme.UnitEditor.Preview)
-	levels := t.Unit().Levels(y)
+	levels := r.units.Levels(y)
 	for c, l := range levels {
 		db := 20 * math.Log10(float64(l))
 		h := int(float64(s.Y) * min(max((db-busLevelDbMin)/-busLevelDbMin, 0), 1))

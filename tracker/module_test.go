@@ -351,3 +351,56 @@ func TestModuleCannotUseItself(t *testing.T) {
 		t.Errorf("a module unit of a module could use the module itself")
 	}
 }
+
+func TestPeek(t *testing.T) {
+	m, _ := newModuleTestModel(t)
+	if m.Peek().Visible() {
+		t.Errorf("there is something to peek at without a module unit")
+	}
+	makeTestModule(t, m)
+	m.Unit().OpenModule().Do()
+	m.Module().AddParam().Do()
+	m.Module().ParamName(1).SetValue("detune")
+	bindParam(t, m, 1, "detune", 1)
+	m.Instrument().Tab().SetValue(int(InstrumentEditorTab))
+	m.Unit().List().SetSelected(2)
+	arg := m.Params().Item(Point{1, 2})
+	arg.SetValue(99)
+	// the units that the synth runs for the module unit, with its values
+	if !m.Peek().Visible() || m.Peek().Title() != "Module" || m.Peek().Units().List().Count() != 4 {
+		t.Fatalf("peek: visible %v, title %q, %v units", m.Peek().Visible(), m.Peek().Title(), m.Peek().Units().List().Count())
+	}
+	if item := m.Peek().Units().Item(1); item.Type != "oscillator" || item.Signals.StackAfter() != 2 {
+		t.Errorf("unit 1 of the peek: %+v", item)
+	}
+	var detune Parameter
+	for x := 0; x < m.Peek().Params().RowWidth(1); x++ {
+		if p := m.Peek().Params().Item(Point{x, 1}); p.Name() == "detune" {
+			detune = p
+		}
+	}
+	if name, ok := detune.Bound(); detune.Value() != 99 || !ok || name != "detune" {
+		t.Errorf("the detune of the peek is %v, bound to %q", detune.Value(), name)
+	}
+	if detune.SetValue(5) || m.d.Song.Modules[0].Units[1].Parameters["detune"] == 5 || detune.Value() != 99 {
+		t.Errorf("a parameter of the peek could be changed")
+	}
+	m.Peek().Params().Table().Clear()
+	m.Peek().Params().Table().Add(1, false)
+	// it follows the module unit
+	arg.SetValue(12)
+	for x := 0; x < m.Peek().Params().RowWidth(1); x++ {
+		if p := m.Peek().Params().Item(Point{x, 1}); p.Name() == "detune" && p.Value() != 12 {
+			t.Errorf("after changing the module unit, the detune of the peek is %v", p.Value())
+		}
+	}
+	m.Peek().Show().SetValue(false)
+	if m.Peek().Visible() || m.Peek().Params().Width() != 0 {
+		t.Errorf("the peek is visible when hidden")
+	}
+	m.Peek().Show().SetValue(true)
+	m.Unit().List().SetSelected(0)
+	if m.Peek().Visible() {
+		t.Errorf("the peek is visible for an oscillator")
+	}
+}

@@ -247,6 +247,9 @@ type (
 		index  int
 		vtable parameterVtable
 		port   int
+		// peek is i+1 for a parameter of unit i of the Peek view, which
+		// cannot be changed
+		peek int
 	}
 
 	parameterVtable interface {
@@ -313,7 +316,7 @@ func (p *Parameter) Port() (int, bool) {
 	return p.port - 1, true
 }
 func (p *Parameter) SetValue(value int) bool {
-	if p.vtable == nil {
+	if p.vtable == nil || p.peek != 0 {
 		return false
 	}
 	r := p.Range()
@@ -382,7 +385,7 @@ func (p *Parameter) Hint() ParameterHint {
 	return hint
 }
 func (p *Parameter) Reset() {
-	if p.vtable == nil {
+	if p.vtable == nil || p.peek != 0 {
 		return
 	}
 	if _, ok := p.Bound(); ok {
@@ -897,6 +900,9 @@ func (b *bufferFrameParameter) RoundToGrid(p *Parameter, val int, up bool) int {
 func (p *Parameter) Bound() (name string, ok bool) {
 	if p.unit == nil || p.up == nil || p.vtable == nil {
 		return "", false
+	}
+	if p.peek != 0 {
+		return p.m.peekBound(p.peek-1, p.up.Name)
 	}
 	k, ok := p.unit.Bind[p.up.Name]
 	if !ok {

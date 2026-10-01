@@ -90,7 +90,7 @@ func (m *Model) unitTitle(u *sointu.Unit) string {
 // warns about what could not be expanded.
 func (m *Model) playerSong() sointu.Song {
 	song, expansion := m.d.Song.Expand()
-	m.expansion = expansion
+	m.expansion, m.expanded = expansion, song.Patch
 	if len(expansion.Problems) > 0 {
 		m.Alerts().AddNamed("Modules", "Modules: "+expansion.Problems[0].Error(), Error)
 	} else {
