@@ -331,7 +331,9 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   the straight notes), semitones when it follows the note (large steps:
   octaves) and whole milliseconds when it is fixed (large steps: 10 ms).
   Note lengths and semitones are chosen from a dropdown, or stepped by keys;
-  milliseconds are a knob that moves over the grid by keys, wheel or drag. The `free` switch of
+  milliseconds are a knob that moves over the grid by keys, wheel or drag.
+  The `rate` knob of a `spawn` unit in sync mode names the straight note
+  lengths in the same way (1/8 at 72; large steps move between them). The `free` switch of
   the unit gives every value again, shown as stored and stepped as before.
   It is a setting of the tracker, not part of the song: the stored values
   mean what they did. A unit starts free if any of its times is not on the

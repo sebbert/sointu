@@ -521,3 +521,53 @@ func TestDelayTimeChoices(t *testing.T) {
 		}
 	}
 }
+
+// The rate of a spawn unit in sync mode shows the note length between the
+// spawns, where it is one.
+func TestSpawnRateNoteLengths(t *testing.T) {
+	m := newSpectrumTestModel(t)
+	addTestUnit(m, "spawn")
+	unit := func() *sointu.Unit { return &m.d.Song.Patch[0].Units[1] }
+	rate := func(mode, value int) Parameter {
+		func() {
+			defer m.change("Test", PatchChange, MajorChange)()
+			unit().Parameters["mode"] = mode
+			unit().Parameters["rate"] = value
+		}()
+		for x := 0; x < m.Params().RowWidth(1); x++ {
+			if p := m.Params().Item(Point{x, 1}); p.Name() == "rate" {
+				return p
+			}
+		}
+		t.Fatal("no rate parameter")
+		return Parameter{}
+	}
+	for _, c := range []struct {
+		value       int
+		label, hint string
+	}{
+		{64, "1/4", "1/4: 1 per beat"},
+		{72, "1/8", "1/8: 2 per beat"},
+		{80, "1/16", "1/16: 4 per beat"},
+		{48, "1/1", "1/1: every 4 beats"},
+		{40, "2/1", "2/1: every 8 beats"},
+		{0, "64/1", "64/1: every 256 beats"},
+		{128, "1/1024", "1/1024: 256 per beat"},
+		{70, "70", "1.68 per beat"},
+	} {
+		p := rate(sointu.SpawnModeSync, c.value)
+		if got := p.Label(); got != c.label {
+			t.Errorf("rate %d: label %q, want %q", c.value, got, c.label)
+		}
+		if got := p.Hint().Label; got != c.hint {
+			t.Errorf("rate %d: hint %q, want %q", c.value, got, c.hint)
+		}
+	}
+	// the length matches the rate: a quarter note is a beat
+	if got := sointu.SpawnsPerBeat(72.0 / 128); got != 2 {
+		t.Errorf("rate 72 is %v per beat, want 2", got)
+	}
+	if p := rate(sointu.SpawnModeRate, 64); p.Label() != "64" {
+		t.Errorf("rate mode: label %q, want 64", p.Label())
+	}
+}

@@ -869,17 +869,48 @@ func (b *spawnTargetParameter) Reset(p *Parameter) {
 }
 
 // spawnRateParameter vtable: the rate of a spawn unit, shown in spawns per
-// beat in sync mode.
+// beat in sync mode, and as the note length between the spawns where it is
+// one.
+
+// spawnNoteLength returns the note length between the spawns of a spawn unit
+// in sync mode, if it is one: the rate doubles every 8 steps, so every 8th
+// value is a straight note, a quarter note at 64. Dotted notes and triplets
+// fall between the values.
+func spawnNoteLength(rate int) (string, bool) {
+	if rate%8 != 0 {
+		return "", false
+	}
+	if k := rate/8 - 6; k >= 0 { // the whole note is at 48
+		return fmt.Sprintf("1/%d", 1<<k), true
+	} else {
+		return fmt.Sprintf("%d/1", 1<<-k), true
+	}
+}
+
+func (b *spawnRateParameter) Label(p *Parameter) string {
+	if p.unit.Parameters["mode"] == sointu.SpawnModeSync {
+		if name, ok := spawnNoteLength(p.Value()); ok {
+			return name
+		}
+	}
+	return strconv.Itoa(p.Value())
+}
 
 func (b *spawnRateParameter) Hint(p *Parameter) ParameterHint {
 	if p.unit.Parameters["mode"] != sointu.SpawnModeSync {
 		return b.namedParameter.Hint(p)
 	}
 	perBeat := sointu.SpawnsPerBeat(float64(p.Value()) / 128)
+	var text string
 	if perBeat >= 1 {
-		return ParameterHint{fmt.Sprintf("%s per beat", strconv.FormatFloat(perBeat, 'g', 3, 64)), true}
+		text = fmt.Sprintf("%s per beat", strconv.FormatFloat(perBeat, 'g', 3, 64))
+	} else {
+		text = fmt.Sprintf("every %s beats", strconv.FormatFloat(1/perBeat, 'g', 3, 64))
 	}
-	return ParameterHint{fmt.Sprintf("every %s beats", strconv.FormatFloat(1/perBeat, 'g', 3, 64)), true}
+	if name, ok := spawnNoteLength(p.Value()); ok {
+		text = name + ": " + text
+	}
+	return ParameterHint{text, true}
 }
 
 // bufferFrameParameter vtable: a position in frames in the buffer played by a
