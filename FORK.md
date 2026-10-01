@@ -470,6 +470,16 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   its inputs are the signals they take from before them), show the module of
   a module unit on the Modules tab (Ctrl+Shift+G), replace the module unit
   with the units of its module, and give it a copy of the module of its own.
+- **Sends follow:** making a module of units that sends from outside them
+  target makes the modulated parameters parameters of the module, named
+  after them, and the sends go to those ports of the module unit. A stereo
+  send takes two parameters next to each other. With no parameter left of
+  the 8, the send stays as it was, which the alert tells, naming the send.
+  Replacing a module unit with the units of its module makes each send to it
+  the sends that it is played as: one to each parameter bound to its port,
+  with scaled amounts, stereo where it can be (`sointu.SendToPorts`, which
+  `Song.Expand` uses too, and `Module.Ports`). A send to a port that nothing
+  is bound to stays, without a target.
 - **Unfolding:** a module unit is like a section that can be collapsed: the
   chevron on its row in the unit list and the rack, or in the footer
   (Ctrl+Alt+G), unfolds it. Its inner units then follow it, set into the

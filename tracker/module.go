@@ -3,6 +3,7 @@ package tracker
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 
 	"github.com/vsariola/sointu"
@@ -1116,7 +1117,9 @@ func (v *paramBinding) SetValue(k int) bool {
 
 // MakeModule returns an Action to make a module of the selected units: they
 // become the units of a new module, and a module unit using it takes their
-// place.
+// place. A send from outside them to one of them can only reach the module
+// unit: the parameter that it modulates becomes a parameter of the module,
+// and the send goes to that port of the module unit.
 func (m *UnitModel) MakeModule() Action { return MakeAction((*makeModule)(m)) }
 
 type makeModule UnitModel
@@ -1151,8 +1154,118 @@ func (m *makeModule) Do() {
 	call.ID = model.maxID() + 1
 	rest := append([]sointu.Unit{call}, (*list)[r.End:]...)
 	*list = append((*list)[:r.Start:r.Start], rest...)
+	sends := model.sendsTo(units) // before the units are in the song again, as the units of the module
 	m.d.Song.Modules = append(m.d.Song.Modules, mod)
+	model.repointToModuleUnit(sends, len(m.d.Song.Modules)-1, &call)
 	m.d.UnitIndex, m.d.UnitIndex2, m.d.ParamIndex = r.Start, r.Start, 0
+}
+
+// sendTo is a send of the song to one of some units: the send, where it is,
+// for telling the user, and the index of the unit that it targets.
+type sendTo struct {
+	send   *sointu.Unit
+	where  string
+	target int
+}
+
+// sendsTo returns the sends of the song that target one of the units.
+func (m *Model) sendsTo(units []sointu.Unit) (ret []sendTo) {
+	targets := map[int]int{}
+	for i, u := range units {
+		if u.ID != 0 {
+			targets[u.ID] = i
+		}
+	}
+	find := func(list []sointu.Unit, name string) {
+		for i := range list {
+			if target, ok := targets[list[i].Parameters["target"]]; ok && list[i].Type == "send" {
+				ret = append(ret, sendTo{&list[i], fmt.Sprintf("send #%d of %s", i, name), target})
+			}
+		}
+	}
+	for i := range m.d.Song.Patch {
+		find(m.d.Song.Patch[i].Units, "instrument "+m.d.Song.Patch[i].Name)
+	}
+	for i := range m.d.Song.Modules {
+		find(m.d.Song.Modules[i].Units, "module "+moduleTitle(&m.d.Song.Modules[i]))
+	}
+	return ret
+}
+
+// paramAtPort returns the name that the parameter of a unit with the given
+// port is bound by.
+func (m *Model) paramAtPort(u *sointu.Unit, port int) (name string, ok bool) {
+	if port < 0 {
+		return "", false
+	}
+	if u.Type == "module" {
+		i, found := m.d.Song.Modules.Find(u.Parameters["module"])
+		return sointu.ModuleParamName(port + 1), found && port < len(m.d.Song.Modules[i].Params) && port < sointu.MaxModuleParams
+	}
+	for _, p := range sointu.UnitTypes[u.Type].Params {
+		if !p.CanModulate {
+			continue
+		}
+		if port == 0 {
+			return p.Name, sointu.CanBind(u.Type, p.Name)
+		}
+		port--
+	}
+	return "", false
+}
+
+// repointToModuleUnit makes sends that target units of the module with the
+// given index, from outside it, target the module unit call instead: the
+// parameter that a send modulates is bound to a parameter of the module, to
+// a new one unless it is bound already, and the send goes to that port of
+// the module unit. A stereo send needs two parameters of the module next to
+// each other, for the two ports that it modulates. A send for which the
+// module has no parameter left stays as it is, and the user is told.
+func (m *Model) repointToModuleUnit(sends []sendTo, module int, call *sointu.Unit) {
+	mod := &m.d.Song.Modules[module]
+	type port struct{ unit, port int }
+	bound := map[port]int{} // the parameter of the module, from 1
+	bind := func(p port, name string) {
+		mod.Params = append(mod.Params, sointu.ModuleParam{Name: name})
+		bound[p] = len(mod.Params)
+		m.bindParam(module, &mod.Units[p.unit], name, len(mod.Params))
+	}
+	repoint := func(s sendTo, stereo bool) {
+		p := port{s.target, s.send.Parameters["port"]}
+		name, ok := m.paramAtPort(&mod.Units[p.unit], p.port)
+		if !ok {
+			return // it modulated nothing
+		}
+		next := port{p.unit, p.port + 1}
+		nextName, pair := m.paramAtPort(&mod.Units[p.unit], next.port)
+		pair = pair && stereo
+		k, has := bound[p]
+		switch k2, has2 := bound[next]; {
+		case has && (!pair || has2 && k2 == k+1):
+		case !has && !pair && len(mod.Params) < sointu.MaxModuleParams:
+			bind(p, name)
+		case !has && pair && !has2 && len(mod.Params)+1 < sointu.MaxModuleParams:
+			bind(p, name)
+			bind(next, nextName)
+		case has && pair && !has2 && k == len(mod.Params) && k < sointu.MaxModuleParams:
+			bind(next, nextName)
+		default:
+			m.Alerts().Add(fmt.Sprintf("The %s still targets a unit of the new module: the module has no parameter left for it", s.where), Warning)
+			return
+		}
+		s.send.Parameters["target"], s.send.Parameters["port"] = call.ID, bound[p]-1
+	}
+	// the stereo sends first: they need parameters next to each other
+	for _, stereo := range []bool{true, false} {
+		for _, s := range sends {
+			if (s.send.Parameters["stereo"]&1 == 1) == stereo {
+				repoint(s, stereo)
+			}
+		}
+	}
+	for k := range mod.Params {
+		call.Parameters[sointu.ModuleParamName(k+1)] = mod.Params[k].Default
+	}
 }
 
 // selectedModuleUnit returns the selected unit and the index of its module,
@@ -1168,8 +1281,10 @@ func (m *Model) selectedModuleUnit() (*sointu.Unit, int, bool) {
 
 // InlineModule returns an Action to replace the selected module unit with
 // copies of the units of its module, with the values the module unit gives
-// their bound parameters. Sends to the module unit are left without a
-// target.
+// their bound parameters. A send to the module unit goes to the parameters
+// that its port modulated, as when the song is played (sointu.SendToPorts):
+// it becomes a send to each of them. A send to a port that modulated nothing
+// is left without a target.
 func (m *UnitModel) InlineModule() Action { return MakeAction((*inlineModule)(m)) }
 
 type inlineModule UnitModel
@@ -1230,11 +1345,62 @@ func (m *inlineModule) Do() {
 	}
 	model.assignUnitIDs(units) // also moves the sends between them
 	model.assignBuses(units)
+	ids := make([]int, len(units))
+	for j := range units {
+		ids[j] = units[j].ID
+	}
+	ports, callID := mod.Ports(ids), call.ID
 	list := model.unitsPtr()
 	i := m.d.UnitIndex
 	rest := append(units, (*list)[i+1:]...)
 	*list = append((*list)[:i:i], rest...)
-	m.d.UnitIndex2 = i + max(len(units)-1, 0)
+	if callID != 0 {
+		model.repointFromModuleUnit(callID, &ports)
+	}
+	// the units are selected; sends before them may have become several
+	list = model.unitsPtr()
+	if len(ids) > 0 {
+		i = max(slices.IndexFunc(*list, func(u sointu.Unit) bool { return u.ID == ids[0] }), 0)
+	}
+	m.d.UnitIndex, m.d.UnitIndex2 = i, i+max(len(units)-1, 0)
+}
+
+// repointFromModuleUnit replaces the sends of the song to the module unit
+// with the given ID, which is gone, with sends to what its ports modulated.
+func (m *Model) repointFromModuleUnit(id int, ports *sointu.ModulePorts) {
+	replace := func(list *[]sointu.Unit) {
+		var out []sointu.Unit
+		for j, u := range *list {
+			if u.Type != "send" || u.Parameters["target"] != id {
+				if out != nil {
+					out = append(out, u)
+				}
+				continue
+			}
+			if out == nil {
+				out = append(make([]sointu.Unit, 0, len(*list)), (*list)[:j]...)
+			}
+			sends := sointu.SendToPorts(u, ports)
+			if !slices.ContainsFunc(sends, func(s sointu.Unit) bool { return s.Type == "send" }) {
+				u.Parameters["target"] = 0 // it modulated nothing: it stays, without a target
+				out = append(out, u)
+				continue
+			}
+			for k := range sends {
+				sends[k].Disabled = u.Disabled
+			}
+			out = append(out, sends...)
+		}
+		if out != nil {
+			*list = out
+		}
+	}
+	for i := range m.d.Song.Patch {
+		replace(&m.d.Song.Patch[i].Units)
+	}
+	for i := range m.d.Song.Modules {
+		replace(&m.d.Song.Modules[i].Units)
+	}
 }
 
 // UniqueModule returns an Action to give the selected module unit a copy of
