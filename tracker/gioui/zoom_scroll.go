@@ -35,6 +35,11 @@ import (
 // scroll from the lists, parameters and plots below it, and empty otherwise,
 // leaving all of it to them. The range is set before the event arrives, so
 // the tracker follows the key of the modifier (zoomModifierKey).
+//
+// The momentum of a gesture (Event.Momentum, added to the vendored Gio; only
+// macOS has it) does not zoom. The momentum of a gesture that zoomed is
+// taken and dropped even after the modifier is released, so that it does not
+// scroll what is under the pointer.
 const (
 	// zoomScrollDp is how far to scroll for one step of ZoomFactors, where
 	// the distance is known. The steps are 0.2 apart on average on the log
@@ -103,10 +108,59 @@ func zoomScrollSteps(goos string, e pointer.Event, pxPerDp float32) float32 {
 }
 
 // zoomScroll adds up the scrolling that zooms the UI, until it is enough for
-// a step.
+// a step, and tells when the tracker takes the scroll.
 type zoomScroll struct {
 	rest float32   // scrolled since the last step, in steps
 	last time.Time // when it was last scrolled
+	// modifier is true while Ctrl/Cmd is held, which makes scrolling
+	// anywhere zoom the UI
+	modifier bool
+	// momentum is true after a gesture that zoomed, whose momentum is still
+	// taken; taken is when the scroll was last taken
+	momentum bool
+	taken    time.Time
+}
+
+// SetModifier tells that the key of the modifier was pressed or released.
+func (z *zoomScroll) SetModifier(held bool) {
+	z.modifier = held
+	z.Reset()
+}
+
+// Taking tells if the tracker takes the scroll: while the modifier is held,
+// and for the momentum of a gesture that zoomed, until it has ended.
+func (z *zoomScroll) Taking(now time.Time) bool {
+	return z.modifier || z.momentum && now.Sub(z.taken) <= zoomScrollTimeout
+}
+
+// Expires returns when Taking ends without another event, if it does.
+func (z *zoomScroll) Expires() (at time.Time, ok bool) {
+	if z.modifier || !z.momentum {
+		return time.Time{}, false
+	}
+	return z.taken.Add(zoomScrollTimeout + time.Millisecond), true
+}
+
+// Scroll handles a scroll event that reached the tracker's handler, on the
+// platform goos (runtime.GOOS) and a display of the scale pxPerDp, and
+// returns how many steps to zoom by. The modifier is also taken from the
+// event, in case its key event was missed.
+func (z *zoomScroll) Scroll(goos string, e pointer.Event, pxPerDp float32, now time.Time) int {
+	held := e.Modifiers.Contain(key.ModShortcut)
+	if e.Momentum {
+		// no zooming by momentum; it is dropped if it was taken
+		if held || z.Taking(now) {
+			z.momentum, z.taken = true, now
+		}
+		return 0
+	}
+	z.modifier, z.momentum = held, held
+	if !held {
+		z.Reset()
+		return 0
+	}
+	z.taken = now
+	return z.Add(zoomScrollSteps(goos, e, pxPerDp), now)
 }
 
 // Add scrolls by the given number of steps, which can be a fraction, and

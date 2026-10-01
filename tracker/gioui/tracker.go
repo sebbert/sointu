@@ -48,9 +48,6 @@ type (
 		plotZoomModifier bool
 		// zoomScroll adds up the Ctrl/Cmd+scrolling that zooms the UI
 		zoomScroll zoomScroll
-		// zoomModifier is true while Ctrl/Cmd is held, which makes scrolling
-		// anywhere zoom the UI
-		zoomModifier bool
 
 		DialogState *DialogState
 
@@ -191,8 +188,8 @@ func (t *Tracker) Main() {
 					break F // this window is done, we need to create a new one
 				case app.ConfigEvent:
 					if !e.Config.Focused {
-						t.plotZoomModifier = false // Alt is not released in another window
-						t.zoomModifier = false     // nor is Ctrl/Cmd
+						t.plotZoomModifier = false  // Alt is not released in another window
+						t.zoomScroll = zoomScroll{} // nor is Ctrl/Cmd
 					}
 				case app.FrameEvent:
 					if onTop != t.preferences.Window.AlwaysOnTop {
@@ -296,7 +293,7 @@ func (t *Tracker) Layout(gtx layout.Context) {
 			key.Filter{Name: "", Optional: key.ModAlt | key.ModCommand | key.ModShift | key.ModShortcut | key.ModSuper},
 			key.Filter{Name: key.NameTab, Optional: key.ModShift | key.ModShortcut},
 			transfer.TargetFilter{Target: t, Type: "application/text"},
-			pointer.Filter{Target: t, Kinds: pointer.Scroll, ScrollY: zoomScrollRange(t.zoomModifier)},
+			pointer.Filter{Target: t, Kinds: pointer.Scroll, ScrollY: zoomScrollRange(t.zoomScroll.Taking(gtx.Now))},
 		)
 		if !ok {
 			break
@@ -306,14 +303,8 @@ func (t *Tracker) Layout(gtx layout.Context) {
 			switch e.Kind {
 			case pointer.Scroll:
 				// Without the modifier, the scroll went on to the handlers
-				// below this one; see zoom_scroll.go. The modifier is also
-				// taken from the event, in case its key event was missed.
-				t.zoomModifier = e.Modifiers.Contain(key.ModShortcut)
-				if !t.zoomModifier {
-					t.zoomScroll.Reset()
-					break
-				}
-				if n := t.zoomScroll.Add(zoomScrollSteps(runtime.GOOS, e, pxPerDp), gtx.Now); n != 0 {
+				// below this one; see zoom_scroll.go.
+				if n := t.zoomScroll.Scroll(runtime.GOOS, e, pxPerDp, gtx.Now); n != 0 {
 					t.Zoom = zoomBy(t.Zoom, n)
 					t.Alerts().AddNamed("ZoomFactor", fmt.Sprintf("%.0f%%", ZoomFactors[t.Zoom]*100), tracker.Info)
 				}
@@ -323,13 +314,15 @@ func (t *Tracker) Layout(gtx layout.Context) {
 				t.plotZoomModifier = e.State == key.Press
 			}
 			if e.Name == zoomModifierKey(runtime.GOOS) {
-				t.zoomModifier = e.State == key.Press
-				t.zoomScroll.Reset()
+				t.zoomScroll.SetModifier(e.State == key.Press)
 			}
 			t.KeyEvent(e, gtx)
 		case transfer.DataEvent:
 			t.Song().Read(e.Open())
 		}
+	}
+	if at, ok := t.zoomScroll.Expires(); ok {
+		gtx.Execute(op.InvalidateCmd{At: at}) // to stop taking the scroll then
 	}
 	// if no-one else handled the note events, we handle them here
 	for len(t.midiMsgs) > 0 {

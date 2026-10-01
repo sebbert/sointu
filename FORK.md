@@ -349,7 +349,11 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
 - **UI zoom:** Ctrl/Cmd+scroll zooms by the distance scrolled: a step for
   every 50 dp on a trackpad, and for every notch of a mouse wheel
   (`zoom_scroll.go`). Before, every scroll event was a step, which on macOS
-  went through the whole range in a short swipe.
+  went through the whole range in a short swipe. It zooms wherever the
+  pointer is, also over lists and knobs, which scrolled or stepped instead
+  before. The momentum of a trackpad gesture does not zoom. The vendored Gio
+  has two additions for this: `pointer.Event.Notch` and `.Momentum`, set by
+  the macOS backend.
 - **Other:** no notes play while typing in text fields; recordings survive
   synth rebuilds; NaNs recorded into buffers are cleared.
 

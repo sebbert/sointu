@@ -236,3 +236,54 @@ func TestZoomScrollTakesScrollWithModifier(t *testing.T) {
 		t.Errorf("wrong key for the modifier")
 	}
 }
+
+// The momentum of a gesture does not zoom, and the momentum of a gesture that
+// zoomed is taken until it ends, also after the modifier is released.
+func TestZoomScrollMomentum(t *testing.T) {
+	now := time.Now()
+	tick := func() time.Time { now = now.Add(16 * time.Millisecond); return now }
+	scroll := func(mods key.Modifiers, momentum bool) pointer.Event {
+		return pointer.Event{Kind: pointer.Scroll, Scroll: f32.Pt(0, -200), Modifiers: mods, Momentum: momentum}
+	}
+	var z zoomScroll
+	if z.Taking(now) {
+		t.Errorf("takes the scroll without the modifier")
+	}
+	z.SetModifier(true)
+	if !z.Taking(now) {
+		t.Errorf("does not take the scroll with the modifier")
+	}
+	if n := z.Scroll("darwin", scroll(key.ModShortcut, false), 2, tick()); n != 1 {
+		t.Errorf("a scroll of 100 dp zoomed %d steps, want 1", n)
+	}
+	for i := 0; i < 20; i++ {
+		if n := z.Scroll("darwin", scroll(key.ModShortcut, true), 2, tick()); n != 0 {
+			t.Fatalf("momentum zoomed %d steps", n)
+		}
+	}
+	z.SetModifier(false)
+	if _, ok := z.Expires(); !ok || !z.Taking(tick()) {
+		t.Errorf("the momentum is not taken after releasing the modifier")
+	}
+	if n := z.Scroll("darwin", scroll(0, true), 2, tick()); n != 0 || !z.Taking(now) {
+		t.Errorf("momentum without the modifier: %d steps, taking %v", n, z.Taking(now))
+	}
+	// the momentum has ended
+	if at, _ := z.Expires(); z.Taking(at) || z.Taking(now.Add(time.Second)) {
+		t.Errorf("still taking the scroll after the momentum has ended")
+	}
+	// a new gesture without the modifier, arriving while it is still taken
+	z.Scroll("darwin", scroll(0, false), 2, tick())
+	if _, ok := z.Expires(); ok || z.Taking(now) {
+		t.Errorf("still taking the scroll after a gesture without the modifier")
+	}
+	// the momentum of a gesture that did not zoom is left alone
+	z = zoomScroll{}
+	if n := z.Scroll("darwin", scroll(0, true), 2, tick()); n != 0 || z.Taking(now) {
+		t.Errorf("momentum of another gesture: %d steps, taking %v", n, z.Taking(now))
+	}
+	// a modifier whose key event was missed is found in the scroll event
+	if z.Scroll("darwin", scroll(key.ModShortcut, false), 2, tick()); !z.Taking(now) {
+		t.Errorf("the modifier of the event is not taken")
+	}
+}

@@ -71,9 +71,11 @@ static void handleMouse(GioView *view, NSEvent *event, int typ, CGFloat dx, CGFl
 		dy *= 10;
 		notch = typ == MOUSE_SCROLL;
 	}
+	// The scrolling that goes on after the fingers have left the trackpad.
+	int momentum = typ == MOUSE_SCROLL && event.momentumPhase != NSEventPhaseNone;
 	// Origin is in the lower left corner. Convert to upper left.
 	CGFloat height = view.bounds.size.height;
-	gio_onMouse(view.handle, (__bridge CFTypeRef)event, typ, event.buttonNumber, p.x, height - p.y, dx, dy, notch, [event timestamp], [event modifierFlags]);
+	gio_onMouse(view.handle, (__bridge CFTypeRef)event, typ, event.buttonNumber, p.x, height - p.y, dx, dy, notch, momentum, [event timestamp], [event modifierFlags]);
 }
 
 @implementation GioView
