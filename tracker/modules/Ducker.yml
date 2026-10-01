@@ -1,0 +1,23 @@
+modules:
+    - id: 1
+      name: Ducker
+      comment: 'Sidechain ducking without a compressor: the stereo signal times 1 - depth·envelope, the envelope triggered by the note of the instrument it is in. Put it in the kick instrument, between an in from the bus of what should duck and an out. Go synth and wasm player only if curve is not 0.'
+      inputs: 2
+      params:
+        - {name: depth, default: 128, display: ott.depth}
+        - {name: release, default: 70}
+        - {name: curve, default: 0}
+      units:
+        - type: envelope
+          id: 1
+          parameters: {attack: 30, curve: 0, decay: 70, gain: 128, release: 70, stereo: 0, sustain: 0}
+          bind: {curve: 3, decay: 2, gain: 1, release: 2}
+          comment: 'How far the gain is turned down: depth is its gain, release the time back to full level, curve bends the way back (fast first). attack is the time down, 1 ms: 0 steps in one sample and clicks'
+        - type: send
+          id: 2
+          parameters: {amount: 0, port: 0, sendpop: 1, target: 3}
+          comment: Minus the envelope to the gain below
+        - type: gain
+          id: 3
+          parameters: {gain: 128, stereo: 1}
+          comment: 'The ducked signal: 1 minus the envelope'

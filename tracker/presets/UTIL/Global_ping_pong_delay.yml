@@ -1,0 +1,74 @@
+name: Global ping pong delay
+numvoices: 1
+units:
+    - id: 1
+      parameters: {}
+      comment: 'Global ping pong delay - the signal of aux 6/7 through the Ping pong delay module. Send to it with aux, channel 6: aux 2/3 is left to the reverb presets and aux 4/5 to the bus that Kick ducker ducks. Load this before Global mastering, and before a reverb preset if the repeats should have reverb.'
+    - type: in
+      id: 2
+      parameters: {channel: 6, stereo: 1}
+      comment: The signal the instruments send to aux 6/7
+    - type: module
+      id: 3
+      parameters: {module: 1}
+      comment: 'The Ping pong delay module: its parameters are time, feedback, tone, lowcut and pan'
+    - type: outaux
+      id: 4
+      parameters: {auxgain: 0, outgain: 128, stereo: 1}
+      comment: 'outgain is the level of the repeats, auxgain how much of them goes to the reverb on aux 2/3'
+modules:
+    - id: 1
+      name: Ping pong delay
+      comment: 'Tempo-synced ping-pong delay, wet only: the sum of the stereo input goes into one side, and each repeat goes through a low-pass and a low cut into the other side.'
+      inputs: 2
+      params:
+        - {name: time, default: 36}
+        - {name: feedback, default: 80}
+        - {name: tone, default: 80}
+        - {name: lowcut, default: 32}
+        - {name: pan, default: 0}
+      units:
+        - type: addp
+          id: 1
+          parameters: {stereo: 0}
+          comment: Left plus right
+        - type: pan
+          id: 2
+          parameters: {panning: 0, stereo: 0}
+          bind: {panning: 5}
+          comment: 'The side of the first repeat: 0 left, 128 right, 64 both, which is a mono delay'
+        - type: receive
+          id: 3
+          parameters: {stereo: 1}
+          comment: The repeats coming back, a sample late
+        - type: addp
+          id: 4
+          parameters: {stereo: 1}
+        - type: delay
+          id: 5
+          parameters: {damp: 0, dry: 0, feedback: 0, notetracking: 2, pregain: 128, stereo: 1}
+          varargs: [36, 36]
+          bind: {delaytime1: 1, delaytime2: 1}
+          comment: 'One line per side, of the same time: 36 is a dotted eighth, 24 an eighth, 48 a quarter'
+        - type: push
+          id: 6
+          parameters: {stereo: 1}
+        - type: filter
+          id: 7
+          parameters: {bandpass: 0, frequency: 89, highpass: 0, lowpass: 1, resonance: 128, stereo: 1}
+          bind: {frequency: {p: 3, min: 24, max: 128}}
+          comment: 'tone: each repeat darker'
+        - type: filter
+          id: 8
+          parameters: {bandpass: 0, frequency: 16, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          bind: {frequency: {p: 4, min: 0, max: 64}}
+          comment: 'lowcut: each repeat thinner; 0 is off'
+        - type: xch
+          id: 9
+          parameters: {stereo: 0}
+          comment: Left to right and right to left
+        - type: send
+          id: 10
+          parameters: {amount: 92, port: 0, sendpop: 1, stereo: 1, target: 3}
+          bind: {amount: {p: 2, min: 64, max: 109}}
+          comment: 'feedback: the level of a repeat relative to the one before, up to 70 %. More would ring: where the two filters meet they raise the level by up to 2.7 dB'
