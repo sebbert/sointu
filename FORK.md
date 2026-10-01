@@ -525,7 +525,33 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   module, with the modules it uses, as a file in `sointu/modules` of the
   user's configuration directory, adds a saved one to the song, and deletes
   one (`Delete <name>`). Saving over a preset with the same name and
-  deleting one ask first, like the instrument presets do.
+  deleting one ask first, like the instrument presets do. The tracker comes
+  with module presets of its own (`tracker/modules/*.yml`, embedded), listed
+  after those of the user; they cannot be deleted, and a preset of the user
+  with the same name is used instead.
+- **Reverb module:** the module preset `Reverb` is the standard reverb, made
+  of [mc units](#mc-units) (Go synth and wasm player only): stereo in, the
+  wet signal out. Its chain is low cut, high cut, predelay, a diffuser of
+  four steps (the early reflections) and a feedback delay network of 8 lines
+  (the tail). Each module unit using it gets a bus of its own.
+  `examples/reverb_module.yml` uses it.
+
+  | Parameter | Default | Sets |
+  |---|---|---|
+  | `size` | 64 | the lengths of the lines: the network from 40 to 280 ms (160 ms), the diffuser steps with it |
+  | `decay` | 90 (3.1 s) | the reverb time, as `decay` of `mcdelay`; 0 holds the sound |
+  | `highs` | 48 | the time above 3 kHz relative to `decay` (`hfdecay`) |
+  | `lows` | 72 | the time below 250 Hz relative to `decay` (`lfdecay`) |
+  | `predelay` | 13 (20 ms) | 0.1 to 200 ms before the reverb starts |
+  | `mod` | 24 | how far the lines move (`moddepth`), against ringing; can be modulated |
+  | `highcut` | 98 (10 kHz) | a low-pass on the input, 1 to 20 kHz; can be modulated |
+  | `lowcut` | 56 (150 Hz) | a high-pass on the input, 20 Hz to 2 kHz; can be modulated |
+
+  The level of the reverb (`gain` of `mcspread`), the level and width of the
+  early reflections and of the tail (`mcsum`) and the rate of the modulation
+  are not parameters: change them in the module. Small sizes with long
+  decays ring, as small rooms do: the tail is dense from about `size` 32
+  with the default decay.
 - **Files:** instrument files, presets and the units and instruments on the
   clipboard carry the modules they use. Loading them does not add a module
   that the song already has with the same name and the same content (apart

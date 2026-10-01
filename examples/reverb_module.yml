@@ -1,0 +1,156 @@
+bpm: 100
+rowsperbeat: 4
+score:
+    tracks:
+        - numvoices: 3
+          order: [0, 1, 0, 2, 3, 3]
+          patterns: [[57, 1, 64, 1, 69, 1, 72, 1, 76, 1, 1, 1, 0, 0, 0, 0], [53, 1, 60, 1, 65, 1, 69, 1, 72, 1, 1, 1, 0, 0, 0, 0], [55, 1, 62, 1, 67, 1, 71, 1, 74, 1, 1, 1, 1, 1, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]
+        - numvoices: 1
+          order: [0, 0, 0, 1, 2, 2]
+          patterns: [[0, 0, 0, 0, 60, 1, 0, 0, 0, 0, 0, 0, 60, 1, 0, 0], [0, 0, 0, 0, 60, 1, 0, 0, 0, 0, 0, 0, 60, 1, 60, 1], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]
+        - numvoices: 1
+          order: [0, 0, 0, 0, 0, 0]
+          patterns: [[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
+    rowsperpattern: 16
+    length: 6
+patch:
+    - name: pluck
+      numvoices: 3
+      units:
+        - type: envelope
+          id: 1
+          parameters: {attack: 0, curve: 96, decay: 60, gain: 128, release: 56, stereo: 0, sustain: 0}
+        - type: oscillator
+          id: 2
+          parameters: {bandlimit: 1, color: 8, detune: 64, gain: 96, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 1, unison: 1}
+        - type: mulp
+          id: 3
+          parameters: {stereo: 0}
+        - type: filter
+          id: 4
+          parameters: {frequency: 70, lowpass: 1, resonance: 100, stereo: 0}
+        - type: pan
+          id: 5
+          parameters: {panning: 56, stereo: 0}
+        - type: outaux
+          id: 6
+          parameters: {auxgain: 72, outgain: 64, stereo: 1}
+      comment: Plucked saw chords; auxgain sends them to the reverb
+    - name: snare
+      numvoices: 1
+      units:
+        - type: envelope
+          id: 11
+          parameters: {attack: 0, curve: 96, decay: 44, gain: 128, release: 44, stereo: 0, sustain: 0}
+        - type: noise
+          id: 12
+          parameters: {gain: 128, shape: 64, stereo: 0}
+        - type: mulp
+          id: 13
+          parameters: {stereo: 0}
+        - type: filter
+          id: 14
+          parameters: {bandpass: 1, frequency: 60, resonance: 70, stereo: 0}
+        - type: pan
+          id: 15
+          parameters: {panning: 72, stereo: 0}
+        - type: outaux
+          id: 16
+          parameters: {auxgain: 96, outgain: 72, stereo: 1}
+      comment: A short noise snare, mostly sent to the reverb
+    - name: reverb
+      numvoices: 1
+      units:
+        - type: in
+          id: 20
+          parameters: {channel: 2, stereo: 1}
+          comment: The aux signal the instruments send
+        - type: module
+          id: 21
+          parameters: {module: 1}
+          comment: The Reverb module preset, with the defaults of its parameters
+        - type: out
+          id: 43
+          parameters: {gain: 128, stereo: 1}
+      comment: 'The reverb of examples/reverb.yml as a module unit: the module preset Reverb. Go synth and wasm player only.'
+buffers:
+    - {id: 1, name: reverb bus, bus: true, auto: true}
+modules:
+    - id: 1
+      name: Reverb
+      comment: 'Stereo reverb, wet only: low and high cut, predelay, a diffuser of four steps for the early reflections, and a feedback delay network of 8 lines for the tail. Uses mc units: Go synth and wasm player only.'
+      inputs: 2
+      params:
+        - {name: size, default: 64}
+        - {name: decay, default: 90}
+        - {name: highs, default: 48}
+        - {name: lows, default: 72}
+        - {name: predelay, default: 13}
+        - {name: mod, default: 24}
+        - {name: highcut, default: 98}
+        - {name: lowcut, default: 56}
+      units:
+        - type: mcspread
+          parameters: {add: 0, bus: 1, gain: 76, stereo: 1}
+          comment: The stereo input on the 8 channels of the bus; gain is the level of the reverb
+        - type: mcfilter
+          parameters: {bus: 1, frequency: 37, type: 1}
+          bind: {frequency: {p: 8, min: 0, max: 85}}
+          comment: Low cut
+        - type: mcfilter
+          parameters: {bus: 1, frequency: 115, type: 0}
+          bind: {frequency: {p: 7, min: 72, max: 128}}
+          comment: High cut
+        - type: mcdelay
+          parameters: {allpass: 0, apgain: 80, bus: 1, decay: 0, hfdecay: 64, lfdecay: 64, moddepth: 0, modrate: 64, notetracking: 0, seed: 0, size: 200, spread: 0}
+          bind: {size: {p: 5, min: 1, max: 2000}}
+          comment: 'Predelay: all 8 lines of the same length'
+        - type: mcdelay
+          parameters: {allpass: 0, apgain: 80, bus: 1, decay: 0, hfdecay: 64, lfdecay: 64, moddepth: 0, modrate: 64, notetracking: 0, seed: 1, size: 400, spread: 128}
+          bind: {size: {p: 1, min: 100, max: 700}}
+          comment: 'Diffuser: each step delays the channels by random amounts up to its size, shuffles and mixes them'
+        - type: mcmix
+          parameters: {bus: 1, seed: 1, type: 2}
+        - type: mcmix
+          parameters: {bus: 1, seed: 0, type: 0}
+        - type: mcdelay
+          parameters: {allpass: 0, apgain: 80, bus: 1, decay: 0, hfdecay: 64, lfdecay: 64, moddepth: 0, modrate: 64, notetracking: 0, seed: 2, size: 200, spread: 128}
+          bind: {size: {p: 1, min: 50, max: 350}}
+        - type: mcmix
+          parameters: {bus: 1, seed: 2, type: 2}
+        - type: mcmix
+          parameters: {bus: 1, seed: 0, type: 0}
+        - type: mcdelay
+          parameters: {allpass: 0, apgain: 80, bus: 1, decay: 0, hfdecay: 64, lfdecay: 64, moddepth: 0, modrate: 64, notetracking: 0, seed: 3, size: 100, spread: 128}
+          bind: {size: {p: 1, min: 25, max: 175}}
+        - type: mcmix
+          parameters: {bus: 1, seed: 3, type: 2}
+        - type: mcmix
+          parameters: {bus: 1, seed: 0, type: 0}
+        - type: mcdelay
+          parameters: {allpass: 0, apgain: 80, bus: 1, decay: 0, hfdecay: 64, lfdecay: 64, moddepth: 0, modrate: 64, notetracking: 0, seed: 4, size: 50, spread: 128}
+          bind: {size: {p: 1, min: 12, max: 88}}
+        - type: mcmix
+          parameters: {bus: 1, seed: 4, type: 2}
+        - type: mcmix
+          parameters: {bus: 1, seed: 0, type: 0}
+        - type: mcsum
+          parameters: {bus: 1, gain: 52, stereo: 1, width: 80}
+          comment: 'Early reflections: the diffused input'
+        - type: mcloop
+          parameters: {bus: 1, feedback: 128}
+          comment: 'Feedback delay network: 8 delay lines mixed back into each other'
+        - type: mcdelay
+          parameters: {allpass: 0, apgain: 80, bus: 1, decay: 90, hfdecay: 48, lfdecay: 72, moddepth: 24, modrate: 56, notetracking: 0, seed: 7, size: 1600, spread: 77}
+          bind: {decay: 2, hfdecay: 3, lfdecay: 4, moddepth: 6, size: {p: 1, min: 400, max: 2800}}
+          comment: decay is the reverb time (0 holds the sound); highs and lows are the times of the highs and lows relative to it; mod moves the lines against ringing
+        - type: mcsum
+          parameters: {bus: 1, gain: 64, stereo: 1, width: 96}
+          comment: The tail
+        - type: mcmix
+          parameters: {bus: 1, seed: 0, type: 1}
+        - type: mcloopend
+          parameters: {bus: 1}
+        - type: addp
+          parameters: {stereo: 1}
+          comment: Early reflections plus the tail

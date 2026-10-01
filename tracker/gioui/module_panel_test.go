@@ -141,8 +141,9 @@ func TestModulesTabLayout(t *testing.T) {
 	// saving over a module preset and deleting one ask first
 	model.Instrument().Tab().SetValue(int(tracker.InstrumentModulesTab))
 	model.Module().SavePreset().Do()
-	if model.Dialog() != tracker.NoDialog || model.Module().Presets().Range().Max != 0 {
-		t.Fatalf("after saving a module preset: dialog %v, %v presets", model.Dialog(), model.Module().Presets().Range().Max+1)
+	// DeletePresets are the presets of the user, without those the tracker comes with
+	if model.Dialog() != tracker.NoDialog || model.Module().DeletePresets().Range().Max != 0 {
+		t.Fatalf("after saving a module preset: dialog %v, %v presets", model.Dialog(), model.Module().DeletePresets().Range().Max+1)
 	}
 	model.Module().SavePreset().Do()
 	if model.Dialog() != tracker.OverwriteModulePresetDialog {
@@ -156,7 +157,7 @@ func TestModulesTabLayout(t *testing.T) {
 	}
 	frame("12-delete-module-preset")
 	model.Module().ConfirmDeletePreset().Do()
-	if model.Dialog() != tracker.NoDialog || model.Module().Presets().Range().Max != -1 {
-		t.Errorf("after deleting the module preset: dialog %v, %v presets", model.Dialog(), model.Module().Presets().Range().Max+1)
+	if model.Dialog() != tracker.NoDialog || model.Module().DeletePresets().Range().Max != -1 {
+		t.Errorf("after deleting the module preset: dialog %v, %v presets", model.Dialog(), model.Module().DeletePresets().Range().Max+1)
 	}
 }

@@ -1,8 +1,10 @@
 package tracker
 
 import (
+	"embed"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -12,12 +14,28 @@ import (
 
 // Module presets are modules saved as files in the modules directory of the
 // user's sointu configuration directory, next to the instrument presets:
-// each file has a module, last, and before it the modules that it uses.
+// each file has a module, last, and before it the modules that it uses. The
+// tracker also comes with module presets of its own, the files in modules/,
+// which cannot be deleted; a preset of the user with the same name is used
+// instead of one of those.
+
+//go:embed modules/*.yml
+var builtinModulePresets embed.FS
 
 type modulePreset struct {
 	name    string
-	file    string
+	file    string // empty for a preset that the tracker comes with
 	modules sointu.Modules
+}
+
+// parseModulePreset reads a module preset from the contents of its file.
+func parseModulePreset(fileName string, data []byte) (modulePreset, bool) {
+	var file struct{ Modules sointu.Modules }
+	if yaml.Unmarshal(data, &file) != nil || len(file.Modules) == 0 {
+		return modulePreset{}, false
+	}
+	name := filenameToInstrumentName(strings.TrimSuffix(fileName, ".yml"))
+	return modulePreset{name: name, modules: file.Modules}, true
 }
 
 // modulePresetDir returns the directory of the module presets.
@@ -32,33 +50,42 @@ func (m *Model) modulePresetDir() (string, bool) {
 	return filepath.Join(configDir, "sointu", "modules"), true
 }
 
-// loadModulePresets reads the module presets from their directory.
+// loadModulePresets reads the module presets: those of the user from their
+// directory, in the order of their names, and after them those that the
+// tracker comes with.
 func (m *Model) loadModulePresets() {
 	m.modulePresets = m.modulePresets[:0]
-	dir, ok := m.modulePresetDir()
-	if !ok {
-		return
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return
-	}
-	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".yml" {
-			continue
+	m.userModulePresets = 0
+	if dir, ok := m.modulePresetDir(); ok {
+		entries, _ := os.ReadDir(dir)
+		for _, e := range entries {
+			if e.IsDir() || filepath.Ext(e.Name()) != ".yml" {
+				continue
+			}
+			data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+			if err != nil {
+				continue
+			}
+			if p, ok := parseModulePreset(e.Name(), data); ok {
+				p.file = filepath.Join(dir, e.Name())
+				m.modulePresets = append(m.modulePresets, p)
+			}
 		}
-		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		sort.Slice(m.modulePresets, func(i, j int) bool { return m.modulePresets[i].name < m.modulePresets[j].name })
+		m.userModulePresets = len(m.modulePresets)
+	}
+	entries, _ := builtinModulePresets.ReadDir("modules") // in the order of the file names
+	for _, e := range entries {
+		data, err := builtinModulePresets.ReadFile("modules/" + e.Name())
 		if err != nil {
 			continue
 		}
-		var file struct{ Modules sointu.Modules }
-		if yaml.Unmarshal(data, &file) != nil || len(file.Modules) == 0 {
+		p, ok := parseModulePreset(e.Name(), data)
+		if !ok || slices.ContainsFunc(m.modulePresets[:m.userModulePresets], func(u modulePreset) bool { return u.name == p.name }) {
 			continue
 		}
-		name := filenameToInstrumentName(strings.TrimSuffix(e.Name(), ".yml"))
-		m.modulePresets = append(m.modulePresets, modulePreset{name: name, file: filepath.Join(dir, e.Name()), modules: file.Modules})
+		m.modulePresets = append(m.modulePresets, p)
 	}
-	sort.Slice(m.modulePresets, func(i, j int) bool { return m.modulePresets[i].name < m.modulePresets[j].name })
 }
 
 // SavePreset returns an Action to save the selected module as a module
@@ -137,26 +164,26 @@ func (m *overwriteModulePreset) Do() {
 // about: the one to delete, or to save over.
 func (m *ModuleModel) AskedPreset() string { return m.modulePresetAsked }
 
-// DeletePresets returns an Int of the module presets, to choose one to
-// delete: setting it shows a dialog asking whether to delete the preset,
-// like deleting an instrument preset does. Its value is -1: none is the
-// current one.
+// DeletePresets returns an Int of the module presets of the user, to choose
+// one to delete: setting it shows a dialog asking whether to delete the
+// preset, like deleting an instrument preset does. Its value is -1: none is
+// the current one.
 func (m *ModuleModel) DeletePresets() Int { return MakeInt((*modulePresetDeletion)(m)) }
 
 type modulePresetDeletion ModuleModel
 
 func (v *modulePresetDeletion) Value() int { return -1 }
 func (v *modulePresetDeletion) Range() RangeInclusive {
-	return RangeInclusive{0, len(v.modulePresets) - 1}
+	return RangeInclusive{0, v.userModulePresets - 1}
 }
 func (v *modulePresetDeletion) StringOf(i int) string {
-	if i < 0 || i >= len(v.modulePresets) {
+	if i < 0 || i >= v.userModulePresets {
 		return ""
 	}
 	return "Delete " + v.modulePresets[i].name
 }
 func (v *modulePresetDeletion) SetValue(i int) bool {
-	if i < 0 || i >= len(v.modulePresets) {
+	if i < 0 || i >= v.userModulePresets {
 		return false
 	}
 	v.modulePresetAsked = v.modulePresets[i].name
@@ -171,7 +198,7 @@ func (m *ModuleModel) ConfirmDeletePreset() Action { return MakeAction((*deleteM
 type deleteModulePreset ModuleModel
 
 func (m *deleteModulePreset) preset() (modulePreset, bool) {
-	for _, p := range m.modulePresets {
+	for _, p := range m.modulePresets[:m.userModulePresets] {
 		if p.name == m.modulePresetAsked {
 			return p, true
 		}

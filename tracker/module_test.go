@@ -594,7 +594,8 @@ func TestModulePresets(t *testing.T) {
 	}
 	m.Module().SavePreset().Do()
 	presets := m.Module().Presets()
-	if r := presets.Range(); r.Max != 0 || presets.StringOf(0) != "outer" {
+	builtin := len(m.modulePresets) - m.userModulePresets // the presets that the tracker comes with are listed last
+	if r := presets.Range(); r.Max != builtin || presets.StringOf(0) != "outer" {
 		t.Fatalf("the presets: %v, %q", r, presets.StringOf(0))
 	}
 	// another song gets both modules, and the saved one is selected
@@ -641,12 +642,12 @@ func TestModulePresets(t *testing.T) {
 	m.Module().Name().SetValue("second")
 	m.Module().SavePreset().Do()
 	presets = m.Module().Presets()
-	if r := presets.Range(); m.Dialog() != NoDialog || r.Max != 1 || presets.StringOf(1) != "second" {
+	if r := presets.Range(); m.Dialog() != NoDialog || r.Max != 1+builtin || presets.StringOf(1) != "second" {
 		t.Fatalf("after saving a second preset: dialog %v, presets %v", m.Dialog(), r)
 	}
 	// deleting a preset asks first
 	deletion := m.Module().DeletePresets()
-	if deletion.StringOf(0) != "Delete outer" || m.Module().ConfirmDeletePreset().Enabled() {
+	if deletion.StringOf(0) != "Delete outer" || deletion.Range().Max != 1 || m.Module().ConfirmDeletePreset().Enabled() {
 		t.Errorf("the deletions: %q", deletion.StringOf(0))
 	}
 	deletion.SetValue(0)
@@ -654,13 +655,13 @@ func TestModulePresets(t *testing.T) {
 		t.Fatalf("deleting the preset: dialog %v about %q, file: %v", m.Dialog(), m.Module().AskedPreset(), err)
 	}
 	m.CancelDialog().Do()
-	if _, err := os.Stat(file); err != nil || m.Module().Presets().Range().Max != 1 {
+	if _, err := os.Stat(file); err != nil || m.Module().Presets().Range().Max != 1+builtin {
 		t.Errorf("after cancelling the file is gone: %v", err)
 	}
 	m.Module().DeletePresets().SetValue(0)
 	m.Module().ConfirmDeletePreset().Do()
 	presets = m.Module().Presets()
-	if _, err := os.Stat(file); !os.IsNotExist(err) || m.Dialog() != NoDialog || presets.Range().Max != 0 || presets.StringOf(0) != "second" {
+	if _, err := os.Stat(file); !os.IsNotExist(err) || m.Dialog() != NoDialog || presets.Range().Max != builtin || presets.StringOf(0) != "second" {
 		t.Errorf("after deleting: file %v, dialog %v, presets %v", err, m.Dialog(), presets.Range())
 	}
 }
@@ -732,5 +733,82 @@ func TestScaledBinding(t *testing.T) {
 	bound.SetValue(94)
 	if d := m.d.Song.Modules[0].Params[0].Default; d != 128 || m.d.Song.Modules[0].Units[3].Parameters["resonance"] != 20 {
 		t.Errorf("after setting the frequency to 94: default %v, resonance %v", d, m.d.Song.Modules[0].Units[3].Parameters["resonance"])
+	}
+}
+
+// The tracker comes with module presets, listed after those of the user: the
+// Reverb module can be added to a song, gets a bus of its own for each module
+// unit and expands without problems. A preset of the user with its name
+// replaces it, and it cannot be deleted.
+func TestBuiltinModulePresets(t *testing.T) {
+	m, _ := newModuleTestModel(t)
+	m.modulePresetPath = t.TempDir()
+	m.loadModulePresets()
+	m.Instrument().Tab().SetValue(int(InstrumentModulesTab))
+	presets := m.Module().Presets()
+	index := -1
+	for i := presets.Range().Min; i <= presets.Range().Max; i++ {
+		if presets.StringOf(i) == "Reverb" {
+			index = i
+		}
+	}
+	if index < 0 || m.Module().DeletePresets().Range().Max != -1 {
+		t.Fatalf("Reverb is preset %d of %v, and %d presets can be deleted", index, presets.Range(), m.Module().DeletePresets().Range().Max+1)
+	}
+	before := len(m.d.Song.Modules)
+	if !presets.SetValue(index) || len(m.d.Song.Modules) != before+1 {
+		t.Fatalf("adding the preset: %d modules, want %d", len(m.d.Song.Modules), before+1)
+	}
+	mod := m.d.Song.Modules[m.d.ModuleIndex]
+	if out, err := m.Module().Outputs(); mod.Name != "Reverb" || mod.Inputs != 2 || len(mod.Params) != 8 || out != 2 || err != nil {
+		t.Fatalf("the module: %q, %d inputs, %d parameters, %d outputs, %v", mod.Name, mod.Inputs, len(mod.Params), out, err)
+	}
+	for k := 1; k <= len(mod.Params); k++ {
+		if _, _, ok := m.Module().ParamSource(k); !ok {
+			t.Errorf("nothing is bound to parameter %d, %s", k, mod.Params[k-1].Name)
+		}
+	}
+	// two module units in an instrument: a reverb each, on buses of their own
+	m.Instrument().Tab().SetValue(int(InstrumentEditorTab))
+	func() {
+		defer m.change("Test", SongChange, MajorChange)()
+		call := func(id int) sointu.Unit {
+			return sointu.Unit{Type: "module", ID: id, Parameters: sointu.ParamMap{"module": mod.ID}}
+		}
+		m.d.Song.Patch = sointu.Patch{{Name: "fx", NumVoices: 1, Units: []sointu.Unit{
+			{Type: "in", ID: 901, Parameters: sointu.ParamMap{"stereo": 1, "channel": 2}},
+			call(902),
+			call(903),
+			{Type: "out", ID: 904, Parameters: sointu.ParamMap{"stereo": 1, "gain": 128}},
+		}}}
+	}()
+	song, x := m.d.Song.Expand()
+	if len(x.Problems) > 0 {
+		t.Fatalf("problems expanding the song: %v", x.Problems)
+	}
+	buses := map[int]bool{}
+	for _, u := range song.Patch[0].Units {
+		if u.Type == "mcspread" {
+			buses[u.Parameters["bus"]] = true
+		}
+	}
+	if n := len(song.Patch[0].Units); len(buses) != 2 || n > 63 {
+		t.Errorf("%d buses for two module units, %d units", len(buses), n)
+	}
+	if _, err := vm.NewBytecode(song.Patch, vm.AllFeatures{}, song.BPM); err != nil {
+		t.Errorf("the expanded song does not encode: %v", err)
+	}
+	// a preset of the user with the same name is used instead
+	m.Instrument().Tab().SetValue(int(InstrumentModulesTab))
+	m.Module().SavePreset().Do()
+	presets = m.Module().Presets()
+	n := 0
+	for i := presets.Range().Min; i <= presets.Range().Max; i++ {
+		if presets.StringOf(i) == "Reverb" {
+			n++
+		}
+	}
+	if n != 1 || presets.StringOf(0) != "Reverb" || m.Module().DeletePresets().Range().Max != 0 {
+		t.Errorf("after saving a preset called Reverb: %d presets of that name, the first is %q, %d can be deleted", n, presets.StringOf(0), m.Module().DeletePresets().Range().Max+1)
 	}
 }

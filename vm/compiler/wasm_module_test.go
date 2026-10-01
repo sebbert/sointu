@@ -1,6 +1,7 @@
 package compiler_test
 
 import (
+	"os"
 	"os/exec"
 	"reflect"
 	"testing"
@@ -8,6 +9,7 @@ import (
 	"github.com/vsariola/sointu"
 	"github.com/vsariola/sointu/vm"
 	"github.com/vsariola/sointu/vm/compiler"
+	"gopkg.in/yaml.v3"
 )
 
 func moduleTestUnit(typ string, id int, params sointu.ParamMap, bind map[string]int) sointu.Unit {
@@ -214,5 +216,68 @@ func TestModuleProblemsRefused(t *testing.T) {
 	// the synths never see module units
 	if _, err := vm.NewBytecode(song.Patch, vm.AllFeatures{}, 120); err == nil {
 		t.Errorf("a patch with module units was encoded")
+	}
+}
+
+// TestReverbModulePresetWasmMatchesGoSynth renders the Reverb module preset
+// that the tracker comes with, fed by bursts of noise, in both synths: with
+// the defaults of its parameters, and with all of them set.
+func TestReverbModulePresetWasmMatchesGoSynth(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not found")
+	}
+	wat2wasm, err := exec.LookPath("wat2wasm")
+	if err != nil {
+		t.Skip("wat2wasm not found")
+	}
+	data, err := os.ReadFile("../../tracker/modules/Reverb.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var file struct{ Modules sointu.Modules }
+	if err := yaml.Unmarshal(data, &file); err != nil || len(file.Modules) != 1 {
+		t.Fatalf("reading the preset: %v, %d modules", err, len(file.Modules))
+	}
+	mod := file.Modules[0]
+	for name, params := range map[string]sointu.ParamMap{
+		"defaults": {"module": mod.ID},
+		"all set":  {"module": mod.ID, "p1": 20, "p2": 70, "p3": 100, "p4": 40, "p5": 60, "p6": 80, "p7": 60, "p8": 20},
+	} {
+		t.Run(name, func(t *testing.T) {
+			song := sointu.Song{BPM: 120, RowsPerBeat: 4,
+				Score: sointu.Score{RowsPerPattern: 16, Length: 1, Tracks: []sointu.Track{
+					{NumVoices: 1, Order: sointu.Order{0}, Patterns: []sointu.Pattern{{60, 1, 1, 1, 0, 1, 1, 1, 64, 1, 0, 1, 1, 1, 1, 1}}},
+					{NumVoices: 1, Order: sointu.Order{0}, Patterns: []sointu.Pattern{make(sointu.Pattern, 16)}},
+				}},
+				Patch: sointu.Patch{{Name: "burst", NumVoices: 1, Units: []sointu.Unit{
+					{Type: "envelope", Parameters: sointu.ParamMap{"stereo": 0, "attack": 0, "decay": 50, "sustain": 0, "release": 50, "gain": 128}},
+					{Type: "noise", Parameters: sointu.ParamMap{"stereo": 0, "shape": 64, "gain": 128}},
+					{Type: "mulp", Parameters: sointu.ParamMap{"stereo": 0}},
+					{Type: "push", Parameters: sointu.ParamMap{"stereo": 0}},
+					{Type: "aux", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128, "channel": 2}},
+				}}, {Name: "reverb", NumVoices: 1, Units: []sointu.Unit{
+					{Type: "in", Parameters: sointu.ParamMap{"stereo": 1, "channel": 2}},
+					{Type: "module", ID: 1000, Parameters: params},
+					{Type: "out", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128}},
+				}}},
+				Modules: file.Modules,
+			}
+			if _, x := song.Expand(); len(x.Problems) > 0 {
+				t.Fatalf("problems expanding the song: %v", x.Problems)
+			}
+			want, err := sointu.Play(vm.GoSynther{}, song, nil)
+			if err != nil {
+				t.Fatalf("Go synth failed: %v", err)
+			}
+			silent := true
+			for _, v := range want {
+				silent = silent && v[0] == 0 && v[1] == 0
+			}
+			if silent {
+				t.Fatal("the reverb is silent")
+			}
+			compareWasmToGo(t, want, renderWasm(t, node, wat2wasm, song, nil, nil, nil))
+		})
 	}
 }

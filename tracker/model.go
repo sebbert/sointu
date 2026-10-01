@@ -77,10 +77,13 @@ type (
 		// rowCache holds the rows of the unit editor
 		rowCache rowCache
 
-		// modulePresets are the module presets, read from modulePresetPath
-		// or, if it is empty, from the user's configuration directory
-		modulePresets    []modulePreset
-		modulePresetPath string
+		// modulePresets are the module presets: first those of the user,
+		// userModulePresets of them, read from modulePresetPath or, if it is
+		// empty, from the user's configuration directory; then those that
+		// the tracker comes with
+		modulePresets     []modulePreset
+		userModulePresets int
+		modulePresetPath  string
 		// modulePresetAsked is the name of the module preset that the dialog
 		// asks about: the one to delete, or to save over
 		modulePresetAsked string
