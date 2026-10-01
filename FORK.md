@@ -65,6 +65,7 @@ All of these are Go and wasm only.
 | `spfilter`, `spcompress`, `spblur`, `spgate`, `spphase`, `spscale`, `spformant` | Change a spectrum in place: band cut and tilt, magnitudes pulled to their mean (with optional attack and release per bin), time smoothing and freeze, gate, phase dispersion/randomization/robot, bin scaling and shifting, formant shift |
 | `spcross`, `spcomb` | Cross-synthesis/vocoder with another spectrum; resonances at the harmonics of up to 8 notes held in another instrument |
 | `ott` | A three-band upward and downward compressor, like Ableton's OTT preset: crossovers at 88.3 Hz and 2.5 kHz, `depth`, `time`, `upward`, `downward`, a gain per band |
+| `limiter` | A lookahead peak limiter: `threshold`, `release`, `lookahead` (0 to 11.5 ms, which is how late its output is), and `drive`, a gain before it of up to 18 dB that costs nothing in songs that do not use it. See [limiter](#limiter) |
 | `mcspread`, `mcsum` | Spread a mono or stereo signal over a bus of 8 channels (replacing or adding), and sum it back (with `width`) |
 | `mcdelay`, `mcmix`, `mcfilter`, `mcloop`, `mcloopend` | Change a bus in place every sample: a delay line per channel (seeded lengths, modulation, note tracking, allpass, per-band decay), orthogonal mixes (Hadamard, Householder, seeded shuffle), one-pole filters, and a feedback loop. See [mc units](#mc-units) |
 
@@ -187,6 +188,45 @@ tracker shows the first problem and plays the rest.
 (a song with modules expands to, renders and compiles like the same song
 written without them, for wasm, 386 and amd64, and the wasm player renders
 it like the Go synth) and `tracker/module_test.go`.
+
+## limiter
+
+`limiter` keeps a signal below `threshold`, with one gain for both channels
+in stereo. It is the cheap kind: a delay line and two one-pole followers
+(`vm/limiter.go`).
+
+1. The input, times `drive` (1 + 7·drive, up to 18 dB), goes into a delay
+   line of `lookahead`: 4 samples per step, up to 508 (11.5 ms).
+2. The level follows the peaks: the larger of what goes into the delay line
+   and what comes out of it. It jumps up to a higher peak at once and falls
+   back by `release` (the same times as the compressor's), so it stays up
+   until a peak has come out.
+3. The gain reduction that brings the level down to `threshold`,
+   1 - threshold/level, is smoothed with a time constant of a quarter of the
+   lookahead, and the delayed signal is multiplied by 1 minus it.
+
+The smoothing has done all but about 2 % of a gain change when the peak
+comes out, so the output can exceed the threshold a little: a burst 12 dB
+above the threshold after silence comes out up to 0.5 dB above it, a peak
+6 dB above it about 0.2 dB. Where nothing may exceed full scale, put a
+`clip` after it or set `threshold` a little lower. With `lookahead` 0 the
+gain drops at once: no delay and nothing above the threshold, but the
+sudden drops distort, like a clipper that recovers slowly. The output is
+late by the lookahead, also against `sync`.
+
+`drive` is the last transformed parameter of the unit and optional, like
+`curve` of the envelope: songs that leave it at 0 and do not modulate it
+compile without its operand and without its code (`LimiterDrive`). The
+lookahead is an operand after the transformed parameters.
+
+The state does not fit in a unit: 4112 bytes, the level, the reduction, the
+frame of the delay line to write next, 4 unused bytes and 512 frames of two
+floats. Like `ott`, the states are in a table of their own, in the order the
+units run, voice by voice: `su_limiter` and `$limiterWRK` in the wasm
+player, `GoSynth.limiters`, `Patch.NumLimiters()` of them. They are not
+cleared when a note is triggered. Without limiters, nothing of it is in the
+player. Tests: `vm/limiter_test.go` and `vm/compiler/wasm_limiter_test.go`
+(the wasm player renders it like the Go synth, with and without drive).
 
 ## mc units
 
@@ -712,6 +752,13 @@ songs that need any of it for x86.
    table and pointer, `ott` as in `vm/ott.go`, and the float32 `exp2f` and
    `log2f` (see 7). The x86 template has a stub that leaves the signal
    unchanged; the compiler refuses ott for x86.
+
+   `limiter` is kept the same way: `su_limiter`, 4112 bytes per state,
+   `Patch.NumLimiters()` states, walked with `$limiterWRK`; see
+   [limiter](#limiter) for the state and `vm/limiter.go` for the unit. Its
+   lookahead is an operand byte after the transformed parameters, and its
+   last transformed parameter, `drive`, is only there in songs that use it.
+   The x86 template has a stub; the compiler refuses limiter for x86.
 
 9. **Bandlimited oscillators.** Flags 0x04 with 0x40, 0x20 or 0x10 mean
    bandlimited, so the gate test becomes flags & 0x74 == 0x04. Keep the

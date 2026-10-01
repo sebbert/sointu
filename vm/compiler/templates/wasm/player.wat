@@ -213,6 +213,19 @@
 {{- .SetBlockLabel "su_ott"}}
 {{- .Block (int (mul 44 .Song.Patch.NumOtts))}}
 {{- end}}
+{{- if .HasOp "limiter"}}
+{{- /*
+;-------------------------------------------------------------------------------
+;    The states of the limiter units, 4112 bytes each, in the order the units
+;    run, voice by voice: the level, the reduction, the frame of the delay
+;    line to write next, 4 unused bytes, and the delay line of 512 frames of
+;    two floats
+;-------------------------------------------------------------------------------
+*/}}
+{{- .Align}}
+{{- .SetBlockLabel "su_limiter"}}
+{{- .Block (int (mul 4112 .Song.Patch.NumLimiters))}}
+{{- end}}
 {{- if or (.HasOp "bufread") (.HasOp "bufwrite")}}
 {{- .Align}}
 {{- .SetBlockLabel "su_buffers"}}
@@ -285,6 +298,9 @@
 {{- end}}
 {{- if .HasOp "ott"}}
 (global $ottWRK (mut i32) (i32.const 0))
+{{- end}}
+{{- if .HasOp "limiter"}}
+(global $limiterWRK (mut i32) (i32.const 0))
 {{- end}}
 (global $globaltick (mut i32) (i32.const 0))
 (global $row (mut i32) (i32.const 0))
@@ -383,6 +399,9 @@
 {{- end}}
 {{- if .HasOp "ott"}}
                 (global.set $ottWRK (i32.const {{index .Labels "su_ott"}}))
+{{- end}}
+{{- if .HasOp "limiter"}}
+                (global.set $limiterWRK (i32.const {{index .Labels "su_limiter"}}))
 {{- end}}
                 (call $su_run_vm)
                 {{- template "output_sound.wat" .}}

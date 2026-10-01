@@ -55,6 +55,7 @@ var optionalParams = map[string]struct {
 	Value int
 }{
 	"envelope": {"curve", 0},
+	"limiter":  {"drive", 0},
 }
 
 var allOpcodes map[string]int

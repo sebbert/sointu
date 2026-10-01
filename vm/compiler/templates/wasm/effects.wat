@@ -680,3 +680,75 @@
     ))
 )
 {{end}}
+
+{{- if .HasOp "limiter"}}
+;;-------------------------------------------------------------------------------
+;;   LIMITER opcode: lookahead peak limiter
+;;-------------------------------------------------------------------------------
+;;   Mono:   limits ST0
+;;   Stereo: limits ST0 and ST1, with one gain for both
+;;   The state of the unit is at $limiterWRK, in su_limiter: the level, the
+;;   reduction, the frame of the delay line to write next, and from offset 16
+;;   the delay line, 512 frames of two floats. Matches limiter in
+;;   vm/limiter.go, where it is explained.
+;;-------------------------------------------------------------------------------
+(func $su_op_limiter (param $stereo i32) (local $lookahead i32) (local $in i32) (local $out i32) (local $peak f32) (local $level f32) (local $red f32)
+{{- if .LimiterDrive}} (local $drive f32){{end}}
+    (local.set $lookahead (i32.shl (call $scanOperand) (i32.const 2))) ;; in steps of 4 samples
+    (local.set $in (i32.add
+        (global.get $limiterWRK)
+        (i32.shl (i32.load offset=8 (global.get $limiterWRK)) (i32.const 3))
+    ))
+    (local.set $out (i32.add
+        (global.get $limiterWRK)
+        (i32.shl (i32.and (i32.sub (i32.load offset=8 (global.get $limiterWRK)) (local.get $lookahead)) (i32.const 511)) (i32.const 3))
+    ))
+{{- if .LimiterDrive}}
+    (local.set $drive (f32.add (f32.const 1) (f32.mul (f32.const 7) (call $input (i32.const {{.InputNumber "limiter" "drive"}})))))
+    (f32.store offset=16 (local.get $in) (f32.mul (call $peek) (local.get $drive)))
+{{- else}}
+    (f32.store offset=16 (local.get $in) (call $peek))
+{{- end}}
+    ;; the peak of what goes into the delay line and of what comes out of it
+    (local.set $peak (f32.max (f32.abs (f32.load offset=16 (local.get $in))) (f32.abs (f32.load offset=16 (local.get $out)))))
+{{- if .Stereo "limiter"}}
+    (if (local.get $stereo) (then
+{{- if .LimiterDrive}}
+        (f32.store offset=20 (local.get $in) (f32.mul (call $peek2) (local.get $drive)))
+{{- else}}
+        (f32.store offset=20 (local.get $in) (call $peek2))
+{{- end}}
+        (local.set $peak (f32.max (local.get $peak)
+            (f32.max (f32.abs (f32.load offset=20 (local.get $in))) (f32.abs (f32.load offset=20 (local.get $out))))
+        ))
+    ))
+{{- end}}
+    ;; the level jumps to a higher peak and falls back by release
+    (local.set $level (f32.load (global.get $limiterWRK)))
+    (local.set $level (f32.max
+        (f32.sub (local.get $level) (f32.mul (local.get $level) (call $nonLinearMap (i32.const {{.InputNumber "limiter" "release"}}))))
+        (local.get $peak)
+    ))
+    (f32.store (global.get $limiterWRK) (local.get $level))
+    ;; the reduction that brings the level down to the threshold ($peak is the target from here on)
+    (local.set $peak (f32.const 0))
+    (if (f32.gt (local.get $level) (call $input (i32.const {{.InputNumber "limiter" "threshold"}}))) (then
+        (local.set $peak (f32.sub (f32.const 1) (f32.div (call $input (i32.const {{.InputNumber "limiter" "threshold"}})) (local.get $level))))
+    ))
+    (local.set $red (f32.load offset=4 (global.get $limiterWRK)))
+    (local.set $red (f32.add (local.get $red) (f32.mul
+        (f32.sub (local.get $peak) (local.get $red))
+        (f32.div (f32.const 4) (f32.convert_i32_u (i32.add (local.get $lookahead) (i32.const 4))))
+    )))
+    (f32.store offset=4 (global.get $limiterWRK) (local.get $red))
+    (local.set $red (f32.sub (f32.const 1) (local.get $red))) ;; the gain
+    (f32.store (global.get $sp) (f32.mul (f32.load offset=16 (local.get $out)) (local.get $red)))
+{{- if .Stereo "limiter"}}
+    (if (local.get $stereo) (then
+        (f32.store offset=4 (global.get $sp) (f32.mul (f32.load offset=20 (local.get $out)) (local.get $red)))
+    ))
+{{- end}}
+    (i32.store offset=8 (global.get $limiterWRK) (i32.and (i32.add (i32.load offset=8 (global.get $limiterWRK)) (i32.const 1)) (i32.const 511)))
+    (global.set $limiterWRK (i32.add (global.get $limiterWRK) (i32.const 4112)))
+)
+{{end}}

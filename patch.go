@@ -346,6 +346,40 @@ var UnitTypes = map[string]UnitType{
 		},
 		StackUse: stackUseEffect,
 	},
+	"limiter": {
+		// limiter is a lookahead peak limiter: it keeps the signal below
+		// threshold, with one gain for both channels in stereo. It follows
+		// the peaks of the signal, times drive: the peak level jumps to a
+		// higher peak at once and falls back by release. The gain that
+		// brings the peak level down to threshold is smoothed with a time
+		// constant of about a quarter of lookahead and applied to the signal
+		// delayed by lookahead, so the gain is nearly down when a peak
+		// comes out: all but about 2 % of the gain reduction, so a peak
+		// 6 dB above threshold comes out 0.2 dB above it. Put a clip after
+		// it, or set threshold a little lower, where nothing may exceed full
+		// scale. The output is late by lookahead. With lookahead 0 the gain
+		// drops at once: no delay, and nothing above threshold, but the
+		// sudden drops distort.
+		//
+		// drive is a gain before the limiter, 1 + 7·drive: up to 18 dB.
+		// Songs that leave it at 0 and do not modulate it compile without
+		// it. The states and delay lines of the limiters are kept outside
+		// the voices, like those of ott.
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "threshold", MinValue: 0, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB"
+			}},
+			{Name: "release", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: compressorTimeDispFunc},
+			{Name: "lookahead", MinValue: 0, Default: 32, MaxValue: LimiterLookaheadMax, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(float64(LimiterLookahead(v))/44.1, 'f', 1, 64), "ms"
+			}},
+			{Name: "drive", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(toDecibel(1+7*float64(v)/128), 'f', 1, 64), "dB"
+			}},
+		},
+		StackUse: stackUseEffect,
+	},
 	"speed": {
 		Params:   []UnitParameter{},
 		StackUse: func(u *Unit) StackUse { return StackUse{Inputs: [][]int{{0}}, Modifies: []bool{true}, NumOutputs: 0} },
@@ -1432,6 +1466,29 @@ func (p Patch) NumOtts() int {
 	for _, instr := range p {
 		for _, unit := range instr.Units {
 			if unit.Type == "ott" && !unit.Disabled {
+				total += instr.NumVoices
+			}
+		}
+	}
+	return total
+}
+
+// LimiterLookaheadMax is the largest lookahead of a limiter unit: the delay
+// line of a limiter has 512 frames.
+const LimiterLookaheadMax = 127
+
+// LimiterLookahead returns the lookahead of a limiter unit in samples: 4 for
+// each step, up to 508 (11.5 ms).
+func LimiterLookahead(v int) int { return 4 * min(max(v, 0), LimiterLookaheadMax) }
+
+// NumLimiters returns the number of limiter states of the patch: the number
+// of limiter units of every instrument times its number of voices. The
+// synths keep them outside the voices, like the states of ott.
+func (p Patch) NumLimiters() int {
+	total := 0
+	for _, instr := range p {
+		for _, unit := range instr.Units {
+			if unit.Type == "limiter" && !unit.Disabled {
 				total += instr.NumVoices
 			}
 		}

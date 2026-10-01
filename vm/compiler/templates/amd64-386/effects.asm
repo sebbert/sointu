@@ -500,3 +500,12 @@ su_op_compressor_mono:
 {{.Func "su_op_ott" "Opcode"}}
     ret
 {{end}}
+
+
+{{- if .HasOp "limiter"}}
+;-------------------------------------------------------------------------------
+;   LIMITER opcode: not supported on x86 yet; leaves the signal unchanged
+;-------------------------------------------------------------------------------
+{{.Func "su_op_limiter" "Opcode"}}
+    ret
+{{end}}

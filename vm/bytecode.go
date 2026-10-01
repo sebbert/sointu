@@ -363,6 +363,10 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				b.op(opcode + p["stereo"])
 				b.defOperands(unit)
 				b.operand(unit.Parameters["channel"])
+			case "limiter":
+				b.op(opcode + p["stereo"])
+				b.defOperands(unit)
+				b.operand(min(max(p["lookahead"], 0), sointu.LimiterLookaheadMax)) // in steps of 4 samples
 			case "filter":
 				flags := 0
 				if unit.Parameters["lowpass"] == 1 {

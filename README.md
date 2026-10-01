@@ -334,6 +334,13 @@ A stereo `ott` uses the same gains on both channels. Unlike the OTT preset,
 it adds no fixed gain, so the output is often quieter than the input: raise
 the band gains, e.g. to about +10, +5.6 and +10 dB (91, 79 and 91).
 
+`limiter` is a lookahead peak limiter: it keeps the signal below `threshold`,
+turning the gain down ahead of a peak, by delaying the signal by `lookahead`
+(up to 11.5 ms), and back up by `release`. `drive` is a gain before it, up to
+18 dB, for loudness. It is a cheap one: a peak well above the threshold can
+come out a few tenths of a dB above it, so put a `clip` after it where nothing
+may exceed full scale. A stereo `limiter` uses the same gain on both channels.
+
 The naive waveforms of the `oscillator` alias at high pitches: their
 harmonics above half the sample rate fold back as inharmonic tones. With
 `bandlimit` on, the sine, trisaw and pulse waveforms are smoothed around their
@@ -405,7 +412,7 @@ count towards the units of its instrument. In the tracker, the Modules tab
 edits them, and so do the units shown under an unfolded module unit; see
 [FORK.md](FORK.md#modules).
 
-`bufread`, `bufwrite`, `spawn`, `arg`, `window`, `ott`, the spectral units,
+`bufread`, `bufwrite`, `spawn`, `arg`, `window`, `ott`, `limiter`, the spectral units,
 the mc units, bandlimited oscillators and curved envelopes are WebAssembly only
 for now; envelopes with `curve` 0 compile for x86 as before.
 

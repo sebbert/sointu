@@ -28,6 +28,12 @@ func (p *FeatureSetMacros) StereoAndMono(unitType string) bool {
 	return p.Stereo(unitType) && p.Mono(unitType)
 }
 
+// LimiterDrive is true when the limiters of the song have the drive
+// parameter; otherwise the players leave the gain before the limiter out.
+func (p *FeatureSetMacros) LimiterDrive() bool {
+	return vm.TransformsParam(p.FeatureSet, "limiter", "drive")
+}
+
 // EnvelopeCurve is true when the envelopes of the song have the curve
 // parameter; otherwise the players leave the curved envelope out.
 func (p *FeatureSetMacros) EnvelopeCurve() bool {
