@@ -160,7 +160,7 @@ func (m *Model) fixModules() {
 		for j := range mod.Units {
 			u := &mod.Units[j]
 			for name, k := range u.Bind {
-				if k < 1 || k > len(mod.Params) || !sointu.CanBind(u.Type, name) {
+				if _, ok := sointu.BindableParam(u.Type, name); k < 1 || k > len(mod.Params) || !sointu.CanBind(u.Type, name) || !ok {
 					delete(u.Bind, name)
 				}
 			}
@@ -226,7 +226,7 @@ func (m *Model) moduleOf(unit *sointu.Unit) (int, bool) {
 func (m *Model) syncBoundDefault(unit *sointu.Unit, name string) {
 	if i, ok := m.moduleOf(unit); ok {
 		if k, ok := unit.Bind[name]; ok {
-			m.setModuleDefault(i, k, unit.Parameters[name])
+			m.setModuleDefault(i, k, unit.BoundValue(name))
 		}
 	}
 }
@@ -241,14 +241,14 @@ func (m *Model) setModuleDefault(index, k, value int) {
 	mod.Params[k-1].Default = value
 	for j := range mod.Units {
 		u := &mod.Units[j]
-		for _, p := range sointu.UnitTypes[u.Type].Params {
+		for _, p := range u.BindableParams() {
 			if u.Bind[p.Name] != k || !p.CanSet {
 				continue
 			}
 			if u.Type == "module" {
 				u.Parameters[p.Name] = value
 			} else {
-				u.Parameters[p.Name] = min(max(value, p.MinValue), max(p.MaxValue, p.MinValue))
+				u.SetBoundValue(p.Name, min(max(value, p.MinValue), max(p.MaxValue, p.MinValue)))
 			}
 		}
 	}
@@ -367,6 +367,9 @@ func (m *Model) modulesUsedBy(unitLists ...[]sointu.Unit) sointu.Modules {
 func moduleKey(mod *sointu.Module) string {
 	c := mod.Copy()
 	c.ID = 0
+	for i := range c.Units {
+		c.Units[i].Unfolded = false // a hint to the tracker, not a difference
+	}
 	ids := map[int]int{}
 	for i := range c.Units {
 		if id := c.Units[i].ID; id != 0 {
@@ -407,16 +410,17 @@ func unitBufferParams(unitType string) []string {
 // use them. A module that the song already has, with the same name and the
 // same content, is not added again: the units use the one of the song.
 // Another module with a name that is taken gets a number added to its name.
-func (m *Model) importModules(mods sointu.Modules, unitLists ...[]sointu.Unit) {
+// It returns the IDs that the modules have in the song, by their IDs.
+func (m *Model) importModules(mods sointu.Modules, unitLists ...[]sointu.Unit) (newIDs map[int]int) {
+	newIDs = map[int]int{}
 	if len(mods) == 0 {
-		return
+		return newIDs
 	}
 	mods = mods.Copy()
 	imported := map[int]bool{}
 	for _, mod := range mods {
 		imported[mod.ID] = true
 	}
-	newIDs := map[int]int{}
 	remap := func(units []sointu.Unit) (ready bool) {
 		for _, u := range units {
 			if _, ok := newIDs[u.Parameters["module"]]; u.Type == "module" && imported[u.Parameters["module"]] && !ok {
@@ -469,6 +473,7 @@ func (m *Model) importModules(mods sointu.Modules, unitLists ...[]sointu.Unit) {
 			}
 		}
 	}
+	return newIDs
 }
 
 // Editing reports whether the unit editor shows the units of a module, on
@@ -935,10 +940,11 @@ func (v moduleParamBound) cursor() (*sointu.Unit, string, bool) {
 		return nil, "", false
 	}
 	p := (*Model)(v.ModuleModel).Params().Item((*Model)(v.ModuleModel).Params().Cursor())
-	if p.unit == nil || p.up == nil || !sointu.CanBind(p.unit.Type, p.up.Name) {
+	unit, name, ok := p.bindTarget()
+	if !ok || p.inner != nil || !sointu.CanBind(unit.Type, name) {
 		return nil, "", false
 	}
-	return p.unit, p.up.Name, true
+	return unit, name, true
 }
 func (v moduleParamBound) Enabled() bool {
 	_, _, ok := v.cursor()
@@ -969,7 +975,7 @@ func (v moduleParamBound) SetValue(val bool) {
 		// and its range the range
 		mp := &v.selected().Params[v.k-1]
 		mp.Min, mp.Max = 0, 0
-		m.setModuleDefault(m.d.ModuleIndex, v.k, unit.Parameters[name])
+		m.setModuleDefault(m.d.ModuleIndex, v.k, unit.BoundValue(name))
 	} else {
 		m.setModuleDefault(m.d.ModuleIndex, v.k, v.selected().Params[v.k-1].Default)
 	}
@@ -1051,12 +1057,7 @@ func (m *inlineModule) Do() {
 		c := u.Copy()
 		for name, k := range u.Bind {
 			delete(c.Bind, name)
-			p, ok := sointu.UnitParameter{}, false
-			for _, q := range sointu.UnitTypes[u.Type].Params {
-				if q.Name == name {
-					p, ok = q, true
-				}
-			}
+			p, ok := sointu.BindableParam(u.Type, name)
 			if !ok {
 				continue
 			}
@@ -1075,7 +1076,7 @@ func (m *inlineModule) Do() {
 			if u.Type != "module" {
 				v = min(max(v, p.MinValue), max(p.MaxValue, p.MinValue))
 			}
-			c.Parameters[name] = v
+			c.SetBoundValue(name, v)
 		}
 		if len(c.Bind) == 0 {
 			c.Bind = nil

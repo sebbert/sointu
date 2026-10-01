@@ -231,7 +231,6 @@ func TestExpandProblems(t *testing.T) {
 		"missing":              song(nil, call(0, 5)),
 		"which is not":         song(sointu.Modules{c}, call(0, 3)),
 		"from outside":         song(sointu.Modules{c, a, b}, call(0, 3), unit("send", 0, map[string]int{"target": 40})),
-		"two mono sends":       song(sointu.Modules{c}, call(4, 3), unit("send", 0, map[string]int{"target": 4, "stereo": 1})),
 		"does not have":        song(sointu.Modules{c}, call(4, 9)),
 		"module b uses itself": song(sointu.Modules{a, b}, call(0, 2)),
 	} {
@@ -377,5 +376,57 @@ func TestExpandPortOnlyBinding(t *testing.T) {
 	}
 	if p, _ := s.Modules.Param(0, 1); p.CanSet || !p.CanModulate {
 		t.Errorf("the parameter of the module: %+v", p)
+	}
+}
+
+func TestExpandStereoSend(t *testing.T) {
+	// a stereo send to a module unit: the top signal to the parameters of
+	// the port, the one below to those of the next port
+	m := sointu.Module{ID: 1, Params: []sointu.ModuleParam{{Name: "a"}, {Name: "b"}}, Units: []sointu.Unit{
+		bound(unit("filter", 0, nil), map[string]int{"frequency": 1, "resonance": 2}),
+		bound(unit("gain", 0, nil), map[string]int{"gain": 2}),
+	}}
+	lfo := unit("oscillator", 0, map[string]int{"lfo": 1})
+	s := song(sointu.Modules{m}, lfo, lfo, unit("send", 0, map[string]int{"target": 7, "port": 0, "stereo": 1, "sendpop": 1, "amount": 90}),
+		unit("noise", 0, nil), call(7, 1), unit("out", 0, nil))
+	got, exp := s.Expand()
+	noProblems(t, exp)
+	u := got.Patch[0].Units
+	want := "oscillator oscillator send:stereo=0:sendpop=0:amount=90 xch send:stereo=0:sendpop=0:amount=90 send:stereo=0:sendpop=0:amount=90 xch pop:stereo=1 noise filter gain out"
+	if s := summary(u, "stereo", "sendpop", "amount"); s != want {
+		t.Fatalf("got  %v\nwant %v", s, want)
+	}
+	filter, gain := u[9], u[10]
+	if p := u[2].Parameters; p["target"] != filter.ID || p["port"] != 0 {
+		t.Errorf("the send of the top signal goes to %v port %v", p["target"], p["port"])
+	}
+	if p := u[4].Parameters; p["target"] != filter.ID || p["port"] != 1 {
+		t.Errorf("the first send of the signal below goes to %v port %v", p["target"], p["port"])
+	}
+	if p := u[5].Parameters; p["target"] != gain.ID || p["port"] != 0 {
+		t.Errorf("the second send of the signal below goes to %v port %v", p["target"], p["port"])
+	}
+}
+
+func TestExpandDelayTimes(t *testing.T) {
+	// the delay times of a delay unit can be bound
+	delay := sointu.Unit{Type: "delay", Parameters: sointu.ParamMap{"notetracking": 2}, VarArgs: []int{24, 48}, Bind: map[string]int{"delaytime2": 1}}
+	m := sointu.Module{ID: 1, Inputs: 1, Params: []sointu.ModuleParam{{Name: "time", Default: 48}}, Units: []sointu.Unit{delay}}
+	s := song(sointu.Modules{m}, unit("noise", 0, nil), call(0, 1, 36), call(0, 1), call(0, 1, 100000), unit("out", 0, nil))
+	got, exp := s.Expand()
+	noProblems(t, exp)
+	u := got.Patch[0].Units
+	if len(u) != 5 || !reflect.DeepEqual(u[1].VarArgs, []int{24, 36}) || !reflect.DeepEqual(u[2].VarArgs, []int{24, 48}) || !reflect.DeepEqual(u[3].VarArgs, []int{24, 65535}) {
+		t.Errorf("the delay times: %v %v %v", u[1].VarArgs, u[2].VarArgs, u[3].VarArgs)
+	}
+	if !reflect.DeepEqual(s.Modules[0].Units[0].VarArgs, []int{24, 48}) {
+		t.Errorf("Expand changed the module")
+	}
+	p, _ := s.Modules.Param(0, 1)
+	if typ, name, _ := s.Modules.ParamSource(0, 1); typ != "delay" || name != "delaytime2" || p.MinValue != 1 || p.MaxValue != 65535 || p.CanModulate {
+		t.Errorf("the parameter: like %v.%v, %+v", typ, name, p)
+	}
+	if !sointu.CanBind("delay", "delaytime3") || sointu.CanBind("filter", "delaytime1") || sointu.CanBind("delay", "delaytime0") {
+		t.Errorf("CanBind is wrong for delay times")
 	}
 }

@@ -238,6 +238,7 @@ func (v *UnitModel) Item(row int) UnitListItem {
 			Comment:  u.Comment,
 			Disabled: u.Disabled,
 			Inner:    true,
+			Outer:    signals.PassThrough,
 			Stack:    signals.PassThrough + e.before[i] + e.uses[i].NumOutputs,
 			First:    i == 0,
 			Last:     i == len(e.units)-1,
@@ -256,7 +257,7 @@ func (v *UnitModel) Item(row int) UnitListItem {
 	return UnitListItem{
 		Stack:    stack,
 		Module:   isModule,
-		Unfolded: isModule && v.unfolded[unit.ID],
+		Unfolded: isModule && unit.Unfolded,
 		Title:    (*Model)(v).unitTitle(&unit),
 		Type:     unit.Type,
 		Comment:  unit.Comment,
@@ -280,6 +281,7 @@ type UnitListItem struct {
 	Module, Unfolded     bool
 	Signals              Rail
 	Stack                int // the number of signals on the stack after the unit
+	Outer                int // for an inner unit, the signals passing by its module unit
 }
 
 // Type returns the type of the currently selected unit.

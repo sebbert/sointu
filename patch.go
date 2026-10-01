@@ -68,6 +68,11 @@ type (
 		// to track what the unit is doing & to make it easier to target sends.
 		Comment string `yaml:",omitempty"`
 
+		// Unfolded hints the GUI to show, under a module unit, the units
+		// that it stands for. Like Instrument.Mute, the compiled player
+		// ignores it.
+		Unfolded bool `yaml:",omitempty"`
+
 		// Bind binds parameters of a unit in the body of a module to the
 		// parameters of the module: the name of a parameter of the unit to
 		// the number of a parameter of the module, from 1. Each module unit

@@ -113,12 +113,84 @@ func CanBind(unitType, param string) bool {
 			return false
 		}
 	}
+	if _, ok := delayTimeIndex(param); ok && unitType == "delay" {
+		return true
+	}
 	for _, p := range UnitTypes[unitType].Params {
 		if p.Name == param {
 			return p.CanSet || p.CanModulate
 		}
 	}
 	return false
+}
+
+// DelayTimeName returns the name that delay time i (from 0) of a delay unit
+// is bound by in Unit.Bind: delaytime1 is the first of Unit.VarArgs.
+func DelayTimeName(i int) string { return "delaytime" + strconv.Itoa(i+1) }
+
+// delayTimeIndex returns i for the name DelayTimeName(i).
+func delayTimeIndex(name string) (int, bool) {
+	const prefix = "delaytime"
+	if len(name) <= len(prefix) || name[:len(prefix)] != prefix {
+		return 0, false
+	}
+	n, err := strconv.Atoi(name[len(prefix):])
+	return n - 1, err == nil && n >= 1
+}
+
+// BindableParams returns what of the unit can be bound to the parameters
+// of a module: the parameters of its type, and for a delay unit, also its
+// delay times, by the names DelayTimeName gives them.
+func (u *Unit) BindableParams() []UnitParameter {
+	params := UnitTypes[u.Type].Params
+	if u.Type != "delay" || len(u.VarArgs) == 0 {
+		return params
+	}
+	params = params[:len(params):len(params)]
+	for i := range u.VarArgs {
+		params = append(params, UnitParameter{Name: DelayTimeName(i), MinValue: 1, MaxValue: 65535, Default: 1, CanSet: true})
+	}
+	return params
+}
+
+// BindableParam returns the parameter with the given name among
+// BindableParams of a unit of the given type.
+func BindableParam(unitType, name string) (UnitParameter, bool) {
+	if _, ok := delayTimeIndex(name); ok && unitType == "delay" {
+		return UnitParameter{Name: name, MinValue: 1, MaxValue: 65535, Default: 1, CanSet: true}, true
+	}
+	for _, p := range UnitTypes[unitType].Params {
+		if p.Name == name {
+			return p, true
+		}
+	}
+	return UnitParameter{}, false
+}
+
+// BoundValue returns the value of what a name of BindableParams stands
+// for: a parameter of the unit, or a delay time.
+func (u *Unit) BoundValue(name string) int {
+	if i, ok := delayTimeIndex(name); ok && u.Type == "delay" {
+		if i < len(u.VarArgs) {
+			return u.VarArgs[i]
+		}
+		return 1
+	}
+	return u.Parameters[name]
+}
+
+// SetBoundValue sets the value that BoundValue returns.
+func (u *Unit) SetBoundValue(name string, value int) {
+	if i, ok := delayTimeIndex(name); ok && u.Type == "delay" {
+		if i < len(u.VarArgs) {
+			u.VarArgs[i] = value
+		}
+		return
+	}
+	if u.Parameters == nil {
+		u.Parameters = ParamMap{}
+	}
+	u.Parameters[name] = value
 }
 
 // Copy makes a deep copy of a module.
@@ -256,27 +328,33 @@ func (m *Module) title() string {
 // from: the first parameter bound to it, through modules used by the
 // module. ok is false if nothing is bound to it.
 func (m Modules) ParamSource(index, k int) (unitType, param string, ok bool) {
+	u, param, ok := m.ParamSourceUnit(index, k)
+	if !ok {
+		return "", "", false
+	}
+	return u.Type, param, true
+}
+
+// ParamSourceUnit is like ParamSource, but returns the unit.
+func (m Modules) ParamSourceUnit(index, k int) (unit *Unit, param string, ok bool) {
 	return m.paramSource(index, k, 0)
 }
 
-func (m Modules) paramSource(index, k, depth int) (string, string, bool) {
+func (m Modules) paramSource(index, k, depth int) (*Unit, string, bool) {
 	if depth > len(m) {
-		return "", "", false // modules using themselves
+		return nil, "", false // modules using themselves
 	}
-	for _, u := range m[index].Units {
+	for j := range m[index].Units {
+		u := &m[index].Units[j]
 		if u.Disabled {
 			continue
 		}
-		ut, ok := UnitTypes[u.Type]
-		if !ok {
-			continue
-		}
-		for _, p := range ut.Params { // in the order of the parameters
+		for _, p := range u.BindableParams() { // in the order of the parameters
 			if u.Bind[p.Name] != k || !CanBind(u.Type, p.Name) {
 				continue
 			}
 			if u.Type != "module" {
-				return u.Type, p.Name, true
+				return u, p.Name, true
 			}
 			if i, ok := m.Find(u.Parameters["module"]); ok {
 				if t, n, ok := m.paramSource(i, moduleParamIndex(p.Name), depth+1); ok {
@@ -285,7 +363,7 @@ func (m Modules) paramSource(index, k, depth int) (string, string, bool) {
 			}
 		}
 	}
-	return "", "", false
+	return nil, "", false
 }
 
 // Param returns the parameter k (from 1) of the module with the given
@@ -300,11 +378,9 @@ func (m Modules) Param(index, k int) (ret UnitParameter, ok bool) {
 	mp := m[index].Params[k-1]
 	ret = UnitParameter{Name: mp.Name, MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true}
 	if t, n, ok := m.ParamSource(index, k); ok {
-		for _, p := range UnitTypes[t].Params {
-			if p.Name == n {
-				ret.MinValue, ret.MaxValue, ret.Neutral, ret.DisplayFunc = p.MinValue, p.MaxValue, p.Neutral, p.DisplayFunc
-				ret.CanSet, ret.CanModulate = p.CanSet, p.CanModulate
-			}
+		if p, ok := BindableParam(t, n); ok {
+			ret.MinValue, ret.MaxValue, ret.Neutral, ret.DisplayFunc = p.MinValue, p.MaxValue, p.Neutral, p.DisplayFunc
+			ret.CanSet, ret.CanModulate = p.CanSet, p.CanModulate
 		}
 	}
 	if mp.Min != 0 || mp.Max != 0 {
@@ -415,18 +491,20 @@ func (s *Song) HasModules() bool {
 //   - The copies get new IDs, above every ID of the song. Sends in a module
 //     to units of the module go to the copies made with them. Sends to other
 //     units stay as they are.
-//   - A mono send to a module unit modulates the parameters bound to the
-//     module parameter of that port: it becomes a send to each of them, only
-//     the last one popping. Without any, a popping send becomes a pop.
+//   - A send to a module unit modulates the parameters bound to the module
+//     parameter of that port: it becomes a send to each of them, only the
+//     last one popping. Without any, a popping send becomes a pop. A stereo
+//     send also modulates those of the next port with its other channel: it
+//     becomes mono sends of each channel, with an xch before and after
+//     those of the second, and a pop.
 //   - Buffers that the tracker created (Buffer.Auto) and that only the units
 //     of one module use belong to that module: its first module unit uses
 //     them, and every further one gets clones of them.
 //   - Disabled units, and module units without a module, are left out.
 //
 // What cannot be expanded is left out and reported in Expansion.Problems:
-// modules using themselves, bindings that are not allowed, stereo sends to
-// module units, and sends from outside a module to one of its units, as
-// they are ambiguous.
+// modules using themselves, bindings that are not allowed, and sends from
+// outside a module to one of its units, as they are ambiguous.
 func (s *Song) Expand() (Song, *Expansion) {
 	exp := &Expansion{}
 	if !s.HasModules() {
@@ -494,31 +572,58 @@ func (s *Song) Expand() (Song, *Expansion) {
 			if out == nil {
 				out = append(make([]Unit, 0, len(units)), units[:j]...)
 			}
-			var targets []portTarget
-			if u.Parameters["stereo"]&1 == 1 {
-				// the parameters bound to two ports need not be next to each
-				// other, as a stereo send needs them
-				e.problem("a stereo send in instrument %d / %s targets a module unit: use two mono sends", i, ret.Patch[i].Name)
-			} else if port := u.Parameters["port"]; port >= 0 && port < MaxModuleParams {
+			// the targets of each channel: a stereo send also modulates
+			// the next port, with the signal below the top of the stack
+			stereo := u.Parameters["stereo"]&1 == 1
+			var targets, below []portTarget
+			if port := u.Parameters["port"]; port >= 0 && port < MaxModuleParams {
 				targets = ports[port]
+				if stereo && port+1 < MaxModuleParams {
+					below = ports[port+1]
+				}
 			}
 			pop := u.Parameters["sendpop"] == 1
-			for k, t := range targets {
+			send := func(k int, t portTarget, pop bool) {
 				c := u.Copy()
 				if k > 0 {
 					c.ID = 0
 				}
 				c.Parameters["target"], c.Parameters["port"] = t.unit, t.port
 				c.Parameters["sendpop"] = 0
-				if pop && k == len(targets)-1 {
+				if stereo {
+					c.Parameters["stereo"] = 0 // each channel on its own
+				}
+				if pop {
 					c.Parameters["sendpop"] = 1
 				}
 				out = append(out, c)
 			}
+			if stereo {
+				// as mono sends of each channel, as the parameters bound
+				// to the two ports need not be next to each other: the top
+				// one, then, swapped to the top, the one below
+				for k, t := range targets {
+					send(k, t, false)
+				}
+				if len(below) > 0 {
+					out = append(out, MakeUnit("xch"))
+					for k, t := range below {
+						send(len(targets)+k, t, false)
+					}
+					out = append(out, MakeUnit("xch"))
+				}
+				if pop {
+					p := MakeUnit("pop")
+					p.Parameters["stereo"] = 1
+					out = append(out, p)
+				}
+				continue
+			}
+			for k, t := range targets {
+				send(k, t, pop && k == len(targets)-1)
+			}
 			if len(targets) == 0 && pop {
-				p := MakeUnit("pop")
-				p.Parameters["stereo"] = u.Parameters["stereo"] & 1
-				out = append(out, p)
+				out = append(out, MakeUnit("pop"))
 			}
 		}
 		if out != nil {
@@ -689,7 +794,7 @@ func (e *expander) instantiate(units []Unit, call *Unit, id int, path []int) []U
 		// parameters
 		var bound []UnitParameter
 		var boundTo []int
-		for _, p := range UnitTypes[c.Type].Params {
+		for _, p := range u.BindableParams() {
 			k, ok := u.Bind[p.Name]
 			if !ok {
 				continue
@@ -711,7 +816,7 @@ func (e *expander) instantiate(units []Unit, call *Unit, id int, path []int) []U
 			if c.Type != "module" {
 				v = min(max(v, p.MinValue), max(p.MaxValue, p.MinValue))
 			}
-			c.Parameters[p.Name] = v
+			c.SetBoundValue(p.Name, v)
 		}
 		if c.Type == "module" {
 			// the ports of the inner module unit become ports of this one

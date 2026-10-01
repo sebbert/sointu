@@ -206,7 +206,7 @@ func paramNamed(t *testing.T, m *Model, unit int, name string) Parameter {
 // to parameter k of the module.
 func bindParam(t *testing.T, m *Model, unit int, name string, k int) {
 	t.Helper()
-	for x := 0; x < m.Params().RowWidth(unit); x++ {
+	for x := m.Params().RowWidth(unit) - 1; x >= 0; x-- { // the last one: a delay time, not the port of the delay times
 		if p := m.Params().Item(Point{x, unit}); p.Name() == name {
 			m.Params().SetCursor(Point{x, unit})
 			if !m.Module().ParamBound(k).Enabled() {
@@ -454,12 +454,12 @@ func TestUnfold(t *testing.T) {
 	if !ok || !units.PasteElements(data) || unitTypes(m.d.Song.Patch[0].Units) != "oscillator send module module out" {
 		t.Fatalf("after copying and pasting the module unit: %v", unitTypes(m.d.Song.Patch[0].Units))
 	}
-	if units.Count() != 9 { // the new module unit is folded
+	if units.Count() != 13 { // the copy is unfolded like the original
 		t.Errorf("with two module units: %v rows", units.Count())
 	}
 	m.Unit().ToggleUnfold(units.Selected()).Do()
-	if units.Count() != 13 || !m.Unit().Item(units.Selected()).Unfolded {
-		t.Errorf("with both unfolded: %v rows", units.Count())
+	if units.Count() != 9 || m.Unit().Item(units.Selected()).Unfolded {
+		t.Errorf("with one folded: %v rows", units.Count())
 	}
 	if !units.DeleteElements(false) || unitTypes(m.d.Song.Patch[0].Units) != "oscillator send module out" || units.Count() != 8 {
 		t.Errorf("after deleting one: %v, %v rows", unitTypes(m.d.Song.Patch[0].Units), units.Count())
@@ -476,5 +476,146 @@ func TestUnfold(t *testing.T) {
 	m.Unit().Unfold().SetValue(false)
 	if units.Count() != 4 {
 		t.Errorf("folded again: %v rows", units.Count())
+	}
+}
+
+// TestModuleUnitParameterKinds checks that a parameter of a module unit is
+// like the parameter bound to it: a choice of buses, a delay time on its grid.
+func TestModuleUnitParameterKinds(t *testing.T) {
+	m, broker := newModuleTestModel(t)
+	m.Instrument().Tab().SetValue(int(InstrumentModulesTab))
+	m.Module().Add().Do()
+	m.Unit().Add(false).Do()
+	m.Unit().SetType("mcspread")
+	m.Unit().Add(false).Do()
+	m.Unit().SetType("mcsum")
+	m.Unit().Add(false).Do()
+	m.Unit().SetType("delay")
+	mod := &m.d.Song.Modules[0]
+	mod.Units[2].Parameters["notetracking"] = 2
+	func() {
+		defer m.change("Test", PatchChange, MajorChange)()
+		mod.Units[2].VarArgs = []int{24}
+		m.d.Song.Buffers = append(m.d.Song.Buffers, sointu.Buffer{ID: 50, Name: "Other bus", Channels: sointu.MCChannels, Bus: true})
+	}()
+	m.Module().AddParam().Do()
+	m.Module().AddParam().Do()
+	bindParam(t, m, 0, "bus", 1)
+	bindParam(t, m, 2, "delaytime", 2)
+	mod = &m.d.Song.Modules[0]
+	if mod.Units[0].Bind["bus"] != 1 || mod.Units[2].Bind["delaytime1"] != 2 || mod.Params[1].Default != 24 {
+		t.Fatalf("bindings %v %v, defaults %+v", mod.Units[0].Bind, mod.Units[2].Bind, mod.Params)
+	}
+	// a module unit in the instrument
+	m.Instrument().Tab().SetValue(int(InstrumentEditorTab))
+	m.Unit().List().SetSelected(2)
+	m.Unit().Add(false).Do()
+	m.Unit().SetType("module")
+	row := m.d.UnitIndex
+	bus, time := m.Params().Item(Point{1, row}), m.Params().Item(Point{2, row})
+	// the bus: a choice of the buses of the song, stored by ID
+	if bus.Type() != ChoiceParameter || bus.Name() != "p1" || bus.Range().Max != 2 {
+		t.Fatalf("the bus parameter: type %v, name %q, range %v", bus.Type(), bus.Name(), bus.Range())
+	}
+	choices := bus.Int()
+	if choices.StringOf(2) != "Other bus" || !choices.SetValue(2) {
+		t.Fatalf("the choices of the bus: %q", choices.StringOf(2))
+	}
+	call := &m.d.Song.Patch[0].Units[row]
+	if call.Parameters["p1"] != 50 {
+		t.Errorf("the module unit has the bus %v, want 50", call.Parameters["p1"])
+	}
+	if got := playerPatch(t, broker)[0].Units[row].Parameters["bus"]; got != 50 {
+		t.Errorf("the player got the bus %v, want 50", got)
+	}
+	// the delay time: a choice of note lengths, as it follows the tempo
+	if time.Type() != ChoiceParameter || time.Value() != 24 || time.Label() == "24" {
+		t.Fatalf("the delay time parameter: type %v, value %v, label %q", time.Type(), time.Value(), time.Label())
+	}
+	lengths := time.Int()
+	if !lengths.SetValue(lengths.Value() - 1) { // a longer note
+		t.Fatal("the delay time could not be set")
+	}
+	call = &m.d.Song.Patch[0].Units[row]
+	if v := call.Parameters["p2"]; v <= 24 {
+		t.Errorf("the module unit has the delay time %v, want more than 24", v)
+	}
+	if got := playerPatch(t, broker)[0].Units[row+2].VarArgs; len(got) != 1 || got[0] != call.Parameters["p2"] {
+		t.Errorf("the player got the delay times %v, want %v", got, call.Parameters["p2"])
+	}
+	if m.d.Song.Modules[0].Units[2].VarArgs[0] != 24 {
+		t.Errorf("the delay time of the module changed to %v", m.d.Song.Modules[0].Units[2].VarArgs[0])
+	}
+	// resetting it gives the default of the module
+	time = m.Params().Item(Point{2, row})
+	time.Reset()
+	if v := m.d.Song.Patch[0].Units[row].Parameters["p2"]; v != 24 {
+		t.Errorf("after a reset the delay time is %v, want 24", v)
+	}
+}
+
+func TestUnfoldIsSaved(t *testing.T) {
+	m, _ := newModuleTestModel(t)
+	makeTestModule(t, m)
+	m.Unit().List().SetSelected(2)
+	m.Unit().Unfold().SetValue(true)
+	if !m.d.Song.Patch[0].Units[2].Unfolded || m.Unit().List().Count() != 8 {
+		t.Fatalf("unfolded: %v, %v rows", m.d.Song.Patch[0].Units[2].Unfolded, m.Unit().List().Count())
+	}
+	var file bytes.Buffer
+	m.Song().Write(nopWriteCloser{&file})
+	if !strings.Contains(file.String(), "unfolded: true") {
+		t.Errorf("the song file does not tell that the module unit is unfolded")
+	}
+	other, _ := newModuleTestModel(t)
+	other.Song().Read(io.NopCloser(bytes.NewReader(file.Bytes())))
+	if !other.d.Song.Patch[0].Units[2].Unfolded || other.Unit().List().Count() != 8 {
+		t.Errorf("after loading: %v rows", other.Unit().List().Count())
+	}
+	m.History().Undo().Do()
+	if m.d.Song.Patch[0].Units[2].Unfolded || m.Unit().List().Count() != 4 {
+		t.Errorf("after undo: %v rows", m.Unit().List().Count())
+	}
+}
+
+func TestModulePresets(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newModuleTestModel(t)
+	m.modulePresetPath = dir
+	makeTestModule(t, m)
+	m.Unit().OpenModule().Do()
+	m.Module().Name().SetValue("my voice")
+	// a module using it, saved with it
+	m.Module().Add().Do()
+	m.Module().Name().SetValue("outer")
+	m.Unit().Add(false).Do()
+	m.Unit().SetType("module")
+	if got := m.d.Song.Modules[1].Units[0].Parameters["module"]; got != m.d.Song.Modules[0].ID {
+		t.Fatalf("the module unit of outer uses module %v", got)
+	}
+	m.Module().SavePreset().Do()
+	presets := m.Module().Presets()
+	if r := presets.Range(); r.Max != 0 || presets.StringOf(0) != "outer" {
+		t.Fatalf("the presets: %v, %q", r, presets.StringOf(0))
+	}
+	// another song gets both modules, and the saved one is selected
+	other, _ := newModuleTestModel(t)
+	other.modulePresetPath = dir
+	other.loadModulePresets()
+	other.Instrument().Tab().SetValue(int(InstrumentModulesTab))
+	if !other.Module().Presets().SetValue(0) {
+		t.Fatal("the preset could not be loaded")
+	}
+	mods := other.d.Song.Modules
+	if len(mods) != 2 || mods[0].Name != "my voice" || mods[1].Name != "outer" || other.d.ModuleIndex != 1 {
+		t.Fatalf("after loading the preset: %+v, selected %v", mods, other.d.ModuleIndex)
+	}
+	if mods[1].Units[0].Parameters["module"] != mods[0].ID {
+		t.Errorf("the module unit of outer uses module %v, want %v", mods[1].Units[0].Parameters["module"], mods[0].ID)
+	}
+	// loading it again adds nothing
+	other.Module().Presets().SetValue(0)
+	if len(other.d.Song.Modules) != 2 {
+		t.Errorf("loading the preset again: %v modules", len(other.d.Song.Modules))
 	}
 }

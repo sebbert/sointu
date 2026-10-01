@@ -64,12 +64,16 @@ type (
 		// expansion tells how the module units were expanded for the song
 		// that the player last got
 		expansion *sointu.Expansion
-		// expanded is the patch of that song. Under the module units with
-		// the IDs in unfolded, the unit editor shows the units that they
-		// stand for, kept in innerCache
+		// expanded is the patch of that song. Under the unfolded module
+		// units, the unit editor shows the units that they stand for, kept
+		// in innerCache
 		expanded   sointu.Patch
-		unfolded   map[int]bool
 		innerCache innerCache
+
+		// modulePresets are the module presets, read from modulePresetPath
+		// or, if it is empty, from the user's configuration directory
+		modulePresets    []modulePreset
+		modulePresetPath string
 
 		// onChange, when set, is called after each change to the model data,
 		// e.g. to tell a plugin host that its project has unsaved changes
@@ -235,6 +239,7 @@ func NewModel(broker *Broker, synthers []sointu.Synther, midiContext MIDIContext
 	m.Scope().updateBufferLength()
 	m.updateDeriveData(SongChange)
 	m.presetData.load()
+	m.loadModulePresets()
 	m.Preset().updateCache()
 	m.derived.searchResults = make([]string, 0, len(sointu.UnitNames))
 	m.Unit().updateDerivedUnitSearch()

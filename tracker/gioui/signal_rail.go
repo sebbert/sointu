@@ -27,9 +27,10 @@ type (
 		Style  *RailStyle
 		Signal tracker.Rail
 		Height unit.Dp
-		// Faint draws the signals half transparent, for the inner units
-		// of a module unit
-		Faint bool
+		// FaintFrom, if not 0, draws the signals from the index
+		// FaintFrom-1 half transparent, and the others as usual: for the
+		// inner units of a module unit, whose own signals are faint
+		FaintFrom int
 	}
 )
 
@@ -48,16 +49,33 @@ func (s RailWidget) Layout(gtx C) D {
 		return D{Size: image.Pt(sw, h)}
 	}
 	lineColor, portColor := s.Style.Color, s.Style.PortColor
-	if s.Faint {
+	bright := s.Signal.PassThrough // the signals passing by that are not faint
+	if s.FaintFrom > 0 {
 		lineColor.A, portColor.A = uint8(int(lineColor.A)*2/5), uint8(int(portColor.A)*2/5)
+		bright = min(bright, s.FaintFrom-1)
+	} else {
+		bright = 0 // all in one path
 	}
 	lw := gtx.Dp(s.Style.LineWidth)
 	pd := gtx.Dp(s.Style.PortDiameter)
 	center := sw / 2
+	if bright > 0 {
+		var by clip.Path
+		by.Begin(gtx.Ops)
+		for i := range min(maxSignalsDrawn, bright) {
+			x := float32(i*sw + center)
+			by.MoveTo(f32.Pt(x, 0))
+			by.LineTo(f32.Pt(x, float32(h)))
+		}
+		paint.FillShape(gtx.Ops, s.Style.Color, clip.Stroke{Path: by.End(), Width: float32(lw)}.Op())
+	}
 	var path clip.Path
 	path.Begin(gtx.Ops)
 	// Draw pass through signals
 	for i := range min(maxSignalsDrawn, s.Signal.PassThrough) {
+		if i < bright {
+			continue
+		}
 		x := float32(i*sw + center)
 		path.MoveTo(f32.Pt(x, 0))
 		path.LineTo(f32.Pt(x, float32(h)))

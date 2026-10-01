@@ -159,7 +159,7 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 		ret = append(ret, Parameter{m: m, unit: unit, up: &unitType.Params[0], vtable: &moduleParameter{}})
 		if index, ok := m.d.Song.Modules.Find(unit.Parameters["module"]); ok {
 			for k := 1; k <= len(m.d.Song.Modules[index].Params) && k <= sointu.MaxModuleParams; k++ {
-				ret = append(ret, Parameter{m: m, unit: unit, up: &unitType.Params[k], index: k, vtable: &moduleArgParameter{}, port: k})
+				ret = append(ret, m.moduleArg(unit, index, k, &unitType.Params[k]))
 			}
 		}
 		return ret

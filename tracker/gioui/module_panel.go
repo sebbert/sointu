@@ -28,6 +28,8 @@ type (
 		addBtn      *Clickable
 		deleteBtn   *Clickable
 		addParamBtn *Clickable
+		presetsBtn  *Clickable
+		presetsMenu *MenuState
 		params      [sointu.MaxModuleParams]moduleParamRow
 		paramList   *layout.List
 
@@ -49,6 +51,8 @@ func NewModulePanel(m *tracker.Model) *ModulePanel {
 		addBtn:      new(Clickable),
 		deleteBtn:   new(Clickable),
 		addParamBtn: new(Clickable),
+		presetsBtn:  new(Clickable),
+		presetsMenu: new(MenuState),
 		paramList:   &layout.List{Axis: layout.Vertical},
 	}
 	for i := range ret.params {
@@ -62,7 +66,7 @@ func NewModulePanel(m *tracker.Model) *ModulePanel {
 }
 
 func (mp *ModulePanel) Tags(level int, yield TagYieldFunc) bool {
-	return yield(level, mp.list) && yield(level+1, &mp.nameEditor.widgetEditor)
+	return yield(level, mp.list) && yield(level+1, &mp.nameEditor.widgetEditor) && mp.presetsMenu.Tags(level+1, yield)
 }
 
 func (mp *ModulePanel) update(gtx C, t *Tracker) {
@@ -193,6 +197,18 @@ func (mp *ModulePanel) layout(gtx C) D {
 	mp.smallIcons(t, &addBtn.IconButton, &addBtn.DisabledStyle)
 	mp.smallIcons(t, &deleteBtn.IconButton, &deleteBtn.DisabledStyle)
 	mp.smallIcons(t, &addParamBtn.IconButton, &addParamBtn.DisabledStyle)
+	// the module presets: saving the selected module as one, and adding one
+	// to the song
+	presets := func(gtx C) D {
+		btn := MenuBtn(mp.presetsMenu, mp.presetsBtn, "Presets").
+			WithBtnStyle(&t.Theme.Button.Text).WithPopupStyle(&t.Theme.Popup.ContextMenu).
+			WithTip("Module presets: save the selected\nmodule, or add one to the song")
+		return btn.Layout(gtx,
+			ActionMenuChild(t.Module().SavePreset(), "Save module as preset", "", icons.ContentSave),
+			DividerMenuChild(),
+			IntMenuChild(t.Module().Presets(), icons.ContentAdd),
+		)
+	}
 	numParams := t.Module().NumParams()
 	// the parts under the list, which scroll: the module, a heading and
 	// the parameters
@@ -229,7 +245,7 @@ func (mp *ModulePanel) layout(gtx C) D {
 		paint.FillShape(gtx.Ops, modulePanelDivider, clip.Rect{Min: image.Pt(width-max(gtx.Dp(1), 1), 0), Max: image.Pt(width, gtx.Constraints.Max.Y)}.Op())
 		return layout.Inset{Left: modulePanelMargin, Right: modulePanelMargin + 1}.Layout(gtx, func(gtx C) D {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				layout.Rigid(func(gtx C) D { return mp.heading(gtx, t, "Modules", deleteBtn.Layout, addBtn.Layout) }),
+				layout.Rigid(func(gtx C) D { return mp.heading(gtx, t, "Modules", presets, deleteBtn.Layout, addBtn.Layout) }),
 				layout.Rigid(list),
 				layout.Rigid(layout.Spacer{Height: 6}.Layout),
 				layout.Flexed(1, properties),

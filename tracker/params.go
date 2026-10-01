@@ -293,6 +293,10 @@ type (
 		index  int
 		vtable parameterVtable
 		port   int
+		// arg is set for a parameter of a module unit that sets a
+		// parameter of its module with something bound to it: see
+		// moduleArg
+		arg *moduleArg
 		// inner is set for a parameter of an inner unit, innerIndex its index
 		// among them: a unit that a module unit stands for, which cannot
 		// be changed
@@ -396,13 +400,37 @@ func (p *Parameter) SetValue(value int) bool {
 	if value == p.Value() || value < r.Min || value > r.Max {
 		return false
 	}
+	if p.arg != nil {
+		// the value was set in the stand-in unit: the module unit gets it
+		defer p.m.change("ModuleArgParameter"+p.arg.key(), PatchChange, MinorChange)()
+		defer p.arg.store(p)
+	}
 	if _, ok := p.Bound(); ok {
 		// the value of a bound parameter is the default of the parameter
 		// of the module
+		unit, name, _ := p.bindTarget()
 		defer p.m.change("BoundParameter", PatchChange, MinorChange)()
-		defer p.m.syncBoundDefault(p.unit, p.up.Name)
+		defer p.m.syncBoundDefault(unit, name)
 	}
 	return p.vtable.SetValue(p, value)
+}
+
+// bindTarget returns the unit and the name that the parameter is bound to a
+// parameter of a module by, in Unit.Bind: a parameter of the unit, a delay
+// time, or for a parameter of a module unit, the module unit and p1 to p8.
+func (p *Parameter) bindTarget() (unit *sointu.Unit, name string, ok bool) {
+	switch {
+	case p.unit == nil || p.vtable == nil:
+		return nil, "", false
+	case p.arg != nil:
+		return p.arg.call, p.arg.key(), true
+	case p.up != nil:
+		return p.unit, p.up.Name, true
+	}
+	if _, ok := p.vtable.(*delayTimeParameter); ok {
+		return p.unit, sointu.DelayTimeName(p.index), true
+	}
+	return nil, "", false
 }
 func (p *Parameter) Add(delta int, snapToGrid bool) bool {
 	if p.vtable == nil {
@@ -460,7 +488,14 @@ func (p *Parameter) Range() RangeInclusive {
 	if p.vtable == nil {
 		return RangeInclusive{}
 	}
-	return p.vtable.Range(p)
+	r := p.vtable.Range(p)
+	if _, plain := p.vtable.(*namedParameter); plain && p.arg != nil {
+		// the range that the module gives its parameter, within it
+		mp := p.arg.param(p.m)
+		r.Min, r.Max = max(r.Min, mp.MinValue), min(r.Max, max(mp.MaxValue, mp.MinValue))
+		r.Max = max(r.Max, r.Min)
+	}
+	return r
 }
 func (p *Parameter) Neutral() int {
 	if p.vtable == nil {
@@ -468,6 +503,11 @@ func (p *Parameter) Neutral() int {
 	}
 	if a, ok := p.vtable.(*moduleArgParameter); ok {
 		return a.param(p).Neutral
+	}
+	if p.arg != nil {
+		if up, ok := sointu.BindableParam(p.unit.Type, p.arg.name); ok {
+			return up.Neutral
+		}
 	}
 	if p.up != nil {
 		return p.up.Neutral
@@ -483,6 +523,9 @@ func (p *Parameter) Type() ParameterType {
 func (p *Parameter) Name() string {
 	if p.vtable == nil {
 		return ""
+	}
+	if p.arg != nil {
+		return p.arg.param(p.m).Name // of the parameter of the module
 	}
 	return p.vtable.Name(p)
 }
@@ -501,9 +544,16 @@ func (p *Parameter) Reset() {
 	if p.vtable == nil || p.inner != nil {
 		return
 	}
+	if p.arg != nil {
+		// back to the default of the parameter of the module
+		defer p.m.change("ResetModuleArgParameter", PatchChange, MinorChange)()
+		p.arg.call.Parameters[p.arg.key()] = p.arg.param(p.m).Default
+		return
+	}
 	if _, ok := p.Bound(); ok {
+		unit, name, _ := p.bindTarget()
 		defer p.m.change("BoundParameter", PatchChange, MinorChange)()
-		defer p.m.syncBoundDefault(p.unit, p.up.Name)
+		defer p.m.syncBoundDefault(unit, name)
 	}
 	p.vtable.Reset(p)
 }
@@ -542,6 +592,9 @@ func (v parameterInt) StringOf(value int) string {
 func (p *Parameter) UnitID() int {
 	if p.unit == nil {
 		return 0
+	}
+	if p.arg != nil {
+		return p.arg.call.ID // sends go to the module unit
 	}
 	return p.unit.ID
 }
@@ -1014,13 +1067,14 @@ func (b *bufferFrameParameter) RoundToGrid(p *Parameter, val int, up bool) int {
 // Bound returns the name of the parameter of the module that the parameter
 // is bound to, if it is a parameter of a unit of a module and bound.
 func (p *Parameter) Bound() (name string, ok bool) {
-	if p.unit == nil || p.up == nil || p.vtable == nil {
+	unit, key, ok := p.bindTarget()
+	if !ok {
 		return "", false
 	}
 	if p.inner != nil {
-		return p.inner.bound(p.m, p.innerIndex, p.up.Name)
+		return p.inner.bound(p.m, p.innerIndex, key)
 	}
-	k, ok := p.unit.Bind[p.up.Name]
+	k, ok := unit.Bind[key]
 	if !ok {
 		return "", false
 	}
@@ -1141,4 +1195,61 @@ func (b *moduleArgParameter) RoundToGrid(p *Parameter, val int, up bool) int {
 func (b *moduleArgParameter) Reset(p *Parameter) {
 	defer p.m.change("ResetModuleArgParameter", PatchChange, MinorChange)()
 	p.unit.Parameters[p.up.Name] = b.param(p).Default
+}
+
+// moduleArg is what makes a parameter of a module unit look and work like
+// the parameter that the module binds to it, e.g. a menu of the buffers for
+// a buffer, or note lengths for a delay time following the tempo. The
+// Parameter is that of a stand-in unit: a copy of the unit of the module with
+// the bound parameter, holding the value of the module unit. Its vtable
+// works on the stand-in, and after a change the module unit gets the value.
+type moduleArg struct {
+	call   *sointu.Unit // the module unit
+	module int          // the index of its module
+	k      int          // the parameter of the module, from 1
+	name   string       // what is bound to it in the stand-in: see sointu.Unit.BoundValue
+}
+
+func (a *moduleArg) key() string { return sointu.ModuleParamName(a.k) }
+
+func (a *moduleArg) param(m *Model) sointu.UnitParameter {
+	if a.module < len(m.d.Song.Modules) {
+		if p, ok := m.d.Song.Modules.Param(a.module, a.k); ok {
+			return p
+		}
+	}
+	return sointu.UnitParameter{Name: a.key()}
+}
+
+// store gives the module unit the value of the stand-in unit.
+func (a *moduleArg) store(p *Parameter) {
+	a.call.Parameters[a.key()] = p.unit.BoundValue(a.name)
+}
+
+// moduleArg returns parameter k (from 1) of a module unit as a Parameter:
+// like the first parameter bound to it, on a stand-in unit, or if nothing is
+// bound to it or it is not shown, a plain one. up is p<k> of the module
+// unit type.
+func (m *Model) moduleArg(call *sointu.Unit, module, k int, up *sointu.UnitParameter) Parameter {
+	plain := Parameter{m: m, unit: call, up: up, index: k, vtable: &moduleArgParameter{}, port: k}
+	source, name, ok := m.d.Song.Modules.ParamSourceUnit(module, k)
+	if !ok {
+		return plain
+	}
+	standIn := new(sointu.Unit)
+	*standIn = source.Copy()
+	standIn.Bind = nil
+	arg := &moduleArg{call: call, module: module, k: k, name: name}
+	value, ok := call.Parameters[arg.key()]
+	if !ok {
+		value = arg.param(m).Default
+	}
+	standIn.SetBoundValue(name, value)
+	for _, p := range m.deriveParams(standIn, nil) {
+		if _, n, ok := p.bindTarget(); ok && n == name {
+			p.arg, p.port = arg, k
+			return p
+		}
+	}
+	return plain
 }

@@ -137,15 +137,21 @@ exactly the same players as before. The `module` unit has no opcode
   stack or where a send goes (`CanBind`). A module parameter takes its range
   and display from the first parameter bound to it; `min`, `max` and
   `display` (`type.parameter`, e.g. `filter.frequency`) of the module
-  parameter override them. Values are not rescaled.
+  parameter override them. Values are not rescaled. The delay times of a
+  `delay` unit can be bound too, as `delaytime1`, `delaytime2`, ... in the
+  order of its `varargs`.
 - **Sends.** The copies get new IDs, above every ID of the song. A send in a
   module to a unit of the module goes to the copy made with it; a send to a
   unit outside stays as it is. A mono send to a module unit, port k-1,
   modulates the parameters bound to module parameter k: it becomes a send to
   each of them, only the last one popping, and each of those sends counts as
   a unit. With nothing bound that can be modulated, a popping send becomes a
-  `pop`. A parameter that can only be modulated, like the inputs of
-  `receive`, can be bound too: signals then reach the module through sends.
+  `pop`. A stereo send also modulates the parameters of the next module
+  parameter with its other channel; as those need not be next to each other
+  in one unit, it becomes mono sends of the top signal, an `xch`, mono sends
+  of the other signal, an `xch`, and a stereo `pop` if it pops. A parameter
+  that can only be modulated, like the inputs of `receive`, can be bound
+  too: signals then reach the module through sends.
 - **Buffers.** A buffer that the tracker created (`Auto`: spectra and buses)
   and that only the units of one module use belongs to that module. The
   first module unit using the module gets the buffer itself, every further
@@ -157,8 +163,8 @@ exactly the same players as before. The `module` unit has no opcode
 
 `Expansion.Problems` lists what cannot be expanded as meant, and is left
 out: modules using themselves, module units whose module is missing,
-bindings that are not allowed, stereo sends to module units, and sends from
-outside a module to one of its units, which are ambiguous (send to the
+bindings that are not allowed, and sends from outside a module to one of
+its units, which are ambiguous (send to the
 module unit instead). The compiler and `sointu.Play` refuse such songs; the
 tracker shows the first problem and plays the rest.
 
@@ -434,18 +440,27 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   under the cursor of the rack to it; a bound parameter shows the name of
   the module parameter and edits its default.
 - **Module units:** a module unit shows the name of its module and its
-  parameters, and sends can target them. The buttons under the rack make a
-  module of the selected units (Ctrl+G; its inputs are the signals they take
-  from before them), show the module of a module unit on the Modules tab
-  (Ctrl+Shift+G), replace the module unit with the units of its module, and
-  give it a copy of the module of its own. A module unit is like a section
-  that can be collapsed: the chevron on its row in the unit list and the
-  rack, or in the footer (Ctrl+Alt+G), unfolds it, and its inner units
-  follow it, set into the rack, darker and faint: the units that it stands
-  for, as the synth runs them, with the values it gives the bound parameters
-  and with their previews. They cannot be changed or selected:
-  the cursor moves past them. The footer shows how many of the 63 units the
-  instrument has once expanded.
+  parameters, and sends can target them. Each parameter looks and works
+  like the parameter bound to it: a menu of the buffers, spectra or buses, of
+  the instruments for a spawn target, of note lengths for a delay time
+  following the tempo, a switch, or a knob with the same scale and labels.
+  The buttons under the rack make a module of the selected units (Ctrl+G;
+  its inputs are the signals they take from before them), show the module of
+  a module unit on the Modules tab (Ctrl+Shift+G), replace the module unit
+  with the units of its module, and give it a copy of the module of its own.
+- **Unfolding:** a module unit is like a section that can be collapsed: the
+  chevron on its row in the unit list and the rack, or in the footer
+  (Ctrl+Alt+G), unfolds it. Its inner units then follow it, set into the
+  rack, darker and faint: the units that it stands for, as the synth runs
+  them, with the values it gives the bound parameters and with their
+  previews. The signals run through the module unit into them; those only
+  passing by stay bright. They cannot be changed or selected: the cursor
+  moves past them. Which module units are unfolded is saved with the song
+  (`unfolded` of the unit, a hint like `mute` of an instrument). The footer
+  shows how many of the 63 units the instrument has once expanded.
+- **Module presets:** the Presets menu of the Modules tab saves the selected
+  module, with the modules it uses, as a file in `sointu/modules` of the
+  user's configuration directory, and adds a saved one to the song.
 - **Files:** instrument files, presets and the units and instruments on the
   clipboard carry the modules they use. Loading them does not add a module
   that the song already has with the same name and the same content (apart

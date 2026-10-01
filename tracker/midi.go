@@ -501,10 +501,14 @@ func (m *MIDIModel) selectedParam() (MIDIParam, bool) {
 	default:
 		return MIDIParam{}, false
 	}
+	unit, name, ok := item.bindTarget() // for a parameter of a module unit, the module unit and p1 to p8
+	if !ok {
+		return MIDIParam{}, false
+	}
 	r := item.Range()
 	value := MIDIParam{
-		Id:    item.unit.ID,
-		Param: item.up.Name,
+		Id:    unit.ID,
+		Param: name,
 		Min:   r.Min,
 		Max:   r.Max,
 	}

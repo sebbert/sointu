@@ -366,7 +366,11 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 		}
 		item := t.Unit().Item(y)
 		sr := Rail(t.Theme, item.Signals)
-		sr.Faint = item.Inner // like the rest of the row
+		if item.Inner {
+			// faint like the rest of the row, but for the signals that
+			// only pass by the module unit
+			sr.FaintFrom = item.Outer + 1
+		}
 		label := Label(t.Theme, &t.Theme.UnitEditor.UnitList.Name, item.Title)
 		switch {
 		case item.Disabled, item.Inner:

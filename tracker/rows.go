@@ -53,7 +53,7 @@ func (m *unitUnfold) Enabled() bool {
 }
 func (m *unitUnfold) Value() bool {
 	u, _, ok := (*Model)(m).selectedModuleUnit()
-	return ok && m.unfolded[u.ID]
+	return ok && u.Unfolded
 }
 func (m *unitUnfold) SetValue(val bool) {
 	units := (*Model)(m).units()
@@ -78,22 +78,19 @@ func (m toggleUnfold) Do() {
 	model := (*Model)(m.UnitModel)
 	units := model.units()
 	if index, e, _, ok := model.rowAt(m.row); ok && e == nil && index < len(units) {
-		model.setUnfolded(&units[index], !model.unfolded[units[index].ID])
+		model.setUnfolded(&units[index], !units[index].Unfolded)
 	}
 }
 
+// setUnfolded folds or unfolds a module unit. It is kept in the unit
+// (sointu.Unit.Unfolded), so it is saved with the song and undone, but the
+// player is not told: nothing it plays changes.
 func (m *Model) setUnfolded(u *sointu.Unit, val bool) {
-	if u.Type != "module" || u.ID == 0 {
+	if u.Type != "module" || u.Unfolded == val {
 		return
 	}
-	if m.unfolded == nil {
-		m.unfolded = map[int]bool{}
-	}
-	if val {
-		m.unfolded[u.ID] = true
-	} else {
-		delete(m.unfolded, u.ID)
-	}
+	defer m.change("Unfold", NoChange, MinorChange)()
+	u.Unfolded = val
 	m.d.UnitSearching = false
 }
 
@@ -108,14 +105,21 @@ func (m *UnitModel) HasModuleUnits() bool {
 	return false
 }
 
-// unfold reports whether any module unit is unfolded: otherwise the rows of
-// the unit editor are the units being edited.
-func (m *Model) unfold() bool { return len(m.unfolded) > 0 }
+// unfold reports whether any of the units being edited is unfolded:
+// otherwise the rows of the unit editor are the units being edited.
+func (m *Model) unfold() bool {
+	for _, u := range m.units() {
+		if u.Unfolded {
+			return true
+		}
+	}
+	return false
+}
 
 // innerUnitsOf returns the inner units of a unit being edited, or nil if it has
 // none or they are not shown.
 func (m *Model) innerUnitsOf(u *sointu.Unit) *innerUnits {
-	if !m.unfolded[u.ID] || u.Type != "module" || u.Disabled || u.ID == 0 {
+	if !u.Unfolded || u.Type != "module" || u.Disabled || u.ID == 0 {
 		return nil
 	}
 	c := &m.innerCache
