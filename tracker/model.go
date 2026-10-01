@@ -313,6 +313,8 @@ func (m *Model) change(kind string, t ChangeType, severity ChangeSeverity) func(
 				// the change was cancelled or put the song in invalid state, so we don't save it
 				m.d = m.undoStack[len(m.undoStack)-1]
 				m.undoStack = m.undoStack[:len(m.undoStack)-1]
+				// the derived data points to the song that was dropped
+				m.updateDeriveData(m.changeType)
 				return
 			}
 			m.d.ChangedSinceSave = true

@@ -400,3 +400,62 @@ func TestParameterDefaultScale(t *testing.T) {
 		t.Errorf("feedback after steps: %d, want 104", p.Value())
 	}
 }
+
+// Toggling free by the keys of the parameter table changes nothing in the
+// song: no undo step, and the song is not marked changed.
+func TestDelayFreeIsNotASongChange(t *testing.T) {
+	m, unit := delayTestModel(t)
+	find := func(match func(p Parameter) bool) int {
+		for x := 0; x < m.Params().RowWidth(1); x++ {
+			if p := m.Params().Item(Point{x, 1}); match(p) {
+				return x
+			}
+		}
+		t.Fatal("parameter not found")
+		return -1
+	}
+	freeX := find(func(p Parameter) bool { return p.Name() == "free" })
+	timeX := find(func(p Parameter) bool { _, ok := p.vtable.(*delayTimeParameter); return ok })
+	tab := m.Params().Table()
+	tab.SetCursor(Point{freeX, 1})
+	tab.SetCursor2(Point{freeX, 1})
+	m.d.ChangedSinceSave = false
+	undos := len(m.undoStack)
+	tab.Add(1, false)
+	if _, free := delayTimes(m); free.Value() != 1 || len(m.undoStack) != undos || m.d.ChangedSinceSave {
+		t.Errorf("free %d, %d undo steps (want %d), changed %v", free.Value(), len(m.undoStack), undos, m.d.ChangedSinceSave)
+	}
+	// the delay time next to it is still edited in the song, not in a copy
+	// of it that the cancelled change dropped
+	tab.SetCursor(Point{timeX, 1})
+	tab.SetCursor2(Point{timeX, 1})
+	before := unit().VarArgs[0]
+	tab.Add(1, false)
+	if got := unit().VarArgs[0]; got != before+1 || len(m.undoStack) != undos+1 || !m.d.ChangedSinceSave {
+		t.Errorf("delay time %d, want %d; %d undo steps, want %d", got, before+1, len(m.undoStack), undos+1)
+	}
+}
+
+// A change that is cancelled, like a step past the end of the range, must
+// not lose the next edit.
+func TestEditAfterCancelledChange(t *testing.T) {
+	m, unit := delayTestModel(t)
+	x := -1
+	for i := 0; i < m.Params().RowWidth(1); i++ {
+		if q := m.Params().Item(Point{i, 1}); q.Name() == "feedback" {
+			x = i
+		}
+	}
+	tab := m.Params().Table()
+	tab.SetCursor(Point{x, 1})
+	tab.SetCursor2(Point{x, 1})
+	func() {
+		defer m.change("Test", PatchChange, MajorChange)()
+		unit().Parameters["feedback"] = 128
+	}()
+	tab.Add(1, false) // past the end: cancelled
+	tab.Add(-1, false)
+	if got := unit().Parameters["feedback"]; got != 127 {
+		t.Errorf("feedback %d after a cancelled step and a step down, want 127", got)
+	}
+}

@@ -147,9 +147,11 @@ func (pt *ParamModel) add(rect Rect, delta int, largeStep bool) (ok bool) {
 			if !q.Add(delta, largeStep) {
 				return false
 			}
+			// a setting of the tracker alone is no change of the song
+			ok = ok || !q.trackerSetting()
 		}
 	}
-	return true
+	return ok
 }
 
 type paramsTable struct {
@@ -346,6 +348,14 @@ func (p *Parameter) Add(delta int, snapToGrid bool) bool {
 		newVal = p.vtable.RoundToGrid(p, newVal, delta > 0)
 	}
 	return p.SetValue(newVal)
+}
+
+// trackerSetting tells if the parameter is a setting of the tracker, not
+// stored in the song: changing it is not undone, and does not make the song
+// changed.
+func (p *Parameter) trackerSetting() bool {
+	_, ok := p.vtable.(*delayFreeParameter)
+	return ok
 }
 
 // Label returns the text shown on the knob of the parameter: its value, or
