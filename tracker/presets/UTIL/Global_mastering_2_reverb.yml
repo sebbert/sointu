@@ -3,7 +3,7 @@ numvoices: 1
 units:
     - id: 1
       parameters: {}
-      comment: 'Global mastering 2 with reverb - Global mastering 2, and before it the aux signal through the Reverb module. Set this preset as last instrument. The reverb uses mc units: Go synth and wasm player only.'
+      comment: 'Global mastering 2 with reverb - Global mastering 2, and before it the aux signal through the Reverb module. Set this preset as last instrument. The reverb uses mc units, and the mastering a limiter: Go synth and wasm player only.'
     - type: in
       id: 2
       parameters: {channel: 2, stereo: 1}
@@ -26,14 +26,18 @@ units:
     - type: compressor
       id: 12
       parameters: {attack: 47, invgain: 54, ratio: 100, release: 68, stereo: 1, threshold: 64}
-      comment: 'Loudness: about 4.6:1 above -6 dB, 10 ms attack and 150 ms release, +7.5 dB makeup (invgain). A shorter release is louder and distorts the bass more'
+      comment: 'About 4.6:1 above -6 dB, 10 ms attack and 150 ms release, +7.5 dB makeup (invgain). A shorter release distorts the bass more'
     - type: mulp
       id: 13
       parameters: {stereo: 1}
+    - type: limiter
+      id: 16
+      parameters: {drive: 12, lookahead: 32, release: 64, stereo: 1, threshold: 124}
+      comment: 'Turns the gain down ahead of the peaks that the attack lets through, 2.9 ms ahead, to -0.3 dB. drive, +4.4 dB, is the loudness: more of it is louder and flatter'
     - type: clip
       id: 14
       parameters: {stereo: 1}
-      comment: The peaks that the attack lets through are clipped at full scale
+      comment: What little the limiter lets through is clipped at full scale
     - type: out
       id: 15
       parameters: {gain: 128, stereo: 1}

@@ -583,8 +583,10 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
     Global mastering as it is.
   - Global mastering 2, for loud music with a clean bass: a low cut of
     12 dB per octave at 27 Hz, a compressor (about 4.6:1 above -6 dB, 10 ms
-    attack, 150 ms release, +7.5 dB makeup), and a `clip` at full scale. It
-    uses only units that the x86 players have.
+    attack, 150 ms release, +7.5 dB makeup), a `limiter` (-0.3 dB, 2.9 ms
+    lookahead, +4.4 dB drive) and a `clip` at full scale for what little
+    the limiter lets through. With the limiter it is Go synth and wasm
+    player only.
   - Global mastering 2 reverb: the reverb, then Global mastering 2.
 
   Why a second version: measured with sines and a test mix (bass, saw
@@ -600,13 +602,17 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
     before, so a mix that just reaches full scale is clipped by whatever
     plays it.
 
-  Global mastering 2 is flat from 30 Hz up, gives the same sine 0.3 %
-  distortion, and never exceeds full scale. On the test mix it is 2 to 3 dB
-  louder (RMS) than Global mastering followed by a clip, for a mix peaking
-  at -2 to +1 dB, clipping 1 to 3 % of the samples. Its slow release can be
-  heard as pumping with a loud kick; `release` and `invgain` of the
-  compressor are the two values to tune. All of this is measured, not
-  judged by ear.
+  Global mastering 2 is flat from 30 Hz up, gives the same sine 0.8 %
+  distortion, also when it is 7 dB louder, and never exceeds full scale. On
+  the test mix it is 3 to 5 dB louder (RMS) than Global mastering followed
+  by a clip, for a mix peaking at -2 to +1 dB (-7.7 and -6.6 dB RMS against
+  -12.5 and -9.7), with 0.01 % of the samples clipped: the limiter turns
+  the gain down ahead of the peaks instead. Before it had the limiter, the
+  clip alone took the peaks: 1 to 3 % of the samples, and 1 to 1.5 dB less
+  loudness. The slow release of the compressor can be heard as pumping
+  with a loud kick. The values to tune: `drive` of the limiter for
+  loudness, `release` of the compressor and of the limiter. All of this is
+  measured, not judged by ear.
 
   | Parameter | Default | Sets |
   |---|---|---|
