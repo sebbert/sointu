@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"time"
 
 	"gioui.org/f32"
 	"gioui.org/op/clip"
@@ -21,6 +22,23 @@ type (
 		SignalWidth  unit.Dp
 		PortDiameter unit.Dp
 		PortColor    color.NRGBA
+		// MinSignals is how many signals the rail of the rack has room for
+		// at least: see RailLane
+		MinSignals int
+	}
+
+	// RailLane is the width of the signal rails of the rack. It is
+	// that of the deepest stack that the units being edited have had since
+	// they were chosen, and at least Style.MinSignals signals, so that
+	// parameters changing the signals on the stack do not move the rack
+	// every time. When it does have to widen, it does so over
+	// railLaneDuration.
+	RailLane struct {
+		key         any
+		signals     int
+		signalWidth int
+		from, to    float32 // the widening, in pixels
+		start       time.Time
 	}
 
 	RailWidget struct {
@@ -128,4 +146,36 @@ func (s RailWidget) Layout(gtx C) D {
 	paint.PaintOp{}.Add(gtx.Ops)
 	p.Pop()
 	return D{Size: image.Pt(sw, h)}
+}
+
+const railLaneDuration = 150 * time.Millisecond
+
+// Update returns the width of the lane in pixels at the time now, and
+// whether it is still widening, for the units identified by the key, whose
+// deepest stack has the given number of signals, each signalWidth pixels
+// wide. With another key or signalWidth than the last time, the lane starts
+// anew, at the width of the signals.
+func (l *RailLane) Update(now time.Time, key any, signals, signalWidth int) (width int, widening bool) {
+	if key != l.key || signalWidth != l.signalWidth {
+		w := float32(signals * signalWidth)
+		*l = RailLane{key: key, signals: signals, signalWidth: signalWidth, from: w, to: w}
+		return signals * signalWidth, false
+	}
+	l.signals = max(l.signals, signals)
+	if target := float32(l.signals * signalWidth); target != l.to {
+		l.from, l.to, l.start = l.at(now), target, now
+	}
+	w := l.at(now)
+	return int(w + 0.5), w != l.to
+}
+
+// at returns the width at the time now: it eases out from l.from to l.to.
+func (l *RailLane) at(now time.Time) float32 {
+	t := float32(now.Sub(l.start)) / float32(railLaneDuration)
+	if l.from == l.to || t >= 1 {
+		l.from = l.to
+		return l.to
+	}
+	t = 1 - max(t, 0)
+	return l.to + (l.from-l.to)*t*t*t
 }

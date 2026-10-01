@@ -25,6 +25,7 @@ type (
 		drag         gesture.Drag
 		dragStartPt  f32.Point // used to calculate the drag amount
 		dragStartVal int
+		origin       f32.Point // the Origin of the widget when it was last laid out
 		tipArea      TipArea
 		clickable    Clickable
 		menu         MenuState
@@ -36,6 +37,10 @@ type (
 		Theme     *Theme
 		Focus     bool
 		Disabled  bool
+		// Origin is where the widget is laid out, relative to something that
+		// stays in place when a change of the parameter moves the widget:
+		// dragging the knob then still follows the pointer
+		Origin image.Point
 	}
 
 	PortStyle struct {
@@ -79,6 +84,7 @@ type (
 		Style  *KnobStyle
 		Hint   string
 		Scroll bool
+		Origin image.Point // see ParamWidget.Origin
 	}
 
 	SwitchStyle struct {
@@ -144,6 +150,7 @@ func (p ParamWidget) Layout(gtx C) D {
 		switch p.Parameter.Type() {
 		case tracker.IntegerParameter:
 			k := Knob(p.Parameter, p.Theme, p.State, p.Parameter.Hint().Label, p.Focus, p.Disabled)
+			k.Origin = p.Origin
 			return k.Layout(gtx)
 		case tracker.BoolParameter:
 			s := Switch(p.Parameter, p.Theme, p.State, p.Parameter.Hint().Label, p.Focus, p.Disabled)
@@ -221,6 +228,10 @@ func (k *KnobWidget) Layout(gtx C) D {
 		if !ok {
 			break
 		}
+		// the position is relative to the knob as it was last laid out, and
+		// changing the value may have moved the knob: the drag is measured
+		// from where the knob does not move
+		p.Position = p.Position.Add(k.State.origin)
 		switch p.Kind {
 		case pointer.Press:
 			k.State.dragStartPt = p.Position
@@ -247,6 +258,7 @@ func (k *KnobWidget) Layout(gtx C) D {
 			k.State.tipArea.Appear(gtx.Now)
 		}
 	}
+	k.State.origin = layout.FPt(k.Origin)
 	d := gtx.Dp(k.Style.Diameter)
 	knob := func(gtx C) D {
 		amount := k.Value.Position(k.Value.Value())

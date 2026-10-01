@@ -495,6 +495,18 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   before. The momentum of a trackpad gesture does not zoom. The vendored Gio
   has two additions for this: `pointer.Event.Notch` and `.Momentum`, set by
   the macOS backend.
+- **Signal rail:** the rail at the left of the rack has room for at least 6
+  signals (`signalrail.minsignals` in the theme), so that a parameter
+  changing the signals on the stack (`stereo`, the `args` and `mode` of a
+  `spawn`, the `module` of a module unit, ...) does not move the rack under
+  the pointer. A deeper stack widens it, eased over 150 ms, and it stays
+  that wide: it starts anew when another instrument or module is shown, or
+  when the first unit is another one (`RailLane` in `signal_rail.go`).
+  Before, it was as wide as the deepest stack, and followed every change.
+- **Knob drags:** dragging a knob of the rack follows the pointer in the
+  window, also when the knob itself moves, as when the rail widens. Before,
+  the drag was measured from the knob, and the value jumped by the distance
+  the knob moved.
 - **Other:** no notes play while typing in text fields; recordings survive
   synth rebuilds; NaNs recorded into buffers are cleared.
 
