@@ -460,8 +460,8 @@ func TestEditAfterCancelledChange(t *testing.T) {
 	}
 }
 
-// Delay times on the grid of note lengths or semitones are a choice among
-// the values of the grid; free and fixed ones are a knob.
+// Delay times on the grid of note lengths are a choice among them; free
+// ones, and those in semitones or milliseconds, are a knob.
 func TestDelayTimeChoices(t *testing.T) {
 	m, unit := delayTestModel(t)
 	set := func(tracking int, free bool, times ...int) Parameter {
@@ -505,15 +505,14 @@ func TestDelayTimeChoices(t *testing.T) {
 	if label, _ := p.ChoiceLabel(); label != "50" {
 		t.Errorf("label %q, want 50", label)
 	}
+	// semitones are a knob on the grid
 	p = set(delayPitch, false, 10787)
-	n = names(p)
-	i = p.Int()
-	if p.Type() != ChoiceParameter || len(n) != 61 || n[0] != "+30 st" || n[60] != "-30 st" || i.StringOf(i.Value()) != "0 st" {
-		t.Errorf("semitones: type %v, value %q, choices %v", p.Type(), i.StringOf(i.Value()), n)
+	if p.Type() != IntegerParameter || p.Label() != "0" {
+		t.Errorf("semitones: type %v, label %q, want a knob at 0", p.Type(), p.Label())
 	}
-	i.SetValue(slices.Index(n, "+12 st"))
-	if got := unit().VarArgs[0]; got != 5394 {
-		t.Errorf("choosing +12 st gives %d, want 5394", got)
+	p.Add(-1, false)
+	if st, whole := delaySemitones(unit().VarArgs[0]); !whole || st != 1 {
+		t.Errorf("a step from 0 st gives %v st, want +1", st)
 	}
 	for _, p := range []Parameter{set(delayBPM, true, 36), set(delayPitch, true, 10787), set(delayFixed, false, 441), set(delayFixed, true, 441)} {
 		if p.Type() != IntegerParameter {

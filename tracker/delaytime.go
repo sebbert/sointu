@@ -251,11 +251,11 @@ func plural(amount, unit string) string {
 
 func (d *delayTimeParameter) free(p *Parameter) bool { return p.m.delayFree[p.unit.ID] }
 
-// Type makes the delay time a choice among the values of its grid, the note
-// lengths or the semitones, unless it is free. Fixed delay times are a knob
-// either way: there are too many milliseconds to choose from.
+// Type makes the delay time a choice among the note lengths when it follows
+// the tempo, unless it is free. Otherwise it is a knob, which moves over the
+// semitones or the milliseconds of the grid.
 func (d *delayTimeParameter) Type(p *Parameter) ParameterType {
-	if !d.free(p) && p.unit.Parameters["notetracking"] != delayFixed {
+	if !d.free(p) && p.unit.Parameters["notetracking"] == delayBPM {
 		return ChoiceParameter
 	}
 	return IntegerParameter
@@ -263,19 +263,14 @@ func (d *delayTimeParameter) Type(p *Parameter) ParameterType {
 
 func (d *delayTimeParameter) Choices(p *Parameter) IntValue { return delayTimeChoice{*p} }
 
-// delayTimeChoice is the delay time as an index of its grid, from the
-// longest time to the shortest for note lengths, and from the highest pitch
-// to the lowest for semitones. A time that is not on the grid is none of the
-// choices.
+// delayTimeChoice is a delay time following the tempo as an index of the
+// note lengths, from the longest to the shortest. A time that is not on the
+// grid is none of the choices.
 type delayTimeChoice struct{ p Parameter }
 
-// gridIndex returns the index in the grid of the choice, and back: note
-// lengths are listed from the longest.
+// gridIndex returns the index in the grid of the choice, and back.
 func (v delayTimeChoice) gridIndex(choice int) int {
-	if v.p.unit.Parameters["notetracking"] == delayBPM {
-		return len(delayGridOf(&v.p).values) - 1 - choice
-	}
-	return choice
+	return len(delayGridOf(&v.p).values) - 1 - choice
 }
 
 func (v delayTimeChoice) Value() int {
@@ -295,13 +290,8 @@ func (v delayTimeChoice) StringOf(choice int) string {
 	if choice < 0 || choice >= len(g.values) {
 		return ""
 	}
-	value := g.values[v.gridIndex(choice)]
-	if v.p.unit.Parameters["notetracking"] == delayBPM {
-		name, _ := delayNoteName(value, true)
-		return name
-	}
-	st, _ := delaySemitones(value)
-	return signed(strconv.Itoa(int(st))) + " st"
+	name, _ := delayNoteName(g.values[v.gridIndex(choice)], true)
+	return name
 }
 
 // Step moves the delay time by grid values: all of them, or the straight
