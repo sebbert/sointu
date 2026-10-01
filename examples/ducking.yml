@@ -1,0 +1,166 @@
+bpm: 140
+rowsperbeat: 4
+score:
+    tracks:
+        - numvoices: 1
+          order: [0, 0, 0, 0]
+          patterns: [[45, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 48, 1]]
+        - numvoices: 1
+          order: [0, 0, 0, 0]
+          patterns: [[57, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
+        - numvoices: 1
+          order: [0, 0, 0, 0]
+          patterns: [[60, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
+        - numvoices: 1
+          order: [0, 0, 0, 0]
+          patterns: [[64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
+        - numvoices: 1
+          order: [0, 1, 1, 1]
+          patterns: [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [55, 1, 1, 1, 55, 1, 1, 1, 55, 1, 1, 1, 55, 1, 1, 1]]
+    rowsperpattern: 16
+    length: 4
+patch:
+    - name: bass
+      numvoices: 1
+      units:
+        - type: envelope
+          id: 101
+          parameters: {attack: 32, decay: 64, gain: 128, release: 48, stereo: 0, sustain: 128}
+        - type: oscillator
+          id: 102
+          parameters: {bandlimit: 1, color: 0, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 1, unison: 0}
+        - type: mulp
+          id: 103
+          parameters: {stereo: 0}
+        - type: filter
+          id: 104
+          parameters: {bandpass: 0, frequency: 28, highpass: 0, lowpass: 1, resonance: 100, stereo: 0}
+        - type: pan
+          id: 105
+          parameters: {panning: 64, stereo: 0}
+        - type: aux
+          id: 106
+          parameters: {channel: 4, gain: 40, stereo: 1}
+          comment: 'To aux 4/5, the bus that the kick ducks, instead of out'
+      comment: A held saw bass, 55 Hz, on the ducked bus
+    - name: pad
+      numvoices: 3
+      units:
+        - type: envelope
+          id: 111
+          parameters: {attack: 64, decay: 64, gain: 128, release: 64, stereo: 1, sustain: 128}
+        - type: oscillator
+          id: 112
+          parameters: {bandlimit: 1, color: 0, detune: 72, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 3}
+        - type: mulp
+          id: 113
+          parameters: {stereo: 1}
+        - type: filter
+          id: 114
+          parameters: {bandpass: 0, frequency: 64, highpass: 0, lowpass: 1, resonance: 128, stereo: 1}
+        - type: aux
+          id: 115
+          parameters: {channel: 4, gain: 16, stereo: 1}
+          comment: To the ducked bus too
+      comment: A held saw chord on the ducked bus
+    - name: kick
+      numvoices: 1
+      units:
+        - id: 121
+          parameters: {}
+          comment: Pitch drop
+        - type: envelope
+          id: 122
+          parameters: {attack: 0, curve: 96, decay: 64, gain: 128, release: 64, stereo: 0, sustain: 0}
+          comment: 'decay is the time of the drop, 93 ms, curve how much of it happens at once'
+        - type: send
+          id: 123
+          parameters: {amount: 90, port: 0, sendpop: 1, target: 125}
+          comment: 'amount is where the drop starts: 52 semitones up'
+        - id: 124
+          parameters: {}
+          comment: Body
+        - type: oscillator
+          id: 125
+          parameters: {color: 128, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 52, type: 0, unison: 0}
+          comment: A sine, an octave below the note
+        - type: envelope
+          id: 126
+          parameters: {attack: 0, curve: 64, decay: 72, gain: 128, release: 72, stereo: 0, sustain: 0}
+          comment: 'decay is the length, 263 ms: 70 for fast dnb, 74 for techno'
+        - type: mulp
+          id: 127
+          parameters: {stereo: 0}
+        - type: distort
+          id: 128
+          parameters: {drive: 116, stereo: 0}
+          comment: 'Harmonics and a flat, loud body: less drive is rounder and quieter'
+        - id: 129
+          parameters: {}
+          comment: Click
+        - type: envelope
+          id: 130
+          parameters: {attack: 0, decay: 36, gain: 48, release: 36, stereo: 0, sustain: 0}
+          comment: '2.4 ms of noise; gain is its level'
+        - type: noise
+          id: 131
+          parameters: {gain: 128, shape: 64, stereo: 0}
+        - type: mulp
+          id: 132
+          parameters: {stereo: 0}
+        - type: filter
+          id: 133
+          parameters: {bandpass: 0, frequency: 100, highpass: 1, lowpass: 0, resonance: 128, stereo: 0}
+          comment: Only its highs, above 4.4 kHz
+        - type: addp
+          id: 134
+          parameters: {stereo: 0}
+        - id: 135
+          parameters: {}
+          comment: Output
+        - type: pan
+          id: 136
+          parameters: {panning: 64, stereo: 0}
+        - type: out
+          id: 137
+          parameters: {gain: 100, stereo: 1}
+          comment: The level of the kick
+        - id: 138
+          parameters: {}
+          comment: The ducked bus
+        - type: in
+          id: 139
+          parameters: {channel: 4, stereo: 1}
+          comment: 'What the other instruments send to aux 4/5. The reverb presets read aux 2/3'
+        - type: module
+          id: 140
+          parameters: {module: 1}
+          comment: 'The Ducker module: depth, release (the time back to full level) and curve. It follows the note of the kick'
+        - type: out
+          id: 141
+          parameters: {gain: 128, stereo: 1}
+          comment: 'The level of the bus. An outaux here sends it to the reverb too'
+      comment: 'The preset Kick ducker: the kick, then the bus through the Ducker module. It comes after the instruments on the bus. The first pattern has no kick: the bus as it is. Go synth and wasm player only (envelope curves, bandlimited oscillators).'
+modules:
+    - id: 1
+      name: Ducker
+      comment: 'Sidechain ducking without a compressor: the stereo signal times 1 - depth·envelope, the envelope triggered by the note of the instrument it is in. Put it in the kick instrument, between an in from the bus of what should duck and an out. Go synth and wasm player only if curve is not 0.'
+      inputs: 2
+      params:
+        - {name: depth, default: 128, display: ott.depth}
+        - {name: release, default: 70}
+        - {name: curve, default: 0}
+      units:
+        - type: envelope
+          id: 201
+          parameters: {attack: 30, curve: 0, decay: 70, gain: 128, release: 70, stereo: 0, sustain: 0}
+          bind: {curve: 3, decay: 2, gain: 1, release: 2}
+          comment: 'How far the gain is turned down: depth is its gain, release the time back to full level, curve bends the way back (fast first). attack is the time down, 1 ms: 0 steps in one sample and clicks'
+        - type: send
+          id: 202
+          parameters: {amount: 0, port: 0, sendpop: 1, target: 203}
+          comment: Minus the envelope to the gain below
+        - type: gain
+          id: 203
+          parameters: {gain: 128, stereo: 1}
+          comment: 'The ducked signal: 1 minus the envelope'

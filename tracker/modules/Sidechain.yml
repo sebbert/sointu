@@ -1,0 +1,28 @@
+modules:
+    - id: 1
+      name: Sidechain
+      comment: 'Sidechain ducking by a compressor: takes a mono key signal on top of a stereo signal, and leaves the stereo signal times the gain that the compressor computes from the key. In the kick instrument: in from the bus first, then the kick, push, pan and out, then this, then out.'
+      inputs: 3
+      params:
+        - {name: threshold, default: 16}
+        - {name: ratio, default: 128}
+        - {name: attack, default: 44}
+        - {name: release, default: 58}
+      units:
+        - type: compressor
+          id: 1
+          parameters: {attack: 44, invgain: 128, ratio: 128, release: 58, stereo: 0, threshold: 16}
+          bind: {attack: 3, ratio: 2, release: 4, threshold: 1}
+          comment: 'The gain from the level of the key: it ducks while the key is above threshold, deeper with more ratio and a lower threshold. A release below 56 follows the waveform of a bass note and distorts'
+        - type: send
+          id: 2
+          parameters: {amount: 128, port: 0, sendpop: 1, target: 4}
+          comment: The gain to the gain below
+        - type: pop
+          id: 3
+          parameters: {stereo: 0}
+          comment: The key is not needed any more
+        - type: gain
+          id: 4
+          parameters: {gain: 0, stereo: 1}
+          comment: The ducked signal
