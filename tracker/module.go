@@ -760,6 +760,16 @@ func (m *ModuleModel) Param(k int) (sointu.UnitParameter, bool) {
 	return m.d.Song.Modules.Param(m.d.ModuleIndex, k)
 }
 
+// ParamSource returns the type of the unit and the name of the parameter
+// that parameter k (from 1) of the selected module takes its range and
+// display from: the first parameter bound to it.
+func (m *ModuleModel) ParamSource(k int) (unitType, param string, ok bool) {
+	if m.selected() == nil {
+		return "", "", false
+	}
+	return m.d.Song.Modules.ParamSource(m.d.ModuleIndex, k)
+}
+
 // ParamName returns a String representing the name of parameter k (from 1)
 // of the selected module.
 func (m *ModuleModel) ParamName(k int) String { return MakeString(moduleParamName{k, m}) }

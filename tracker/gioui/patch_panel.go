@@ -25,6 +25,7 @@ type (
 		instrPresets InstrumentPresets
 		instrBuffers *InstrumentBuffers
 		instrEditor  InstrumentEditor
+		modules      *ModulePanel
 		*tracker.Model
 	}
 
@@ -38,6 +39,7 @@ type (
 		PresetsTab *Clickable
 		CommentTab *Clickable
 		BuffersTab *Clickable
+		ModulesTab *Clickable
 
 		saveInstrumentBtn   *Clickable
 		loadInstrumentBtn   *Clickable
@@ -69,6 +71,7 @@ func NewPatchPanel(model *tracker.Model) *PatchPanel {
 		instrProps:   *NewInstrumentProperties(),
 		instrPresets: *NewInstrumentPresets(model),
 		instrBuffers: NewInstrumentBuffers(model),
+		modules:      NewModulePanel(model),
 		Model:        model,
 	}
 }
@@ -83,6 +86,12 @@ func (pp *PatchPanel) Layout(gtx C) D {
 			return pp.instrPresets.layout(gtx)
 		case tr.Instrument().Tab().Value() == int(tracker.InstrumentBuffersTab):
 			return pp.instrBuffers.layout(gtx)
+		case tr.Instrument().Tab().Value() == int(tracker.InstrumentModulesTab):
+			// the unit editor edits the units of the selected module
+			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+				layout.Rigid(pp.modules.layout),
+				layout.Flexed(1, pp.instrEditor.layout),
+			)
 		default: // editor
 			return pp.instrEditor.layout(gtx)
 		}
@@ -102,6 +111,8 @@ func (pp *PatchPanel) BottomTags(level int, yield TagYieldFunc) bool {
 		return pp.instrPresets.Tags(level, yield)
 	case pp.Instrument().Tab().Value() == int(tracker.InstrumentBuffersTab):
 		return pp.instrBuffers.Tags(level, yield)
+	case pp.Instrument().Tab().Value() == int(tracker.InstrumentModulesTab):
+		return pp.modules.Tags(level, yield) && pp.instrEditor.Tags(level, yield)
 	default: // editor
 		return pp.instrEditor.Tags(level, yield)
 	}
@@ -128,6 +139,7 @@ func MakeInstrumentTools(m *tracker.Model) InstrumentTools {
 		PresetsTab:           new(Clickable),
 		CommentTab:           new(Clickable),
 		BuffersTab:           new(Clickable),
+		ModulesTab:           new(Clickable),
 		deleteInstrumentBtn:  new(Clickable),
 		copyInstrumentBtn:    new(Clickable),
 		saveInstrumentBtn:    new(Clickable),
@@ -154,6 +166,7 @@ func (it *InstrumentTools) Layout(gtx C) D {
 	presetsBtn := TabBtn(tracker.MakeBool((*presetsTab)(t.Model)), t.Theme, it.PresetsTab, "Presets", "")
 	commentBtn := TabBtn(tracker.MakeBool((*commentTab)(t.Model)), t.Theme, it.CommentTab, "Properties", "")
 	buffersBtn := TabBtn(tracker.MakeBool((*buffersTab)(t.Model)), t.Theme, it.BuffersTab, "Buffers", "")
+	modulesBtn := TabBtn(tracker.MakeBool((*modulesTab)(t.Model)), t.Theme, it.ModulesTab, "Modules", "")
 	octave := NumUpDown(t.Note().Octave(), t.Theme, t.OctaveNumberInput, "Octave")
 	linkInstrTrackBtn := ToggleIconBtn(t.Track().LinkInstrument(), t.Theme, it.linkInstrTrackBtn, icons.NotificationSyncDisabled, icons.NotificationSync, it.linkDisabledHint, it.linkEnabledHint)
 	instrEnlargedBtn := ToggleIconBtn(t.Play().TrackerHidden(), t.Theme, it.enlargeBtn, icons.NavigationFullscreen, icons.NavigationFullscreenExit, it.enlargeHint, it.shrinkHint)
@@ -170,6 +183,7 @@ func (it *InstrumentTools) Layout(gtx C) D {
 			layout.Rigid(presetsBtn.Layout),
 			layout.Rigid(commentBtn.Layout),
 			layout.Rigid(buffersBtn.Layout),
+			layout.Rigid(modulesBtn.Layout),
 			layout.Flexed(1, func(gtx C) D { return layout.Dimensions{Size: gtx.Constraints.Min} }),
 			layout.Rigid(layout.Spacer{Width: 4}.Layout),
 			layout.Rigid(Label(t.Theme, &t.Theme.InstrumentEditor.Octave, "Octave").Layout),
@@ -191,7 +205,17 @@ type (
 	presetsTab tracker.Model
 	commentTab tracker.Model
 	buffersTab tracker.Model
+	modulesTab tracker.Model
 )
+
+func (b *modulesTab) Value() bool {
+	return (*tracker.Model)(b).Instrument().Tab().Value() == int(tracker.InstrumentModulesTab)
+}
+func (b *modulesTab) SetValue(val bool) {
+	if val {
+		(*tracker.Model)(b).Instrument().Tab().SetValue(int(tracker.InstrumentModulesTab))
+	}
+}
 
 func (b *buffersTab) Value() bool {
 	return (*tracker.Model)(b).Instrument().Tab().Value() == int(tracker.InstrumentBuffersTab)
@@ -337,6 +361,8 @@ func (il *InstrumentList) update(gtx C, t *Tracker) {
 					tagged = &t.PatchPanel.instrPresets
 				case t.Instrument().Tab().Value() == int(tracker.InstrumentBuffersTab):
 					tagged = t.PatchPanel.instrBuffers
+				case t.Instrument().Tab().Value() == int(tracker.InstrumentModulesTab):
+					tagged = t.PatchPanel.modules
 				default: // editor
 					tagged = &t.PatchPanel.instrEditor
 				}

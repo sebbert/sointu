@@ -2,6 +2,7 @@ package gioui
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/color"
 	"io"
@@ -43,7 +44,14 @@ type (
 		commentEditor  *Editor
 		caser          cases.Caser
 
+		makeModuleBtn   *Clickable
+		inlineModuleBtn *Clickable
+		uniqueModuleBtn *Clickable
+		openModuleBtn   *Clickable
+
 		copyHint        string
+		makeModuleHint  string
+		openModuleHint  string
 		disableUnitHint string
 		enableUnitHint  string
 
@@ -66,9 +74,16 @@ func NewInstrumentEditor(m *tracker.Model) *InstrumentEditor {
 		paramTable:     NewScrollTable(m.Params().Table(), m.Params().Columns(), m.Unit().List()),
 		searchList:     NewDragList(m.Unit().SearchResults(), layout.Vertical),
 		searching:      m.Unit().Searching(),
+
+		makeModuleBtn:   new(Clickable),
+		inlineModuleBtn: new(Clickable),
+		uniqueModuleBtn: new(Clickable),
+		openModuleBtn:   new(Clickable),
 	}
 	ret.caser = cases.Title(language.English)
 	ret.copyHint = makeHint("Copy unit", " (%s)", "Copy")
+	ret.makeModuleHint = makeHint("Make a module of\nthe selected units", "\n(%s)", "MakeModule")
+	ret.openModuleHint = makeHint("Show the module\nof the module unit", "\n(%s)", "OpenModule")
 	ret.disableUnitHint = makeHint("Disable unit", " (%s)", "UnitDisabledToggle")
 	ret.enableUnitHint = makeHint("Enable unit", " (%s)", "UnitDisabledToggle")
 	return ret
@@ -110,7 +125,7 @@ func (ul *InstrumentEditor) layoutList(gtx C) D {
 				defer clip.Rect(image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Constraints.Max.Y)).Push(gtx.Ops).Pop()
 				return ul.searchEditor.Layout(gtx, t.Model.Unit().SearchTerm(), t.Theme, &editorStyle, "---")
 			} else {
-				text := u.Type
+				text := u.Title
 				if text == "" {
 					text = "---"
 				}
@@ -324,7 +339,7 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 		}
 		item := t.Unit().Item(y)
 		sr := Rail(t.Theme, item.Signals)
-		label := Label(t.Theme, &t.Theme.UnitEditor.UnitList.Name, item.Type)
+		label := Label(t.Theme, &t.Theme.UnitEditor.UnitList.Name, item.Title)
 		switch {
 		case item.Disabled:
 			label.LabelStyle = t.Theme.UnitEditor.UnitList.Disabled
@@ -530,11 +545,53 @@ func (pe *InstrumentEditor) layoutFooter(gtx C) D {
 	copyUnitBtn := IconBtn(t.Theme, &t.Theme.IconButton.Enabled, pe.CopyUnitBtn, icons.ContentContentCopy, pe.copyHint)
 	disableUnitBtn := ToggleIconBtn(t.Unit().Disabled(), t.Theme, pe.DisableUnitBtn, icons.AVVolumeUp, icons.AVVolumeOff, pe.disableUnitHint, pe.enableUnitHint)
 	clearUnitBtn := IconBtn(t.Theme, &t.Theme.IconButton.Enabled, pe.ClearUnitBtn, icons.ContentClear, "Clear unit")
+	makeModuleBtn := ActionIconBtn(t.Unit().MakeModule(), t.Theme, pe.makeModuleBtn, icons.ActionExtension, pe.makeModuleHint)
+	openModuleBtn := ActionIconBtn(t.Unit().OpenModule(), t.Theme, pe.openModuleBtn, icons.ActionOpenInNew, pe.openModuleHint)
+	inlineModuleBtn := ActionIconBtn(t.Unit().InlineModule(), t.Theme, pe.inlineModuleBtn, icons.NavigationUnfoldMore, "Replace the module unit with\nthe units of its module")
+	uniqueModuleBtn := ActionIconBtn(t.Unit().UniqueModule(), t.Theme, pe.uniqueModuleBtn, icons.CommunicationCallSplit, "Give the module unit a copy\nof its module of its own")
+	// what the units come to: of an instrument, the units it has once its
+	// module units are expanded; of a module, its inputs and outputs
+	status := func(gtx C) D {
+		var text string
+		style := t.Theme.InstrumentEditor.UnitList.Comment
+		if t.Module().Editing() {
+			if t.Module().List().Count() == 0 {
+				return D{}
+			}
+			outputs, err := t.Module().Outputs()
+			text = fmt.Sprintf("%d in → %d out", t.Module().Inputs().Value(), outputs)
+			if err != nil {
+				text = err.Error()
+				style.Color = t.Theme.InstrumentEditor.UnitList.Error
+			}
+		} else {
+			count, limit := t.Unit().ExpandedUnits()
+			text = fmt.Sprintf("%d/%d units", count, limit)
+			if count > limit {
+				style.Color = t.Theme.InstrumentEditor.UnitList.Error
+			}
+		}
+		return layout.Inset{Right: unit.Dp(10)}.Layout(gtx, Label(t.Theme, &style, text).Layout)
+	}
+	moduleBtns := func(gtx C) D {
+		if !t.Unit().OpenModule().Enabled() { // not a module unit
+			return D{}
+		}
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(openModuleBtn.Layout),
+			layout.Rigid(inlineModuleBtn.Layout),
+			layout.Rigid(uniqueModuleBtn.Layout),
+		)
+	}
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(deleteUnitBtn.Layout),
 		layout.Rigid(clearUnitBtn.Layout),
 		layout.Rigid(disableUnitBtn.Layout),
 		layout.Rigid(copyUnitBtn.Layout),
+		layout.Rigid(makeModuleBtn.Layout),
+		layout.Rigid(moduleBtns),
+		layout.Flexed(1, func(gtx C) D { return D{Size: gtx.Constraints.Min} }),
+		layout.Rigid(status),
 	)
 }
 
