@@ -577,6 +577,146 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   (UTIL) is the aux signal through it: `in` from aux, the module unit, `out`.
   The preset carries the module, the same as the module preset, so a song
   gets it once.
+- **Sidechain ducking:** the kick instrument itself turns down a bus. What
+  should pump is sent to aux 4/5 instead of the main output (`aux`, channel
+  4). The kick instrument, after its own `out`, reads that bus with `in`,
+  multiplies it by a gain that the note of the kick triggers, and sends it
+  out: `in`, the module unit, `out`. No second pattern and no compressor.
+  An `outaux` in place of that `out` sends the ducked bus to the reverb too.
+  `examples/ducking.yml` is a bass and a pad on the bus. Two limits:
+  - A bus is an aux pair, and there are three: 2/3, which the reverb presets
+    read, 4/5, which Kick ducker reads, and 6/7, which the delay presets
+    read. `in` clears the pair, so one instrument reads a bus.
+  - The kick instrument has to come after the instruments on the bus in the
+    instrument list, and before a mastering preset. Before them, it reads
+    what they sent in the sample before: the bus is one sample late.
+
+  The module preset `Ducker` (3 units: `envelope`, `send`, `gain`) is the
+  gain: stereo in, stereo out, the signal times 1 - `depth`·envelope. The
+  envelope falls from 1 to 0 and is sent, times -1, to the gain of a `gain`
+  unit of 1. With nothing after it but `out`, the send can go to the gain of
+  that `out` instead: 2 units, in a copy of the module.
+
+  | Parameter | Default | Sets |
+  |---|---|---|
+  | `depth` | 128 (100 %) | how far down: 64 is -6 dB, 96 -12 dB, 112 -18 dB, 128 silence |
+  | `release` | 70 (203 ms) | the time back to full level, as the times of the envelope: 64 is 93 ms, 76 443 ms |
+  | `curve` | 0 (linear) | `curve` of the envelope: the gain comes back fast first, then slowly |
+
+  Measured, with a constant signal on the bus, so that the output is the
+  gain (`release` 70, times after the note):
+
+  | `curve` | -12 dB | -6 dB | -3 dB | -1 dB | full |
+  |---|---|---|---|---|---|
+  | 0 | 52 ms | 103 ms | 145 ms | 182 ms | 204 ms |
+  | 32 | 43 ms | 90 ms | 133 ms | 176 ms | 204 ms |
+  | 64 | 25 ms | 57 ms | 95 ms | 149 ms | 204 ms |
+  | 96 | 14 ms | 31 ms | 53 ms | 94 ms | 204 ms |
+  | 128 | 8 ms | 18 ms | 31 ms | 55 ms | 203 ms |
+
+  The gain is 1 until the note, and down after 49 samples (1.1 ms): the
+  attack of the envelope is 30, not 0, which is not a parameter. The largest
+  step of the gain is 0.02 per sample (0.16 at `curve` 128, which bends the
+  attack too). With attack 0 the gain steps to its lowest value in one
+  sample, and the bus steps by whatever level it has then: in the example,
+  by up to 0.16 against 0.02, with 5 to 11 dB more above 5 kHz in the 6 ms
+  around the kick. The note of the kick should last as long as the release:
+  released earlier, a curved envelope comes back sooner (149 ms to -1 dB
+  becomes 132 ms at `curve` 64 for a note of one row), a linear one the
+  same. In the example (140 beats per minute), the bus is 13 dB lower below
+  120 Hz in the 93 ms after a kick, back within 1 dB after 182 ms, and the
+  mix peaks at -2.8 dB instead of 0.0 dB without ducking.
+
+  The preset Kick ducker (DR; 18 units, 13 of them the kick) is a kick with
+  this after it: a sine an octave below the note, falling to it from 52
+  semitones above along a curved envelope, a curved amplitude envelope,
+  `distort` for harmonics and a flat body, and 2.4 ms of high-passed noise
+  as click. For the G below note 60: 49 Hz from 100 ms on (540 Hz over the
+  first 10 ms, 170 Hz from 10 to 30 ms), -40 dB after 260 ms, peak -4.8 dB,
+  -14 dB RMS over 400 ms; of eight other kick presets measured, seven peak
+  7 to 13 dB lower and DR kickedm 8 dB higher. Envelope curves: Go synth
+  and wasm player only.
+
+  The alternative that needs no envelope is the module preset `Sidechain`
+  (4 units: `compressor`, `send`, `pop`, `gain`), a real audio sidechain: it
+  takes a mono key on top of the stereo signal and multiplies the signal by
+  the gain that the compressor computes from the key. In the kick
+  instrument: `in` from the bus first, then the kick, `push`, `pan`, `out`,
+  the module unit, `out`. Its parameters are `threshold` (16, -18 dB),
+  `ratio` (128), `attack` (44) and `release` (58). The gain then follows the
+  kick as it is, so a longer or louder kick ducks longer and deeper.
+  Measured with the kick above as key: -17.4 dB at the lowest, -10 dB after
+  1.3 ms, back to -6 dB after 283 ms and to -1 dB after 332 ms; -23.4 dB
+  with `threshold` 8. The level follows the square of the key, 98 Hz for a
+  49 Hz kick, so the gain ripples by 1.2 dB within a period, which distorts
+  the bus a little: 2.5 dB with `release` 48, 0.3 dB with 72, which comes
+  back in 1.1 s.
+- **Ping pong delay module:** the module preset `Ping pong delay` (10
+  units) is a tempo-synced stereo delay, wet only. The `delay` unit cannot
+  feed one side into the other: in stereo it is two delays next to each
+  other. So the cross-feed is made of units: the sum of the input goes into
+  one side (`addp`, `pan`), a stereo `delay` without feedback of its own
+  delays both sides, and its output goes through a low-pass and a high-pass
+  `filter`, an `xch` and a `send` to a `receive` before the delay, left to
+  right and right to left.
+
+  | Parameter | Default | Sets |
+  |---|---|---|
+  | `time` | 36 (a dotted eighth) | the time between repeats, in 1/48 beat; 65535 samples (1.49 s) at most |
+  | `feedback` | 80 (44 %) | the level of a repeat relative to the one before, 0 to 70 % |
+  | `tone` | 80 (3.4 kHz) | the low-pass in the feedback, 250 Hz to 7.4 kHz: each repeat darker |
+  | `lowcut` | 32 (110 Hz) | the high-pass in the feedback, off to 1.8 kHz: each repeat thinner |
+  | `pan` | 0 | the side of the first repeat: 0 left, 128 right; 64 is a mono delay |
+
+  Measured with a click of noise at 120 beats per minute: the repeats come
+  16537 samples (375.0 ms) apart, 1, 5, 7 and 10 samples late for the first
+  four (a sample per pass for the `send`, the rest the delay of the
+  filters), on the left, right, left, right, with nothing on the other side.
+  From the first to the fourth repeat the level falls by 20 dB from 125 Hz
+  to 4 kHz (three passes at 44 % are 21.5 dB), by 25 dB at 60 Hz, 31 dB at
+  4 to 8 kHz and 62 dB above; with `tone` 128 and `lowcut` 0 by 21.5 dB
+  from 250 Hz up. The feedback ends at 70 % because the filters are not
+  flat: each raises the level by about 1.2 dB next to its frequency, both
+  together by up to 2.7 dB where they meet (computed from the filter), and
+  the loop has to lose more than that. The worst setting still decays, by
+  5 dB per second at 174 beats per minute with a time of 12.
+- **Ducking reverb and Ducking delay modules:** the module presets
+  `Ducking reverb` (27 units) and `Ducking delay` (14 units) are the Reverb
+  and the Ping pong delay module with the wet signal turned down while the
+  dry input plays: the space stays out of the way of the notes and blooms
+  after them. A stereo `compressor` computes a gain from the input, a
+  `send` gives it to a `gain` unit after the module unit. They use the
+  modules instead of copying their units, so their files carry `Reverb` or
+  `Ping pong delay` too, the same as the module presets, and a song gets
+  each once. Parameters: `size`, `decay`, `highs`, `lows` and `lowcut` of
+  the reverb (`predelay`, `mod` and `highcut` stay at their defaults), or
+  `time`, `feedback`, `tone`, `lowcut` and `pan` of the delay; then `duck`
+  (96; the ratio of the compressor: 0 is no ducking), `release` (62) and
+  `threshold` (8, -24 dB). Measured with a held saw note of one second: the
+  reverb is 15.7 dB lower when the note starts, 9.4 dB lower at its sustain
+  level, within 1 dB 180 ms after the note ends, and from then on exactly
+  the reverb without ducking. `duck` 48 gives 7.8 dB, 128 gives 20.9 dB;
+  `release` 52 comes back in 40 ms, 68 in 420 ms, 74 in 1.1 s. As with any
+  compressor, the depth follows the level of the input: 6 dB less input,
+  4.5 dB less ducking. The delay measures the same.
+
+  `xch` and `mulp`, a unit less, would do the same, but the wasm player
+  does not assemble a song that has a stereo `xch` and a mono one (as the
+  Ping pong delay has), and plays a stereo `xch` wrongly in a song with a
+  stereo `delay`. That is not fixed here.
+- **Global presets with them** (UTIL), which leave the existing ones as
+  they are: Global ducking reverb (aux 2/3 through `Ducking reverb`, 29
+  units), Global ping pong delay (aux 6/7 through `Ping pong delay`, 12
+  units; its `outaux` can send the repeats on to the reverb) and Global
+  mastering 2 ducking (aux 6/7 through `Ducking delay`, a quarter of it on
+  to the reverb, aux 2/3 through `Ducking reverb`, then Global mastering 2;
+  52 units).
+
+  All of this is measured on rendered audio, not judged by ear. Tests:
+  `vm/compiler/wasm_ducking_test.go` (what the modules do, and that the
+  wasm player renders them, the example and Global mastering 2 ducking like
+  the Go synth) and `TestBuiltinModulePresetsCanonical` and
+  `TestDuckingPresets` in `tracker/module_test.go`.
 - **Global mastering presets** (UTIL), next to upstream's Global mastering,
   which is unchanged:
   - Global mastering reverb: the aux signal through the Reverb module, then
