@@ -46,6 +46,8 @@ type (
 		// plotZoomModifier is true while Alt is held, which makes scrolling
 		// over plots zoom them
 		plotZoomModifier bool
+		// zoomScroll adds up the Ctrl/Cmd+scrolling that zooms the UI
+		zoomScroll zoomScroll
 
 		DialogState *DialogState
 
@@ -257,6 +259,7 @@ func titleFromPath(path string, unsaved bool) string {
 func (t *Tracker) Layout(gtx layout.Context) {
 	t.textFocused = false
 	zoomFactor := ZoomFactors[t.Zoom]
+	pxPerDp := gtx.Metric.PxPerDp // of the display, without the zoom
 	gtx.Metric.PxPerDp *= zoomFactor
 	gtx.Metric.PxPerSp *= zoomFactor
 	defer clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Push(gtx.Ops).Pop()
@@ -283,7 +286,7 @@ func (t *Tracker) Layout(gtx layout.Context) {
 			key.Filter{Name: "", Optional: key.ModAlt | key.ModCommand | key.ModShift | key.ModShortcut | key.ModSuper},
 			key.Filter{Name: key.NameTab, Optional: key.ModShift | key.ModShortcut},
 			transfer.TargetFilter{Target: t, Type: "application/text"},
-			pointer.Filter{Target: t, Kinds: pointer.Scroll, ScrollY: pointer.ScrollRange{Min: -1, Max: 1}},
+			pointer.Filter{Target: t, Kinds: pointer.Scroll, ScrollY: pointer.ScrollRange{Min: -1e6, Max: 1e6}},
 		)
 		if !ok {
 			break
@@ -292,14 +295,23 @@ func (t *Tracker) Layout(gtx layout.Context) {
 		case pointer.Event:
 			switch e.Kind {
 			case pointer.Scroll:
-				if e.Modifiers.Contain(key.ModShortcut) {
-					t.Zoom = min(max(t.Zoom-int(e.Scroll.Y), 0), len(ZoomFactors)-1)
+				// The handlers above this one have taken what they scroll
+				// by; see zoom_scroll.go.
+				if !e.Modifiers.Contain(key.ModShortcut) {
+					t.zoomScroll.Reset()
+					break
+				}
+				if n := t.zoomScroll.Add(zoomScrollSteps(runtime.GOOS, e, pxPerDp), gtx.Now); n != 0 {
+					t.Zoom = zoomBy(t.Zoom, n)
 					t.Alerts().AddNamed("ZoomFactor", fmt.Sprintf("%.0f%%", ZoomFactors[t.Zoom]*100), tracker.Info)
 				}
 			}
 		case key.Event:
 			if e.Name == key.NameAlt {
 				t.plotZoomModifier = e.State == key.Press
+			}
+			if e.Name == key.NameCtrl || e.Name == key.NameCommand {
+				t.zoomScroll.Reset()
 			}
 			t.KeyEvent(e, gtx)
 		case transfer.DataEvent:
