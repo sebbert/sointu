@@ -362,6 +362,7 @@ func (c *MenuChild) enabled() bool {
 // MenuButton displays a button with text that opens a menu when clicked.
 type MenuButton struct {
 	Title      string
+	Tip        string
 	BtnStyle   *ButtonStyle
 	MenuStyle  *MenuStyle
 	PopupStyle *PopupStyle
@@ -374,6 +375,7 @@ func MenuBtn(ms *MenuState, cl *Clickable, title string) MenuButton {
 	return MenuButton{MenuState: ms, Clickable: cl, Title: title}
 }
 
+func (mb MenuButton) WithTip(tip string) MenuButton               { mb.Tip = tip; return mb }
 func (mb MenuButton) WithBtnStyle(style *ButtonStyle) MenuButton  { mb.BtnStyle = style; return mb }
 func (mb MenuButton) WithMenuStyle(style *MenuStyle) MenuButton   { mb.MenuStyle = style; return mb }
 func (mb MenuButton) WithPopupStyle(style *PopupStyle) MenuButton { mb.PopupStyle = style; return mb }
@@ -390,7 +392,7 @@ func (mb MenuButton) Layout(gtx C, children ...MenuChild) D {
 	if mb.PopupStyle == nil {
 		mb.PopupStyle = &t.Theme.Popup.Menu
 	}
-	btn := Btn(t.Theme, mb.BtnStyle, mb.Clickable, mb.Title, "")
+	btn := Btn(t.Theme, mb.BtnStyle, mb.Clickable, mb.Title, mb.Tip)
 	dims := btn.Layout(gtx)
 	if mb.MenuState.visible {
 		defer op.Offset(image.Pt(0, dims.Size.Y)).Push(gtx.Ops).Pop()

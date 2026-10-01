@@ -276,6 +276,11 @@ type (
 	parameterLabeler interface {
 		Label(p *Parameter) string
 	}
+	// parameterChooser gives the choices of a ChoiceParameter, when they
+	// are not the values of its range.
+	parameterChooser interface {
+		Choices(p *Parameter) IntValue
+	}
 
 	// different parameter vtables to handle different types of parameters.
 	// Casting struct{} to interface does not cause allocations.
@@ -430,7 +435,22 @@ func (p *Parameter) Reset() {
 
 // Int returns the parameter as an Int, with the value names of choice
 // parameters, e.g. for showing the choices in a menu.
-func (p Parameter) Int() Int { return MakeInt(parameterInt{p}) }
+func (p Parameter) Int() Int {
+	if c, ok := p.vtable.(parameterChooser); ok {
+		return MakeInt(c.Choices(&p))
+	}
+	return MakeInt(parameterInt{p})
+}
+
+// ChoiceLabel returns the text shown on the button of a choice parameter,
+// which opens the menu of its choices, and the hint to show as its tip, if
+// the two are not the same.
+func (p *Parameter) ChoiceLabel() (label, tip string) {
+	if l, ok := p.vtable.(parameterLabeler); ok {
+		return l.Label(p), p.Hint().Label
+	}
+	return p.Hint().Label, ""
+}
 
 type parameterInt struct{ p Parameter }
 
@@ -582,8 +602,7 @@ func init() {
 	slices.Sort(delayBpmTrackGrid)
 }
 
-func (d *delayTimeParameter) Type(p *Parameter) ParameterType { return IntegerParameter }
-func (d *delayTimeParameter) Name(p *Parameter) string        { return "delaytime" }
+func (d *delayTimeParameter) Name(p *Parameter) string { return "delaytime" }
 func (d *delayTimeParameter) Value(p *Parameter) int {
 	if p.index < 0 || p.index >= len(p.unit.VarArgs) {
 		return 1

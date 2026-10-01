@@ -325,12 +325,13 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   its bus IDs are taken. The rack shows the peak level of each channel of
   the bus after each mc unit. Presets: Reverb FDN Room, Hall, Ambient and
   Plate.
-- **Delay times:** the knobs of the `delay` unit's delay times move over the
-  values of a grid, by keys, wheel or drag, and show them by name: note
-  lengths when the delay follows the tempo (1/8, 1/8D dotted, 1/8T triplet,
-  from 1/128T to 2/1D; large steps move between the straight notes),
-  semitones when it follows the note (large steps: octaves) and whole
-  milliseconds when it is fixed (large steps: 10 ms). The `free` switch of
+- **Delay times:** the `delay` unit's delay times are on a grid, and show
+  its values by name: note lengths when the delay follows the tempo (1/8,
+  1/8D dotted, 1/8T triplet, from 1/128T to 2/1D; large steps move between
+  the straight notes), semitones when it follows the note (large steps:
+  octaves) and whole milliseconds when it is fixed (large steps: 10 ms).
+  Note lengths and semitones are chosen from a dropdown, or stepped by keys;
+  milliseconds are a knob that moves over the grid by keys, wheel or drag. The `free` switch of
   the unit gives every value again, shown as stored and stepped as before.
   It is a setting of the tracker, not part of the song: the stored values
   mean what they did. A unit starts free if any of its times is not on the

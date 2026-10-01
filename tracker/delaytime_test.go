@@ -459,3 +459,65 @@ func TestEditAfterCancelledChange(t *testing.T) {
 		t.Errorf("feedback %d after a cancelled step and a step down, want 127", got)
 	}
 }
+
+// Delay times on the grid of note lengths or semitones are a choice among
+// the values of the grid; free and fixed ones are a knob.
+func TestDelayTimeChoices(t *testing.T) {
+	m, unit := delayTestModel(t)
+	set := func(tracking int, free bool, times ...int) Parameter {
+		func() {
+			defer m.change("Test", PatchChange, MajorChange)()
+			unit().Parameters["stereo"] = 0
+			unit().Parameters["notetracking"] = tracking
+			unit().VarArgs = times
+		}()
+		m.setDelayFree(unit(), free)
+		times2, _ := delayTimes(m)
+		return times2[0]
+	}
+	names := func(p Parameter) (ret []string) {
+		for _, s := range p.Int().Values {
+			ret = append(ret, s)
+		}
+		return
+	}
+	p := set(delayBPM, false, 36)
+	n := names(p)
+	if p.Type() != ChoiceParameter || len(n) != 25 || n[0] != "2/1 dotted" || n[24] != "1/128 triplet" || !slices.Contains(n, "1/8 dotted") {
+		t.Errorf("note lengths: type %v, choices %v", p.Type(), n)
+	}
+	i := p.Int()
+	if got := i.StringOf(i.Value()); got != "1/8 dotted" {
+		t.Errorf("the choice of 36 is %q, want 1/8 dotted", got)
+	}
+	if label, tip := p.ChoiceLabel(); label != "1/8D" || !strings.HasPrefix(tip, "1/8 dotted: 0.75 beats") {
+		t.Errorf("label %q, tip %q", label, tip)
+	}
+	i.SetValue(slices.Index(n, "1/4 triplet"))
+	if got := unit().VarArgs[0]; got != 32 {
+		t.Errorf("choosing 1/4 triplet gives %d, want 32", got)
+	}
+	// a time that is not on the grid is none of the choices, and shows as it is
+	p = set(delayBPM, false, 50)
+	if i := p.Int(); i.Value() != -1 {
+		t.Errorf("the choice of 50 is %d, want none", i.Value())
+	}
+	if label, _ := p.ChoiceLabel(); label != "50" {
+		t.Errorf("label %q, want 50", label)
+	}
+	p = set(delayPitch, false, 10787)
+	n = names(p)
+	i = p.Int()
+	if p.Type() != ChoiceParameter || len(n) != 61 || n[0] != "+30 st" || n[60] != "-30 st" || i.StringOf(i.Value()) != "0 st" {
+		t.Errorf("semitones: type %v, value %q, choices %v", p.Type(), i.StringOf(i.Value()), n)
+	}
+	i.SetValue(slices.Index(n, "+12 st"))
+	if got := unit().VarArgs[0]; got != 5394 {
+		t.Errorf("choosing +12 st gives %d, want 5394", got)
+	}
+	for _, p := range []Parameter{set(delayBPM, true, 36), set(delayPitch, true, 10787), set(delayFixed, false, 441), set(delayFixed, true, 441)} {
+		if p.Type() != IntegerParameter {
+			t.Errorf("tracking %d: not a knob", unit().Parameters["notetracking"])
+		}
+	}
+}

@@ -143,7 +143,8 @@ func (p ParamWidget) Layout(gtx C) D {
 			s := Switch(p.Parameter, p.Theme, p.State, p.Parameter.Hint().Label, p.Focus, p.Disabled)
 			return s.Layout(gtx)
 		case tracker.ChoiceParameter:
-			btn := MenuBtn(&p.State.menu, &p.State.clickable, p.Parameter.Hint().Label).
+			label, tip := p.Parameter.ChoiceLabel()
+			btn := MenuBtn(&p.State.menu, &p.State.clickable, label).WithTip(tip).
 				WithBtnStyle(&t.Theme.UnitEditor.Choice).WithPopupStyle(&t.Theme.Popup.ContextMenu)
 			if p.Disabled {
 				btn.BtnStyle = &t.Theme.Button.Disabled
