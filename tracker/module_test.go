@@ -812,3 +812,71 @@ func TestBuiltinModulePresets(t *testing.T) {
 		t.Errorf("after saving a preset called Reverb: %d presets of that name, the first is %q, %d can be deleted", n, presets.StringOf(0), m.Module().DeletePresets().Range().Max+1)
 	}
 }
+
+// The preset Global reverb is the aux signal through the Reverb module. It
+// carries the module, which must be the same as the module preset Reverb, so
+// that a song gets it only once.
+func TestGlobalReverbPreset(t *testing.T) {
+	m, _ := newModuleTestModel(t)
+	m.modulePresetPath = t.TempDir()
+	m.loadModulePresets()
+	var global *preset
+	for i := range m.presetData.presets {
+		if p := &m.presetData.presets[i]; p.instr.Name == "Global reverb" && !p.user {
+			global = p
+		}
+	}
+	if global == nil || len(global.modules) != 1 {
+		t.Fatalf("no preset Global reverb with one module")
+	}
+	var reverb *modulePreset
+	for i := range m.modulePresets {
+		if m.modulePresets[i].name == "Reverb" {
+			reverb = &m.modulePresets[i]
+		}
+	}
+	if reverb == nil {
+		t.Fatal("no module preset Reverb")
+	}
+	a, b := global.modules[0], reverb.modules[len(reverb.modules)-1]
+	if a.Name != b.Name || moduleKey(&a) != moduleKey(&b) {
+		t.Errorf("the module of the preset Global reverb differs from the module preset Reverb")
+	}
+	// the instrument: in from aux, the module unit, out
+	units := global.instr.Units
+	var types []string
+	for _, u := range units {
+		if u.Type != "" {
+			types = append(types, u.Type)
+		}
+	}
+	if strings.Join(types, " ") != "in module out" || units[1].Parameters["channel"] != 2 {
+		t.Errorf("the units of the preset: %v", types)
+	}
+	// as an instrument of a song it expands and encodes, and the module
+	// preset then adds nothing
+	func() {
+		defer m.change("Test", SongChange, MajorChange)()
+		instr := global.instr.Copy()
+		m.importModules(global.modules, instr.Units)
+		m.d.Song.Patch = sointu.Patch{instr}
+	}()
+	n := len(m.d.Song.Modules)
+	song, x := m.d.Song.Expand()
+	if len(x.Problems) > 0 {
+		t.Fatalf("problems expanding the song: %v", x.Problems)
+	}
+	if _, err := vm.NewBytecode(song.Patch, vm.AllFeatures{}, song.BPM); err != nil {
+		t.Errorf("the expanded song does not encode: %v", err)
+	}
+	m.Instrument().Tab().SetValue(int(InstrumentModulesTab))
+	presets := m.Module().Presets()
+	for i := presets.Range().Min; i <= presets.Range().Max; i++ {
+		if presets.StringOf(i) == "Reverb" {
+			presets.SetValue(i)
+		}
+	}
+	if len(m.d.Song.Modules) != n {
+		t.Errorf("adding the module preset Reverb after the preset Global reverb: %d modules, want %d", len(m.d.Song.Modules), n)
+	}
+}

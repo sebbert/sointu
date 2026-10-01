@@ -534,7 +534,10 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   wet signal out. Its chain is low cut, high cut, predelay, a diffuser of
   four steps (the early reflections) and a feedback delay network of 8 lines
   (the tail). Each module unit using it gets a bus of its own.
-  `examples/reverb_module.yml` uses it.
+  `examples/reverb_module.yml` uses it. The instrument preset Global reverb
+  (UTIL) is the aux signal through it: `in` from aux, the module unit, `out`.
+  The preset carries the module, the same as the module preset, so a song
+  gets it once.
 
   | Parameter | Default | Sets |
   |---|---|---|

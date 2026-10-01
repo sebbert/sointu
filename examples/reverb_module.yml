@@ -102,7 +102,7 @@ modules:
           bind: {frequency: {p: 7, min: 72, max: 128}}
           comment: High cut
         - type: mcdelay
-          parameters: {allpass: 0, apgain: 80, bus: 1, decay: 0, hfdecay: 64, lfdecay: 64, moddepth: 0, modrate: 64, notetracking: 0, seed: 0, size: 200, spread: 0}
+          parameters: {allpass: 0, apgain: 80, bus: 1, decay: 0, hfdecay: 64, lfdecay: 64, moddepth: 0, modrate: 64, notetracking: 0, seed: 0, size: 204, spread: 0}
           bind: {size: {p: 5, min: 1, max: 2000}}
           comment: 'Predelay: all 8 lines of the same length'
         - type: mcdelay

@@ -1,3 +1,21 @@
+name: Global reverb
+numvoices: 1
+units:
+    - id: 1
+      parameters: {}
+      comment: 'Global reverb - the aux signal through the Reverb module. Send to it with outaux or aux. Uses mc units: Go synth and wasm player only. Load this before Global mastering.'
+    - type: in
+      id: 2
+      parameters: {channel: 2, stereo: 1}
+      comment: The aux signal the instruments send; set channel to 4 for a second reverb
+    - type: module
+      id: 3
+      parameters: {module: 1}
+      comment: 'The Reverb module: its parameters are size, decay, highs, lows, predelay, mod, highcut and lowcut'
+    - type: out
+      id: 4
+      parameters: {gain: 128, stereo: 1}
+      comment: The level of the reverb
 modules:
     - id: 1
       name: Reverb

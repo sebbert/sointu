@@ -340,8 +340,10 @@ func moduleKey(mod *sointu.Module) string {
 	for i := range c.Units {
 		if id := c.Units[i].ID; id != 0 {
 			ids[id] = i + 1
-			c.Units[i].ID = i + 1
 		}
+		// also the units of a file written without IDs, which get them
+		// when the module is added to a song
+		c.Units[i].ID = i + 1
 	}
 	buffers := map[int]int{}
 	for i := range c.Units {
