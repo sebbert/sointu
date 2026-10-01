@@ -385,17 +385,22 @@
 {{- if .Stereo "bufwrite"}}
     (if (local.get $stereo) (then (local.set $rt (call $pop))))
 {{- end}}
+{{- if .BufwriteNoPop}}
     (if (i32.and (i32.load offset=24 (local.get $r)) (i32.const 16)) (then ;; no pop: put the signal back
 {{- if .Stereo "bufwrite"}}
         (if (local.get $stereo) (then (call $push (local.get $rt))))
 {{- end}}
         (call $push (local.get $l))
     ))
+{{- end}}
     (local.set $cap (i32.load offset=4 (local.get $h)))
     (if (i32.eqz (local.get $cap)) (then
         return
     ))
+{{- if .BufwriteOneShot}}
+{{- if .BufwriteRing}}
     (if (i32.eqz (i32.and (i32.load offset=24 (local.get $r)) (i32.const 4))) (then ;; one shot: while the note is held
+{{- end}}
         (if (i32.or (i32.eqz (i32.load (global.get $voice))) (i32.eqz (i32.load offset=4 (global.get $voice)))) (then
             return
         ))
@@ -403,9 +408,15 @@
             (i32.store (global.get $WRK) (i32.const 1))
             (i32.store offset=12 (local.get $h) (i32.const 0))
             (i32.store offset=16 (local.get $h) (i32.const 0))
+{{- if .BufwriteMix}}
             (i32.store offset=20 (local.get $h) (i32.const 0))
+{{- end}}
         ))
+{{- if .BufwriteRing}}
     ))
+{{- end}}
+{{- end}}
+{{- if .BufwriteMix}}
     (if (i32.eq (i32.load offset=20 (local.get $h)) (i32.add (global.get $globaltick) (i32.const 1))) (then
         ;; another writer wrote this frame already: mix
         (local.set $ptr (i32.add
@@ -419,22 +430,37 @@
                     (i32.const 2))
             )
         ))
+{{- if and .BufwriteStereoBuf .BufwriteMonoBuf}}
         (if (i32.eq (i32.load offset=8 (local.get $h)) (i32.const 2)) (then
+{{- end}}
+{{- if .BufwriteStereoBuf}}
             (f32.store (local.get $ptr) (f32.add (f32.load (local.get $ptr)) (local.get $l)))
             (f32.store offset=4 (local.get $ptr) (f32.add (f32.load offset=4 (local.get $ptr)) (local.get $rt)))
+{{- end}}
+{{- if and .BufwriteStereoBuf .BufwriteMonoBuf}}
         )(else
+{{- end}}
+{{- if .BufwriteMonoBuf}}
             (f32.store (local.get $ptr) (f32.add
                 (f32.load (local.get $ptr))
                 (f32.mul (f32.add (local.get $l) (local.get $rt)) (f32.const 0.5))
             ))
+{{- end}}
+{{- if and .BufwriteStereoBuf .BufwriteMonoBuf}}
         ))
+{{- end}}
         return
     ))
+{{- end}}
     (local.set $head (i32.load offset=12 (local.get $h)))
+{{- if .BufwriteOneShot}}
     (if (i32.ge_u (local.get $head) (local.get $cap)) (then
         return ;; a recording that reached the end
     ))
+{{- end}}
+{{- if .BufwriteFeedback}}
     (local.set $fb (call $input (i32.const {{.InputNumber "bufwrite" "feedback"}})))
+{{- end}}
     (local.set $ptr (i32.add
         (i32.const {{index .Labels "su_buffers"}})
         (i32.add
@@ -444,32 +470,58 @@
     ))
     ;; without feedback, the old frame is not read, so that e.g. a NaN in it
     ;; does not stay forever
+{{- if and .BufwriteStereoBuf .BufwriteMonoBuf}}
     (if (i32.eq (i32.load offset=8 (local.get $h)) (i32.const 2)) (then
+{{- end}}
+{{- if .BufwriteStereoBuf}}
+{{- if .BufwriteFeedback}}
         (if (f32.ne (local.get $fb) (f32.const 0)) (then
             (local.set $l (f32.add (local.get $l) (f32.mul (f32.load (local.get $ptr)) (local.get $fb))))
             (local.set $rt (f32.add (local.get $rt) (f32.mul (f32.load offset=4 (local.get $ptr)) (local.get $fb))))
         ))
+{{- end}}
         (f32.store (local.get $ptr) (local.get $l))
         (f32.store offset=4 (local.get $ptr) (local.get $rt))
+{{- end}}
+{{- if and .BufwriteStereoBuf .BufwriteMonoBuf}}
     )(else
+{{- end}}
+{{- if .BufwriteMonoBuf}}
         (local.set $l (f32.mul (f32.add (local.get $l) (local.get $rt)) (f32.const 0.5)))
+{{- if .BufwriteFeedback}}
         (if (f32.ne (local.get $fb) (f32.const 0)) (then
             (local.set $l (f32.add (local.get $l) (f32.mul (f32.load (local.get $ptr)) (local.get $fb))))
         ))
+{{- end}}
         (f32.store (local.get $ptr) (local.get $l))
+{{- end}}
+{{- if and .BufwriteStereoBuf .BufwriteMonoBuf}}
     ))
+{{- end}}
+{{- if .BufwriteMix}}
     (i32.store offset=20 (local.get $h) (i32.add (global.get $globaltick) (i32.const 1)))
+{{- end}}
     (local.set $head (i32.add (local.get $head) (i32.const 1)))
+{{- if and .BufwriteRing .BufwriteOneShot}}
     (if (i32.and (i32.load offset=24 (local.get $r)) (i32.const 4)) (then ;; ring
+{{- end}}
+{{- if .BufwriteRing}}
         (i32.store offset=12 (local.get $h) (i32.rem_u (local.get $head) (local.get $cap)))
         (i32.store offset=16 (local.get $h) (select
             (local.get $cap)
             (i32.add (i32.load offset=16 (local.get $h)) (i32.const 1))
             (i32.ge_u (i32.load offset=16 (local.get $h)) (local.get $cap))
         ))
+{{- end}}
+{{- if and .BufwriteRing .BufwriteOneShot}}
     )(else
+{{- end}}
+{{- if .BufwriteOneShot}}
         (i32.store offset=12 (local.get $h) (local.get $head))
         (i32.store offset=16 (local.get $h) (local.get $head))
+{{- end}}
+{{- if and .BufwriteRing .BufwriteOneShot}}
     ))
+{{- end}}
 )
 {{end}}

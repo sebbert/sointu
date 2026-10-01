@@ -597,13 +597,17 @@
 ;;   has been in the loop and WRK[5] the filled length at the trigger. Voices never triggered (note 0) are silent. Matches
 ;;   bufread in vm/go_synth.go.
 ;;-------------------------------------------------------------------------------
+{{- $fadeArgs := ""}}
+{{- if .BufreadFade}}{{$fadeArgs = "(local.get $ll) (local.get $le) (local.get $fade) "}}{{end}}
 (func $su_op_bufread (param $stereo i32) (local $r i32) (local $h i32) (local $cap i32) (local $filled i32) (local $pos i32) (local $frac f32) (local $base i32) (local $next i32) (local $ls i32) (local $ll i32) (local $le i32) (local $fade i32) (local $inloop i32) (local $start i32) (local $g f32) (local $rel i32) (local $semitones f32) (local $whole f32)
     (local.set $r (i32.add (i32.const {{index .Labels "su_buffer_regions"}}) (i32.mul (call $scanOperand) (i32.const 28))))
     (local.set $h (i32.add (i32.const {{index .Labels "su_buffer_headers"}}) (i32.load (local.get $r))))
     (local.set $cap (i32.load offset=4 (local.get $h)))
     (local.set $filled (i32.load offset=16 (local.get $h)))
     (if (i32.or (i32.eqz (i32.load (global.get $voice))) (i32.eqz (local.get $cap))) (then
+{{- if .BufreadMod}}
         (call $bufreadClearPorts)
+{{- end}}
 {{- if .Stereo "bufread"}}
         (if (local.get $stereo) (then (call $push (f32.const 0))))
 {{- end}}
@@ -613,31 +617,54 @@
     (local.set $pos (i32.load (global.get $WRK)))
     (local.set $frac (f32.load offset=4 (global.get $WRK)))
     (local.set $base (i32.load offset=8 (global.get $WRK)))
+{{- if .BufreadBackwards}}
     (local.set $inloop (i32.load offset=16 (global.get $WRK)))
+{{- end}}
     (if (i32.eqz (i32.load offset=12 (global.get $WRK))) (then
         (local.set $base (call $bufreadOldest (local.get $h)))
+{{- if .BufreadNegLoopStart}}
         (i32.store offset=20 (global.get $WRK) (local.get $filled)) ;; for negative loop starts
+{{- end}}
         (local.set $start (i32.load offset=4 (local.get $r)))
+{{- if .BufreadNegStart}}
         (if (i32.lt_s (local.get $start) (i32.const 0)) (then ;; from the newest frame
             (local.set $start (i32.add (local.get $start) (local.get $filled)))
         ))
+{{- end}}
+{{- if .BufreadMod}}
         (local.set $pos (call $bufreadFrames (local.get $start) (f32.load offset={{add 32 (mul 4 (.InputNumber "bufread" "start"))}} (global.get $WRK)) (local.get $filled) (local.get $cap)))
+{{- else}}
+        (local.set $pos (call $bufreadClamp (local.get $start) (local.get $cap)))
+{{- end}}
+{{- if .BufreadModStart}}
         (local.set $frac (f32.mul (f32.load offset={{add 32 (mul 4 (.InputNumber "bufread" "start"))}} (global.get $WRK)) (f32.convert_i32_u (local.get $filled))))
         (local.set $frac (f32.sub (local.get $frac) (f32.floor (local.get $frac))))
+{{- end}}
     ))
     (local.set $next (i32.add (local.get $pos) (i32.const 1)))
+{{- if .BufreadLoop}}
     (if (i32.and (i32.load offset=24 (local.get $r)) (i32.const 2)) (then ;; loop
         (local.set $ls (i32.load offset=8 (local.get $r)))
+{{- if .BufreadNegLoopStart}}
         (if (i32.lt_s (local.get $ls) (i32.const 0)) (then ;; from the newest frame at the trigger
             (local.set $ls (i32.add (local.get $ls) (i32.load offset=20 (global.get $WRK))))
         ))
+{{- end}}
+{{- if .BufreadMod}}
         (local.set $ls (call $bufreadFrames (local.get $ls) (f32.load offset={{add 32 (mul 4 (.InputNumber "bufread" "loopstart"))}} (global.get $WRK)) (local.get $filled) (local.get $cap)))
         (local.set $ll (call $bufreadFrames (i32.load offset=12 (local.get $r)) (f32.load offset={{add 32 (mul 4 (.InputNumber "bufread" "looplength"))}} (global.get $WRK)) (local.get $filled) (local.get $cap)))
+{{- else}}
+        (local.set $ls (call $bufreadClamp (local.get $ls) (local.get $cap)))
+        (local.set $ll (call $bufreadClamp (i32.load offset=12 (local.get $r)) (local.get $cap)))
+{{- end}}
         (local.set $le (i32.add (local.get $ls) (local.get $ll)))
+{{- if .BufreadFade}}
         (local.set $fade (call $minu (call $minu (i32.load offset=16 (local.get $r)) (local.get $ls)) (local.get $ll)))
+{{- end}}
         (if (local.get $ll) (then
             (if (i32.ge_s (local.get $pos) (local.get $le)) (then
                 (local.set $pos (i32.add (local.get $ls) (i32.rem_u (i32.sub (local.get $pos) (local.get $ls)) (local.get $ll))))
+{{- if .BufreadBackwards}}
             )(else
                 (if (i32.and (local.get $inloop) (i32.lt_s (local.get $pos) (local.get $ls))) (then ;; backwards past the loop start
                     (local.set $pos (i32.sub
@@ -647,15 +674,22 @@
                 ))
             ))
             (if (i32.ge_s (local.get $pos) (local.get $ls)) (then (local.set $inloop (i32.const 1))))
+{{- else}}
+            ))
+{{- end}}
             (local.set $next (i32.add (local.get $pos) (i32.const 1)))
             (if (i32.ge_s (local.get $next) (local.get $le)) (then
                 (local.set $next (local.get $ls))
             ))
         ))
     ))
+{{- end}}
+{{- if .BufreadMod}}
     (call $bufreadClearPorts)
-    ;; fade out near the edges of the valid frames
+{{- end}}
     (local.set $g (call $input (i32.const {{.InputNumber "bufread" "gain"}})))
+{{- if .BufreadEdgeFade}}
+    ;; fade out near the edges of the valid frames
     (if (i32.and
             (i32.ne (i32.load offset=20 (local.get $r)) (i32.const 0))
             (i32.lt_u (local.get $pos) (local.get $cap))) (then ;; unsigned: also not negative
@@ -672,55 +706,85 @@
                 (f32.const 1))))
         ))
     ))
+{{- end}}
 {{- if .Stereo "bufread"}}
     (if (local.get $stereo) (then
-        (call $push (call $bufreadRead (local.get $h) (local.get $base) (local.get $pos) (local.get $next) (local.get $frac) (local.get $ll) (local.get $le) (local.get $fade) (i32.const 1) (local.get $g)))
-        (call $push (call $bufreadRead (local.get $h) (local.get $base) (local.get $pos) (local.get $next) (local.get $frac) (local.get $ll) (local.get $le) (local.get $fade) (i32.const 0) (local.get $g)))
+        (call $push (call $bufreadRead (local.get $h) (local.get $base) (local.get $pos) (local.get $next) (local.get $frac) {{$fadeArgs}}(i32.const 1) (local.get $g)))
+        (call $push (call $bufreadRead (local.get $h) (local.get $base) (local.get $pos) (local.get $next) (local.get $frac) {{$fadeArgs}}(i32.const 0) (local.get $g)))
     )(else
 {{- end}}
+{{- if .BufreadMonoMix}}
+{{- if .BufreadMonoPlain}}
     (if (i32.eq (i32.load offset=8 (local.get $h)) (i32.const 2)) (then
+{{- end}}
         (call $push (f32.mul
             (f32.add
-                (call $bufreadRead (local.get $h) (local.get $base) (local.get $pos) (local.get $next) (local.get $frac) (local.get $ll) (local.get $le) (local.get $fade) (i32.const 0) (local.get $g))
-                (call $bufreadRead (local.get $h) (local.get $base) (local.get $pos) (local.get $next) (local.get $frac) (local.get $ll) (local.get $le) (local.get $fade) (i32.const 1) (local.get $g))
+                (call $bufreadRead (local.get $h) (local.get $base) (local.get $pos) (local.get $next) (local.get $frac) {{$fadeArgs}}(i32.const 0) (local.get $g))
+                (call $bufreadRead (local.get $h) (local.get $base) (local.get $pos) (local.get $next) (local.get $frac) {{$fadeArgs}}(i32.const 1) (local.get $g))
             )
             (f32.const 0.5)
         ))
+{{- if .BufreadMonoPlain}}
     )(else
-        (call $push (call $bufreadRead (local.get $h) (local.get $base) (local.get $pos) (local.get $next) (local.get $frac) (local.get $ll) (local.get $le) (local.get $fade) (i32.const 0) (local.get $g)))
+{{- end}}
+{{- end}}
+{{- if .BufreadMonoPlain}}
+        (call $push (call $bufreadRead (local.get $h) (local.get $base) (local.get $pos) (local.get $next) (local.get $frac) {{$fadeArgs}}(i32.const 0) (local.get $g)))
+{{- if .BufreadMonoMix}}
     ))
+{{- end}}
+{{- end}}
 {{- if .Stereo "bufread"}}
     ))
 {{- end}}
+{{- if .BufreadPitch}}
     (local.set $semitones (f32.add
         (f32.mul (call $inputSigned (i32.const {{.InputNumber "bufread" "transpose"}})) (f32.const 64))
         (call $inputSigned (i32.const {{.InputNumber "bufread" "detune"}}))
     ))
+{{- end}}
+{{- if .BufreadNoteTracking}}
     (if (i32.and (i32.load offset=24 (local.get $r)) (i32.const 1)) (then ;; note tracking
         (local.set $semitones (f32.add
             (local.get $semitones)
             (f32.sub (f32.convert_i32_u (i32.load (global.get $voice))) (f32.const 60))
         ))
     ))
+{{- end}}
+{{- if or .BufreadPitch .BufreadNoteTracking}}
     (local.set $frac (f32.add (local.get $frac) (f32.mul
         (call $inputSigned (i32.const {{.InputNumber "bufread" "speed"}}))
         (call $pow2 (f32.div (local.get $semitones) (f32.const 12)))
     )))
+{{- else}}
+    ;; no transpose, detune or note tracking in the song: the rate is the speed
+    (local.set $frac (f32.add (local.get $frac) (call $inputSigned (i32.const {{.InputNumber "bufread" "speed"}}))))
+{{- end}}
     (local.set $whole (f32.floor (local.get $frac)))
     (i32.store (global.get $WRK) (i32.add (local.get $pos) (i32.trunc_f32_s (local.get $whole))))
     (f32.store offset=4 (global.get $WRK) (f32.sub (local.get $frac) (local.get $whole)))
     (i32.store offset=8 (global.get $WRK) (local.get $base))
     (i32.store offset=12 (global.get $WRK) (i32.const 1))
+{{- if .BufreadBackwards}}
     (i32.store offset=16 (global.get $WRK) (local.get $inloop))
+{{- end}}
 )
 
+{{- if .BufreadMod}}
 ;; $bufreadClearPorts clears the modulations of start, loop start and loop
-;; length, which bufread reads itself
+;; length, which bufread reads itself; those that the song modulates
 (func $bufreadClearPorts
+{{- if .BufreadModStart}}
     (f32.store offset={{add 32 (mul 4 (.InputNumber "bufread" "start"))}} (global.get $WRK) (f32.const 0))
+{{- end}}
+{{- if .BufreadModLoopStart}}
     (f32.store offset={{add 32 (mul 4 (.InputNumber "bufread" "loopstart"))}} (global.get $WRK) (f32.const 0))
+{{- end}}
+{{- if .BufreadModLoopLen}}
     (f32.store offset={{add 32 (mul 4 (.InputNumber "bufread" "looplength"))}} (global.get $WRK) (f32.const 0))
+{{- end}}
 )
+{{- end}}
 
 ;; $bufreadOldest returns the oldest valid frame of the buffer with header h
 (func $bufreadOldest (param $h i32) (result i32)
@@ -730,6 +794,7 @@
     )
 )
 
+{{- if .BufreadMod}}
 ;; $bufreadFrames returns frames shifted by the modulation times the filled
 ;; length of the buffer, clamped between 0 and the capacity
 (func $bufreadFrames (param $frames i32) (param $mod f32) (param $filled i32) (param $cap i32) (result i32) (local $v i64)
@@ -744,16 +809,30 @@
         (i64.lt_s (local.get $v) (i64.const 0))
     ))
 )
+{{- else}}
+;; $bufreadClamp returns frames clamped between 0 and the capacity: no
+;; position is modulated in the song
+(func $bufreadClamp (param $frames i32) (param $cap i32) (result i32)
+    (select (i32.const 0)
+        (select (local.get $cap) (local.get $frames) (i32.gt_s (local.get $frames) (local.get $cap)))
+        (i32.lt_s (local.get $frames) (i32.const 0))
+    )
+)
+{{- end}}
+
+{{- if or .BufreadFade .BufreadEdgeFade}}
 
 (func $minu (param $a i32) (param $b i32) (result i32)
     (select (local.get $a) (local.get $b) (i32.lt_u (local.get $a) (local.get $b)))
 )
+{{- end}}
 
 ;; $bufreadRead returns channel c of the buffer interpolated between frames
 ;; i and next, crossfaded to the frames before the loop start at the end of
 ;; the loop, times the gain g
-(func $bufreadRead (param $h i32) (param $base i32) (param $i i32) (param $next i32) (param $frac f32) (param $ll i32) (param $le i32) (param $fade i32) (param $c i32) (param $g f32) (result f32) (local $v f32) (local $j i32)
+(func $bufreadRead (param $h i32) (param $base i32) (param $i i32) (param $next i32) (param $frac f32){{if .BufreadFade}} (param $ll i32) (param $le i32) (param $fade i32){{end}} (param $c i32) (param $g f32) (result f32) (local $v f32) (local $j i32)
     (local.set $v (call $bufreadLerp (local.get $h) (local.get $base) (local.get $i) (local.get $next) (local.get $frac) (local.get $c)))
+{{- if .BufreadFade}}
     (if (i32.and (i32.and (i32.ne (local.get $ll) (i32.const 0)) (i32.ne (local.get $fade) (i32.const 0)))
             (i32.ge_s (local.get $i) (i32.sub (local.get $le) (local.get $fade)))) (then
         (local.set $j (i32.sub (local.get $i) (local.get $ll)))
@@ -764,6 +843,7 @@
                 (f32.convert_i32_u (local.get $fade)))
         )))
     ))
+{{- end}}
     (f32.mul (local.get $v) (local.get $g))
 )
 
@@ -792,7 +872,9 @@
         (return (f32.const 0))
     ))
     (local.set $channels (i32.load offset=8 (local.get $h)))
+{{- if .BufreadChannelClamp}}
     (local.set $c (select (local.get $c) (i32.sub (local.get $channels) (i32.const 1)) (i32.lt_u (local.get $c) (local.get $channels))))
+{{- end}}
     (f32.load offset={{index .Labels "su_buffers"}} (i32.add
         (i32.load (local.get $h))
         (i32.shl (i32.add (i32.mul (local.get $abs) (local.get $channels)) (local.get $c)) (i32.const 2))

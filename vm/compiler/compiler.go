@@ -65,6 +65,99 @@ type wasmBufferData struct {
 	Headers     []wasmBufferHeader
 	Regions     []wasmBufferRegion
 	BufferBytes int
+	wasmBufferFeatures
+}
+
+// wasmBufferFeatures tells which parts of bufread and bufwrite the song
+// needs; the wasm player leaves the others out. Each part does nothing in a
+// song that does not need it, so the player renders the same without it.
+type wasmBufferFeatures struct {
+	BufreadLoop         bool // a bufread loops
+	BufreadFade         bool // a looping bufread has a crossfade
+	BufreadBackwards    bool // the position of a looping bufread can get below the loop start: negative or modulated speed, modulated loop start
+	BufreadMod          bool // start, loop start or loop length is modulated
+	BufreadModStart     bool
+	BufreadModLoopStart bool
+	BufreadModLoopLen   bool
+	BufreadNegStart     bool // a start counts from the newest frame
+	BufreadNegLoopStart bool // a loop start counts from the newest frame
+	BufreadEdgeFade     bool
+	BufreadNoteTracking bool
+	BufreadPitch        bool // transpose or detune is not 64, or modulated
+	BufreadMonoMix      bool // a mono bufread plays a stereo buffer
+	BufreadMonoPlain    bool // a mono bufread plays a mono buffer
+	BufreadChannelClamp bool // a stereo bufread plays a mono buffer
+
+	BufwriteNoPop     bool
+	BufwriteOneShot   bool
+	BufwriteRing      bool
+	BufwriteMix       bool // several bufwrite units or voices write the same buffer
+	BufwriteFeedback  bool
+	BufwriteStereoBuf bool // a buffer written is stereo
+	BufwriteMonoBuf   bool // a buffer written is mono
+}
+
+// bufferFeatures finds the parts of bufread and bufwrite that the units of
+// the song use.
+func bufferFeatures(song *sointu.Song, features vm.FeatureSet, b *vm.Bytecode, data *wasmBufferData) (f wasmBufferFeatures) {
+	channels := map[int]uint32{}
+	for i, r := range b.BufferRegions {
+		channels[int(r.BufferID)] = data.Headers[data.Regions[i].Header/wasmBufferHeaderSize].Channels
+	}
+	mod := func(unit, param string) bool { return features.SupportsModulation(unit, param) }
+	f.BufreadModStart = mod("bufread", "start")
+	f.BufreadModLoopStart = mod("bufread", "loopstart")
+	f.BufreadModLoopLen = mod("bufread", "looplength")
+	f.BufreadMod = f.BufreadModStart || f.BufreadModLoopStart || f.BufreadModLoopLen
+	f.BufreadPitch = mod("bufread", "transpose") || mod("bufread", "detune")
+	f.BufwriteFeedback = mod("bufwrite", "feedback")
+	backwards := mod("bufread", "speed") || f.BufreadModLoopStart
+	writers := map[int]int{}
+	for _, instr := range song.Patch {
+		for _, u := range instr.Units {
+			if u.Disabled {
+				continue
+			}
+			p := u.Parameters
+			ch := channels[p["buffer"]]
+			switch u.Type {
+			case "bufread":
+				loop := p["loop"] == 1
+				f.BufreadLoop = f.BufreadLoop || loop
+				f.BufreadFade = f.BufreadFade || loop && p["fade"] != 0
+				backwards = backwards || p["speed"] < 64
+				f.BufreadNegStart = f.BufreadNegStart || int32(p["start"]) < 0
+				f.BufreadNegLoopStart = f.BufreadNegLoopStart || loop && int32(p["loopstart"]) < 0
+				f.BufreadEdgeFade = f.BufreadEdgeFade || p["edgefade"] > 0
+				f.BufreadNoteTracking = f.BufreadNoteTracking || p["notetracking"] == 1
+				f.BufreadPitch = f.BufreadPitch || p["transpose"] != 64 || p["detune"] != 64
+				if p["stereo"] == 1 {
+					f.BufreadChannelClamp = f.BufreadChannelClamp || ch != 2
+				} else if ch == 2 {
+					f.BufreadMonoMix = true
+				} else {
+					f.BufreadMonoPlain = true
+				}
+			case "bufwrite":
+				f.BufwriteNoPop = f.BufwriteNoPop || p["pop"] == 0
+				if p["oneshot"] == 0 {
+					f.BufwriteRing = true
+				} else {
+					f.BufwriteOneShot = true
+				}
+				f.BufwriteFeedback = f.BufwriteFeedback || p["feedback"] != 0
+				if ch == 2 {
+					f.BufwriteStereoBuf = true
+				} else {
+					f.BufwriteMonoBuf = true
+				}
+				writers[p["buffer"]] += instr.NumVoices
+				f.BufwriteMix = f.BufwriteMix || writers[p["buffer"]] > 1
+			}
+		}
+	}
+	f.BufreadBackwards = f.BufreadLoop && backwards
+	return
 }
 
 // wasmBufferHeaderSize is the size of a buffer header in the wasm player in
@@ -203,6 +296,7 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 			if bufErr != nil {
 				return nil, nil, bufErr
 			}
+			buffers.wasmBufferFeatures = bufferFeatures(song, features, encodedPatch, &buffers)
 			data := struct {
 				CompilerMacros
 				FeatureSetMacros
