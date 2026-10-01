@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -931,5 +932,221 @@ func TestGlobalPresets(t *testing.T) {
 	}
 	for name := range want {
 		t.Errorf("no preset %s", name)
+	}
+}
+
+// presetModuleKey is moduleKey without the IDs of the modules that the
+// module uses, which differ from file to file, and with their names instead.
+func presetModuleKey(mods sointu.Modules, mod *sointu.Module) string {
+	c := mod.Copy()
+	var uses []string
+	for i := range c.Units {
+		if u := &c.Units[i]; u.Type == "module" {
+			name := "?"
+			if j, ok := mods.Find(u.Parameters["module"]); ok {
+				name = mods[j].Name
+			}
+			uses = append(uses, name)
+			u.Parameters["module"] = 0
+		}
+	}
+	return moduleKey(&c) + strings.Join(uses, ",")
+}
+
+// builtinModuleKeys returns the keys of the module presets that the tracker
+// comes with, by the names of their modules.
+func builtinModuleKeys(t *testing.T, m *Model) map[string]string {
+	t.Helper()
+	keys := map[string]string{}
+	for i := range m.modulePresets {
+		p := &m.modulePresets[i]
+		if p.file == "" {
+			keys[p.modules[len(p.modules)-1].Name] = presetModuleKey(p.modules, &p.modules[len(p.modules)-1])
+		}
+	}
+	return keys
+}
+
+// The module presets that the tracker comes with are canonical, so that a
+// song gets each module once: a bound parameter is stored with the value
+// that the default of the module parameter gives it, and a module that a
+// preset uses is the same as the preset of that module. Each takes its
+// inputs, leaves a stereo signal, expands to the number of units that
+// FORK.md tells, and encodes.
+func TestBuiltinModulePresetsCanonical(t *testing.T) {
+	m, _ := newModuleTestModel(t)
+	m.modulePresetPath = t.TempDir()
+	m.loadModulePresets()
+	keys := builtinModuleKeys(t, m)
+	want := map[string]int{"Reverb": 23, "Ducker": 3, "Sidechain": 4, "Ping pong delay": 10, "Ducking reverb": 27, "Ducking delay": 14}
+	for i := range m.modulePresets {
+		p := &m.modulePresets[i]
+		if p.file != "" {
+			continue
+		}
+		mods := p.modules
+		last := &mods[len(mods)-1]
+		if p.name != last.Name {
+			t.Errorf("the preset %s has the module %s last", p.name, last.Name)
+		}
+		for j := range mods {
+			mod := &mods[j]
+			if key, ok := keys[mod.Name]; !ok || key != presetModuleKey(mods, mod) {
+				t.Errorf("the preset %s: its module %s differs from the module preset of that name (found: %v)", p.name, mod.Name, ok)
+			}
+			bound := map[int]bool{}
+			for k := range mod.Units {
+				u := &mod.Units[k]
+				for name, b := range u.Bind {
+					if b.Param < 1 || b.Param > len(mod.Params) {
+						t.Errorf("%s, unit %d: %s is bound to parameter %d", mod.Name, k, name, b.Param)
+						continue
+					}
+					bound[b.Param] = true
+					if got, def := u.BoundValue(name), b.Map(mod.Params[b.Param-1].Default); got != def {
+						t.Errorf("%s, unit %d (%s): %s is stored as %d, the default of %s gives %d", mod.Name, k, u.Type, name, got, mod.Params[b.Param-1].Name, def)
+					}
+				}
+			}
+			if len(bound) != len(mod.Params) {
+				t.Errorf("%s: %d of %d parameters are bound", mod.Name, len(bound), len(mod.Params))
+			}
+		}
+		units, ok := want[p.name]
+		if !ok {
+			t.Errorf("the module preset %s is not expected here: add it with its number of units", p.name)
+			continue
+		}
+		delete(want, p.name)
+		index := len(mods) - 1
+		if out, err := mods.Outputs(index); out != 2 || err != nil || last.Inputs < 2 {
+			t.Errorf("%s: %d inputs, %d outputs, %v", p.name, last.Inputs, out, err)
+		}
+		var instr []sointu.Unit
+		for range last.Inputs {
+			instr = append(instr, sointu.Unit{Type: "loadval", ID: 900 + len(instr), Parameters: sointu.ParamMap{"stereo": 0, "value": 96}})
+		}
+		before := len(instr) + 1
+		instr = append(instr,
+			sointu.Unit{Type: "module", ID: 990, Parameters: sointu.ParamMap{"module": last.ID}},
+			sointu.Unit{Type: "out", ID: 991, Parameters: sointu.ParamMap{"stereo": 1, "gain": 128}})
+		song := sointu.Song{BPM: 120, RowsPerBeat: 4, Patch: sointu.Patch{{Name: "fx", NumVoices: 1, Units: instr}}, Modules: mods.Copy()}
+		song, x := song.Expand()
+		if len(x.Problems) > 0 {
+			t.Errorf("%s: problems expanding it: %v", p.name, x.Problems)
+		}
+		if n := len(song.Patch[0].Units) - before; n != units {
+			t.Errorf("%s expands to %d units, want %d", p.name, n, units)
+		}
+		if _, err := vm.NewBytecode(song.Patch, vm.AllFeatures{}, song.BPM); err != nil {
+			t.Errorf("%s does not encode: %v", p.name, err)
+		}
+	}
+	for name := range want {
+		t.Errorf("no module preset %s", name)
+	}
+}
+
+// The presets with the ducking modules: Kick ducker, Global ducking reverb,
+// Global ping pong delay and Global mastering 2 ducking. Every preset that
+// the tracker comes with carries its modules as the module presets have
+// them; these four are complete instruments, within 63 units; and a song
+// with all four of them has each module once, also after the module presets
+// are added to it.
+func TestDuckingPresets(t *testing.T) {
+	m, _ := newModuleTestModel(t)
+	m.modulePresetPath = t.TempDir()
+	m.loadModulePresets()
+	keys := builtinModuleKeys(t, m)
+	// the modules, the units once expanded, and the last unit
+	type preset struct {
+		modules, units int
+		last           string
+	}
+	want := map[string]preset{
+		"Kick ducker":                {1, 18, "out"},
+		"Global ducking reverb":      {2, 29, "out"},
+		"Global ping pong delay":     {1, 12, "outaux"},
+		"Global mastering 2 ducking": {4, 52, "out"},
+	}
+	var patch sointu.Patch
+	var modules []sointu.Modules
+	for i := range m.presetData.presets {
+		p := &m.presetData.presets[i]
+		if p.user {
+			continue
+		}
+		for j := range p.modules {
+			mod := &p.modules[j]
+			if key, ok := keys[mod.Name]; ok && key != presetModuleKey(p.modules, mod) {
+				t.Errorf("the module %s of the preset %s differs from the module preset of that name", mod.Name, p.instr.Name)
+			}
+		}
+		w, ok := want[p.instr.Name]
+		if !ok {
+			continue
+		}
+		delete(want, p.instr.Name)
+		if len(p.modules) != w.modules {
+			t.Errorf("the preset %s has %d modules, want %d", p.instr.Name, len(p.modules), w.modules)
+		}
+		song := sointu.Song{BPM: 120, RowsPerBeat: 4, Patch: sointu.Patch{p.instr.Copy()}, Modules: p.modules.Copy()}
+		song, x := song.Expand()
+		if len(x.Problems) > 0 {
+			t.Errorf("the preset %s: problems expanding it: %v", p.instr.Name, x.Problems)
+		}
+		if _, err := vm.NewBytecode(song.Patch, vm.AllFeatures{}, song.BPM); err != nil {
+			t.Errorf("the preset %s does not encode: %v", p.instr.Name, err)
+		}
+		n := 0
+		for _, u := range song.Patch[0].Units {
+			if u.Type != "" {
+				n++
+			}
+		}
+		if last := song.Patch[0].Units[len(song.Patch[0].Units)-1]; n != w.units || n > 63 || last.Type != w.last {
+			t.Errorf("the preset %s: %d units ending in %s, want %d ending in %s", p.instr.Name, n, last.Type, w.units, w.last)
+		}
+		patch = append(patch, p.instr.Copy())
+		modules = append(modules, p.modules)
+	}
+	for name := range want {
+		t.Errorf("no preset %s", name)
+	}
+	// all of them in one song
+	func() {
+		defer m.change("Test", SongChange, MajorChange)()
+		m.d.Song.Modules = nil
+		for i := range patch {
+			m.importModules(modules[i], patch[i].Units)
+		}
+		m.d.Song.Patch = patch
+	}()
+	names := func() string {
+		var ret []string
+		for _, mod := range m.d.Song.Modules {
+			ret = append(ret, mod.Name)
+		}
+		slices.Sort(ret)
+		return strings.Join(ret, ", ")
+	}
+	if got := names(); got != "Ducker, Ducking delay, Ducking reverb, Ping pong delay, Reverb" {
+		t.Errorf("the modules of a song with the four presets: %s", got)
+	}
+	for _, instr := range m.d.Song.Patch {
+		for _, u := range instr.Units {
+			if _, ok := m.d.Song.Modules.Find(u.Parameters["module"]); u.Type == "module" && !ok {
+				t.Errorf("%s: a module unit without its module", instr.Name)
+			}
+		}
+	}
+	// the module presets add only the one that no preset uses
+	m.Instrument().Tab().SetValue(int(InstrumentModulesTab))
+	presets := m.Module().Presets()
+	for i := presets.Range().Min; i <= presets.Range().Max; i++ {
+		presets.SetValue(i)
+	}
+	if got := names(); got != "Ducker, Ducking delay, Ducking reverb, Ping pong delay, Reverb, Sidechain" {
+		t.Errorf("the modules after adding every module preset: %s", got)
 	}
 }
