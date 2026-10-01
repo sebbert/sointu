@@ -47,12 +47,12 @@ func moduleTestSongs(reverb bool) (withModules, without sointu.Song) {
 		}
 	}
 	modules := sointu.Modules{
-		{ID: 1, Name: "saws", Params: []sointu.ModuleParam{{Name: "detune"}, {Name: "color"}}, Units: []sointu.Unit{
+		{ID: 1, Name: "saws", Params: []sointu.ModuleParam{{Name: "detune", Default: 64}, {Name: "color", Default: 64}}, Units: []sointu.Unit{
 			osc(64, 64, map[string]int{"detune": 1, "color": 2}), osc(50, 100, nil), addp,
 		}},
-		{ID: 2, Name: "voice", Params: []sointu.ModuleParam{{Name: "cutoff"}, {Name: "detune"}}, Units: []sointu.Unit{
+		{ID: 2, Name: "voice", Params: []sointu.ModuleParam{{Name: "cutoff", Default: 64}, {Name: "detune", Default: 64}}, Units: []sointu.Unit{
 			envelope,
-			moduleTestUnit("module", 0, sointu.ParamMap{"module": 1, "p1": 0, "p2": 32}, map[string]int{"p1": 2}),
+			moduleTestUnit("module", 0, sointu.ParamMap{"module": 1, "p1": 64, "p2": 32}, map[string]int{"p1": 2}),
 			mulp,
 			filter(0, 64, map[string]int{"frequency": 1}),
 		}},

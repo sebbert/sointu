@@ -168,6 +168,13 @@ func (m *Model) fixModules() {
 				u.Bind = nil
 			}
 		}
+		// a bound parameter shows the default of the parameter of the
+		// module, e.g. in a song written by hand
+		for k := range mod.Params {
+			if p, ok := m.d.Song.Modules.Param(i, k+1); ok {
+				m.setModuleDefault(i, k+1, p.Default)
+			}
+		}
 	}
 	for i := range m.d.Song.Patch {
 		for j := range m.d.Song.Patch[i].Units {
@@ -982,8 +989,7 @@ func (m *makeModule) Do() {
 	model := (*Model)(m)
 	defer model.change("MakeModule", PatchChange, MajorChange)()
 	list := model.unitsPtr()
-	l := (*UnitModel)(m).List()
-	r := l.listRange()
+	r := model.unitRange()
 	if list == nil || r.Len() <= 0 {
 		m.changeCancel = true
 		return

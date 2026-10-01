@@ -26,6 +26,8 @@ func (m *ParamModel) Wires(yield func(wire Wire) bool) {
 	}
 	for _, wire := range d.wires {
 		wire.Highlight = (wire.FromSet && m.d.UnitIndex == wire.From) || (wire.ToSet && m.d.UnitIndex == wire.To.Y && m.d.ParamIndex == wire.To.X)
+		// the wires are between units; the unit editor draws rows
+		wire.From, wire.To.Y = (*Model)(m).rowOfUnit(wire.From), (*Model)(m).rowOfUnit(wire.To.Y)
 		if !yield(wire) {
 			return
 		}
@@ -91,16 +93,22 @@ func (pt *paramsColumns) Count() int             { return (*ParamModel)(pt).Widt
 
 // Model and Params methods
 
-func (pt *ParamModel) Table() Table   { return Table{pt} }
-func (pt *ParamModel) Cursor() Point  { return Point{pt.d.ParamIndex, pt.d.UnitIndex} }
-func (pt *ParamModel) Cursor2() Point { return Point{pt.d.ParamIndex, pt.d.UnitIndex2} }
+func (pt *ParamModel) Table() Table { return Table{pt} }
+
+// The table is in rows of the unit editor: see rows.go.
+func (pt *ParamModel) Cursor() Point {
+	return Point{pt.d.ParamIndex, (*Model)(pt).rowOfUnit(pt.d.UnitIndex)}
+}
+func (pt *ParamModel) Cursor2() Point {
+	return Point{pt.d.ParamIndex, (*Model)(pt).rowOfUnit(pt.d.UnitIndex2)}
+}
 func (pt *ParamModel) SetCursor(p Point) {
 	pt.d.ParamIndex = max(min(p.X, pt.Width()-1), 0)
-	pt.d.UnitIndex = max(min(p.Y, pt.Height()-1), 0)
+	pt.d.UnitIndex = (*Model)(pt).unitOfRow(max(min(p.Y, pt.Height()-1), 0), false)
 }
 func (pt *ParamModel) SetCursor2(p Point) {
 	pt.d.ParamIndex = max(min(p.X, pt.Width()-1), 0)
-	pt.d.UnitIndex2 = max(min(p.Y, pt.Height()-1), 0)
+	pt.d.UnitIndex2 = (*Model)(pt).unitOfRow(max(min(p.Y, pt.Height()-1), 0), false)
 }
 func (pt *ParamModel) Width() int {
 	d := (*Model)(pt).derivedUnits()
@@ -110,29 +118,62 @@ func (pt *ParamModel) Width() int {
 	// TODO: we hack the +1 so that we always have one extra cell to draw the
 	// comments. Refactor the gioui side so that we can specify the width and
 	// height regardless of the underlying table size
-	return d.paramsWidth + 1
+	width := d.paramsWidth
+	if pt.unfold {
+		units := (*Model)(pt).units()
+		for i := range units {
+			if e := (*Model)(pt).entrailsOf(&units[i]); e != nil {
+				width = max(width, e.paramsWidth)
+			}
+		}
+	}
+	return width + 1
 }
 func (pt *ParamModel) RowWidth(y int) int {
 	d := (*Model)(pt).derivedUnits()
-	if d == nil || y < 0 || y >= len(d.params) {
+	unit, e, i, ok := (*Model)(pt).rowAt(y)
+	if d == nil || !ok {
 		return 0
 	}
-	return len(d.params[y])
+	if e != nil {
+		return len(e.params[i])
+	}
+	if unit >= len(d.params) {
+		return 0
+	}
+	return len(d.params[unit])
 }
-func (pt *ParamModel) Height() int { return (*Model)(pt).Unit().List().Count() }
+func (pt *ParamModel) Height() int { return (*Model)(pt).numRows() }
 func (pt *ParamModel) MoveCursor(dx, dy int) (ok bool) {
 	p := pt.Cursor()
 	p.X += dx
 	p.Y += dy
 	pt.SetCursor(p)
+	if dy > 0 {
+		// moving down goes past the entrails of a module unit
+		pt.d.UnitIndex = (*Model)(pt).unitOfRow(max(min(p.Y, pt.Height()-1), 0), true)
+		if _, e, _, _ := (*Model)(pt).rowAt(p.Y); e != nil {
+			return true
+		}
+	}
 	return p == pt.Cursor()
 }
 func (pt *ParamModel) Item(p Point) Parameter {
 	d := (*Model)(pt).derivedUnits()
-	if d == nil || p.Y < 0 || p.Y >= len(d.params) || p.X < 0 || p.X >= len(d.params[p.Y]) {
+	unit, e, i, ok := (*Model)(pt).rowAt(p.Y)
+	if d == nil || !ok || p.X < 0 {
 		return Parameter{}
 	}
-	return d.params[p.Y][p.X]
+	if e != nil { // an entrail: it cannot be changed
+		if p.X >= len(e.params[i]) {
+			return Parameter{}
+		}
+		return e.params[i][p.X]
+	}
+	if unit >= len(d.params) || p.X >= len(d.params[unit]) {
+		return Parameter{}
+	}
+	return d.params[unit][p.X]
 }
 func (pt *ParamModel) clear(p Point) {
 	q := pt.Item(p)
@@ -147,6 +188,9 @@ func (pt *ParamModel) add(rect Rect, delta int, largeStep bool) (ok bool) {
 		for x := rect.TopLeft.X; x <= rect.BottomRight.X; x++ {
 			p := Point{x, y}
 			q := pt.Item(p)
+			if q.entrails != nil {
+				continue // the units a module unit stands for cannot be changed
+			}
 			if !q.Add(delta, largeStep) {
 				return false
 			}
@@ -247,9 +291,11 @@ type (
 		index  int
 		vtable parameterVtable
 		port   int
-		// peek is i+1 for a parameter of unit i of the Peek view, which
-		// cannot be changed
-		peek int
+		// entrails is set for a parameter of an entrail, entrail its index
+		// among them: a unit that a module unit stands for, which cannot
+		// be changed
+		entrails *entrails
+		entrail  int
 	}
 
 	parameterVtable interface {
@@ -316,7 +362,7 @@ func (p *Parameter) Port() (int, bool) {
 	return p.port - 1, true
 }
 func (p *Parameter) SetValue(value int) bool {
-	if p.vtable == nil || p.peek != 0 {
+	if p.vtable == nil || p.entrails != nil {
 		return false
 	}
 	r := p.Range()
@@ -385,7 +431,7 @@ func (p *Parameter) Hint() ParameterHint {
 	return hint
 }
 func (p *Parameter) Reset() {
-	if p.vtable == nil || p.peek != 0 {
+	if p.vtable == nil || p.entrails != nil {
 		return
 	}
 	if _, ok := p.Bound(); ok {
@@ -901,8 +947,8 @@ func (p *Parameter) Bound() (name string, ok bool) {
 	if p.unit == nil || p.up == nil || p.vtable == nil {
 		return "", false
 	}
-	if p.peek != 0 {
-		return p.m.peekBound(p.peek-1, p.up.Name)
+	if p.entrails != nil {
+		return p.entrails.bound(p.m, p.entrail, p.up.Name)
 	}
 	k, ok := p.unit.Bind[p.up.Name]
 	if !ok {

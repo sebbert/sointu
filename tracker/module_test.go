@@ -352,11 +352,8 @@ func TestModuleCannotUseItself(t *testing.T) {
 	}
 }
 
-func TestPeek(t *testing.T) {
+func TestUnfold(t *testing.T) {
 	m, _ := newModuleTestModel(t)
-	if m.Peek().Visible() {
-		t.Errorf("there is something to peek at without a module unit")
-	}
 	makeTestModule(t, m)
 	m.Unit().OpenModule().Do()
 	m.Module().AddParam().Do()
@@ -366,41 +363,106 @@ func TestPeek(t *testing.T) {
 	m.Unit().List().SetSelected(2)
 	arg := m.Params().Item(Point{1, 2})
 	arg.SetValue(99)
-	// the units that the synth runs for the module unit, with its values
-	if !m.Peek().Visible() || m.Peek().Title() != "Module" || m.Peek().Units().List().Count() != 4 {
-		t.Fatalf("peek: visible %v, title %q, %v units", m.Peek().Visible(), m.Peek().Title(), m.Peek().Units().List().Count())
+	units, params := m.Unit().List(), m.Params()
+	if units.Count() != 4 || params.Height() != 4 || m.Unit().Item(3).Entrail {
+		t.Fatalf("folded: %v rows", units.Count())
 	}
-	if item := m.Peek().Units().Item(1); item.Type != "oscillator" || item.Signals.StackAfter() != 2 {
-		t.Errorf("unit 1 of the peek: %+v", item)
+	// unfolded, the units that the synth runs for the module unit follow it
+	m.Unit().Unfold().SetValue(true)
+	if units.Count() != 8 || params.Height() != 8 {
+		t.Fatalf("unfolded: %v rows", units.Count())
 	}
+	var types []string
+	for i := range units.Count() {
+		item := m.Unit().Item(i)
+		if item.Entrail != (i >= 3 && i <= 6) {
+			t.Errorf("row %v: entrail %v", i, item.Entrail)
+		}
+		types = append(types, item.Title)
+	}
+	if got := strings.Join(types, " "); got != "oscillator send Module envelope oscillator mulp filter out" {
+		t.Errorf("rows: %v", got)
+	}
+	// the signals of the entrails: envelope 1, oscillator 2, mulp 1
+	after := func(row int) int {
+		signals := m.Unit().Item(row).Signals
+		return signals.StackAfter()
+	}
+	if a, b, c := after(3), after(4), after(5); a != 1 || b != 2 || c != 1 {
+		t.Errorf("signals after the entrails: %v %v %v", a, b, c)
+	}
+	// with the value of the module unit, bound, and not to be changed
 	var detune Parameter
-	for x := 0; x < m.Peek().Params().RowWidth(1); x++ {
-		if p := m.Peek().Params().Item(Point{x, 1}); p.Name() == "detune" {
+	for x := 0; x < params.RowWidth(4); x++ {
+		if p := params.Item(Point{x, 4}); p.Name() == "detune" {
 			detune = p
 		}
 	}
 	if name, ok := detune.Bound(); detune.Value() != 99 || !ok || name != "detune" {
-		t.Errorf("the detune of the peek is %v, bound to %q", detune.Value(), name)
+		t.Errorf("the detune of the entrail is %v, bound to %q", detune.Value(), name)
 	}
-	if detune.SetValue(5) || m.d.Song.Modules[0].Units[1].Parameters["detune"] == 5 || detune.Value() != 99 {
-		t.Errorf("a parameter of the peek could be changed")
+	if detune.SetValue(5) || m.d.Song.Modules[0].Units[1].Parameters["detune"] == 5 {
+		t.Errorf("a parameter of an entrail could be changed")
 	}
-	m.Peek().Params().Table().Clear()
-	m.Peek().Params().Table().Add(1, false)
-	// it follows the module unit
+	// the cursor skips the entrails
+	if units.Selected() != 2 {
+		t.Fatalf("the module unit is on row %v", units.Selected())
+	}
+	units.SetSelected(units.Selected() + 1)
+	if m.d.UnitIndex != 3 || units.Selected() != 7 {
+		t.Errorf("down from the module unit: unit %v, row %v", m.d.UnitIndex, units.Selected())
+	}
+	units.SetSelected(units.Selected() - 1)
+	if m.d.UnitIndex != 2 || units.Selected() != 2 {
+		t.Errorf("up from the out: unit %v, row %v", m.d.UnitIndex, units.Selected())
+	}
+	units.SetSelected(5) // clicking an entrail selects its module unit
+	if m.d.UnitIndex != 2 {
+		t.Errorf("selecting an entrail selected unit %v", m.d.UnitIndex)
+	}
+	params.SetCursor(Point{0, 2})
+	params.MoveCursor(0, 1)
+	if c := params.Cursor(); c.Y != 7 || m.d.UnitIndex != 3 {
+		t.Errorf("the cursor moved down to row %v, unit %v", c.Y, m.d.UnitIndex)
+	}
+	// moving, copying and deleting work on the units
+	units.SetSelected(2)
+	units.SetSelected2(2)
+	if !units.MoveElements(1) || unitTypes(m.d.Song.Patch[0].Units) != "oscillator send out module" || m.d.UnitIndex != 3 {
+		t.Errorf("after moving the module unit down: %v, unit %v", unitTypes(m.d.Song.Patch[0].Units), m.d.UnitIndex)
+	}
+	if !units.MoveElements(-1) || unitTypes(m.d.Song.Patch[0].Units) != "oscillator send module out" || m.d.UnitIndex != 2 {
+		t.Errorf("after moving it back up: %v, unit %v", unitTypes(m.d.Song.Patch[0].Units), m.d.UnitIndex)
+	}
+	units.SetSelected(units.Count() - 1) // the out, below the entrails
+	units.SetSelected2(units.Selected())
+	if !units.MoveElements(-1) || unitTypes(m.d.Song.Patch[0].Units) != "oscillator send out module" {
+		t.Errorf("after moving the out up: %v", unitTypes(m.d.Song.Patch[0].Units))
+	}
+	m.History().Undo().Do()
+	units.SetSelected(2)
+	units.SetSelected2(2)
+	data, ok := units.CopyElements()
+	if !ok || !units.PasteElements(data) || unitTypes(m.d.Song.Patch[0].Units) != "oscillator send module module out" {
+		t.Fatalf("after copying and pasting the module unit: %v", unitTypes(m.d.Song.Patch[0].Units))
+	}
+	if units.Count() != 13 {
+		t.Errorf("with two module units: %v rows", units.Count())
+	}
+	if !units.DeleteElements(false) || unitTypes(m.d.Song.Patch[0].Units) != "oscillator send module out" || units.Count() != 8 {
+		t.Errorf("after deleting one: %v, %v rows", unitTypes(m.d.Song.Patch[0].Units), units.Count())
+	}
+	// the entrails follow the module unit
+	units.SetSelected(2)
+	arg = params.Item(Point{1, 2})
 	arg.SetValue(12)
-	for x := 0; x < m.Peek().Params().RowWidth(1); x++ {
-		if p := m.Peek().Params().Item(Point{x, 1}); p.Name() == "detune" && p.Value() != 12 {
-			t.Errorf("after changing the module unit, the detune of the peek is %v", p.Value())
+	for x := 0; x < params.RowWidth(4); x++ {
+		if p := params.Item(Point{x, 4}); p.Name() == "detune" && p.Value() != 12 {
+			t.Errorf("after changing the module unit, the detune of the entrail is %v", p.Value())
 		}
 	}
-	m.Peek().Show().SetValue(false)
-	if m.Peek().Visible() || m.Peek().Params().Width() != 0 {
-		t.Errorf("the peek is visible when hidden")
-	}
-	m.Peek().Show().SetValue(true)
-	m.Unit().List().SetSelected(0)
-	if m.Peek().Visible() {
-		t.Errorf("the peek is visible for an oscillator")
+	m.Unit().Unfold().SetValue(false)
+	if units.Count() != 4 {
+		t.Errorf("folded again: %v rows", units.Count())
 	}
 }

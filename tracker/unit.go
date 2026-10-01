@@ -91,8 +91,7 @@ func (m *clearUnit) Enabled() bool {
 }
 func (m *clearUnit) Do() {
 	defer (*Model)(m).change("DeleteUnitAction", PatchChange, MajorChange)()
-	l := ((*UnitModel)(m)).List()
-	r := l.listRange()
+	r := (*Model)(m).unitRange()
 	units := (*Model)(m).units()
 	for i := r.Start; i < r.End && i < len(units); i++ {
 		units[i] = sointu.Unit{}
@@ -208,8 +207,7 @@ func (m *unitDisabled) SetValue(val bool) {
 	if units == nil {
 		return
 	}
-	l := ((*UnitModel)(m)).List()
-	r := l.listRange()
+	r := (*Model)(m).unitRange()
 	defer (*Model)(m).change("UnitDisabledSet", PatchChange, MajorChange)()
 	for i := r.Start; i < r.End && i < len(units); i++ {
 		units[i].Disabled = val
@@ -219,17 +217,31 @@ func (m *unitDisabled) Enabled() bool {
 	return len((*Model)(m).units()) > 0
 }
 
-// Item returns information about the unit at the given index.
-func (v *UnitModel) Item(index int) UnitListItem {
+// Item returns information about the unit on the given row of the unit
+// editor: a unit being edited, or an entrail of a module unit.
+func (v *UnitModel) Item(row int) UnitListItem {
 	units := (*Model)(v).units()
-	if index < 0 || index >= len(units) {
+	index, e, i, ok := (*Model)(v).rowAt(row)
+	if !ok || index >= len(units) {
 		return UnitListItem{}
 	}
-	unit := units[index]
 	signals := Rail{}
 	if d := (*Model)(v).derivedUnits(); d != nil && index < len(d.rails) {
 		signals = d.rails[index]
 	}
+	if e != nil {
+		// its signals are on top of those passing the module unit
+		u := &e.units[i]
+		return UnitListItem{
+			Title:    (*Model)(v).unitTitle(u),
+			Type:     u.Type,
+			Comment:  u.Comment,
+			Disabled: u.Disabled,
+			Entrail:  true,
+			Signals:  Rail{PassThrough: signals.PassThrough + e.before[i], StackUse: e.uses[i], Send: !u.Disabled && u.Type == "send"},
+		}
+	}
+	unit := units[index]
 	return UnitListItem{
 		Title:    (*Model)(v).unitTitle(&unit),
 		Type:     unit.Type,
@@ -240,10 +252,12 @@ func (v *UnitModel) Item(index int) UnitListItem {
 }
 
 // UnitListItem is a unit in the unit list. Title is its type, or for a
-// module unit, the name of its module.
+// module unit, the name of its module. Entrail is true for a unit that the
+// module unit above it stands for, which cannot be changed.
 type UnitListItem struct {
 	Type, Title, Comment string
 	Disabled             bool
+	Entrail              bool
 	Signals              Rail
 }
 
@@ -294,9 +308,11 @@ func (m *UnitModel) SetType(t string) {
 	(*list)[m.d.UnitIndex].ID = oldUnit.ID // keep the ID of the replaced unit
 }
 
-// List returns a List of all the units of the selected instrument, implementing
-// ListData & MutableListData interfaces
-func (m *UnitModel) List() List { return List{(*unitList)(m)} }
+// List returns a List of the rows of the unit editor: the units of the
+// selected instrument, or of the selected module on the Modules tab, and
+// with Unfold, the entrails of the module units among them, which cannot be
+// selected. It implements the ListData & MutableListData interfaces.
+func (m *UnitModel) List() List { return List{(*unitRows)(m)} }
 
 type unitList UnitModel
 
@@ -389,25 +405,56 @@ func (s *UnitModel) RailError() RailError {
 	if m := (*Model)(s); ret.Err != nil && (m.editingModule() != (ret.Module > 0) ||
 		m.editingModule() && ret.Module-1 != m.d.ModuleIndex || !m.editingModule() && ret.InstrIndex != m.d.InstrIndex) {
 		ret.UnitIndex = -1
+	} else if ret.UnitIndex >= 0 {
+		ret.UnitIndex = (*Model)(s).rowOfUnit(ret.UnitIndex) // the unit editor shows rows
 	}
 	return ret
 }
 
 func (s *UnitModel) RailWidth() int {
-	if d := (*Model)(s).derivedUnits(); d != nil {
-		return d.railWidth
+	m := (*Model)(s)
+	d := m.derivedUnits()
+	if d == nil {
+		return 0
 	}
-	return 0
+	width := d.railWidth
+	if m.unfold {
+		units := m.units()
+		for i := range units {
+			if e := m.entrailsOf(&units[i]); e != nil && i < len(d.rails) {
+				width = max(width, d.rails[i].PassThrough+e.width)
+			}
+		}
+	}
+	return width
+}
+
+// rowUnit returns the unit on a row of the unit editor: a unit being
+// edited, or an entrail. played is the ID that the unit has in the synth, or
+// 0 if it is not in the synth.
+func (m *Model) rowUnit(row int) (u *sointu.Unit, played int, ok bool) {
+	units := m.units()
+	index, e, i, ok := m.rowAt(row)
+	if !ok || index >= len(units) {
+		return nil, 0, false
+	}
+	if e != nil {
+		if e.source[i].Body != 0 { // a unit of the synth
+			played = e.units[i].ID
+		}
+		return &e.units[i], played, true
+	}
+	return &units[index], m.playedUnitID(index), true
 }
 
 func (e *RailError) Error() string { return e.Err.Error() }
 
 func (s *Rail) StackAfter() int { return s.PassThrough + s.StackUse.NumOutputs }
 
-// Spectrum returns the spectrum as unit i of the selected instrument, a
+// Spectrum returns the spectrum as the unit on row i of the unit editor, a
 // spectral unit, last left it, as BufferModel.SpectrumOf.
 func (m *UnitModel) Spectrum(i int) ([]float32, int) {
-	id := (*Model)(m).playedUnitID(i)
+	_, id, _ := (*Model)(m).rowUnit(i)
 	if id == 0 {
 		return nil, 0
 	}
@@ -417,11 +464,10 @@ func (m *UnitModel) Spectrum(i int) ([]float32, int) {
 // Bus returns the ID of the bus of unit i of the selected instrument, if it
 // is an mc unit, whose preview shows the levels of its bus.
 func (m *UnitModel) Bus(i int) (id int, ok bool) {
-	units := (*Model)(m).units()
-	if i < 0 || i >= len(units) {
+	u, _, ok := (*Model)(m).rowUnit(i)
+	if !ok {
 		return 0, false
 	}
-	u := &units[i]
 	if sointu.BusParams(u.Type) == nil {
 		return 0, false
 	}
@@ -431,11 +477,11 @@ func (m *UnitModel) Bus(i int) (id int, ok bool) {
 // Buffer returns the ID of the buffer that unit i of the selected instrument
 // plays, writes or holds its spectrum in, and whether it is a spectrum.
 func (m *UnitModel) Buffer(i int) (id int, spectrum, ok bool) {
-	units := (*Model)(m).units()
-	if i < 0 || i >= len(units) {
+	u, _, ok := (*Model)(m).rowUnit(i)
+	if !ok {
 		return 0, false, false
 	}
-	return unitBuffer(&units[i])
+	return unitBuffer(u)
 }
 
 // UnitPreviewCells is how many parameter cells wide the preview of a unit's

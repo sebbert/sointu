@@ -222,6 +222,8 @@ func (t *Tracker) KeyEvent(e key.Event, gtx C) {
 		t.Play().IsFollowing().Toggle()
 	case "UnitDisabledToggle":
 		t.Unit().Disabled().Toggle()
+	case "UnfoldModulesToggle":
+		t.Unit().Unfold().Toggle()
 	case "MakeModule":
 		t.Unit().MakeModule().Do()
 	case "OpenModule":

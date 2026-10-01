@@ -86,7 +86,22 @@ func TestModulesTabLayout(t *testing.T) {
 	frame("3-modules-tab")
 	model.Instrument().Tab().SetValue(int(tracker.InstrumentEditorTab))
 	frame("4-module-unit-with-parameter")
+	model.Unit().Unfold().SetValue(true)
+	frame("4b-unfolded")
+	model.Unit().Unfold().SetValue(false)
 	model.Module().Delete().Do()
 	model.Instrument().Tab().SetValue(int(tracker.InstrumentModulesTab))
 	frame("5-no-modules")
+	// the example song
+	f, err := os.Open("../../examples/modules.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	model.Song().Read(f)
+	model.Module().List().SetSelected(1)
+	frame("6-example-modules-tab")
+	model.Instrument().Tab().SetValue(int(tracker.InstrumentEditorTab))
+	model.Unit().Unfold().SetValue(true)
+	model.Unit().List().SetSelected(2)
+	frame("7-example-unfolded")
 }

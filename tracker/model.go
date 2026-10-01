@@ -59,12 +59,12 @@ type (
 		// expansion tells how the module units were expanded for the song
 		// that the player last got
 		expansion *sointu.Expansion
-		// expanded is the patch of that song, peeked the units that the
-		// selected module unit stands for, and peekHidden tells not to show
-		// them
-		expanded   sointu.Patch
-		peeked     peekData
-		peekHidden bool
+		// expanded is the patch of that song. With unfold, the unit
+		// editor shows the units that the module units stand for, kept in
+		// entrailCache
+		expanded     sointu.Patch
+		unfold       bool
+		entrailCache entrailCache
 
 		// onChange, when set, is called after each change to the model data,
 		// e.g. to tell a plugin host that its project has unsaved changes

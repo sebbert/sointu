@@ -47,7 +47,9 @@ modules:
       comment: two detuned saws
       params:
         - name: detune
+          default: 64
         - name: color
+          default: 64
       units:
         - type: oscillator
           parameters: {color: 64, detune: 64, gain: 128, shape: 64, transpose: 64, type: 1}
@@ -60,12 +62,14 @@ modules:
       name: voice
       params:
         - name: cutoff
+          default: 64
         - name: detune
+          default: 64
       units:
         - type: envelope
           parameters: {attack: 40, decay: 70, gain: 128, release: 70, sustain: 60}
         - type: module
-          parameters: {module: 1, p1: 0, p2: 32}
+          parameters: {module: 1, p1: 64, p2: 32}
           bind: {p1: 2}
         - type: mulp
           parameters: {}
