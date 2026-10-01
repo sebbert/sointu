@@ -63,12 +63,14 @@ var allInputs map[paramKey]int
 var allTransformCounts map[string]int
 
 func init() {
-	allInstructions = make([]string, len(sointu.UnitTypes))
+	allInstructions = make([]string, 0, len(sointu.UnitTypes))
 	allOpcodes = map[string]int{}
 	allTransformCounts = map[string]int{}
 	allInputs = map[paramKey]int{}
-	i := 0
 	for k, v := range sointu.UnitTypes {
+		if v.Virtual {
+			continue // replaced by Song.Expand: no opcode
+		}
 		inputCount := 0
 		transformCount := 0
 		for _, t := range v.Params {
@@ -80,9 +82,8 @@ func init() {
 				transformCount++
 			}
 		}
-		allInstructions[i] = k // Opcode 0 is reserved for instrument advance, so opcodes start from 1
+		allInstructions = append(allInstructions, k) // Opcode 0 is reserved for instrument advance, so opcodes start from 1
 		allTransformCounts[k] = transformCount
-		i++
 	}
 	sort.Strings(allInstructions) // sort the opcodes to have predictable ordering, as maps don't guarantee the order the items
 	for i, instruction := range allInstructions {

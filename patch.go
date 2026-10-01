@@ -67,6 +67,13 @@ type (
 		// instead of/besides the type of the unit in the GUI, to make it easier
 		// to track what the unit is doing & to make it easier to target sends.
 		Comment string `yaml:",omitempty"`
+
+		// Bind binds parameters of a unit in the body of a module to the
+		// parameters of the module: the name of a parameter of the unit to
+		// the number of a parameter of the module, from 1. Each module unit
+		// calling the module gives the bound parameters its own values. See
+		// Module.
+		Bind map[string]int `yaml:",flow,omitempty"`
 	}
 
 	// MIDI contains info on how MIDI events should trigger an instrument
@@ -87,6 +94,9 @@ type (
 		Params         []UnitParameter
 		DefaultVarArgs []int
 		StackUse       func(*Unit) StackUse
+		// Virtual is true for unit types that the synths never run, as
+		// Song.Expand replaces them: the module unit. They have no opcode.
+		Virtual bool
 	}
 
 	// StackUse documents how a unit will affect the signal stack.
@@ -749,6 +759,27 @@ var UnitTypes = map[string]UnitType{
 		},
 		StackUse: stackUseSource,
 	},
+	"module": {
+		// module stands for the units of a module of the song, with its
+		// parameters p1 to p8 in place of the parameters the module binds to
+		// them. Song.Expand replaces it with those units, so the synths never
+		// see it. module is the ID of the module; 0 means none. The ranges of
+		// p1 to p8 and the stack use depend on the module: see
+		// Modules.ParamRange and Modules.StackUse.
+		Params: []UnitParameter{
+			{Name: "module", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+			{Name: "p1", MinValue: math.MinInt32, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true},
+			{Name: "p2", MinValue: math.MinInt32, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true},
+			{Name: "p3", MinValue: math.MinInt32, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true},
+			{Name: "p4", MinValue: math.MinInt32, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true},
+			{Name: "p5", MinValue: math.MinInt32, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true},
+			{Name: "p6", MinValue: math.MinInt32, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true},
+			{Name: "p7", MinValue: math.MinInt32, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true},
+			{Name: "p8", MinValue: math.MinInt32, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true},
+		},
+		StackUse: func(u *Unit) StackUse { return StackUse{} },
+		Virtual:  true,
+	},
 	"sync": {
 		Params:   []UnitParameter{},
 		StackUse: func(u *Unit) StackUse { return StackUse{Inputs: [][]int{{0}}, Modifies: []bool{false}, NumOutputs: 1} },
@@ -1299,6 +1330,12 @@ func (u *Unit) Copy() Unit {
 	}
 	ret.VarArgs = make([]int, len(u.VarArgs))
 	copy(ret.VarArgs, u.VarArgs)
+	if u.Bind != nil {
+		ret.Bind = make(map[string]int, len(u.Bind))
+		for k, v := range u.Bind {
+			ret.Bind[k] = v
+		}
+	}
 	return ret
 }
 
