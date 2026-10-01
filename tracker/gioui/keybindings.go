@@ -222,6 +222,14 @@ func (t *Tracker) KeyEvent(e key.Event, gtx C) {
 		t.Play().IsFollowing().Toggle()
 	case "UnitDisabledToggle":
 		t.Unit().Disabled().Toggle()
+	case "UnfoldModuleToggle":
+		t.Unit().Unfold().Toggle()
+	case "MakeModule":
+		t.Unit().MakeModule().Do()
+	case "OpenModule":
+		t.Unit().OpenModule().Do()
+	case "InlineModule":
+		t.Unit().InlineModule().Do()
 	case "LoopToggle":
 		t.Play().IsLooping().Toggle()
 	case "UniquePatternsToggle":

@@ -2,6 +2,7 @@ package gioui
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/color"
 	"io"
@@ -43,7 +44,19 @@ type (
 		commentEditor  *Editor
 		caser          cases.Caser
 
+		makeModuleBtn   *Clickable
+		inlineModuleBtn *Clickable
+		uniqueModuleBtn *Clickable
+		openModuleBtn   *Clickable
+		unfoldBtn       *Clickable
+		listFolds       []Clickable // the chevrons of the module units, by row, in the unit list
+		rackFolds       []Clickable // and in the rack
+
 		copyHint        string
+		makeModuleHint  string
+		openModuleHint  string
+		unfoldHint      string
+		foldHint        string
 		disableUnitHint string
 		enableUnitHint  string
 
@@ -66,9 +79,19 @@ func NewInstrumentEditor(m *tracker.Model) *InstrumentEditor {
 		paramTable:     NewScrollTable(m.Params().Table(), m.Params().Columns(), m.Unit().List()),
 		searchList:     NewDragList(m.Unit().SearchResults(), layout.Vertical),
 		searching:      m.Unit().Searching(),
+
+		makeModuleBtn:   new(Clickable),
+		inlineModuleBtn: new(Clickable),
+		uniqueModuleBtn: new(Clickable),
+		openModuleBtn:   new(Clickable),
+		unfoldBtn:       new(Clickable),
 	}
 	ret.caser = cases.Title(language.English)
 	ret.copyHint = makeHint("Copy unit", " (%s)", "Copy")
+	ret.makeModuleHint = makeHint("Make a module of\nthe selected units", "\n(%s)", "MakeModule")
+	ret.unfoldHint = makeHint("Unfold the module unit:\nshow the units inside it", "\n(%s)", "UnfoldModuleToggle")
+	ret.foldHint = makeHint("Fold the module unit:\nhide the units inside it", "\n(%s)", "UnfoldModuleToggle")
+	ret.openModuleHint = makeHint("Show the module\nof the module unit", "\n(%s)", "OpenModule")
 	ret.disableUnitHint = makeHint("Disable unit", " (%s)", "UnitDisabledToggle")
 	ret.enableUnitHint = makeHint("Enable unit", " (%s)", "UnitDisabledToggle")
 	return ret
@@ -93,6 +116,7 @@ func (ie *InstrumentEditor) Tags(level int, yield TagYieldFunc) bool {
 
 func (ul *InstrumentEditor) layoutList(gtx C) D {
 	t := TrackerFromContext(gtx)
+	hasModules := t.Unit().HasModuleUnits()
 	element := func(gtx C, i int) D {
 		gtx.Constraints.Max.Y = gtx.Dp(20)
 		gtx.Constraints.Min.Y = gtx.Constraints.Max.Y
@@ -100,17 +124,29 @@ func (ul *InstrumentEditor) layoutList(gtx C) D {
 		editorStyle := t.Theme.InstrumentEditor.UnitList.Name
 		signalError := t.Unit().RailError()
 		switch {
-		case u.Disabled:
+		case u.Disabled, u.Inner:
 			editorStyle = t.Theme.InstrumentEditor.UnitList.NameDisabled
 		case signalError.Err != nil && signalError.UnitIndex == i:
 			editorStyle.Color = t.Theme.InstrumentEditor.UnitList.Error
+		}
+		// a module unit is like a section that can be collapsed: a chevron
+		// folds and unfolds it, and the units that it stands for are
+		// indented under it
+		lead := layout.Spacer{Width: 0}.Layout
+		switch {
+		case u.Inner:
+			lead = layout.Spacer{Width: 26}.Layout
+		case !u.Module && hasModules:
+			lead = layout.Spacer{Width: 14}.Layout // in line with the module units
+		case u.Module:
+			lead = func(gtx C) D { return ul.layoutFold(gtx, &ul.listFolds, i, u.Unfolded, 14) }
 		}
 		unitName := func(gtx C) D {
 			if i == ul.dragList.TrackerList.Selected() {
 				defer clip.Rect(image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Constraints.Max.Y)).Push(gtx.Ops).Pop()
 				return ul.searchEditor.Layout(gtx, t.Model.Unit().SearchTerm(), t.Theme, &editorStyle, "---")
 			} else {
-				text := u.Type
+				text := u.Title
 				if text == "" {
 					text = "---"
 				}
@@ -118,10 +154,11 @@ func (ul *InstrumentEditor) layoutList(gtx C) D {
 				return Label(t.Theme, &l, text).Layout(gtx)
 			}
 		}
-		stackText := strconv.FormatInt(int64(u.Signals.StackAfter()), 10)
+		stackText := strconv.FormatInt(int64(u.Stack), 10)
 		commentLabel := Label(t.Theme, &t.Theme.InstrumentEditor.UnitList.Comment, u.Comment)
 		stackLabel := Label(t.Theme, &t.Theme.InstrumentEditor.UnitList.Stack, stackText)
-		return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(lead),
 			layout.Rigid(unitName),
 			layout.Rigid(layout.Spacer{Width: 5}.Layout),
 			layout.Flexed(1, commentLabel.Layout),
@@ -136,7 +173,12 @@ func (ul *InstrumentEditor) layoutList(gtx C) D {
 			layout.Expanded(func(gtx C) D {
 				defer clip.Rect(image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Constraints.Max.Y)).Push(gtx.Ops).Pop()
 				gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(140), gtx.Constraints.Max.Y))
-				dims := unitList.Layout(gtx, element, nil)
+				dims := unitList.Layout(gtx, element, func(gtx C, i int) D {
+					if u := t.Unit().Item(i); u.Inner {
+						drawInnerBackground(gtx, gtx.Constraints.Min, u.First, u.Last)
+					}
+					return D{}
+				})
 				unitList.LayoutScrollBar(gtx)
 				return dims
 			}),
@@ -324,15 +366,25 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 		}
 		item := t.Unit().Item(y)
 		sr := Rail(t.Theme, item.Signals)
-		label := Label(t.Theme, &t.Theme.UnitEditor.UnitList.Name, item.Type)
+		if item.Inner {
+			// faint like the rest of the row, but for the signals that
+			// only pass by the module unit
+			sr.FaintFrom = item.Outer + 1
+		}
+		label := Label(t.Theme, &t.Theme.UnitEditor.UnitList.Name, item.Title)
 		switch {
-		case item.Disabled:
+		case item.Disabled, item.Inner:
 			label.LabelStyle = t.Theme.UnitEditor.UnitList.Disabled
 		case signalError.Err != nil && signalError.UnitIndex == y:
 			label.Color = t.Theme.UnitEditor.UnitList.Error
 		}
 		gtx.Constraints = layout.Exact(image.Pt(rowTitleWidth, cellHeight))
 		sr.Layout(gtx)
+		if item.Module { // the chevron that folds and unfolds it, above its name
+			o := op.Offset(image.Pt(rowTitleSignalWidth, 0)).Push(gtx.Ops)
+			pe.layoutFold(gtx, &pe.rackFolds, y, item.Unfolded, t.Theme.UnitEditor.UnitList.LabelWidth)
+			o.Pop()
+		}
 		defer op.Affine(f32.Affine2D{}.Rotate(f32.Pt(0, 0), -90*math.Pi/180).Offset(f32.Point{X: float32(rowTitleSignalWidth), Y: float32(cellHeight)})).Push(gtx.Ops).Pop()
 		gtx.Constraints = layout.Exact(image.Pt(cellHeight, rowTitleLabelWidth))
 		label.Layout(gtx)
@@ -346,7 +398,7 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 			return D{}
 		}
 		selection := pe.paramTable.Table.Range()
-		if selection.Contains(point) {
+		if selection.Contains(point) && !t.Unit().Item(y).Inner {
 			color := t.Theme.Selection.Inactive
 			if gtx.Focused(pe.paramTable) {
 				color = t.Theme.Selection.Active
@@ -394,13 +446,19 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 	table.ColumnTitleHeight = 0
 	table.CellWidth = t.Theme.UnitEditor.Width
 	table.CellHeight = t.Theme.UnitEditor.Height
-	if t.preferences.Rack.BufferPreviews {
-		table.RowOverlay = func(gtx C, y int) {
-			if id, ok := t.Unit().Bus(y); ok {
-				pe.layoutBusPreview(gtx, y, id)
-			} else if id, spectrum, ok := t.Unit().Buffer(y); ok {
-				pe.layoutUnitPreview(gtx, y, id, spectrum)
-			}
+	table.RowOverlay = func(gtx C, y int) {
+		if t.Unit().Item(y).Inner {
+			// the units that a module unit stands for are faint: they
+			// cannot be changed here
+			paint.FillShape(gtx.Ops, innerFade, clip.Rect{Max: gtx.Constraints.Min}.Op())
+		}
+		if !t.preferences.Rack.BufferPreviews {
+			return
+		}
+		if id, ok := t.Unit().Bus(y); ok {
+			pe.layoutBusPreview(gtx, y, id)
+		} else if id, spectrum, ok := t.Unit().Buffer(y); ok {
+			pe.layoutUnitPreview(gtx, y, id, spectrum)
 		}
 	}
 	pe.drawBackGround(gtx)
@@ -437,11 +495,73 @@ func (pe *InstrumentEditor) drawSignals(gtx C, rowTitleWidth int) {
 func (pe *InstrumentEditor) drawBackGround(gtx C) {
 	t := TrackerFromContext(gtx)
 	rowP := pe.paramTable.RowTitleList.List.Position
+	height := gtx.Dp(t.Theme.UnitEditor.Height)
 	defer op.Offset(image.Pt(0, -rowP.Offset)).Push(gtx.Ops).Pop()
-	for range pe.paramTable.RowTitleList.List.Position.Count + 1 {
+	for i := range rowP.Count + 1 {
+		if u := t.Unit().Item(rowP.First + i); u.Inner {
+			drawInnerBackground(gtx, image.Pt(gtx.Constraints.Max.X, height), u.First, u.Last)
+		}
 		paint.FillShape(gtx.Ops, t.Theme.UnitEditor.Divider, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, 1)}.Op())
-		op.Offset(image.Pt(0, gtx.Dp(t.Theme.UnitEditor.Height))).Add(gtx.Ops)
+		op.Offset(image.Pt(0, height)).Add(gtx.Ops)
 	}
+}
+
+// The rows of the units that an unfolded module unit stands for are set into
+// the rack and the unit list: darker, with a shadow falling into them from
+// the module unit above and a faint one at their end. In the rack they are
+// also faded, with innerFade drawn over them, as they cannot be changed.
+var (
+	innerBackground = color.NRGBA{R: 0, G: 0, B: 0, A: 90}
+	innerShadow     = color.NRGBA{R: 0, G: 0, B: 0, A: 120}
+	innerFade       = color.NRGBA{R: 16, G: 16, B: 16, A: 150}
+)
+
+// drawInnerBackground draws the background of a row of the size, first
+// and last telling whether it is the first and the last row under its module
+// unit.
+func drawInnerBackground(gtx C, size image.Point, first, last bool) {
+	paint.FillShape(gtx.Ops, innerBackground, clip.Rect{Max: size}.Op())
+	shadow := func(y0, y1 int, from, to color.NRGBA) {
+		defer clip.Rect{Min: image.Pt(0, min(y0, y1)), Max: image.Pt(size.X, max(y0, y1))}.Push(gtx.Ops).Pop()
+		paint.LinearGradientOp{Stop1: f32.Pt(0, float32(y0)), Color1: from, Stop2: f32.Pt(0, float32(y1)), Color2: to}.Add(gtx.Ops)
+		paint.PaintOp{}.Add(gtx.Ops)
+	}
+	if first {
+		shadow(0, min(gtx.Dp(7), size.Y), innerShadow, color.NRGBA{})
+	}
+	if last {
+		faint := innerShadow
+		faint.A /= 2
+		shadow(size.Y, max(size.Y-gtx.Dp(4), 0), faint, color.NRGBA{})
+	}
+	// the left edge, down all the rows
+	defer clip.Rect{Max: image.Pt(min(gtx.Dp(5), size.X), size.Y)}.Push(gtx.Ops).Pop()
+	paint.LinearGradientOp{Stop1: f32.Pt(0, 0), Color1: innerShadow, Stop2: f32.Pt(float32(gtx.Dp(5)), 0), Color2: color.NRGBA{}}.Add(gtx.Ops)
+	paint.PaintOp{}.Add(gtx.Ops)
+}
+
+// layoutFold lays out the chevron of the module unit on a row, in a square
+// of the given size: it points right when the module unit is folded and down
+// when it is unfolded, and clicking it folds or unfolds the module unit.
+func (pe *InstrumentEditor) layoutFold(gtx C, clicks *[]Clickable, row int, unfolded bool, size unit.Dp) D {
+	t := TrackerFromContext(gtx)
+	for len(*clicks) <= row {
+		*clicks = append(*clicks, Clickable{})
+	}
+	click := &(*clicks)[row]
+	for click.Clicked(gtx) {
+		t.Unit().ToggleUnfold(row).Do()
+	}
+	icon := icons.NavigationChevronRight
+	if unfolded {
+		icon = icons.NavigationExpandMore
+	}
+	px := gtx.Dp(size)
+	gtx.Constraints = layout.Exact(image.Pt(px, px))
+	return click.Layout(gtx, func(gtx C) D {
+		t.Theme.Icon(icon).Layout(gtx, t.Theme.IconButton.Enabled.Color)
+		return D{Size: image.Pt(px, px)}
+	})
 }
 
 func (pe *InstrumentEditor) drawRemoteSendSignal(gtx C, wire tracker.Wire, row int) {
@@ -530,11 +650,55 @@ func (pe *InstrumentEditor) layoutFooter(gtx C) D {
 	copyUnitBtn := IconBtn(t.Theme, &t.Theme.IconButton.Enabled, pe.CopyUnitBtn, icons.ContentContentCopy, pe.copyHint)
 	disableUnitBtn := ToggleIconBtn(t.Unit().Disabled(), t.Theme, pe.DisableUnitBtn, icons.AVVolumeUp, icons.AVVolumeOff, pe.disableUnitHint, pe.enableUnitHint)
 	clearUnitBtn := IconBtn(t.Theme, &t.Theme.IconButton.Enabled, pe.ClearUnitBtn, icons.ContentClear, "Clear unit")
+	makeModuleBtn := ActionIconBtn(t.Unit().MakeModule(), t.Theme, pe.makeModuleBtn, icons.ActionExtension, pe.makeModuleHint)
+	openModuleBtn := ActionIconBtn(t.Unit().OpenModule(), t.Theme, pe.openModuleBtn, icons.ActionOpenInNew, pe.openModuleHint)
+	inlineModuleBtn := ActionIconBtn(t.Unit().InlineModule(), t.Theme, pe.inlineModuleBtn, icons.NavigationUnfoldMore, "Replace the module unit with\nthe units of its module")
+	uniqueModuleBtn := ActionIconBtn(t.Unit().UniqueModule(), t.Theme, pe.uniqueModuleBtn, icons.CommunicationCallSplit, "Give the module unit a copy\nof its module of its own")
+	unfoldBtn := ToggleIconBtn(t.Unit().Unfold(), t.Theme, pe.unfoldBtn, icons.NavigationChevronRight, icons.NavigationExpandMore, pe.unfoldHint, pe.foldHint)
+	// what the units come to: of an instrument, the units it has once its
+	// module units are expanded; of a module, its inputs and outputs
+	status := func(gtx C) D {
+		var text string
+		style := t.Theme.InstrumentEditor.UnitList.Comment
+		if t.Module().Editing() {
+			if t.Module().List().Count() == 0 {
+				return D{}
+			}
+			outputs, err := t.Module().Outputs()
+			text = fmt.Sprintf("%d in → %d out", t.Module().Inputs().Value(), outputs)
+			if err != nil {
+				text = err.Error()
+				style.Color = t.Theme.InstrumentEditor.UnitList.Error
+			}
+		} else {
+			count, limit := t.Unit().ExpandedUnits()
+			text = fmt.Sprintf("%d/%d units", count, limit)
+			if count > limit {
+				style.Color = t.Theme.InstrumentEditor.UnitList.Error
+			}
+		}
+		return layout.Inset{Right: unit.Dp(10)}.Layout(gtx, Label(t.Theme, &style, text).Layout)
+	}
+	moduleBtns := func(gtx C) D {
+		if !t.Unit().OpenModule().Enabled() { // not a module unit
+			return D{}
+		}
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(unfoldBtn.Layout),
+			layout.Rigid(openModuleBtn.Layout),
+			layout.Rigid(inlineModuleBtn.Layout),
+			layout.Rigid(uniqueModuleBtn.Layout),
+		)
+	}
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(deleteUnitBtn.Layout),
 		layout.Rigid(clearUnitBtn.Layout),
 		layout.Rigid(disableUnitBtn.Layout),
 		layout.Rigid(copyUnitBtn.Layout),
+		layout.Rigid(makeModuleBtn.Layout),
+		layout.Rigid(moduleBtns),
+		layout.Flexed(1, func(gtx C) D { return D{Size: gtx.Constraints.Min} }),
+		layout.Rigid(status),
 	)
 }
 

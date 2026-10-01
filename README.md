@@ -394,6 +394,16 @@ their instrument; in the tracker, `mcspread` creates a bus, which new mc units
 below it use, and the rack shows the level of each channel of the bus after
 each mc unit.
 
+For patterns of units used again and again, e.g. a supersaw or a reverb, a
+song can have modules: named blocks of units with inputs, outputs and up to 8
+parameters. A `module` unit in an instrument, or in another module, stands for
+the units of a module, with its own state, and sets the parameters of the
+module, which the parameters of its units are bound to; sends to the module
+unit modulate them. Modules are expanded before the song is played or
+compiled, so they cost nothing in the player: the units of each module unit
+count towards the units of its instrument. In the tracker, the Modules tab
+edits them; see [FORK.md](FORK.md#modules).
+
 `bufread`, `bufwrite`, `spawn`, `arg`, `window`, `ott`, the spectral units,
 the mc units, bandlimited oscillators and curved envelopes are WebAssembly only
 for now; envelopes with `curve` 0 compile for x86 as before.

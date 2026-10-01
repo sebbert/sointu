@@ -13,6 +13,9 @@
 - { key: "Z", shortcut: true, action: "Undo" }
 - { key: "Y", shortcut: true, action: "Redo" }
 - { key: "D", shortcut: true, action: "UnitDisabledToggle" }
+- { key: "G", shortcut: true, shift: true, action: "OpenModule" }
+- { key: "G", shortcut: true, alt: true, action: "UnfoldModuleToggle" }
+- { key: "G", shortcut: true, action: "MakeModule" }
 - { key: "L", shortcut: true, action: "LoopToggle" }
 - { key: "N", shortcut: true, action: "NewSong" }
 - { key: "S", shortcut: true, action: "SaveSong" }

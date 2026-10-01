@@ -70,14 +70,13 @@ func (s *scopeTriggerChannel) StringOf(value int) string {
 func (s *ScopeModel) Waveform() RingBuffer[[2]float32] { return s.scopeData.waveForm }
 
 func (s *ScopeModel) Envelope() (Envelope, bool) {
-	i := s.d.InstrIndex
-	u := s.d.UnitIndex
-	if i < 0 || i >= len(s.d.Song.Patch) || u < 0 || u >= len(s.d.Song.Patch[i].Units) || s.d.Song.Patch[i].Units[u].Type != "envelope" {
+	unit := (*Model)(s).selectedUnit()
+	if unit == nil || unit.Type != "envelope" {
 		return Envelope{}, false
 	}
 	var ret Envelope = Envelope{{Position: math.MaxInt}, {Position: math.MaxInt}, {Position: math.MaxInt}, {Position: math.MaxInt}, {Position: math.MaxInt}}
 	releasePos := len(s.scopeData.waveForm.Buffer) / 2
-	p := s.d.Song.Patch[s.d.InstrIndex].Units[s.d.UnitIndex].Parameters
+	p := unit.Parameters
 	attack := nonLinearMap((float32)(p["attack"]) / 128.0)
 	decay := nonLinearMap((float32)(p["decay"]) / 128.0)
 	sustain := (float32)(p["sustain"]) / 128.0

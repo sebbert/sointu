@@ -24,8 +24,12 @@ type (
 		Highlight bool
 	}
 
+	// RailError is an error in the signal rails: of unit UnitIndex of
+	// instrument InstrIndex, or of the module with the index Module-1, if
+	// Module is not 0.
 	RailError struct {
 		InstrIndex, UnitIndex int
+		Module                int
 		Err                   error
 	}
 
@@ -35,6 +39,7 @@ type (
 	derivedModelData struct {
 		// map Unit by ID, other entities by their respective index
 		patch         []derivedInstrument
+		modules       []derivedInstrument // like patch, for the units of the modules
 		tracks        []derivedTrack
 		railError     RailError
 		searchResults []string
@@ -47,6 +52,9 @@ type (
 		params      [][]Parameter
 		paramsWidth int
 		title       string
+		// expandedUnits is the number of units of the instrument once its
+		// module units are expanded
+		expandedUnits int
 	}
 
 	derivedTrack struct {
@@ -73,6 +81,7 @@ func (m *Model) updateDeriveData(changeType ChangeType) {
 		}
 	}
 	setSliceLength(&m.derived.patch, len(m.d.Song.Patch))
+	setSliceLength(&m.derived.modules, len(m.d.Song.Modules))
 	if changeType&PatchChange != 0 {
 		m.updateParams()
 		m.updateRails()
@@ -101,39 +110,58 @@ func (m *Model) buildInstrumentTitles() {
 
 func (m *Model) updateParams() {
 	for id := range m.delayFree { // forget the units that are gone
-		if i, u, err := m.d.Song.Patch.FindUnit(id); err != nil || m.d.Song.Patch[i].Units[u].Type != "delay" {
+		if u := m.d.Song.FindUnit(id); u == nil || u.Type != "delay" {
 			delete(m.delayFree, id)
 		}
 	}
-	for i, instr := range m.d.Song.Patch {
-		for u := range instr.Units {
+	for units := range m.d.Song.UnitLists() {
+		for u := range units {
 			// a delay unit seen for the first time: loaded, pasted or added
-			if unit := &instr.Units[u]; unit.Type == "delay" {
+			if unit := &units[u]; unit.Type == "delay" {
 				if _, ok := m.delayFree[unit.ID]; !ok {
 					m.setDelayFree(unit, delayOffGrid(unit))
 				}
 			}
 		}
-		setSliceLength(&m.derived.patch[i].params, len(instr.Units))
-		paramsWidth, previews := 0, false
-		for u := range instr.Units {
-			p := m.deriveParams(&instr.Units[u], m.derived.patch[i].params[u])
-			m.derived.patch[i].params[u] = p
-			paramsWidth = max(paramsWidth, len(p))
-			_, _, ok := unitBuffer(&instr.Units[u])
-			previews = previews || ok
-		}
-		if previews { // room for the previews at the right edge
-			paramsWidth += UnitPreviewCells
-		}
-		m.derived.patch[i].paramsWidth = paramsWidth
 	}
+	for i, instr := range m.d.Song.Patch {
+		m.updateParamsOf(&m.derived.patch[i], instr.Units)
+	}
+	for i, mod := range m.d.Song.Modules {
+		m.updateParamsOf(&m.derived.modules[i], mod.Units)
+	}
+}
+
+func (m *Model) updateParamsOf(d *derivedInstrument, units []sointu.Unit) {
+	setSliceLength(&d.params, len(units))
+	paramsWidth, previews := 0, false
+	for u := range units {
+		p := m.deriveParams(&units[u], d.params[u])
+		d.params[u] = p
+		paramsWidth = max(paramsWidth, len(p))
+		_, _, ok := unitBuffer(&units[u])
+		previews = previews || ok
+	}
+	if previews { // room for the previews at the right edge
+		paramsWidth += UnitPreviewCells
+	}
+	d.paramsWidth = paramsWidth
 }
 
 func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 	ret = ret[:0] // reset the slice
 	unitType, ok := sointu.UnitTypes[unit.Type]
 	if !ok {
+		return ret
+	}
+	if unit.Type == "module" {
+		// the module, and the parameters that it has
+		ret = append(ret, Parameter{m: m, unit: unit, up: &unitType.Params[0], vtable: &moduleParameter{}})
+		if index, ok := m.d.Song.Modules.Find(unit.Parameters["module"]); ok {
+			for k := 1; k <= len(m.d.Song.Modules[index].Params) && k <= sointu.MaxModuleParams; k++ {
+				ret = append(ret, m.moduleArg(unit, index, k, &unitType.Params[k]))
+			}
+		}
 		return ret
 	}
 	portIndex := 0
@@ -286,12 +314,40 @@ func (m *Model) updateRails() {
 	scratchArray := [32]stackElem{}
 	scratch := scratchArray[:0]
 	m.derived.railError = RailError{}
+	modules := m.d.Song.Modules
+	// the modules: their units start with the inputs of the module
+	for i, mod := range modules {
+		d := &m.derived.modules[i]
+		setSliceLength(&d.rails, len(mod.Units))
+		depth := max(mod.Inputs, 0)
+		maxWidth := depth
+		for u := range mod.Units {
+			stackUse := modules.StackUse(&mod.Units[u])
+			numInputs := len(stackUse.Inputs)
+			if depth < numInputs {
+				if m.derived.railError == (RailError{}) {
+					m.derived.railError = RailError{Module: i + 1, UnitIndex: u,
+						Err: fmt.Errorf("%s unit in module %s needs %d inputs, but got only %d", mod.Units[u].Type, mod.Name, numInputs, depth)}
+				}
+				depth = 0
+			} else {
+				depth -= numInputs
+			}
+			d.rails[u] = Rail{PassThrough: depth, StackUse: stackUse, Send: !mod.Units[u].Disabled && mod.Units[u].Type == "send"}
+			maxWidth = max(maxWidth, depth+max(numInputs, stackUse.NumOutputs))
+			depth += stackUse.NumOutputs
+		}
+		d.railWidth = maxWidth
+		if _, err := modules.Outputs(i); err != nil && m.derived.railError == (RailError{}) {
+			m.derived.railError = RailError{Module: i + 1, UnitIndex: -1, Err: err} // e.g. using itself
+		}
+	}
 	for i, instr := range m.d.Song.Patch {
 		setSliceLength(&m.derived.patch[i].rails, len(instr.Units))
 		start := len(scratch)
 		maxWidth := 0
 		for u, unit := range instr.Units {
-			stackUse := unit.StackUse()
+			stackUse := modules.StackUse(&unit)
 			numInputs := len(stackUse.Inputs)
 			if len(scratch) < numInputs {
 				if m.derived.railError == (RailError{}) {
@@ -316,6 +372,7 @@ func (m *Model) updateRails() {
 			}
 		}
 		m.derived.patch[i].railWidth = maxWidth
+		m.derived.patch[i].expandedUnits = modules.NumExpandedUnits(instr.Units)
 		diff := len(scratch) - start
 		if instr.NumVoices > 1 && diff != 0 {
 			if diff < 0 {
@@ -363,6 +420,27 @@ func (m *Model) updateWires() {
 	for i := range m.d.Song.Patch {
 		m.derived.patch[i].wires = m.derived.patch[i].wires[:0] // reset the wires
 	}
+	// in a module, only the sends to its own units are drawn
+	for i, mod := range m.d.Song.Modules {
+		d := &m.derived.modules[i]
+		d.wires = d.wires[:0]
+		for u, unit := range mod.Units {
+			if unit.Disabled || unit.Type != "send" {
+				continue
+			}
+			wire := Wire{From: u, FromSet: true, Hint: "To a unit outside the module"}
+			for tU, target := range mod.Units {
+				if target.ID != unit.Parameters["target"] || target.Disabled {
+					continue
+				}
+				if tX, ok := m.paramColumn(d, tU, unit.Parameters["port"]); ok {
+					wire = Wire{From: u, FromSet: true, To: Point{X: tX, Y: tU}, ToSet: true}
+				}
+				break
+			}
+			d.wires = append(d.wires, wire)
+		}
+	}
 	for i, instr := range m.d.Song.Patch {
 		for u, unit := range instr.Units {
 			if unit.Disabled || unit.Type != "send" {
@@ -372,10 +450,11 @@ func (m *Model) updateWires() {
 			if err != nil {
 				continue
 			}
-			up, tX, ok := sointu.FindParamForModulationPort(m.d.Song.Patch[tI].Units[tU].Type, unit.Parameters["port"])
+			tX, ok := m.paramColumn(&m.derived.patch[tI], tU, unit.Parameters["port"])
 			if !ok {
 				continue
 			}
+			portName := m.derived.patch[tI].params[tU][tX].Name()
 			if tI == i {
 				// local send
 				m.derived.patch[i].wires = append(m.derived.patch[i].wires, Wire{
@@ -389,7 +468,7 @@ func (m *Model) updateWires() {
 				m.derived.patch[i].wires = append(m.derived.patch[i].wires, Wire{
 					From:    u,
 					FromSet: true,
-					Hint:    fmt.Sprintf("To instrument #%d (%s), unit #%d (%s), port %s", tI, m.d.Song.Patch[tI].Name, tU, m.d.Song.Patch[tI].Units[tU].Type, up.Name),
+					Hint:    fmt.Sprintf("To instrument #%d (%s), unit #%d (%s), port %s", tI, m.d.Song.Patch[tI].Name, tU, m.d.Song.Patch[tI].Units[tU].Type, portName),
 				})
 				toPt := Point{X: tX, Y: tU}
 				hint := fmt.Sprintf("From instrument #%d (%s), send #%d", i, m.d.Song.Patch[i].Name, u)
@@ -408,4 +487,18 @@ func (m *Model) updateWires() {
 			}
 		}
 	}
+}
+
+// paramColumn returns the column of the parameter with the given port of
+// unit u, in the derived parameters d of its instrument or module.
+func (m *Model) paramColumn(d *derivedInstrument, u, port int) (int, bool) {
+	if u < 0 || u >= len(d.params) {
+		return 0, false
+	}
+	for x := range d.params[u] {
+		if p, ok := d.params[u][x].Port(); ok && p == port {
+			return x, true
+		}
+	}
+	return 0, false
 }

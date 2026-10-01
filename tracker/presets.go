@@ -164,6 +164,7 @@ func (m *presetResultList) SetSelected(i int) {
 		m.d.Song.Patch = append(m.d.Song.Patch, defaultInstrument.Copy())
 	}
 	newInstr := m.presetData.cache.results[i].instr.Copy()
+	(*Model)(m).importModules(m.presetData.cache.results[i].modules, newInstr.Units)
 	(*Model)(m).assignUnitIDs(newInstr.Units)
 	(*Model)(m).assignBuses(newInstr.Units)
 	m.d.Song.Patch[m.d.InstrIndex].Name = newInstr.Name // only copy the relevant fields to preserve the  user defined values e.g. NumVoices and MIDI configuration
@@ -225,7 +226,8 @@ func (m *overwriteUserPreset) Do() {
 	name := instrumentNameToFilename(instr.Name)
 	fileName := filepath.Join(userPresetsDir, name+".yml")
 	os.MkdirAll(userPresetsDir, 0755)
-	data, err := yaml.Marshal(&instr)
+	// with the modules that its units use
+	data, err := yaml.Marshal(&instrumentFile{Instrument: instr, Modules: (*Model)(m).modulesUsedBy(instr.Units)})
 	if err != nil {
 		return
 	}
@@ -287,6 +289,7 @@ type (
 		user       bool
 		needsGmDls bool
 		instr      sointu.Instrument
+		modules    sointu.Modules // the modules that the units of instr use
 	}
 
 	presetCache struct {
@@ -396,11 +399,12 @@ func (m *presetData) loadPresetsFromFs(fsys fs.FS, userDefined bool, seenDir map
 		if err != nil {
 			return nil
 		}
-		var instr sointu.Instrument
+		var file instrumentFile
 
 		dec := yaml.NewDecoder(bytes.NewReader(data))
 		dec.KnownFields(true)
-		if dec.Decode(&instr) == nil {
+		if dec.Decode(&file) == nil {
+			instr := file.Instrument
 			noExt := path[:len(path)-len(filepath.Ext(path))]
 			splitted := splitPath(noExt)
 			splitted = splitted[1:] // remove "presets" from the path
@@ -410,6 +414,7 @@ func (m *presetData) loadPresetsFromFs(fsys fs.FS, userDefined bool, seenDir map
 				dir:        dir,
 				user:       userDefined,
 				instr:      instr,
+				modules:    file.Modules,
 				needsGmDls: checkNeedsGmDls(instr),
 			}
 			if dir != "" {

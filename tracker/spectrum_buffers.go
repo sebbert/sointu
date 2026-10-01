@@ -20,8 +20,8 @@ import (
 // It runs inside the change, so undo restores the buffers with the units.
 func (m *Model) fixSpectrumBuffers() {
 	remap := map[int]int{} // IDs of audio buffers written as spectra -> new spectrum buffers
-	for i := range m.d.Song.Patch {
-		for _, u := range m.d.Song.Patch[i].Units {
+	for units := range m.d.Song.UnitLists() {
+		for _, u := range units {
 			if !sointu.WritesSpectrum(u.Type) {
 				continue
 			}
@@ -40,8 +40,8 @@ func (m *Model) fixSpectrumBuffers() {
 		}
 	}
 	used := map[int]bool{}
-	for i := range m.d.Song.Patch {
-		for _, u := range m.d.Song.Patch[i].Units {
+	for units := range m.d.Song.UnitLists() {
+		for _, u := range units {
 			for _, p := range sointu.SpectrumBufferParams(u.Type) {
 				if id, ok := remap[u.Parameters[p]]; ok {
 					u.Parameters[p] = id
@@ -67,7 +67,7 @@ func (m *Model) fixSpectrumBuffers() {
 // written by more than one unit.
 func (m *Model) warnSpectral() {
 	writers := map[int]int{}
-	for i, instr := range m.d.Song.Patch {
+	for i, instr := range m.runPatch() {
 		for _, u := range instr.Units {
 			if u.Disabled || len(sointu.SpectrumBufferParams(u.Type)) == 0 {
 				continue
@@ -106,8 +106,8 @@ func (m *Model) addSpectrumBuffer(id int) int {
 func (m *Model) spectrumSize(id int) (size, channels int, ok bool) {
 	for range 8 { // copies of copies
 		found := false
-		for _, instr := range m.d.Song.Patch {
-			for _, u := range instr.Units {
+		for units := range m.d.Song.UnitLists() {
+			for _, u := range units {
 				if u.Disabled || u.Parameters["buffer"] != id {
 					continue
 				}
@@ -132,8 +132,7 @@ func (m *Model) spectrumSize(id int) (size, channels int, ok bool) {
 // a spectrum at the given position should use: the spectrum written last
 // before it in its instrument, or else the first spectrum buffer of the song,
 // or 0.
-func (m *Model) defaultSpectrumBuffer(instrIndex, unitIndex int) int {
-	units := m.d.Song.Patch[instrIndex].Units
+func (m *Model) defaultSpectrumBuffer(units []sointu.Unit, unitIndex int) int {
 	for i := min(unitIndex, len(units)) - 1; i >= 0; i-- {
 		if sointu.WritesSpectrum(units[i].Type) {
 			return units[i].Parameters["buffer"]
@@ -150,8 +149,8 @@ func (m *Model) defaultSpectrumBuffer(instrIndex, unitIndex int) int {
 // spectrumBufferUsed reports whether a unit refers to the spectrum buffer
 // with the given ID.
 func (m *Model) spectrumBufferUsed(id int) bool {
-	for _, instr := range m.d.Song.Patch {
-		for _, u := range instr.Units {
+	for units := range m.d.Song.UnitLists() {
+		for _, u := range units {
 			for _, p := range sointu.SpectrumBufferParams(u.Type) {
 				if u.Parameters[p] == id {
 					return true

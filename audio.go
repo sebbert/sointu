@@ -177,6 +177,13 @@ func PlayWithBuffers(synther Synther, song Song, buffers map[int]BufferAudio, pr
 	if err != nil {
 		return nil, err
 	}
+	if song.HasModules() {
+		// the synths only know the units the module units stand for
+		var expansion *Expansion
+		if song, expansion = song.Expand(); len(expansion.Problems) > 0 {
+			return nil, fmt.Errorf("sointu.Play failed: could not expand the modules: %w", errors.Join(expansion.Problems...))
+		}
+	}
 	synth, err := synther.Synth(song.Patch, song.BPM)
 	if err != nil {
 		return nil, fmt.Errorf("sointu.Play failed: %v", err)

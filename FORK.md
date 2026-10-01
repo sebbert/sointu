@@ -1,7 +1,8 @@
 # Changes in the sebbert-custom branch
 
 This branch of Sointu adds macOS and CLAP plugins, audio samples and buffers,
-granular synthesis, spectral processing and up to 255 voices. Most of the new
+granular synthesis, spectral processing, modules (reusable blocks of units)
+and up to 255 voices. Most of the new
 synthesis features exist only in the Go synth and the WebAssembly player; the
 x86 players (`vm/compiler/templates/amd64-386`) and the native bridge were left
 behind on purpose. The [x86 backend](#updating-the-x86-backend) section lists
@@ -46,6 +47,8 @@ sounding the same (`addedParameters` in `patch.go`).
     tracker created for units and deletes with them.
   - A buffer with `Bus` is a bus of 8 channels for the mc units.
 - `Song.EncodingPresets`: named ffmpeg encodings that samples share.
+- `Song.Modules`: reusable blocks of units, and `Unit.Bind` in their units.
+  See [Modules](#modules).
 
 ## New units
 
@@ -86,6 +89,104 @@ leaves, the high band what is left after that, so the bands sum back to the
 input, up to rounding. The preset's input gain
 (+5.2 dB) and output gains (about +10.3, +5.7, +10.3 dB) are not built in,
 so that `upward` and `downward` at 0 pass the input through.
+
+## Modules
+
+A module is a reusable block of units: `Song.Modules`, each with an `ID`, a
+name, the number of signals its units expect on the stack (`Inputs`), up to
+8 parameters and its units. A unit of the type `module` in an instrument, or
+in another module, stands for the units of a module: its parameter `module`
+is the ID of the module, and `p1` to `p8` set the parameters of the module.
+
+```yaml
+modules:
+    - id: 1
+      name: saws
+      params:
+        - {name: detune, default: 70}
+      units:
+        - {type: oscillator, id: 11, parameters: {detune: 70, type: 1, ...}, bind: {detune: 1}}
+        - {type: oscillator, id: 12, parameters: {detune: 58, type: 1, ...}}
+        - {type: addp, id: 13, parameters: {stereo: 0}}
+patch:
+    - numvoices: 4
+      units:
+        - {type: module, id: 20, parameters: {module: 1, p1: 80}}
+        ...
+```
+
+**Expansion.** The synths and the compiled players never see modules:
+`Song.Expand` (`module.go`) replaces every module unit with a copy of the
+units of its module, so each module unit has its own state in every voice,
+and the copies count towards the 63 units of an instrument. The tracker's
+player, `sointu.Play` and the compiler expand the song first. Nothing in
+the VM, the wasm player or the x86 players changed: a song with modules
+compiles to exactly the player of the same song written without them, also
+for x86 if its units compile for x86, and songs without modules compile to
+exactly the same players as before. The `module` unit has no opcode
+(`UnitType.Virtual`).
+
+- **Parameters.** `Unit.Bind` of a unit of a module binds its parameters to
+  the parameters of the module: the name of the parameter to the number of
+  the module parameter, from 1. The copy gets the value of the module unit
+  (the default of the module parameter if the unit does not set it), clamped
+  to the range of the bound parameter. Any parameter that can be set or
+  modulated can be bound, also those that cannot be modulated, like the type
+  of an oscillator or a buffer; not `stereo`, the `args` and `mode` of
+  `spawn`, and of `send` only `amount`, as they change how the unit uses the
+  stack or where a send goes (`CanBind`). The delay times of a `delay` unit
+  can be bound too, as `delaytime1`, `delaytime2`, ... in the order of its
+  `varargs`.
+- **Scaled bindings.** A binding can map the module parameter onto a range
+  of its own: `bind: {frequency: {p: 1, min: 40, max: 100}}`. The module
+  parameter then goes from 0 to 128, and the bound parameter gets
+  `min` + (`max` - `min`)·value/128, rounded: `min` at 0, `max` at 128,
+  which may be less than `min`. So one module parameter can move several
+  parameters over different ranges, some of them the other way. A send to
+  the module unit modulates each bound parameter by that much less: its
+  amount, as (amount - 64)/64, is multiplied by (`max` - `min`)/128 and
+  rounded to the nearest of the 64 steps of an amount, which is coarse for
+  weak sends into narrow ranges (through modules using modules, by the
+  product of the scales).
+- **Range and display.** A module parameter takes its range and display
+  from the first parameter bound to it: the range of that parameter, or if
+  that binding is scaled, 0 to 128, displayed as the values it is mapped
+  to. `display` (`type.parameter`, e.g. `filter.frequency`) of the module
+  parameter overrides the display.
+- **Sends.** The copies get new IDs, above every ID of the song. A send in a
+  module to a unit of the module goes to the copy made with it; a send to a
+  unit outside stays as it is. A mono send to a module unit, port k-1,
+  modulates the parameters bound to module parameter k: it becomes a send to
+  each of them, only the last one popping, and each of those sends counts as
+  a unit. With nothing bound that can be modulated, a popping send becomes a
+  `pop`. A stereo send also modulates the parameters of the next module
+  parameter with its other channel. Where the two module parameters are
+  bound to two ports next to each other of one unit, like `left` and `right`
+  of a `receive`, it stays one stereo send. The others become mono sends of
+  the top signal, an `xch`, mono sends of the other signal, an `xch`, and a
+  stereo `pop` if it pops. A parameter
+  that can only be modulated, like the inputs of `receive`, can be bound
+  too: signals then reach the module through sends.
+- **Buffers.** A buffer that the tracker created (`Auto`: spectra and buses)
+  and that only the units of one module use belongs to that module. The
+  first module unit using the module gets the buffer itself, every further
+  one a clone, so that two reverbs made of one module do not share a bus.
+  Other buffers are shared, and a buffer parameter can be bound instead.
+- **Stack.** A module unit takes the inputs of its module and leaves its
+  outputs: what its units leave, given the inputs (`Modules.Outputs`).
+- **Modules using modules** are expanded too. A module cannot use itself.
+
+`Expansion.Problems` lists what cannot be expanded as meant, and is left
+out: modules using themselves, module units whose module is missing,
+bindings that are not allowed, and sends from outside a module to one of
+its units, which are ambiguous (send to the
+module unit instead). The compiler and `sointu.Play` refuse such songs; the
+tracker shows the first problem and plays the rest.
+
+**Tests.** `module_test.go` (expansion), `vm/compiler/wasm_module_test.go`
+(a song with modules expands to, renders and compiles like the same song
+written without them, for wasm, 386 and amd64, and the wasm player renders
+it like the Go synth) and `tracker/module_test.go`.
 
 ## mc units
 
@@ -346,6 +447,46 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
 - **Warnings:** spectral units and mc units in instruments with several
   voices, spectra with several writers, and buffers, spectra or buses used
   across threads.
+- **Modules tab:** the list of the modules, with the name, the inputs, the
+  outputs and the parameters of the selected one (name and default).
+  Next to it, the unit editor edits the units of the selected module instead
+  of those of the selected instrument; notes still play the selected
+  instrument. The link button of a module parameter binds the parameter
+  under the cursor of the rack to it; a bound parameter shows the name of
+  the module parameter and edits its default. With the cursor on a bound
+  parameter, the Range of its module parameter is the range of that
+  binding: the values the parameter gets at the lowest and the highest
+  value of the module parameter. Changing the range of the first binding
+  changes the default and the values of the module units to keep what they
+  give, as near as the new range allows.
+- **Module units:** a module unit shows the name of its module and its
+  parameters, and sends can target them. Each parameter looks and works
+  like the parameter bound to it: a menu of the buffers, spectra or buses, of
+  the instruments for a spawn target, of note lengths for a delay time
+  following the tempo, a switch, or a knob with the same scale and labels.
+  With a scaled binding it is a knob from 0 to 128, labelled with the value
+  that the bound parameter gets.
+  The buttons under the rack make a module of the selected units (Ctrl+G;
+  its inputs are the signals they take from before them), show the module of
+  a module unit on the Modules tab (Ctrl+Shift+G), replace the module unit
+  with the units of its module, and give it a copy of the module of its own.
+- **Unfolding:** a module unit is like a section that can be collapsed: the
+  chevron on its row in the unit list and the rack, or in the footer
+  (Ctrl+Alt+G), unfolds it. Its inner units then follow it, set into the
+  rack, darker and faint: the units that it stands for, as the synth runs
+  them, with the values it gives the bound parameters and with their
+  previews. The signals run through the module unit into them; those only
+  passing by stay bright. They cannot be changed or selected: the cursor
+  moves past them. Which module units are unfolded is saved with the song
+  (`unfolded` of the unit, a hint like `mute` of an instrument). The footer
+  shows how many of the 63 units the instrument has once expanded.
+- **Module presets:** the Presets menu of the Modules tab saves the selected
+  module, with the modules it uses, as a file in `sointu/modules` of the
+  user's configuration directory, and adds a saved one to the song.
+- **Files:** instrument files, presets and the units and instruments on the
+  clipboard carry the modules they use. Loading them does not add a module
+  that the song already has with the same name and the same content (apart
+  from IDs); another module with a taken name gets a number added.
 - **UI zoom:** Ctrl/Cmd+scroll zooms by the distance scrolled: a step for
   every 50 dp on a trackpad, and for every notch of a mouse wheel
   (`zoom_scroll.go`). Before, every scroll event was a step, which on macOS

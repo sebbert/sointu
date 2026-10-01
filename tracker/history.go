@@ -30,7 +30,7 @@ func (m *historyUndo) Do() {
 	m.undoStack = m.undoStack[:len(m.undoStack)-1]
 	m.prevUndoKind = ""
 	(*Model)(m).updateDeriveData(SongChange)
-	TrySend(m.broker.ToPlayer, any(m.d.Song.Copy()))
+	TrySend(m.broker.ToPlayer, any((*Model)(m).playerSong()))
 	(*Model)(m).notifyChange()
 }
 
@@ -50,7 +50,7 @@ func (m *historyRedo) Do() {
 	m.redoStack = m.redoStack[:len(m.redoStack)-1]
 	m.prevUndoKind = ""
 	(*Model)(m).updateDeriveData(SongChange)
-	TrySend(m.broker.ToPlayer, any(m.d.Song.Copy()))
+	TrySend(m.broker.ToPlayer, any((*Model)(m).playerSong()))
 	(*Model)(m).notifyChange()
 }
 
@@ -116,6 +116,6 @@ func (m *HistoryModel) UnmarshalRecovery(bytes []byte) {
 		}
 	}
 	m.d.ChangedSinceRecovery = false
-	TrySend(m.broker.ToPlayer, any(m.d.Song.Copy()))
+	TrySend(m.broker.ToPlayer, any((*Model)(m).playerSong()))
 	(*Model)(m).updateDeriveData(SongChange)
 }

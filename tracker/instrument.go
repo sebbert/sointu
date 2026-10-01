@@ -112,7 +112,16 @@ type instrumentTab InstrModel
 func (v *instrumentTab) Value() int            { return int(v.d.InstrumentTab) }
 func (v *instrumentTab) Range() RangeInclusive { return RangeInclusive{0, int(NumInstrumentTabs) - 1} }
 func (v *instrumentTab) SetValue(value int) bool {
+	wasEditingModule := (*Model)(v).editingModule()
 	v.d.InstrumentTab = InstrumentTab(value)
+	if (*Model)(v).editingModule() != wasEditingModule {
+		// the unit editor now shows other units: those of the selected
+		// module on the Modules tab, of the selected instrument elsewhere
+		v.d.UnitIndex, v.d.UnitIndex2, v.d.ParamIndex = 0, 0, 0
+		v.d.UnitSearching = false
+		v.d.UnitSearchString = ""
+		v.d.SendSource = 0
+	}
 	return true
 }
 
@@ -456,10 +465,11 @@ func (m *InstrModel) Write(w io.WriteCloser) bool {
 	if _, ok := w.(*os.File); ok {
 		instr2.Name = "" // don't save the instrument name to a file; we'll replace the instruments name with the filename when loading from a file
 	}
+	file := instrumentFile{Instrument: instr2, Modules: (*Model)(m).modulesUsedBy(instr.Units)} // with the modules its units use
 	if extension == ".json" {
-		contents, err = json.Marshal(instr2)
+		contents, err = json.Marshal(file)
 	} else {
-		contents, err = yaml.Marshal(instr2)
+		contents, err = yaml.Marshal(file)
 	}
 	if err != nil {
 		(*Model)(m).Alerts().Add(fmt.Sprintf("Error marshaling an instrument file: %v", err), Error)
@@ -483,16 +493,21 @@ func (m *InstrModel) Read(r io.ReadCloser) bool {
 	}
 	r.Close() // if we can't close the file, it's not a big deal, so ignore the error
 	var instrument sointu.Instrument
+	var file instrumentFile
 	var errJSON, errYaml, err4ki, err4kp error
 	var patch sointu.Patch
-	errJSON = json.Unmarshal(b, &instrument)
+	errJSON = json.Unmarshal(b, &file)
 	if errJSON == nil {
+		instrument = file.Instrument
 		goto success
 	}
-	errYaml = yaml.Unmarshal(b, &instrument)
+	file = instrumentFile{}
+	errYaml = yaml.Unmarshal(b, &file)
 	if errYaml == nil {
+		instrument = file.Instrument
 		goto success
 	}
+	file = instrumentFile{}
 	patch, err4kp = sointu.Read4klangPatch(bytes.NewReader(b))
 	if err4kp == nil {
 		defer (*Model)(m).change("LoadInstrument", PatchChange, MajorChange)()
@@ -515,6 +530,7 @@ success:
 	for len(m.d.Song.Patch) <= m.d.InstrIndex {
 		m.d.Song.Patch = append(m.d.Song.Patch, defaultInstrument.Copy())
 	}
+	(*Model)(m).importModules(file.Modules, instrument.Units)
 	(*Model)(m).assignUnitIDs(instrument.Units)
 	(*Model)(m).assignBuses(instrument.Units)
 	m.d.Song.Patch[m.d.InstrIndex].Name = instrument.Name // only copy the relevant fields to preserve the user defined values e.g. NumVoices and MIDI configuration

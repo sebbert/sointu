@@ -126,6 +126,12 @@ func Param(Parameter tracker.Parameter, th *Theme, paramWidget *ParamState, focu
 
 func (p ParamWidget) Layout(gtx C) D {
 	title := Label(p.Theme, &p.Theme.UnitEditor.Name, p.Parameter.Name())
+	if name, ok := p.Parameter.Bound(); ok {
+		// a parameter of a unit of a module that the module units set:
+		// it shows the parameter of the module it is bound to
+		title.Text = "← " + name
+		title.Color = p.Theme.Knob.Pos.Color
+	}
 	t := TrackerFromContext(gtx)
 	widget := func(gtx C) D {
 		if port, ok := p.Parameter.Port(); t.Params().IsChoosingSendTarget() && ok {

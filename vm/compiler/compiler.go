@@ -3,6 +3,7 @@ package compiler
 import (
 	"bytes"
 	"embed"
+	"errors"
 	"fmt"
 	"math"
 	"path/filepath"
@@ -134,6 +135,14 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 		templates = []string{"player.asm", "player.h", "player.inc"}
 	} else if com.Arch == "wasm" {
 		templates = []string{"player.wat"}
+	}
+	if song.HasModules() {
+		// the players only know the units the module units stand for
+		expanded, expansion := song.Expand()
+		if len(expansion.Problems) > 0 {
+			return nil, nil, fmt.Errorf(`could not expand the modules: %w`, errors.Join(expansion.Problems...))
+		}
+		song = &expanded
 	}
 	features := vm.NecessaryFeaturesFor(song.Patch)
 	for _, unit := range features.Instructions() {
