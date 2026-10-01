@@ -311,8 +311,11 @@ func (mp *ModulePanel) layoutParam(gtx C, t *Tracker, k int) D {
 		source = fmt.Sprintf("like %s of %s", name, typ)
 	}
 	defUpDown := NumUpDown(def, t.Theme, row.def, fmt.Sprintf("The value of new module units: %s\n(%s)", def.String(), source))
-	minUpDown := NumUpDown(m.ParamMin(k), t.Theme, row.min, "Lowest value")
-	maxUpDown := NumUpDown(m.ParamMax(k), t.Theme, row.max, "Highest value")
+	// the range of the binding of the parameter under the cursor, if it is
+	// bound to this parameter
+	minUpDown := NumUpDown(m.BindingAt(k, false), t.Theme, row.min, "The value that the parameter under the\ncursor gets when a module unit sets\nthis parameter to its lowest value")
+	maxUpDown := NumUpDown(m.BindingAt(k, true), t.Theme, row.max, "The value that the parameter under the\ncursor gets when a module unit sets\nthis parameter to its highest value.\nIt may be less than the other one")
+	bound := m.ParamBound(k).Value()
 	bindBtn := ToggleIconBtn(m.ParamBound(k), t.Theme, row.bind, icons.ToggleCheckBoxOutlineBlank, icons.ContentLink,
 		"Bind the parameter under the cursor\nto this parameter of the module",
 		"Unbind the parameter under the cursor")
@@ -337,6 +340,13 @@ func (mp *ModulePanel) layoutParam(gtx C, t *Tracker, k int) D {
 			layout.Rigid(func(gtx C) D { return mp.row(gtx, t, "Default", defUpDown.Layout) }),
 			layout.Rigid(func(gtx C) D {
 				gtx.Constraints.Min.X = gtx.Constraints.Max.X
+				if !bound {
+					// the same height, so that nothing moves with the cursor
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(layout.Spacer{Height: 28}.Layout),
+						layout.Rigid(Label(t.Theme, &t.Theme.InstrumentEditor.UnitList.Comment, "Range: select a parameter bound to it").Layout),
+					)
+				}
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(layout.Spacer{Height: 28}.Layout),
 					layout.Rigid(Label(t.Theme, label, "Range").Layout),

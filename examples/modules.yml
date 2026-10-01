@@ -75,7 +75,7 @@ modules:
           parameters: {}
         - type: filter
           parameters: {frequency: 64, lowpass: 1, resonance: 50}
-          bind: {frequency: 1}
+          bind: {frequency: {p: 1, min: 20, max: 110}}
     - id: 3
       name: verb
       comment: a small feedback delay network on a bus of its own

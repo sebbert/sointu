@@ -140,7 +140,7 @@ func TestModuleEditingAndBinding(t *testing.T) {
 	m.Module().ParamName(1).SetValue("cutoff")
 	bindParam(t, m, 3, "frequency", 1)
 	mod := &m.d.Song.Modules[0]
-	if mod.Units[3].Bind["frequency"] != 1 || mod.Params[0].Default != 40 {
+	if mod.Units[3].Bind["frequency"].Param != 1 || mod.Params[0].Default != 40 {
 		t.Fatalf("bindings %v, default %v", mod.Units[3].Bind, mod.Params[0].Default)
 	}
 	p, _ := m.Module().Param(1)
@@ -503,7 +503,7 @@ func TestModuleUnitParameterKinds(t *testing.T) {
 	bindParam(t, m, 0, "bus", 1)
 	bindParam(t, m, 2, "delaytime", 2)
 	mod = &m.d.Song.Modules[0]
-	if mod.Units[0].Bind["bus"] != 1 || mod.Units[2].Bind["delaytime1"] != 2 || mod.Params[1].Default != 24 {
+	if mod.Units[0].Bind["bus"].Param != 1 || mod.Units[2].Bind["delaytime1"].Param != 2 || mod.Params[1].Default != 24 {
 		t.Fatalf("bindings %v %v, defaults %+v", mod.Units[0].Bind, mod.Units[2].Bind, mod.Params)
 	}
 	// a module unit in the instrument
@@ -617,5 +617,75 @@ func TestModulePresets(t *testing.T) {
 	other.Module().Presets().SetValue(0)
 	if len(other.d.Song.Modules) != 2 {
 		t.Errorf("loading the preset again: %v modules", len(other.d.Song.Modules))
+	}
+}
+
+func TestScaledBinding(t *testing.T) {
+	m, broker := newModuleTestModel(t)
+	makeTestModule(t, m)
+	m.Unit().OpenModule().Do()
+	m.Module().AddParam().Do()
+	m.Module().ParamName(1).SetValue("bright")
+	bindParam(t, m, 3, "frequency", 1) // the filter, at 40
+	bindParam(t, m, 3, "resonance", 1)
+	at0, at128 := m.Module().BindingAt(1, false), m.Module().BindingAt(1, true)
+	if at0.Value() != 0 || at128.Value() != 128 {
+		t.Fatalf("a binding that is not scaled is from %v to %v", at0.Value(), at128.Value())
+	}
+	// the resonance from 100 down to 20: the default, 40, gives it 75
+	at0.SetValue(100)
+	at128.SetValue(20)
+	mod := &m.d.Song.Modules[0]
+	if b := mod.Units[3].Bind["resonance"]; !b.Scaled || b.Min != 100 || b.Max != 20 {
+		t.Fatalf("the binding: %+v", b)
+	}
+	if mod.Params[0].Default != 40 || mod.Units[3].Parameters["frequency"] != 40 || mod.Units[3].Parameters["resonance"] != 75 {
+		t.Errorf("default %v, frequency %v, resonance %v", mod.Params[0].Default, mod.Units[3].Parameters["frequency"], mod.Units[3].Parameters["resonance"])
+	}
+	// the frequency, the first binding, from 30 to 94: the default becomes
+	// the value that keeps it at 40, and the module unit follows
+	m.Instrument().Tab().SetValue(int(InstrumentEditorTab))
+	m.Unit().List().SetSelected(2)
+	arg := m.Params().Item(Point{1, 2})
+	arg.SetValue(62)
+	m.Instrument().Tab().SetValue(int(InstrumentModulesTab))
+	for x := 0; x < m.Params().RowWidth(3); x++ {
+		if p := m.Params().Item(Point{x, 3}); p.Name() == "frequency" {
+			m.Params().SetCursor(Point{x, 3})
+		}
+	}
+	m.Module().BindingAt(1, false).SetValue(30)
+	m.Module().BindingAt(1, true).SetValue(94)
+	mod = &m.d.Song.Modules[0]
+	if b := mod.Units[3].Bind["frequency"]; !b.Scaled || b.Min != 30 || b.Max != 94 {
+		t.Fatalf("the binding of the frequency: %+v", b)
+	}
+	if mod.Params[0].Default != 20 || mod.Units[3].Parameters["frequency"] != 40 {
+		t.Errorf("default %v, frequency %v", mod.Params[0].Default, mod.Units[3].Parameters["frequency"])
+	}
+	if got := m.d.Song.Patch[0].Units[2].Parameters["p1"]; got != 64 { // 30 + 64/2 = 62
+		t.Errorf("the module unit has %v, want 64", got)
+	}
+	filter := playerPatch(t, broker)[0].Units[5]
+	if filter.Parameters["frequency"] != 62 || filter.Parameters["resonance"] != 60 {
+		t.Errorf("the player got frequency %v and resonance %v, want 62 and 60", filter.Parameters["frequency"], filter.Parameters["resonance"])
+	}
+	// the module unit: a knob from 0 to 128, labelled with the frequency
+	m.Instrument().Tab().SetValue(int(InstrumentEditorTab))
+	arg = m.Params().Item(Point{1, 2})
+	if r := arg.Range(); r.Min != 0 || r.Max != 128 || arg.Value() != 64 || arg.Name() != "bright" {
+		t.Errorf("the parameter of the module unit: %v in %v", arg.Value(), r)
+	}
+	plain := m.Params().Item(Point{1, 2})
+	if label := plain.Label(); label == "64" || label == "" {
+		t.Errorf("the knob is labelled %q", label)
+	}
+	// editing the bound frequency in the module sets the default
+	m.Unit().List().SetSelected(2)
+	m.Unit().OpenModule().Do()
+	bound := paramNamed(t, m, 3, "frequency")
+	bound.SetValue(94)
+	if d := m.d.Song.Modules[0].Params[0].Default; d != 128 || m.d.Song.Modules[0].Units[3].Parameters["resonance"] != 20 {
+		t.Errorf("after setting the frequency to 94: default %v, resonance %v", d, m.d.Song.Modules[0].Units[3].Parameters["resonance"])
 	}
 }

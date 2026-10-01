@@ -99,6 +99,7 @@ func TestModulesTabLayout(t *testing.T) {
 	}
 	model.Song().Read(f)
 	model.Module().List().SetSelected(1)
+	model.Params().SetCursor(tracker.Point{X: 1, Y: 3}) // the cutoff of the filter, with a scaled binding
 	frame("6-example-modules-tab")
 	model.Instrument().Tab().SetValue(int(tracker.InstrumentEditorTab))
 	model.Unit().List().SetSelected(2)

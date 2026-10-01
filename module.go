@@ -3,7 +3,10 @@ package sointu
 import (
 	"fmt"
 	"iter"
+	"math"
 	"strconv"
+
+	"gopkg.in/yaml.v3"
 )
 
 type (
@@ -34,20 +37,31 @@ type (
 	}
 
 	// ModuleParam is a parameter of a module. Its range and display are
-	// those of the first parameter bound to it, unless overridden.
+	// those of the first parameter bound to it: the range of that
+	// parameter, or with a scaled Binding, 0 to 128.
 	ModuleParam struct {
 		Name string `yaml:",omitempty"`
 		// Default is the value of new module units.
 		Default int `yaml:",omitempty"`
-		// Min and Max override the range of the parameter, unless both are
-		// 0. Values are still clamped to the range of each parameter bound
-		// to it.
-		Min int `yaml:",omitempty"`
-		Max int `yaml:",omitempty"`
 		// Display overrides how values are displayed: the type of a unit
 		// and the name of its parameter to display the values like, as
 		// "type.parameter", e.g. "filter.frequency".
 		Display string `yaml:",omitempty"`
+	}
+
+	// Binding binds a parameter of a unit of a module to a parameter of
+	// the module: Param, from 1. The bound parameter gets the value that a
+	// module unit gives the module parameter. With Scaled, that value, from
+	// 0 to 128, is mapped onto Min to Max instead: Min at 0, Max at 128,
+	// which may be less than Min. A send to the module unit then modulates
+	// the bound parameter by that much less, or the other way.
+	//
+	// In YAML it is the number of the parameter, or scaled, a map:
+	// {p: 1, min: 40, max: 100}.
+	Binding struct {
+		Param    int
+		Scaled   bool `json:",omitempty"`
+		Min, Max int  `json:",omitempty"`
 	}
 
 	// Modules is the list of modules of a song.
@@ -74,6 +88,65 @@ type (
 		Call, Instrument, Module, Body int
 	}
 )
+
+// Map returns the value that the bound parameter gets for the value of the
+// module parameter.
+func (b Binding) Map(value int) int {
+	if !b.Scaled {
+		return value
+	}
+	value = min(max(value, 0), 128)
+	return b.Min + int(math.Round(float64((b.Max-b.Min)*value)/128))
+}
+
+// Unmap returns the value of the module parameter that gives the bound
+// parameter the given value, or the nearest to it.
+func (b Binding) Unmap(value int) int {
+	if !b.Scaled {
+		return value
+	}
+	if b.Max == b.Min {
+		return 0
+	}
+	return min(max(int(math.Round(float64((value-b.Min)*128)/float64(b.Max-b.Min))), 0), 128)
+}
+
+// Scale returns how much the bound parameter changes with the module
+// parameter: 1 unless scaled.
+func (b Binding) Scale() float64 {
+	if !b.Scaled {
+		return 1
+	}
+	return float64(b.Max-b.Min) / 128
+}
+
+// MarshalYAML implements yaml.Marshaler.
+func (b Binding) MarshalYAML() (any, error) {
+	if !b.Scaled {
+		return b.Param, nil
+	}
+	return struct {
+		P        int `yaml:"p"`
+		Min, Max int
+	}{b.Param, b.Min, b.Max}, nil
+}
+
+// UnmarshalYAML implements yaml.Unmarshaler.
+func (b *Binding) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.ScalarNode {
+		*b = Binding{}
+		return node.Decode(&b.Param)
+	}
+	var scaled struct {
+		P        int `yaml:"p"`
+		Min, Max int
+	}
+	if err := node.Decode(&scaled); err != nil {
+		return err
+	}
+	*b = Binding{Param: scaled.P, Scaled: true, Min: scaled.Min, Max: scaled.Max}
+	return nil
+}
 
 // MaxModuleParams is the number of parameters a module can have: a send
 // can address 8 ports.
@@ -350,11 +423,11 @@ func (m Modules) paramSource(index, k, depth int) (*Unit, string, bool) {
 			continue
 		}
 		for _, p := range u.BindableParams() { // in the order of the parameters
-			if u.Bind[p.Name] != k || !CanBind(u.Type, p.Name) {
+			if b, ok := u.Bind[p.Name]; !ok || b.Param != k || !CanBind(u.Type, p.Name) {
 				continue
 			}
-			if u.Type != "module" {
-				return u, p.Name, true
+			if u.Type != "module" || u.Bind[p.Name].Scaled {
+				return u, p.Name, true // a scaled binding gives the range, also of a module unit
 			}
 			if i, ok := m.Find(u.Parameters["module"]); ok {
 				if t, n, ok := m.paramSource(i, moduleParamIndex(p.Name), depth+1); ok {
@@ -377,14 +450,25 @@ func (m Modules) Param(index, k int) (ret UnitParameter, ok bool) {
 	}
 	mp := m[index].Params[k-1]
 	ret = UnitParameter{Name: mp.Name, MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true}
-	if t, n, ok := m.ParamSource(index, k); ok {
-		if p, ok := BindableParam(t, n); ok {
-			ret.MinValue, ret.MaxValue, ret.Neutral, ret.DisplayFunc = p.MinValue, p.MaxValue, p.Neutral, p.DisplayFunc
-			ret.CanSet, ret.CanModulate = p.CanSet, p.CanModulate
+	if u, n, ok := m.ParamSourceUnit(index, k); ok {
+		p, _ := BindableParam(u.Type, n)
+		if u.Type == "module" { // a scaled binding of a parameter of a module unit
+			if i, ok := m.Find(u.Parameters["module"]); ok && i != index {
+				p, _ = m.Param(i, moduleParamIndex(n))
+			}
 		}
-	}
-	if mp.Min != 0 || mp.Max != 0 {
-		ret.MinValue, ret.MaxValue = mp.Min, max(mp.Min, mp.Max)
+		ret.CanSet, ret.CanModulate = p.CanSet, p.CanModulate
+		if b := u.Bind[n]; b.Scaled {
+			// 0 to 128, shown as the values they are mapped to
+			ret.DisplayFunc = func(v int) (string, string) {
+				if p.DisplayFunc != nil {
+					return p.DisplayFunc(b.Map(v))
+				}
+				return strconv.Itoa(b.Map(v)), ""
+			}
+		} else {
+			ret.MinValue, ret.MaxValue, ret.Neutral, ret.DisplayFunc = p.MinValue, p.MaxValue, p.Neutral, p.DisplayFunc
+		}
 	}
 	if t, n, ok := splitDisplay(mp.Display); ok {
 		for _, p := range UnitTypes[t].Params {
@@ -487,13 +571,15 @@ func (s *Song) HasModules() bool {
 // data with s.
 //
 //   - The parameters bound to the parameters of a module (Unit.Bind) get the
-//     values of the module unit, clamped to their ranges.
+//     values of the module unit, mapped by a scaled Binding, and clamped to
+//     their ranges.
 //   - The copies get new IDs, above every ID of the song. Sends in a module
 //     to units of the module go to the copies made with them. Sends to other
 //     units stay as they are.
 //   - A send to a module unit modulates the parameters bound to the module
 //     parameter of that port: it becomes a send to each of them, only the
-//     last one popping. Without any, a popping send becomes a pop. A stereo
+//     last one popping, with its amount times the scale of a scaled
+//     Binding. Without any, a popping send becomes a pop. A stereo
 //     send also modulates those of the next port with its other channel.
 //     Where the two ports are bound to two ports next to each other of one
 //     unit, like the left and right of a receive, it stays a stereo send;
@@ -593,6 +679,12 @@ func (s *Song) Expand() (Song, *Expansion) {
 				}
 				sent++
 				c.Parameters["target"], c.Parameters["port"] = t.unit, t.port
+				if t.scale != 1 {
+					// a scaled binding: the send modulates that much less,
+					// to the nearest amount there is
+					amount := 64 + int(math.Round(float64(c.Parameters["amount"]-64)*t.scale))
+					c.Parameters["amount"] = min(max(amount, 0), 128)
+				}
 				c.Parameters["sendpop"] = 0
 				if pop {
 					c.Parameters["sendpop"] = 1
@@ -614,7 +706,7 @@ func (s *Song) Expand() (Song, *Expansion) {
 				for _, t := range targets {
 					found := false
 					for j, b := range below {
-						if !paired[j] && !found && b.unit == t.unit && b.port == t.port+1 {
+						if !paired[j] && !found && b.unit == t.unit && b.port == t.port+1 && b.scale == t.scale {
 							paired[j], found = true, true
 						}
 					}
@@ -692,9 +784,13 @@ type (
 		call, instr int
 	}
 
-	// portTarget is a modulated parameter: the ID of the unit and the
-	// number of the port
-	portTarget struct{ unit, port int }
+	// portTarget is a modulated parameter: the ID of the unit, the number
+	// of the port, and how much the parameter changes with the parameter
+	// of the module unit (Binding.Scale, through all the modules)
+	portTarget struct {
+		unit, port int
+		scale      float64
+	}
 )
 
 func (e *expander) problem(format string, args ...any) {
@@ -830,16 +926,19 @@ func (e *expander) instantiate(units []Unit, call *Unit, id int, path []int) []U
 		// parameters
 		var bound []UnitParameter
 		var boundTo []int
+		var scales []float64 // of the bindings
 		for _, p := range u.BindableParams() {
-			k, ok := u.Bind[p.Name]
+			binding, ok := u.Bind[p.Name]
 			if !ok {
 				continue
 			}
+			k := binding.Param
 			if !CanBind(c.Type, p.Name) || k < 1 || k > MaxModuleParams {
 				e.problem("module %v binds %s of a %s unit to parameter %d, which is not possible", mod.title(), p.Name, c.Type, k)
 				continue
 			}
 			bound, boundTo = append(bound, p), append(boundTo, k)
+			scales = append(scales, binding.Scale())
 			if !p.CanSet {
 				continue // only a port
 			}
@@ -849,6 +948,7 @@ func (e *expander) instantiate(units []Unit, call *Unit, id int, path []int) []U
 					v = mp.Default
 				}
 			}
+			v = binding.Map(v)
 			if c.Type != "module" {
 				v = min(max(v, p.MinValue), max(p.MaxValue, p.MinValue))
 			}
@@ -865,7 +965,10 @@ func (e *expander) instantiate(units []Unit, call *Unit, id int, path []int) []U
 			if ports != nil {
 				if innerPorts := e.ports[inner]; innerPorts != nil {
 					for j, p := range bound {
-						ports[boundTo[j]-1] = append(ports[boundTo[j]-1], innerPorts[moduleParamIndex(p.Name)-1]...)
+						for _, t := range innerPorts[moduleParamIndex(p.Name)-1] {
+							t.scale *= scales[j] // through both bindings
+							ports[boundTo[j]-1] = append(ports[boundTo[j]-1], t)
+						}
 					}
 				}
 			}
@@ -888,7 +991,7 @@ func (e *expander) instantiate(units []Unit, call *Unit, id int, path []int) []U
 						port++
 					}
 				}
-				ports[boundTo[j]-1] = append(ports[boundTo[j]-1], portTarget{c.ID, port})
+				ports[boundTo[j]-1] = append(ports[boundTo[j]-1], portTarget{c.ID, port, scales[j]})
 			}
 		}
 		units = append(units, c)

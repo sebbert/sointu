@@ -75,10 +75,9 @@ type (
 
 		// Bind binds parameters of a unit in the body of a module to the
 		// parameters of the module: the name of a parameter of the unit to
-		// the number of a parameter of the module, from 1. Each module unit
-		// calling the module gives the bound parameters its own values. See
-		// Module.
-		Bind map[string]int `yaml:",flow,omitempty"`
+		// a Binding. Each module unit calling the module gives the bound
+		// parameters its own values. See Module.
+		Bind map[string]Binding `yaml:",flow,omitempty"`
 	}
 
 	// MIDI contains info on how MIDI events should trigger an instrument
@@ -1336,7 +1335,7 @@ func (u *Unit) Copy() Unit {
 	ret.VarArgs = make([]int, len(u.VarArgs))
 	copy(ret.VarArgs, u.VarArgs)
 	if u.Bind != nil {
-		ret.Bind = make(map[string]int, len(u.Bind))
+		ret.Bind = make(map[string]Binding, len(u.Bind))
 		for k, v := range u.Bind {
 			ret.Bind[k] = v
 		}

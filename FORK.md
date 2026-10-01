@@ -134,12 +134,25 @@ exactly the same players as before. The `module` unit has no opcode
   modulated can be bound, also those that cannot be modulated, like the type
   of an oscillator or a buffer; not `stereo`, the `args` and `mode` of
   `spawn`, and of `send` only `amount`, as they change how the unit uses the
-  stack or where a send goes (`CanBind`). A module parameter takes its range
-  and display from the first parameter bound to it; `min`, `max` and
-  `display` (`type.parameter`, e.g. `filter.frequency`) of the module
-  parameter override them. Values are not rescaled. The delay times of a
-  `delay` unit can be bound too, as `delaytime1`, `delaytime2`, ... in the
-  order of its `varargs`.
+  stack or where a send goes (`CanBind`). The delay times of a `delay` unit
+  can be bound too, as `delaytime1`, `delaytime2`, ... in the order of its
+  `varargs`.
+- **Scaled bindings.** A binding can map the module parameter onto a range
+  of its own: `bind: {frequency: {p: 1, min: 40, max: 100}}`. The module
+  parameter then goes from 0 to 128, and the bound parameter gets
+  `min` + (`max` - `min`)·value/128, rounded: `min` at 0, `max` at 128,
+  which may be less than `min`. So one module parameter can move several
+  parameters over different ranges, some of them the other way. A send to
+  the module unit modulates each bound parameter by that much less: its
+  amount, as (amount - 64)/64, is multiplied by (`max` - `min`)/128 and
+  rounded to the nearest of the 64 steps of an amount, which is coarse for
+  weak sends into narrow ranges (through modules using modules, by the
+  product of the scales).
+- **Range and display.** A module parameter takes its range and display
+  from the first parameter bound to it: the range of that parameter, or if
+  that binding is scaled, 0 to 128, displayed as the values it is mapped
+  to. `display` (`type.parameter`, e.g. `filter.frequency`) of the module
+  parameter overrides the display.
 - **Sends.** The copies get new IDs, above every ID of the song. A send in a
   module to a unit of the module goes to the copy made with it; a send to a
   unit outside stays as it is. A mono send to a module unit, port k-1,
@@ -435,17 +448,24 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   voices, spectra with several writers, and buffers, spectra or buses used
   across threads.
 - **Modules tab:** the list of the modules, with the name, the inputs, the
-  outputs and the parameters of the selected one (name, default, range).
+  outputs and the parameters of the selected one (name and default).
   Next to it, the unit editor edits the units of the selected module instead
   of those of the selected instrument; notes still play the selected
   instrument. The link button of a module parameter binds the parameter
   under the cursor of the rack to it; a bound parameter shows the name of
-  the module parameter and edits its default.
+  the module parameter and edits its default. With the cursor on a bound
+  parameter, the Range of its module parameter is the range of that
+  binding: the values the parameter gets at the lowest and the highest
+  value of the module parameter. Changing the range of the first binding
+  changes the default and the values of the module units to keep what they
+  give, as near as the new range allows.
 - **Module units:** a module unit shows the name of its module and its
   parameters, and sends can target them. Each parameter looks and works
   like the parameter bound to it: a menu of the buffers, spectra or buses, of
   the instruments for a spawn target, of note lengths for a delay time
   following the tempo, a switch, or a knob with the same scale and labels.
+  With a scaled binding it is a knob from 0 to 128, labelled with the value
+  that the bound parameter gets.
   The buttons under the rack make a module of the selected units (Ctrl+G;
   its inputs are the signals they take from before them), show the module of
   a module unit on the Modules tab (Ctrl+Shift+G), replace the module unit

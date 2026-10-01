@@ -159,9 +159,13 @@ func (m *Model) fixModules() {
 		}
 		for j := range mod.Units {
 			u := &mod.Units[j]
-			for name, k := range u.Bind {
-				if _, ok := sointu.BindableParam(u.Type, name); k < 1 || k > len(mod.Params) || !sointu.CanBind(u.Type, name) || !ok {
+			for name, b := range u.Bind {
+				p, ok := sointu.BindableParam(u.Type, name)
+				if b.Param < 1 || b.Param > len(mod.Params) || !sointu.CanBind(u.Type, name) || !ok {
 					delete(u.Bind, name)
+				} else if b.Scaled && u.Type != "module" && p.MaxValue >= p.MinValue {
+					b.Min, b.Max = min(max(b.Min, p.MinValue), p.MaxValue), min(max(b.Max, p.MinValue), p.MaxValue)
+					u.Bind[name] = b
 				}
 			}
 			if len(u.Bind) == 0 {
@@ -225,8 +229,9 @@ func (m *Model) moduleOf(unit *sointu.Unit) (int, bool) {
 // module the default of the parameter of the module that it is bound to.
 func (m *Model) syncBoundDefault(unit *sointu.Unit, name string) {
 	if i, ok := m.moduleOf(unit); ok {
-		if k, ok := unit.Bind[name]; ok {
-			m.setModuleDefault(i, k, unit.BoundValue(name))
+		if b, ok := unit.Bind[name]; ok {
+			// with a scaled binding, the default that gives the value
+			m.setModuleDefault(i, b.Param, b.Unmap(unit.BoundValue(name)))
 		}
 	}
 }
@@ -242,13 +247,14 @@ func (m *Model) setModuleDefault(index, k, value int) {
 	for j := range mod.Units {
 		u := &mod.Units[j]
 		for _, p := range u.BindableParams() {
-			if u.Bind[p.Name] != k || !p.CanSet {
+			b, ok := u.Bind[p.Name]
+			if !ok || b.Param != k || !p.CanSet {
 				continue
 			}
 			if u.Type == "module" {
-				u.Parameters[p.Name] = value
+				u.Parameters[p.Name] = b.Map(value)
 			} else {
-				u.SetBoundValue(p.Name, min(max(value, p.MinValue), max(p.MaxValue, p.MinValue)))
+				u.SetBoundValue(p.Name, min(max(b.Map(value), p.MinValue), max(p.MaxValue, p.MinValue)))
 			}
 		}
 	}
@@ -725,12 +731,13 @@ func (m deleteModuleParam) Do() {
 	mod := m.selected()
 	mod.Params = append(mod.Params[:m.k-1], mod.Params[m.k:]...)
 	for i := range mod.Units {
-		for name, k := range mod.Units[i].Bind {
+		for name, b := range mod.Units[i].Bind {
 			switch {
-			case k == m.k:
+			case b.Param == m.k:
 				delete(mod.Units[i].Bind, name)
-			case k > m.k:
-				mod.Units[i].Bind[name] = k - 1
+			case b.Param > m.k:
+				b.Param--
+				mod.Units[i].Bind[name] = b
 			}
 		}
 	}
@@ -857,69 +864,120 @@ func (v moduleParamDefault) StringOf(value int) string {
 	return strconv.Itoa(value)
 }
 
-// ParamMin and ParamMax return Ints representing the range of parameter k
-// (from 1) of the selected module, within the range of the first parameter
-// bound to it. The whole of that range means that the module does not
-// override it.
-func (m *ModuleModel) ParamMin(k int) Int { return MakeInt(moduleParamLimit{k, false, m}) }
-func (m *ModuleModel) ParamMax(k int) Int { return MakeInt(moduleParamLimit{k, true, m}) }
+// BindingAt returns an Int representing the value that the parameter under
+// the cursor of the unit editor, bound to parameter k (from 1) of the
+// selected module, gets when a module unit sets the module parameter to 0, or
+// with top, to 128: the Min and Max of a scaled sointu.Binding. Set to the
+// whole range of the bound parameter, the binding is not scaled: the bound
+// parameter gets the value of the module unit as it is.
+//
+// Changing the first binding of a module parameter changes what the values
+// of the module parameter mean: its default and the values of the module
+// units using the module are changed to give the bound parameter the values
+// nearest to those it had.
+func (m *ModuleModel) BindingAt(k int, top bool) Int { return MakeInt(moduleBindingAt{k, top, m}) }
 
-type moduleParamLimit struct {
+type moduleBindingAt struct {
 	k   int
-	max bool
+	top bool
 	*ModuleModel
 }
 
-// full returns the range of the parameter without the override.
-func (v moduleParamLimit) full() RangeInclusive {
-	ret := RangeInclusive{0, 128}
-	if v.selected() == nil {
-		return ret
+// binding returns the binding of the parameter under the cursor to
+// parameter k, the unit and the bound parameter.
+func (v moduleBindingAt) binding() (b sointu.Binding, unit *sointu.Unit, p sointu.UnitParameter, ok bool) {
+	unit, name, ok := moduleParamBound{v.k, v.ModuleModel}.cursor()
+	if !ok {
+		return b, nil, p, false
 	}
-	if t, n, ok := v.d.Song.Modules.ParamSource(v.d.ModuleIndex, v.k); ok {
-		for _, p := range sointu.UnitTypes[t].Params {
-			if p.Name == n {
-				ret = RangeInclusive{p.MinValue, max(p.MaxValue, p.MinValue)}
+	b, ok = unit.Bind[name]
+	if !ok || b.Param != v.k {
+		return b, nil, p, false
+	}
+	p, ok = sointu.BindableParam(unit.Type, name)
+	if unit.Type == "module" { // a parameter of a module unit: the range of the parameter of its module
+		p = sointu.UnitParameter{Name: name, MinValue: 0, MaxValue: 128, CanSet: true}
+		if i, found := v.d.Song.Modules.Find(unit.Parameters["module"]); found {
+			if mp, found := v.d.Song.Modules.Param(i, moduleParamNumber(name)); found {
+				p.MinValue, p.MaxValue = mp.MinValue, mp.MaxValue
 			}
 		}
 	}
-	return ret
+	return b, unit, p, ok && p.MaxValue >= p.MinValue
 }
-func (v moduleParamLimit) Value() int {
-	p, _ := v.Param(v.k)
-	if v.max {
+func (v moduleBindingAt) Value() int {
+	b, _, p, ok := v.binding()
+	switch {
+	case !ok:
+		return 0
+	case b.Scaled && v.top:
+		return b.Max
+	case b.Scaled:
+		return b.Min
+	case v.top:
 		return p.MaxValue
 	}
 	return p.MinValue
 }
-func (v moduleParamLimit) SetValue(value int) bool {
-	p, ok := v.Param(v.k)
+func (v moduleBindingAt) Range() RangeInclusive {
+	_, _, p, ok := v.binding()
+	if !ok {
+		return RangeInclusive{}
+	}
+	return RangeInclusive{p.MinValue, p.MaxValue}
+}
+func (v moduleBindingAt) SetValue(value int) bool {
+	old, unit, p, ok := v.binding()
 	if !ok {
 		return false
 	}
-	defer (*Model)(v.ModuleModel).change("ModuleParamLimit", PatchChange, MinorChange)()
-	lo, hi := p.MinValue, p.MaxValue
-	if v.max {
-		hi = value
-	} else {
-		lo = value
+	m := (*Model)(v.ModuleModel)
+	defer m.change("ModuleBindingAt", PatchChange, MinorChange)()
+	b := sointu.Binding{Param: v.k, Scaled: true, Min: p.MinValue, Max: p.MaxValue}
+	if old.Scaled {
+		b.Min, b.Max = old.Min, old.Max
 	}
-	mp := &v.selected().Params[v.k-1]
-	if full := v.full(); lo == full.Min && hi == full.Max || lo == 0 && hi == 0 {
-		mp.Min, mp.Max = 0, 0 // not overridden
+	if v.top {
+		b.Max = value
 	} else {
-		mp.Min, mp.Max = lo, hi
+		b.Min = value
 	}
-	(*Model)(v.ModuleModel).setModuleDefault(v.d.ModuleIndex, v.k, min(max(mp.Default, lo), hi))
+	if b.Min == p.MinValue && b.Max == p.MaxValue {
+		b = sointu.Binding{Param: v.k} // the whole range: the value as it is
+	}
+	_, name, _ := moduleParamBound{v.k, v.ModuleModel}.cursor()
+	source, sourceName, _ := m.d.Song.Modules.ParamSourceUnit(m.d.ModuleIndex, v.k)
+	first := source == unit && sourceName == name
+	unit.Bind[name] = b
+	mod := v.selected()
+	if !first {
+		m.setModuleDefault(m.d.ModuleIndex, v.k, mod.Params[v.k-1].Default)
+		return true
+	}
+	// the values of the module parameter mean something else now
+	convert := func(value int) int { return b.Unmap(old.Map(value)) }
+	for units := range m.d.Song.UnitLists() {
+		for i := range units {
+			u := &units[i]
+			key := sointu.ModuleParamName(v.k)
+			if value, ok := u.Parameters[key]; ok && u.Type == "module" && u.Parameters["module"] == mod.ID {
+				u.Parameters[key] = convert(value)
+			}
+		}
+	}
+	m.setModuleDefault(m.d.ModuleIndex, v.k, convert(mod.Params[v.k-1].Default))
 	return true
 }
-func (v moduleParamLimit) Range() RangeInclusive {
-	full := v.full()
-	p, _ := v.Param(v.k)
-	if v.max {
-		return RangeInclusive{p.MinValue, full.Max}
+
+// moduleParamNumber returns k for the name p<k> of a parameter of a module
+// unit, or 0.
+func moduleParamNumber(name string) int {
+	for k := 1; k <= sointu.MaxModuleParams; k++ {
+		if sointu.ModuleParamName(k) == name {
+			return k
+		}
 	}
-	return RangeInclusive{full.Min, p.MaxValue}
+	return 0
 }
 
 // ParamBound returns a Bool telling whether the parameter under the cursor
@@ -952,7 +1010,11 @@ func (v moduleParamBound) Enabled() bool {
 }
 func (v moduleParamBound) Value() bool {
 	unit, name, ok := v.cursor()
-	return ok && unit.Bind[name] == v.k
+	if !ok {
+		return false
+	}
+	b, bound := unit.Bind[name]
+	return bound && b.Param == v.k
 }
 func (v moduleParamBound) SetValue(val bool) {
 	unit, name, ok := v.cursor()
@@ -967,14 +1029,12 @@ func (v moduleParamBound) SetValue(val bool) {
 	}
 	_, _, hadSource := m.d.Song.Modules.ParamSource(m.d.ModuleIndex, v.k)
 	if unit.Bind == nil {
-		unit.Bind = map[string]int{}
+		unit.Bind = map[string]sointu.Binding{}
 	}
-	unit.Bind[name] = v.k
+	unit.Bind[name] = sointu.Binding{Param: v.k}
 	if !hadSource {
 		// the first parameter bound to it: its value becomes the default,
 		// and its range the range
-		mp := &v.selected().Params[v.k-1]
-		mp.Min, mp.Max = 0, 0
 		m.setModuleDefault(m.d.ModuleIndex, v.k, unit.BoundValue(name))
 	} else {
 		m.setModuleDefault(m.d.ModuleIndex, v.k, v.selected().Params[v.k-1].Default)
@@ -1055,14 +1115,26 @@ func (m *inlineModule) Do() {
 	units := make([]sointu.Unit, 0, len(mod.Units))
 	for _, u := range mod.Units {
 		c := u.Copy()
-		for name, k := range u.Bind {
+		for name, b := range u.Bind {
+			k := b.Param
 			delete(c.Bind, name)
 			p, ok := sointu.BindableParam(u.Type, name)
 			if !ok {
 				continue
 			}
 			if outer, ok := call.Bind[sointu.ModuleParamName(k)]; ok && model.editingModule() {
-				c.Bind[name] = outer // bound to the module being edited instead
+				// bound to the module being edited instead, through both
+				// bindings
+				through := sointu.Binding{Param: outer.Param}
+				if b.Scaled || outer.Scaled {
+					through.Scaled = true
+					if lo, hi := 0, 128; outer.Scaled {
+						through.Min, through.Max = b.Map(outer.Map(lo)), b.Map(outer.Map(hi))
+					} else {
+						through.Min, through.Max = b.Min, b.Max
+					}
+				}
+				c.Bind[name] = through
 			}
 			if !p.CanSet {
 				continue
@@ -1073,6 +1145,7 @@ func (m *inlineModule) Do() {
 					v = mp.Default
 				}
 			}
+			v = b.Map(v)
 			if u.Type != "module" {
 				v = min(max(v, p.MinValue), max(p.MaxValue, p.MinValue))
 			}

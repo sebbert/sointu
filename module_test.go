@@ -18,7 +18,20 @@ func unit(typ string, id int, params map[string]int) sointu.Unit {
 }
 
 func bound(u sointu.Unit, bind map[string]int) sointu.Unit {
-	u.Bind = bind
+	u.Bind = map[string]sointu.Binding{}
+	for name, k := range bind {
+		u.Bind[name] = sointu.Binding{Param: k}
+	}
+	return u
+}
+
+// scaled binds a parameter of the unit to parameter k of the module, mapped
+// onto lo to hi.
+func scaled(u sointu.Unit, name string, k, lo, hi int) sointu.Unit {
+	if u.Bind == nil {
+		u.Bind = map[string]sointu.Binding{}
+	}
+	u.Bind[name] = sointu.Binding{Param: k, Scaled: true, Min: lo, Max: hi}
 	return u
 }
 
@@ -304,7 +317,7 @@ func TestModuleStackUse(t *testing.T) {
 func TestModuleParam(t *testing.T) {
 	m := sointu.Modules{{ID: 1, Params: []sointu.ModuleParam{
 		{Name: "cutoff", Default: 300},
-		{Name: "wave", Min: 1, Max: 2, Display: "filter.frequency"},
+		{Name: "wave", Default: 9, Display: "filter.frequency"},
 		{},
 	}, Units: []sointu.Unit{
 		bound(unit("filter", 0, nil), map[string]int{"frequency": 1}),
@@ -318,7 +331,7 @@ func TestModuleParam(t *testing.T) {
 		t.Errorf("parameter 1 is like %v.%v", typ, name)
 	}
 	p, _ = m.Param(0, 2)
-	if p.MinValue != 1 || p.MaxValue != 2 || p.Default != 1 || p.CanModulate || p.DisplayFunc == nil {
+	if p.MinValue != 0 || p.MaxValue != 4 || p.Default != 4 || p.CanModulate || p.DisplayFunc == nil {
 		t.Errorf("parameter 2: %+v", p)
 	}
 	if p, _ = m.Param(0, 3); p.Name != "p3" || p.MaxValue != 128 {
@@ -344,7 +357,7 @@ func TestModuleYAML(t *testing.T) {
 	if err := yaml.Unmarshal(out, &got); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(got.Modules[0].Params, s.Modules[0].Params) || got.Modules[0].Units[0].Bind["detune"] != 1 || got.Modules[0].Inputs != 1 {
+	if !reflect.DeepEqual(got.Modules[0].Params, s.Modules[0].Params) || got.Modules[0].Units[0].Bind["detune"] != (sointu.Binding{Param: 1}) || got.Modules[0].Inputs != 1 {
 		t.Errorf("modules after a round trip: %+v", got.Modules)
 	}
 	// songs without modules are saved as before
@@ -409,7 +422,7 @@ func TestExpandStereoSend(t *testing.T) {
 
 func TestExpandDelayTimes(t *testing.T) {
 	// the delay times of a delay unit can be bound
-	delay := sointu.Unit{Type: "delay", Parameters: sointu.ParamMap{"notetracking": 2}, VarArgs: []int{24, 48}, Bind: map[string]int{"delaytime2": 1}}
+	delay := bound(sointu.Unit{Type: "delay", Parameters: sointu.ParamMap{"notetracking": 2}, VarArgs: []int{24, 48}}, map[string]int{"delaytime2": 1})
 	m := sointu.Module{ID: 1, Inputs: 1, Params: []sointu.ModuleParam{{Name: "time", Default: 48}}, Units: []sointu.Unit{delay}}
 	s := song(sointu.Modules{m}, unit("noise", 0, nil), call(0, 1, 36), call(0, 1), call(0, 1, 100000), unit("out", 0, nil))
 	got, exp := s.Expand()
@@ -455,5 +468,64 @@ func TestExpandStereoSendToPair(t *testing.T) {
 	noProblems(t, exp)
 	if s, want := summary(got.Patch[0].Units, "stereo", "sendpop"), "oscillator oscillator send:stereo=1:sendpop=0 send:stereo=0:sendpop=0 pop:stereo=1 receive:stereo=1 gain out:stereo=1"; s != want {
 		t.Errorf("got  %v\nwant %v", s, want)
+	}
+}
+
+func TestExpandScaledBindings(t *testing.T) {
+	// one parameter of the module moves the cutoff from 40 to 100 and the
+	// resonance from 80 down to 16, and a parameter of a module in it
+	inner := sointu.Module{ID: 1, Inputs: 1, Params: []sointu.ModuleParam{{Name: "gain"}}, Units: []sointu.Unit{
+		scaled(unit("gain", 0, nil), "gain", 1, 0, 64),
+	}}
+	m := sointu.Module{ID: 2, Inputs: 1, Params: []sointu.ModuleParam{{Name: "bright", Default: 32}}, Units: []sointu.Unit{
+		scaled(scaled(unit("filter", 0, nil), "frequency", 1, 40, 100), "resonance", 1, 80, 16),
+		scaled(call(0, 1), "p1", 1, 128, 0),
+	}}
+	lfo := unit("oscillator", 0, map[string]int{"lfo": 1})
+	s := song(sointu.Modules{inner, m},
+		lfo, unit("send", 0, map[string]int{"target": 9, "port": 0, "sendpop": 1, "amount": 128}),
+		unit("noise", 0, nil), call(9, 2, 64), call(0, 2), call(0, 2, 128), call(0, 2, 500), unit("out", 0, nil))
+	got, exp := s.Expand()
+	noProblems(t, exp)
+	u := got.Patch[0].Units
+	want := "oscillator send:amount=94 send:amount=32 send:amount=32 noise " +
+		"filter:frequency=70:resonance=48 gain:gain=32 " + // at 64: half way; the gain 128 to 0, then 0 to 64
+		"filter:frequency=55:resonance=64 gain:gain=48 " + // the default, 32
+		"filter:frequency=100:resonance=16 gain:gain=0 " +
+		"filter:frequency=100:resonance=16 gain:gain=0 out" // clamped to 128
+	if s := summary(u, "amount", "frequency", "resonance", "gain"); s != want {
+		t.Fatalf("got  %v\nwant %v", s, want)
+	}
+	// the sends: to the frequency by 60/128, the resonance by -64/128 and
+	// the gain by -1 times 64/128 of the amount of 1
+	filter, gain := u[5], u[6]
+	for i, wantTarget := range []struct{ id, port int }{{filter.ID, 0}, {filter.ID, 1}, {gain.ID, 0}} {
+		if p := u[1+i].Parameters; p["target"] != wantTarget.id || p["port"] != wantTarget.port || (p["sendpop"] == 1) != (i == 2) {
+			t.Errorf("send %v goes to %v port %v, popping %v", i, p["target"], p["port"], p["sendpop"])
+		}
+	}
+	// the parameter of the module is 0 to 128, shown as the cutoff
+	p, _ := s.Modules.Param(1, 1)
+	if p.MinValue != 0 || p.MaxValue != 128 || !p.CanModulate || p.DisplayFunc == nil {
+		t.Fatalf("the parameter of the module: %+v", p)
+	}
+	a, _ := p.DisplayFunc(64)
+	b, _ := sointu.UnitTypes["filter"].Params[1].DisplayFunc(70)
+	if sointu.UnitTypes["filter"].Params[1].Name != "frequency" || a != b {
+		t.Errorf("64 is shown as %q, want %q", a, b)
+	}
+	// Binding maps and back
+	bd := sointu.Binding{Param: 1, Scaled: true, Min: 80, Max: 16}
+	if bd.Map(0) != 80 || bd.Map(128) != 16 || bd.Map(64) != 48 || bd.Unmap(48) != 64 || bd.Unmap(200) != 0 || bd.Scale() != -0.5 {
+		t.Errorf("the binding maps 0, 64, 128 to %v, %v, %v, 48 back to %v, scale %v", bd.Map(0), bd.Map(64), bd.Map(128), bd.Unmap(48), bd.Scale())
+	}
+	// in YAML
+	out, err := yaml.Marshal(s.Modules[1].Units[0])
+	if err != nil || !strings.Contains(string(out), "frequency: {p: 1, min: 40, max: 100}") {
+		t.Errorf("the scaled binding in YAML: %s (%v)", out, err)
+	}
+	var back sointu.Unit
+	if err := yaml.Unmarshal(out, &back); err != nil || !reflect.DeepEqual(back.Bind, s.Modules[1].Units[0].Bind) {
+		t.Errorf("the bindings after a round trip: %+v (%v)", back.Bind, err)
 	}
 }

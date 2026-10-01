@@ -1074,10 +1074,11 @@ func (p *Parameter) Bound() (name string, ok bool) {
 	if p.inner != nil {
 		return p.inner.bound(p.m, p.innerIndex, key)
 	}
-	k, ok := unit.Bind[key]
+	b, ok := unit.Bind[key]
 	if !ok {
 		return "", false
 	}
+	k := b.Param
 	if i := p.m.d.ModuleIndex; p.m.editingModule() && i >= 0 && i < len(p.m.d.Song.Modules) {
 		if mp, ok := p.m.d.Song.Modules.Param(i, k); ok {
 			return mp.Name, true
@@ -1189,6 +1190,21 @@ func (b *moduleArgParameter) Hint(p *Parameter) ParameterHint {
 	}
 	return ParameterHint{strconv.Itoa(val), true}
 }
+
+// Label is the text on the knob: with a scaled binding, the value that the
+// first bound parameter gets, as that parameter shows it.
+func (b *moduleArgParameter) Label(p *Parameter) string {
+	if i, ok := p.m.d.Song.Modules.Find(p.unit.Parameters["module"]); ok {
+		if source, name, ok := p.m.d.Song.Modules.ParamSourceUnit(i, p.index); ok && source.Bind[name].Scaled {
+			if mp := b.param(p); mp.DisplayFunc != nil {
+				value, _ := mp.DisplayFunc(b.Value(p))
+				return value
+			}
+		}
+	}
+	return strconv.Itoa(b.Value(p))
+}
+
 func (b *moduleArgParameter) RoundToGrid(p *Parameter, val int, up bool) int {
 	return roundToGrid(val, 8, up)
 }
@@ -1233,7 +1249,9 @@ func (a *moduleArg) store(p *Parameter) {
 func (m *Model) moduleArg(call *sointu.Unit, module, k int, up *sointu.UnitParameter) Parameter {
 	plain := Parameter{m: m, unit: call, up: up, index: k, vtable: &moduleArgParameter{}, port: k}
 	source, name, ok := m.d.Song.Modules.ParamSourceUnit(module, k)
-	if !ok {
+	if !ok || source.Bind[name].Scaled || source.Type == "module" {
+		// with a scaled binding the values are 0 to 128, not those of the
+		// bound parameter: a plain knob, labelled with what they give
 		return plain
 	}
 	standIn := new(sointu.Unit)

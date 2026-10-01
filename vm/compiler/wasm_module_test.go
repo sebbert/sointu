@@ -12,7 +12,13 @@ import (
 
 func moduleTestUnit(typ string, id int, params sointu.ParamMap, bind map[string]int) sointu.Unit {
 	u := sointu.MakeUnit(typ)
-	u.ID, u.Bind = id, bind
+	u.ID = id
+	for name, k := range bind {
+		if u.Bind == nil {
+			u.Bind = map[string]sointu.Binding{}
+		}
+		u.Bind[name] = sointu.Binding{Param: k}
+	}
 	for k, v := range params {
 		u.Parameters[k] = v
 	}
@@ -22,8 +28,8 @@ func moduleTestUnit(typ string, id int, params sointu.ParamMap, bind map[string]
 // moduleTestSongs returns a song with modules and the same song written
 // without them. The first instrument, with two voices, plays a module of an
 // envelope, another module (two oscillators, with bound detune and color)
-// and a filter, whose cutoff, a parameter of the module, an LFO modulates
-// through a send to the module unit. With reverb, a second instrument runs
+// and a filter, whose cutoff, a parameter of the module with a scaled
+// binding, an LFO modulates through a send to the module unit. With reverb, a second instrument runs
 // each channel of the first one's sound through a module of mc units, which
 // has its own bus: the second module unit gets a clone of it.
 func moduleTestSongs(reverb bool) (withModules, without sointu.Song) {
@@ -59,8 +65,8 @@ func moduleTestSongs(reverb bool) (withModules, without sointu.Song) {
 		{ID: 3, Name: "verb", Inputs: 1, Units: mc(1)},
 	}
 	lfo := unit("oscillator", 0, sointu.ParamMap{"transpose": 70, "detune": 64, "color": 128, "gain": 128, "type": sointu.Sine, "lfo": 1}, nil)
-	send := func(target int) sointu.Unit {
-		return unit("send", 0, sointu.ParamMap{"amount": 96, "target": target, "port": 0, "sendpop": 1}, nil)
+	send := func(target, amount int) sointu.Unit {
+		return unit("send", 0, sointu.ParamMap{"amount": amount, "target": target, "port": 0, "sendpop": 1}, nil)
 	}
 	pan := unit("pan", 0, sointu.ParamMap{"panning": 40}, nil)
 	sink := unit("out", 0, sointu.ParamMap{"stereo": 1, "gain": 128}, nil)
@@ -72,8 +78,11 @@ func moduleTestSongs(reverb bool) (withModules, without sointu.Song) {
 			Score: sointu.Score{RowsPerPattern: 16, Length: 1, Tracks: []sointu.Track{{NumVoices: 2, Order: sointu.Order{0}, Patterns: []sointu.Pattern{{60, 1, 67, 1, 0, 1, 55, 1, 1, 72, 1, 0, 1, 1, 1, 1}}}}},
 		}
 	}
-	a := []sointu.Unit{lfo, send(5), moduleTestUnit("module", 5, sointu.ParamMap{"module": 2, "p1": 40, "p2": 70}, nil), pan, sink}
-	b := []sointu.Unit{lfo, send(9), envelope, osc(70, 32, nil), osc(50, 100, nil), addp, mulp, filter(9, 40, nil), pan, sink}
+	// the cutoff of the module is scaled onto 20 to 110: 40 gives the
+	// filter 20 + 90·40/128 = 48, and the send of 32/64 becomes 23/64
+	modules[1].Units[3].Bind["frequency"] = sointu.Binding{Param: 1, Scaled: true, Min: 20, Max: 110}
+	a := []sointu.Unit{lfo, send(5, 96), moduleTestUnit("module", 5, sointu.ParamMap{"module": 2, "p1": 40, "p2": 70}, nil), pan, sink}
+	b := []sointu.Unit{lfo, send(9, 87), envelope, osc(70, 32, nil), osc(50, 100, nil), addp, mulp, filter(9, 48, nil), pan, sink}
 	patchA, patchB := sointu.Patch{{Name: "lead", NumVoices: 2, Units: a}}, sointu.Patch{{Name: "lead", NumVoices: 2, Units: b}}
 	var buffersA, buffersB sointu.Buffers
 	if reverb {

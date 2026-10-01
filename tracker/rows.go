@@ -206,10 +206,11 @@ func (e *innerUnits) bound(m *Model, i int, param string) (string, bool) {
 		if u.ID != e.source[i].Body {
 			continue
 		}
-		k, ok := u.Bind[param]
+		b, ok := u.Bind[param]
 		if !ok {
 			return "", false
 		}
+		k := b.Param
 		if mp, ok := m.d.Song.Modules.Param(module, k); ok {
 			return mp.Name, true
 		}
