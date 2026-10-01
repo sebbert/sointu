@@ -414,6 +414,10 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 
 		param := t.Model.Params().Item(point)
 		paramStyle := Param(param, t.Theme, pe.Parameters[y][x], pe.paramTable.Table.Cursor() == point, t.Unit().Item(y).Disabled)
+		// where the cell is in the rack: the row titles may get wider or
+		// narrower as the parameter changes
+		colP, rowP := pe.paramTable.ColTitleList.List.Position, pe.paramTable.RowTitleList.List.Position
+		paramStyle.Origin = image.Pt(rowTitleWidth+(x-colP.First)*cellWidth-colP.Offset, (y-rowP.First)*cellHeight-rowP.Offset)
 		paramStyle.Layout(gtx)
 		if x == t.Model.Params().RowWidth(y) {
 			if y == cursor.Y {

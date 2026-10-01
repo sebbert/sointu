@@ -495,6 +495,12 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   before. The momentum of a trackpad gesture does not zoom. The vendored Gio
   has two additions for this: `pointer.Event.Notch` and `.Momentum`, set by
   the macOS backend.
+- **Knob drags:** dragging a knob of the rack follows the pointer in the
+  window, also when the knob itself moves: the `args` and `mode` of a
+  `spawn` and the `reverb` of a `delay` change the signals on the stack, so
+  the width of the signal rail, and the knobs with it. Before, the drag was
+  measured from the knob, and the value jumped by the distance the knob
+  moved.
 - **Other:** no notes play while typing in text fields; recordings survive
   synth rebuilds; NaNs recorded into buffers are cleared.
 
