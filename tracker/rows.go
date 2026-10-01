@@ -2,8 +2,9 @@ package tracker
 
 import "github.com/vsariola/sointu"
 
-// The rows of the unit editor. Normally they are the units being edited.
-// With UnitModel.Unfold on, every module unit is followed by its entrails:
+// The rows of the unit editor. Normally they are the units being edited. A
+// module unit can be unfolded (UnitModel.Unfold); it is then followed by its
+// inner units:
 // the units that it stands for, which can be seen but not changed. For a
 // module unit of an instrument, they are the units that the synth runs for
 // it, with the values that the module unit gives the bound parameters and
@@ -12,12 +13,12 @@ import "github.com/vsariola/sointu"
 //
 // modelData.UnitIndex and UnitIndex2 stay indices of the units being edited;
 // UnitModel.List, UnitModel.Item and ParamModel work in rows. The cursor is
-// never on an entrail: moving onto one moves past them.
+// never on an inner unit: moving onto one moves past them.
 
 type (
-	// entrails are the units that a module unit stands for, and what is
+	// innerUnits are the units that a module unit stands for, and what is
 	// derived from them.
-	entrails struct {
+	innerUnits struct {
 		units       []sointu.Unit
 		source      []sointu.ExpandedUnit // where each unit came from; zero for the units of a module as they are
 		params      [][]Parameter
@@ -27,57 +28,118 @@ type (
 		paramsWidth int   // the most parameters of a unit, with room for previews
 	}
 
-	// entrailCache holds the entrails of the module units being edited, by
+	// innerCache holds the inner units of the module units being edited, by
 	// the ID of the module unit, as long as the song the player has, the
 	// tab, the instrument and the module stay the same.
-	entrailCache struct {
+	innerCache struct {
 		expansion *sointu.Expansion
 		editing   bool
 		index     int
-		byCall    map[int]*entrails
+		byCall    map[int]*innerUnits
 	}
 )
 
-// Unfold returns a Bool telling whether the unit editor shows, under every
-// module unit, the units that it stands for.
+// Unfold returns a Bool telling whether the selected module unit is
+// unfolded, like a section that can be collapsed: the unit editor then shows
+// the units that it stands for under it. Setting it folds or unfolds all the
+// selected module units.
 func (m *UnitModel) Unfold() Bool { return MakeBool((*unitUnfold)(m)) }
 
 type unitUnfold UnitModel
 
-func (m *unitUnfold) Value() bool { return m.unfold }
+func (m *unitUnfold) Enabled() bool {
+	_, _, ok := (*Model)(m).selectedModuleUnit()
+	return ok
+}
+func (m *unitUnfold) Value() bool {
+	u, _, ok := (*Model)(m).selectedModuleUnit()
+	return ok && m.unfolded[u.ID]
+}
 func (m *unitUnfold) SetValue(val bool) {
-	m.unfold = val
+	units := (*Model)(m).units()
+	r := (*Model)(m).unitRange()
+	for i := r.Start; i < r.End; i++ {
+		(*Model)(m).setUnfolded(&units[i], val)
+	}
+}
+
+// ToggleUnfold returns an Action to fold or unfold the module unit on the
+// given row of the unit editor.
+func (m *UnitModel) ToggleUnfold(row int) Action {
+	return MakeAction(toggleUnfold{row: row, UnitModel: m})
+}
+
+type toggleUnfold struct {
+	row int
+	*UnitModel
+}
+
+func (m toggleUnfold) Do() {
+	model := (*Model)(m.UnitModel)
+	units := model.units()
+	if index, e, _, ok := model.rowAt(m.row); ok && e == nil && index < len(units) {
+		model.setUnfolded(&units[index], !model.unfolded[units[index].ID])
+	}
+}
+
+func (m *Model) setUnfolded(u *sointu.Unit, val bool) {
+	if u.Type != "module" || u.ID == 0 {
+		return
+	}
+	if m.unfolded == nil {
+		m.unfolded = map[int]bool{}
+	}
+	if val {
+		m.unfolded[u.ID] = true
+	} else {
+		delete(m.unfolded, u.ID)
+	}
 	m.d.UnitSearching = false
 }
 
-// entrailsOf returns the entrails of a unit being edited, or nil if it has
+// HasModuleUnits reports whether there are module units among the units
+// being edited.
+func (m *UnitModel) HasModuleUnits() bool {
+	for _, u := range (*Model)(m).units() {
+		if u.Type == "module" {
+			return true
+		}
+	}
+	return false
+}
+
+// unfold reports whether any module unit is unfolded: otherwise the rows of
+// the unit editor are the units being edited.
+func (m *Model) unfold() bool { return len(m.unfolded) > 0 }
+
+// innerUnitsOf returns the inner units of a unit being edited, or nil if it has
 // none or they are not shown.
-func (m *Model) entrailsOf(u *sointu.Unit) *entrails {
-	if !m.unfold || u.Type != "module" || u.Disabled || u.ID == 0 {
+func (m *Model) innerUnitsOf(u *sointu.Unit) *innerUnits {
+	if !m.unfolded[u.ID] || u.Type != "module" || u.Disabled || u.ID == 0 {
 		return nil
 	}
-	c := &m.entrailCache
+	c := &m.innerCache
 	index := m.d.InstrIndex
 	if m.editingModule() {
 		index = m.d.ModuleIndex
 	}
 	if c.expansion != m.expansion || c.editing != m.editingModule() || c.index != index || c.byCall == nil {
-		*c = entrailCache{expansion: m.expansion, editing: m.editingModule(), index: index, byCall: map[int]*entrails{}}
+		*c = innerCache{expansion: m.expansion, editing: m.editingModule(), index: index, byCall: map[int]*innerUnits{}}
 	}
 	if e, ok := c.byCall[u.ID]; ok {
 		return e
 	}
-	e := m.makeEntrails(u)
+	e := m.makeInnerUnits(u)
 	c.byCall[u.ID] = e
 	return e
 }
 
-func (m *Model) makeEntrails(call *sointu.Unit) *entrails {
+func (m *Model) makeInnerUnits(call *sointu.Unit) *innerUnits {
 	index, ok := m.d.Song.Modules.Find(call.Parameters["module"])
 	if !ok {
 		return nil
 	}
-	e := &entrails{}
+	e := &innerUnits{}
 	if !m.editingModule() {
 		if m.expansion == nil || m.d.InstrIndex < 0 || m.d.InstrIndex >= len(m.expanded) {
 			return nil
@@ -108,7 +170,7 @@ func (m *Model) makeEntrails(call *sointu.Unit) *entrails {
 		u := &e.units[i]
 		e.params[i] = m.deriveParams(u, nil)
 		for j := range e.params[i] {
-			e.params[i][j].entrails, e.params[i][j].entrail = e, i
+			e.params[i][j].inner, e.params[i][j].innerIndex = e, i
 		}
 		e.paramsWidth = max(e.paramsWidth, len(e.params[i]))
 		_, _, ok := unitBuffer(u)
@@ -126,8 +188,8 @@ func (m *Model) makeEntrails(call *sointu.Unit) *entrails {
 }
 
 // bound returns the name of the parameter of a module that a parameter of
-// entrail i is bound to.
-func (e *entrails) bound(m *Model, i int, param string) (string, bool) {
+// inner unit i is bound to.
+func (e *innerUnits) bound(m *Model, i int, param string) (string, bool) {
 	if i < 0 || i >= len(e.units) || e.source[i].Body == 0 {
 		return "", false // the units of a module as they are show no bindings: they are not those of the module being edited
 	}
@@ -156,11 +218,11 @@ func (e *entrails) bound(m *Model, i int, param string) (string, bool) {
 func (m *Model) numRows() int {
 	units := m.units()
 	n := len(units)
-	if !m.unfold {
+	if !m.unfold() {
 		return n
 	}
 	for i := range units {
-		if e := m.entrailsOf(&units[i]); e != nil {
+		if e := m.innerUnitsOf(&units[i]); e != nil {
 			n += len(e.units)
 		}
 	}
@@ -170,13 +232,13 @@ func (m *Model) numRows() int {
 // rowOfUnit returns the row of the unit with the given index among the
 // units being edited.
 func (m *Model) rowOfUnit(index int) int {
-	if !m.unfold {
+	if !m.unfold() {
 		return index
 	}
 	units := m.units()
 	row := index
 	for i := 0; i < index && i < len(units); i++ {
-		if e := m.entrailsOf(&units[i]); e != nil {
+		if e := m.innerUnitsOf(&units[i]); e != nil {
 			row += len(e.units)
 		}
 	}
@@ -184,11 +246,11 @@ func (m *Model) rowOfUnit(index int) int {
 }
 
 // rowAt returns what is on a row: the index of a unit being edited, and if
-// the row is an entrail of that unit, its entrails and the index among them
+// the row is an inner unit of that unit, its inner units and the index among them
 // (otherwise e is nil). ok is false if there is no such row.
-func (m *Model) rowAt(row int) (unit int, e *entrails, entrail int, ok bool) {
+func (m *Model) rowAt(row int) (unit int, e *innerUnits, inner int, ok bool) {
 	units := m.units()
-	if !m.unfold {
+	if !m.unfold() {
 		return row, nil, 0, row >= 0 && row < len(units)
 	}
 	if row < 0 {
@@ -199,7 +261,7 @@ func (m *Model) rowAt(row int) (unit int, e *entrails, entrail int, ok bool) {
 			return i, nil, 0, true
 		}
 		row--
-		if e := m.entrailsOf(&units[i]); e != nil {
+		if e := m.innerUnitsOf(&units[i]); e != nil {
 			if row < len(e.units) {
 				return i, e, row, true
 			}
@@ -210,9 +272,9 @@ func (m *Model) rowAt(row int) (unit int, e *entrails, entrail int, ok bool) {
 }
 
 // unitOfRow returns the index of the unit that selecting a row selects: the
-// unit on the row, or for an entrail, the module unit it belongs to. With
-// down, an entrail selects the unit after its module unit instead, if there
-// is one: moving down from a module unit goes past its entrails.
+// unit on the row, or for an inner unit, the module unit it belongs to. With
+// down, an inner unit selects the unit after its module unit instead, if there
+// is one: moving down from a module unit goes past its inner units.
 func (m *Model) unitOfRow(row int, down bool) int {
 	unit, e, _, ok := m.rowAt(row)
 	if !ok {
@@ -245,8 +307,8 @@ func (v *unitRows) Count() int       { return (*Model)(v).numRows() }
 func (v *unitRows) Selected() int    { return (*Model)(v).rowOfUnit(v.d.UnitIndex) }
 func (v *unitRows) Selected2() int   { return (*Model)(v).rowOfUnit(v.d.UnitIndex2) }
 
-// Selecting the row after a module unit, an entrail, is taken as moving
-// down from it; selecting any other entrail, e.g. by clicking it, selects
+// Selecting the row after a module unit, an inner unit, is taken as moving
+// down from it; selecting any other inner unit, e.g. by clicking it, selects
 // its module unit.
 func (v *unitRows) SetSelected(row int) {
 	v.units().SetSelected((*Model)(v).unitOfRow(row, row == v.Selected()+1))
@@ -259,7 +321,7 @@ func (v *unitRows) SetSelected2(row int) {
 // with rows of units.
 func (v *unitRows) unitRangeOf(r Range) Range {
 	m := (*Model)(v)
-	if !m.unfold {
+	if !m.unfold() {
 		return r
 	}
 	a, _, _, ok := m.rowAt(r.Start)

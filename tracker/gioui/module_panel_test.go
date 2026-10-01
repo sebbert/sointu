@@ -101,7 +101,7 @@ func TestModulesTabLayout(t *testing.T) {
 	model.Module().List().SetSelected(1)
 	frame("6-example-modules-tab")
 	model.Instrument().Tab().SetValue(int(tracker.InstrumentEditorTab))
-	model.Unit().Unfold().SetValue(true)
 	model.Unit().List().SetSelected(2)
+	model.Unit().Unfold().SetValue(true)
 	frame("7-example-unfolded")
 }

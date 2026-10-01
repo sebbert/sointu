@@ -364,7 +364,7 @@ func TestUnfold(t *testing.T) {
 	arg := m.Params().Item(Point{1, 2})
 	arg.SetValue(99)
 	units, params := m.Unit().List(), m.Params()
-	if units.Count() != 4 || params.Height() != 4 || m.Unit().Item(3).Entrail {
+	if units.Count() != 4 || params.Height() != 4 || m.Unit().Item(3).Inner {
 		t.Fatalf("folded: %v rows", units.Count())
 	}
 	// unfolded, the units that the synth runs for the module unit follow it
@@ -375,21 +375,21 @@ func TestUnfold(t *testing.T) {
 	var types []string
 	for i := range units.Count() {
 		item := m.Unit().Item(i)
-		if item.Entrail != (i >= 3 && i <= 6) {
-			t.Errorf("row %v: entrail %v", i, item.Entrail)
+		if item.Inner != (i >= 3 && i <= 6) {
+			t.Errorf("row %v: inner %v", i, item.Inner)
 		}
 		types = append(types, item.Title)
 	}
 	if got := strings.Join(types, " "); got != "oscillator send Module envelope oscillator mulp filter out" {
 		t.Errorf("rows: %v", got)
 	}
-	// the signals of the entrails: envelope 1, oscillator 2, mulp 1
+	// the signals of the inner units: envelope 1, oscillator 2, mulp 1
 	after := func(row int) int {
 		signals := m.Unit().Item(row).Signals
 		return signals.StackAfter()
 	}
 	if a, b, c := after(3), after(4), after(5); a != 1 || b != 2 || c != 1 {
-		t.Errorf("signals after the entrails: %v %v %v", a, b, c)
+		t.Errorf("signals after the inner units: %v %v %v", a, b, c)
 	}
 	// with the value of the module unit, bound, and not to be changed
 	var detune Parameter
@@ -399,12 +399,12 @@ func TestUnfold(t *testing.T) {
 		}
 	}
 	if name, ok := detune.Bound(); detune.Value() != 99 || !ok || name != "detune" {
-		t.Errorf("the detune of the entrail is %v, bound to %q", detune.Value(), name)
+		t.Errorf("the detune of the inner unit is %v, bound to %q", detune.Value(), name)
 	}
 	if detune.SetValue(5) || m.d.Song.Modules[0].Units[1].Parameters["detune"] == 5 {
-		t.Errorf("a parameter of an entrail could be changed")
+		t.Errorf("a parameter of an inner unit could be changed")
 	}
-	// the cursor skips the entrails
+	// the cursor skips the inner units
 	if units.Selected() != 2 {
 		t.Fatalf("the module unit is on row %v", units.Selected())
 	}
@@ -416,9 +416,9 @@ func TestUnfold(t *testing.T) {
 	if m.d.UnitIndex != 2 || units.Selected() != 2 {
 		t.Errorf("up from the out: unit %v, row %v", m.d.UnitIndex, units.Selected())
 	}
-	units.SetSelected(5) // clicking an entrail selects its module unit
+	units.SetSelected(5) // clicking an inner unit selects its module unit
 	if m.d.UnitIndex != 2 {
-		t.Errorf("selecting an entrail selected unit %v", m.d.UnitIndex)
+		t.Errorf("selecting an inner unit selected unit %v", m.d.UnitIndex)
 	}
 	params.SetCursor(Point{0, 2})
 	params.MoveCursor(0, 1)
@@ -434,7 +434,7 @@ func TestUnfold(t *testing.T) {
 	if !units.MoveElements(-1) || unitTypes(m.d.Song.Patch[0].Units) != "oscillator send module out" || m.d.UnitIndex != 2 {
 		t.Errorf("after moving it back up: %v, unit %v", unitTypes(m.d.Song.Patch[0].Units), m.d.UnitIndex)
 	}
-	units.SetSelected(units.Count() - 1) // the out, below the entrails
+	units.SetSelected(units.Count() - 1) // the out, below the inner units
 	units.SetSelected2(units.Selected())
 	if !units.MoveElements(-1) || unitTypes(m.d.Song.Patch[0].Units) != "oscillator send out module" {
 		t.Errorf("after moving the out up: %v", unitTypes(m.d.Song.Patch[0].Units))
@@ -446,19 +446,23 @@ func TestUnfold(t *testing.T) {
 	if !ok || !units.PasteElements(data) || unitTypes(m.d.Song.Patch[0].Units) != "oscillator send module module out" {
 		t.Fatalf("after copying and pasting the module unit: %v", unitTypes(m.d.Song.Patch[0].Units))
 	}
-	if units.Count() != 13 {
+	if units.Count() != 9 { // the new module unit is folded
 		t.Errorf("with two module units: %v rows", units.Count())
+	}
+	m.Unit().ToggleUnfold(units.Selected()).Do()
+	if units.Count() != 13 || !m.Unit().Item(units.Selected()).Unfolded {
+		t.Errorf("with both unfolded: %v rows", units.Count())
 	}
 	if !units.DeleteElements(false) || unitTypes(m.d.Song.Patch[0].Units) != "oscillator send module out" || units.Count() != 8 {
 		t.Errorf("after deleting one: %v, %v rows", unitTypes(m.d.Song.Patch[0].Units), units.Count())
 	}
-	// the entrails follow the module unit
+	// the inner units follow the module unit
 	units.SetSelected(2)
 	arg = params.Item(Point{1, 2})
 	arg.SetValue(12)
 	for x := 0; x < params.RowWidth(4); x++ {
 		if p := params.Item(Point{x, 4}); p.Name() == "detune" && p.Value() != 12 {
-			t.Errorf("after changing the module unit, the detune of the entrail is %v", p.Value())
+			t.Errorf("after changing the module unit, the detune of the inner unit is %v", p.Value())
 		}
 	}
 	m.Unit().Unfold().SetValue(false)

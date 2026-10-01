@@ -218,7 +218,7 @@ func (m *unitDisabled) Enabled() bool {
 }
 
 // Item returns information about the unit on the given row of the unit
-// editor: a unit being edited, or an entrail of a module unit.
+// editor: a unit being edited, or an inner unit of a module unit.
 func (v *UnitModel) Item(row int) UnitListItem {
 	units := (*Model)(v).units()
 	index, e, i, ok := (*Model)(v).rowAt(row)
@@ -237,12 +237,18 @@ func (v *UnitModel) Item(row int) UnitListItem {
 			Type:     u.Type,
 			Comment:  u.Comment,
 			Disabled: u.Disabled,
-			Entrail:  true,
+			Inner:    true,
+			First:    i == 0,
+			Last:     i == len(e.units)-1,
 			Signals:  Rail{PassThrough: signals.PassThrough + e.before[i], StackUse: e.uses[i], Send: !u.Disabled && u.Type == "send"},
 		}
 	}
 	unit := units[index]
+	_, isModule := v.d.Song.Modules.Find(unit.Parameters["module"])
+	isModule = isModule && unit.Type == "module"
 	return UnitListItem{
+		Module:   isModule,
+		Unfolded: isModule && v.unfolded[unit.ID],
 		Title:    (*Model)(v).unitTitle(&unit),
 		Type:     unit.Type,
 		Comment:  unit.Comment,
@@ -252,12 +258,17 @@ func (v *UnitModel) Item(row int) UnitListItem {
 }
 
 // UnitListItem is a unit in the unit list. Title is its type, or for a
-// module unit, the name of its module. Entrail is true for a unit that the
+// module unit, the name of its module. Inner is true for a unit that the
 // module unit above it stands for, which cannot be changed.
+//
+// Module is true for a module unit with a module, which can be unfolded, and
+// Unfolded if it is; First and Last are true for the first and the last of
+// the inner units of a module unit.
 type UnitListItem struct {
 	Type, Title, Comment string
 	Disabled             bool
-	Entrail              bool
+	Inner, First, Last   bool
+	Module, Unfolded     bool
 	Signals              Rail
 }
 
@@ -310,7 +321,7 @@ func (m *UnitModel) SetType(t string) {
 
 // List returns a List of the rows of the unit editor: the units of the
 // selected instrument, or of the selected module on the Modules tab, and
-// with Unfold, the entrails of the module units among them, which cannot be
+// with Unfold, the inner units of the module units among them, which cannot be
 // selected. It implements the ListData & MutableListData interfaces.
 func (m *UnitModel) List() List { return List{(*unitRows)(m)} }
 
@@ -418,10 +429,10 @@ func (s *UnitModel) RailWidth() int {
 		return 0
 	}
 	width := d.railWidth
-	if m.unfold {
+	if m.unfold() {
 		units := m.units()
 		for i := range units {
-			if e := m.entrailsOf(&units[i]); e != nil && i < len(d.rails) {
+			if e := m.innerUnitsOf(&units[i]); e != nil && i < len(d.rails) {
 				width = max(width, d.rails[i].PassThrough+e.width)
 			}
 		}
@@ -430,7 +441,7 @@ func (s *UnitModel) RailWidth() int {
 }
 
 // rowUnit returns the unit on a row of the unit editor: a unit being
-// edited, or an entrail. played is the ID that the unit has in the synth, or
+// edited, or an inner unit. played is the ID that the unit has in the synth, or
 // 0 if it is not in the synth.
 func (m *Model) rowUnit(row int) (u *sointu.Unit, played int, ok bool) {
 	units := m.units()

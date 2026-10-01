@@ -119,10 +119,10 @@ func (pt *ParamModel) Width() int {
 	// comments. Refactor the gioui side so that we can specify the width and
 	// height regardless of the underlying table size
 	width := d.paramsWidth
-	if pt.unfold {
+	if (*Model)(pt).unfold() {
 		units := (*Model)(pt).units()
 		for i := range units {
-			if e := (*Model)(pt).entrailsOf(&units[i]); e != nil {
+			if e := (*Model)(pt).innerUnitsOf(&units[i]); e != nil {
 				width = max(width, e.paramsWidth)
 			}
 		}
@@ -150,7 +150,7 @@ func (pt *ParamModel) MoveCursor(dx, dy int) (ok bool) {
 	p.Y += dy
 	pt.SetCursor(p)
 	if dy > 0 {
-		// moving down goes past the entrails of a module unit
+		// moving down goes past the inner units of a module unit
 		pt.d.UnitIndex = (*Model)(pt).unitOfRow(max(min(p.Y, pt.Height()-1), 0), true)
 		if _, e, _, _ := (*Model)(pt).rowAt(p.Y); e != nil {
 			return true
@@ -164,7 +164,7 @@ func (pt *ParamModel) Item(p Point) Parameter {
 	if d == nil || !ok || p.X < 0 {
 		return Parameter{}
 	}
-	if e != nil { // an entrail: it cannot be changed
+	if e != nil { // an inner unit: it cannot be changed
 		if p.X >= len(e.params[i]) {
 			return Parameter{}
 		}
@@ -188,7 +188,7 @@ func (pt *ParamModel) add(rect Rect, delta int, largeStep bool) (ok bool) {
 		for x := rect.TopLeft.X; x <= rect.BottomRight.X; x++ {
 			p := Point{x, y}
 			q := pt.Item(p)
-			if q.entrails != nil {
+			if q.inner != nil {
 				continue // the units a module unit stands for cannot be changed
 			}
 			if !q.Add(delta, largeStep) {
@@ -291,11 +291,11 @@ type (
 		index  int
 		vtable parameterVtable
 		port   int
-		// entrails is set for a parameter of an entrail, entrail its index
+		// inner is set for a parameter of an inner unit, innerIndex its index
 		// among them: a unit that a module unit stands for, which cannot
 		// be changed
-		entrails *entrails
-		entrail  int
+		inner      *innerUnits
+		innerIndex int
 	}
 
 	parameterVtable interface {
@@ -362,7 +362,7 @@ func (p *Parameter) Port() (int, bool) {
 	return p.port - 1, true
 }
 func (p *Parameter) SetValue(value int) bool {
-	if p.vtable == nil || p.entrails != nil {
+	if p.vtable == nil || p.inner != nil {
 		return false
 	}
 	r := p.Range()
@@ -431,7 +431,7 @@ func (p *Parameter) Hint() ParameterHint {
 	return hint
 }
 func (p *Parameter) Reset() {
-	if p.vtable == nil || p.entrails != nil {
+	if p.vtable == nil || p.inner != nil {
 		return
 	}
 	if _, ok := p.Bound(); ok {
@@ -947,8 +947,8 @@ func (p *Parameter) Bound() (name string, ok bool) {
 	if p.unit == nil || p.up == nil || p.vtable == nil {
 		return "", false
 	}
-	if p.entrails != nil {
-		return p.entrails.bound(p.m, p.entrail, p.up.Name)
+	if p.inner != nil {
+		return p.inner.bound(p.m, p.innerIndex, p.up.Name)
 	}
 	k, ok := p.unit.Bind[p.up.Name]
 	if !ok {

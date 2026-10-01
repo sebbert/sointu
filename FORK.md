@@ -419,10 +419,12 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   module of the selected units (Ctrl+G; its inputs are the signals they take
   from before them), show the module of a module unit on the Modules tab
   (Ctrl+Shift+G), replace the module unit with the units of its module, and
-  give it a copy of the module of its own. The eye button (Ctrl+Alt+G)
-  unfolds the module units: under each, faint, the units that it stands
-  for, as the synth runs them, with the values it gives the bound
-  parameters and with their previews. They cannot be changed or selected:
+  give it a copy of the module of its own. A module unit is like a section
+  that can be collapsed: the chevron on its row in the unit list and the
+  rack, or in the footer (Ctrl+Alt+G), unfolds it, and its inner units
+  follow it, set into the rack, darker and faint: the units that it stands
+  for, as the synth runs them, with the values it gives the bound parameters
+  and with their previews. They cannot be changed or selected:
   the cursor moves past them. The footer shows how many of the 63 units the
   instrument has once expanded.
 - **Files:** instrument files, presets and the units and instruments on the
