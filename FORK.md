@@ -534,8 +534,7 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   every module unit using it: changing parameters by mouse or keyboard,
   adding, deleting, moving, disabling, copying and pasting units, changing
   their type and comment, making a module of them. The footer then says
-  `editing module <name>, used N×`, and the rows showing that module have a
-  line down their left edge, also under other module units using it.
+  `editing module <name>, used N×`.
   - A parameter bound to a parameter of the module shows the value that the
     module unit above gives it, and changing it changes that value of the
     module unit, through the binding, like turning the knob on the row of

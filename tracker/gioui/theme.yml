@@ -231,7 +231,7 @@ dialog:
   titleinset: { top: 12, left: 20, right: 20 }
   textinset: { top: 12, bottom: 12, left: 20, right: 20 }
   buttons: *textbutton
-split: { bar: 10, minsize1: 180, minsize2: 180 }
+split: { bar: 4, minsize1: 180, minsize2: 180 }
 uniteditor:
   hint: { textsize: 16, color: *highemphasis, shadowcolor: *black }
   chooser: { textsize: 12, color: *white, shadowcolor: *black }

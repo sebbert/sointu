@@ -541,10 +541,7 @@ func (pe *InstrumentEditor) drawBackGround(gtx C) {
 
 // The rows of the inner units of an unfolded module unit are set into the
 // rack and the unit list: darker, with a shadow falling into them from the
-// module unit above and a faint one at their end. While the cursor is on an
-// inner unit, the rows showing the units of its module have a line down
-// their left edge, also under other module units using the module: they all
-// change with it.
+// module unit above and a faint one at their end.
 var (
 	innerBackground = color.NRGBA{R: 0, G: 0, B: 0, A: 90}
 	innerShadow     = color.NRGBA{R: 0, G: 0, B: 0, A: 120}
@@ -572,11 +569,6 @@ func drawInnerBackground(gtx C, size image.Point, u tracker.UnitListItem) {
 	paint.LinearGradientOp{Stop1: f32.Pt(0, 0), Color1: innerShadow, Stop2: f32.Pt(float32(gtx.Dp(5)), 0), Color2: color.NRGBA{}}.Add(gtx.Ops)
 	paint.PaintOp{}.Add(gtx.Ops)
 	edge.Pop()
-	if u.Edited {
-		c := TrackerFromContext(gtx).Theme.Knob.Pos.Color
-		c.A = 170
-		paint.FillShape(gtx.Ops, c, clip.Rect{Max: image.Pt(min(gtx.Dp(2), size.X), size.Y)}.Op())
-	}
 }
 
 // layoutFold lays out the chevron of the module unit on a row, in a square
