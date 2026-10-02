@@ -58,3 +58,31 @@ func (p *FeatureSetMacros) LadderDrive() bool {
 func (p *FeatureSetMacros) EnvelopeCurve() bool {
 	return vm.TransformsParam(p.FeatureSet, "envelope", "curve")
 }
+
+// set is true when a unit of the type has another value than the neutral
+// one for the parameter, or something modulates it. The parts of the players
+// below are left out of songs that do not use them: with the neutral value
+// they do nothing.
+func (p *FeatureSetMacros) set(unitType, paramName string, neutral int) bool {
+	return p.SupportsParamValueOtherThan(unitType, paramName, neutral) || p.SupportsModulation(unitType, paramName)
+}
+
+// The operands that only the songs have whose units differ in them, see
+// vm/operands.go.
+func (p *FeatureSetMacros) MCSpreadAddOperand() bool  { return vm.MCSpreadAddOperand(p.FeatureSet) }
+func (p *FeatureSetMacros) MCMixTypeOperand() bool    { return vm.MCMixTypeOperand(p.FeatureSet) }
+func (p *FeatureSetMacros) MCFilterTypeOperand() bool { return vm.MCFilterTypeOperand(p.FeatureSet) }
+func (p *FeatureSetMacros) MCDelayFlagsOperand() bool { return vm.MCDelayFlagsOperand(p.FeatureSet) }
+
+// MCDelayMod is true when the lines of an mcdelay are modulated: moddepth is
+// not 0. A modulated modrate counts too, as it could be infinite.
+func (p *FeatureSetMacros) MCDelayMod() bool {
+	return p.set("mcdelay", "moddepth", 0) || p.SupportsModulation("mcdelay", "modrate")
+}
+
+// MCSpreadGain, MCSumGain, MCSumWidth and MCLoopFeedback are true when the
+// song uses the parameter: otherwise it is a factor of 1.
+func (p *FeatureSetMacros) MCSpreadGain() bool   { return p.set("mcspread", "gain", 64) }
+func (p *FeatureSetMacros) MCSumGain() bool      { return p.set("mcsum", "gain", 64) }
+func (p *FeatureSetMacros) MCSumWidth() bool     { return p.set("mcsum", "width", 64) }
+func (p *FeatureSetMacros) MCLoopFeedback() bool { return p.set("mcloop", "feedback", 128) }

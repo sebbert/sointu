@@ -5,24 +5,31 @@
 ;;   voice of their instrument.
 ;;
 ;;   $mcUnit scans the operand of the unit, its index, and returns the address
-;;   of its entry in su_mc_table: the offset of the voice running it from
-;;   su_voices, the offsets of its bus and its state in su_mc, and the offset
-;;   of its constant data in su_mc_consts.
+;;   of its entry in su_mc_table: the offsets of its bus and its state in
+;;   su_mc, the offset of its constant data in su_mc_consts, and, when an
+;;   instrument with mc units has several voices, the offset of the voice
+;;   running it from su_voices.
 ;;-------------------------------------------------------------------------------
 (func $mcUnit (result i32)
+{{- if .MCVoices}}
     (i32.add (i32.const {{index .Labels "su_mc_table"}}) (i32.shl (call $scanOperand) (i32.const 4)))
+{{- else}}
+    (i32.add (i32.const {{index .Labels "su_mc_table"}}) (i32.mul (call $scanOperand) (i32.const 12)))
+{{- end}}
 )
+{{- if .MCVoices}}
 
 ;; $mcVoice is true if the current voice runs the unit
 (func $mcVoice (param $u i32) (result i32)
-    (i32.eq (i32.sub (global.get $voice) (i32.const {{index .Labels "su_voices"}})) (i32.load (local.get $u)))
+    (i32.eq (i32.sub (global.get $voice) (i32.const {{index .Labels "su_voices"}})) (i32.load offset=12 (local.get $u)))
 )
+{{- end}}
 
 ;; $mcBus returns the address of the unit's bus
 (func $mcBus (param $u i32) (result i32)
-    (i32.add (i32.const {{index .Labels "su_mc"}}) (i32.load offset=4 (local.get $u)))
+    (i32.add (i32.const {{index .Labels "su_mc"}}) (i32.load (local.get $u)))
 )
-{{- if or (.HasOp "mcspread") (.HasOp "mcsum")}}
+{{- if or .MCSpreadGain .MCSumGain}}
 
 ;; $mcGain returns the gain of mcspread and mcsum, ±40 dB like dbgain
 (func $mcGain (param $p f32) (result f32)
@@ -37,7 +44,7 @@
 ;;   the bus: channel c gets left (even c) or right (odd c) times the gain,
 ;;   negated for c = 2, 3, 6, 7. With add, it adds to the bus.
 ;;-------------------------------------------------------------------------------
-(func $su_op_mcspread (param $stereo i32) (local $u i32) (local $b i32) (local $add i32) (local $l f32) (local $r f32) (local $g f32) (local $v v128)
+(func $su_op_mcspread (param $stereo i32) (local $u i32) (local $b i32) (local $add i32) (local $l f32) (local $r f32) (local $v v128)
     (local.set $r (local.tee $l (call $pop)))
 {{- if .Stereo "mcspread"}}
     (if (local.get $stereo) (then
@@ -45,18 +52,26 @@
     ))
 {{- end}}
     (local.set $u (call $mcUnit))
-    (local.set $add (call $scanOperand))
+{{- if .MCSpreadAddOperand}}
+    (local.set $add (call $scanOperand)) ;; add
+{{- end}}
+{{- if .MCVoices}}
     (if (i32.eqz (call $mcVoice (local.get $u))) (then
         return
     ))
-    (local.set $g (call $mcGain (call $input (i32.const {{.InputNumber "mcspread" "gain"}}))))
-    (local.set $v (f32x4.mul
-        (f32x4.mul
-            (f32x4.replace_lane 3 (f32x4.replace_lane 1 (f32x4.splat (local.get $l)) (local.get $r)) (local.get $r))
-            (f32x4.splat (local.get $g)))
-        (v128.const f32x4 1 1 -1 -1)))
+{{- end}}
+{{- if .Stereo "mcspread"}}
+    (local.set $v (f32x4.replace_lane 3 (f32x4.replace_lane 1 (f32x4.splat (local.get $l)) (local.get $r)) (local.get $r)))
+{{- else}}
+    (local.set $v (f32x4.splat (local.get $l)))
+{{- end}}
+{{- if .MCSpreadGain}}
+    ;; the gain of the spread
+    (local.set $v (f32x4.mul (local.get $v) (f32x4.splat (call $mcGain (call $input (i32.const {{.InputNumber "mcspread" "gain"}}))))))
+{{- end}}
+    (local.set $v (f32x4.mul (local.get $v) (v128.const f32x4 1 1 -1 -1)))
     (local.set $b (call $mcBus (local.get $u)))
-{{- if .SupportsParamValue "mcspread" "add" 1}}
+{{- if .MCSpreadAddOperand}}
     (if (local.get $add) (then
         (v128.store (local.get $b) (f32x4.add (v128.load (local.get $b)) (local.get $v)))
         (v128.store offset=16 (local.get $b) (f32x4.add (v128.load offset=16 (local.get $b)) (local.get $v)))
@@ -76,25 +91,36 @@
 ;;-------------------------------------------------------------------------------
 (func $su_op_mcsum (param $stereo i32) (local $u i32) (local $b i32) (local $h v128) (local $l f32) (local $r f32) (local $g f32) (local $mid f32) (local $side f32)
     (local.set $u (call $mcUnit))
+{{- if .MCVoices}}
     (if (call $mcVoice (local.get $u)) (then
+{{- end}}
         (local.set $b (call $mcBus (local.get $u)))
         (local.set $h (f32x4.add (v128.load (local.get $b)) (v128.load offset=16 (local.get $b))))
         (local.set $l (f32.sub (f32x4.extract_lane 0 (local.get $h)) (f32x4.extract_lane 2 (local.get $h))))
         (local.set $r (f32.sub (f32x4.extract_lane 1 (local.get $h)) (f32x4.extract_lane 3 (local.get $h))))
+{{- if .MCSumGain}}
+        ;; the gain of the sum
         (local.set $g (call $mcGain (call $input (i32.const {{.InputNumber "mcsum" "gain"}}))))
+{{- end}}
         (local.set $mid (f32.mul (f32.add (local.get $l) (local.get $r)) (f32.const 0.125)))
 {{- if .Stereo "mcsum"}}
         (if (local.get $stereo) (then
+{{- if .MCSumWidth}}
             (local.set $side (f32.mul
                 (f32.mul (f32.sub (local.get $l) (local.get $r)) (f32.const 0.125))
                 (f32.mul (call $input (i32.const {{.InputNumber "mcsum" "width"}})) (f32.const 2))))
-            (local.set $r (f32.mul (f32.sub (local.get $mid) (local.get $side)) (local.get $g)))
+{{- else}}
+            (local.set $side (f32.mul (f32.sub (local.get $l) (local.get $r)) (f32.const 0.125)))
+{{- end}}
+            (local.set $r {{if .MCSumGain}}(f32.mul (f32.sub (local.get $mid) (local.get $side)) (local.get $g)){{else}}(f32.sub (local.get $mid) (local.get $side)){{end}})
         ))
 {{- end}}
-        (local.set $l (f32.mul (f32.add (local.get $mid) (local.get $side)) (local.get $g)))
+        (local.set $l {{if .MCSumGain}}(f32.mul (f32.add (local.get $mid) (local.get $side)) (local.get $g)){{else}}(f32.add (local.get $mid) (local.get $side)){{end}})
+{{- if .MCVoices}}
     )(else
         (local.set $r (f32.const 0))
     ))
+{{- end}}
 {{- if .Stereo "mcsum"}}
     (if (local.get $stereo) (then
         (call $push (local.get $r))
@@ -126,24 +152,35 @@
 
 (func $su_op_mcmix (param $stereo i32) (local $u i32) (local $t i32) (local $b i32) (local $k i32) (local $c i32) (local $lo v128) (local $hi v128) (local $x v128)
     (local.set $u (call $mcUnit))
-    (local.set $t (call $scanOperand))
+{{- if .MCMixTypeOperand}}
+    (local.set $t (call $scanOperand)) ;; the type of the mix
+{{- end}}
+{{- if .MCVoices}}
     (if (i32.eqz (call $mcVoice (local.get $u))) (then
         return
     ))
+{{- end}}
     (local.set $b (call $mcBus (local.get $u)))
     (local.set $lo (v128.load (local.get $b)))
     (local.set $hi (v128.load offset=16 (local.get $b)))
+{{- /* without the operand, all mcmix units have the same type: its code alone */}}
 {{- if .SupportsParamValue "mcmix" "type" 0}}
+{{- if .MCMixTypeOperand}}
     (if (i32.eqz (local.get $t)) (then
+{{- end}}
         (local.set $x (f32x4.add (local.get $lo) (local.get $hi)))
         (v128.store offset=16 (local.get $b) (call $mcHadamard4 (f32x4.sub (local.get $lo) (local.get $hi))))
         (v128.store (local.get $b) (call $mcHadamard4 (local.get $x)))
+{{- if .MCMixTypeOperand}}
         return
     ))
 {{- end}}
+{{- end}}
 {{- if .SupportsParamValue "mcmix" "type" 2}}
+{{- if .MCMixTypeOperand}}
     (if (i32.eq (local.get $t) (i32.const 2)) (then
-        (local.set $k (i32.add (i32.const {{index .Labels "su_mc_consts"}}) (i32.load offset=12 (local.get $u))))
+{{- end}}
+        (local.set $k (i32.add (i32.const {{index .Labels "su_mc_consts"}}) (i32.load offset=8 (local.get $u))))
         loop $channels
             (f32.store (i32.add (global.get $WRK) (local.get $c)) (f32.mul
                 (f32.load (i32.add (local.get $b) (i32.load (i32.add (local.get $k) (local.get $c)))))
@@ -152,8 +189,10 @@
         end
         (v128.store (local.get $b) (v128.load (global.get $WRK)))
         (v128.store offset=16 (local.get $b) (v128.load offset=16 (global.get $WRK)))
+{{- if .MCMixTypeOperand}}
         return
     ))
+{{- end}}
 {{- end}}
 {{- if .SupportsParamValue "mcmix" "type" 1}}
     ;; Householder: the sum in every lane, ((x0+x4)+(x2+x6)) + ((x1+x5)+(x3+x7))
@@ -174,12 +213,22 @@
 ;;-------------------------------------------------------------------------------
 (func $su_op_mcloop (param $stereo i32) (local $u i32) (local $b i32) (local $f v128)
     (local.set $u (call $mcUnit))
+{{- if .MCVoices}}
     (if (call $mcVoice (local.get $u)) (then
+{{- end}}
         (local.set $b (call $mcBus (local.get $u)))
+{{- if .MCLoopFeedback}}
         (local.set $f (f32x4.splat (call $input (i32.const {{.InputNumber "mcloop" "feedback"}}))))
         (v128.store (local.get $b) (f32x4.add (v128.load (local.get $b)) (f32x4.mul (local.get $f) (v128.load offset=32 (local.get $b)))))
         (v128.store offset=16 (local.get $b) (f32x4.add (v128.load offset=16 (local.get $b)) (f32x4.mul (local.get $f) (v128.load offset=48 (local.get $b)))))
+{{- else}}
+        ;; the feedback is 1 in the song
+        (v128.store (local.get $b) (f32x4.add (v128.load (local.get $b)) (v128.load offset=32 (local.get $b))))
+        (v128.store offset=16 (local.get $b) (f32x4.add (v128.load offset=16 (local.get $b)) (v128.load offset=48 (local.get $b))))
+{{- end}}
+{{- if .MCVoices}}
     ))
+{{- end}}
 )
 {{- end}}
 
@@ -189,11 +238,15 @@
 ;;-------------------------------------------------------------------------------
 (func $su_op_mcloopend (param $stereo i32) (local $u i32) (local $b i32)
     (local.set $u (call $mcUnit))
+{{- if .MCVoices}}
     (if (call $mcVoice (local.get $u)) (then
+{{- end}}
         (local.set $b (call $mcBus (local.get $u)))
         (v128.store offset=32 (local.get $b) (v128.load (local.get $b)))
         (v128.store offset=48 (local.get $b) (v128.load offset=16 (local.get $b)))
+{{- if .MCVoices}}
     ))
+{{- end}}
 )
 {{- end}}
 
@@ -204,12 +257,16 @@
 ;;-------------------------------------------------------------------------------
 (func $su_op_mcfilter (param $stereo i32) (local $u i32) (local $t i32) (local $b i32) (local $s i32) (local $h i32) (local $a v128) (local $x v128) (local $lo v128)
     (local.set $u (call $mcUnit))
-    (local.set $t (call $scanOperand))
+{{- if .MCFilterTypeOperand}}
+    (local.set $t (call $scanOperand)) ;; the type of the filter
+{{- end}}
+{{- if .MCVoices}}
     (if (i32.eqz (call $mcVoice (local.get $u))) (then
         return
     ))
+{{- end}}
     (local.set $b (call $mcBus (local.get $u)))
-    (local.set $s (i32.add (i32.const {{index .Labels "su_mc"}}) (i32.load offset=8 (local.get $u))))
+    (local.set $s (i32.add (i32.const {{index .Labels "su_mc"}}) (i32.load offset=4 (local.get $u))))
     (local.set $a (f32x4.splat (f32.sub (f32.const 1) (call $exp2f (f32.mul
         (call $exp2f (f32.mul (call $input (i32.const {{.InputNumber "mcfilter" "frequency"}})) (f32.const 10)))
         (f32.const -0.004110984))))))
@@ -219,9 +276,13 @@
         (local.set $lo (f32x4.add (local.get $lo) (f32x4.mul (local.get $a) (f32x4.sub (local.get $x) (local.get $lo)))))
         (v128.store offset=32 (i32.add (local.get $s) (local.get $h)) (local.get $lo))
 {{- if .SupportsParamValue "mcfilter" "type" 1}}
+{{- if .MCFilterTypeOperand}}
         (if (local.get $t) (then
-            (local.set $lo (f32x4.sub (local.get $x) (local.get $lo)))
+{{- end}}
+            (local.set $lo (f32x4.sub (local.get $x) (local.get $lo))) ;; high-pass
+{{- if .MCFilterTypeOperand}}
         ))
+{{- end}}
 {{- end}}
         (v128.store (i32.add (local.get $b) (local.get $h)) (local.get $lo))
         (br_if $halves (i32.lt_u (local.tee $h (i32.add (local.get $h) (i32.const 16))) (i32.const 32)))
@@ -244,21 +305,27 @@
 (func $su_op_mcdelay (param $stereo i32) (local $u i32) (local $flags i32) (local $b i32) (local $s i32) (local $k i32) (local $ring i32) (local $t i32) (local $mask i32) (local $h i32) (local $p f32)
     (local $rate v128) (local $depth v128) (local $nt v128) (local $max v128) (local $g v128) (local $v v128) (local $d v128) (local $i v128) (local $ia v128) (local $ib v128) (local $ya v128) (local $yb v128) (local $y v128) (local $w v128) (local $f v128)
     (local.set $u (call $mcUnit))
-    (local.set $flags (call $scanOperand))
+{{- if .MCDelayFlagsOperand}}
+    (local.set $flags (call $scanOperand)) ;; note tracking and allpass
+{{- end}}
+{{- if .MCVoices}}
     (if (i32.eqz (call $mcVoice (local.get $u))) (then
         return
     ))
+{{- end}}
     (local.set $b (call $mcBus (local.get $u)))
-    (local.set $s (i32.add (i32.const {{index .Labels "su_mc"}}) (i32.load offset=8 (local.get $u))))
-    (local.set $k (i32.add (i32.const {{index .Labels "su_mc_consts"}}) (i32.load offset=12 (local.get $u))))
+    (local.set $s (i32.add (i32.const {{index .Labels "su_mc"}}) (i32.load offset=4 (local.get $u))))
+    (local.set $k (i32.add (i32.const {{index .Labels "su_mc_consts"}}) (i32.load offset=8 (local.get $u))))
+{{- if .MCDelayMod}}
     ;; the rate in turns per sample, the depth in samples
     (local.set $rate (f32x4.splat (f32.mul
         (call $exp2f (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "mcdelay" "modrate"}})) (f32.const 8)) (f32.const 4)))
         (f32.const 2.2675737e-05))))
     (local.set $p (call $input (i32.const {{.InputNumber "mcdelay" "moddepth"}})))
     (local.set $depth (f32x4.splat (f32.mul (f32.mul (local.get $p) (local.get $p)) (f32.const 352.8))))
-    (local.set $nt (v128.const f32x4 1 1 1 1))
+{{- end}}
 {{- if .SupportsParamValue "mcdelay" "notetracking" 1}}
+    (local.set $nt (v128.const f32x4 1 1 1 1))
     (if (i32.and (local.get $flags) (i32.const 1)) (then
         (local.set $nt (f32x4.splat (call $exp2f (f32.mul
             (f32.sub (f32.const 60) (f32.convert_i32_u (i32.load (global.get $voice))))
@@ -266,11 +333,16 @@
     ))
 {{- end}}
     (local.set $mask (i32.load offset=128 (local.get $k)))
+{{- if or .MCDelayMod (.SupportsParamValue "mcdelay" "notetracking" 1)}}
     (local.set $max (f32x4.splat (f32.load offset=132 (local.get $k))))
+{{- end}}
+{{- if .SupportsParamValue "mcdelay" "allpass" 1}}
     (local.set $g (f32x4.splat (f32.load offset=136 (local.get $k))))
+{{- end}}
     (local.set $t (i32.load offset=96 (local.get $s)))
     (local.set $ring (i32.add (local.get $s) (i32.const 128)))
     loop $halves
+{{- if .MCDelayMod}}
         ;; the modulation: the phase advances at the channel's rate, and the
         ;; triangle is |2·frac(phase + offset) - 1|
         (local.set $v (f32x4.add
@@ -282,16 +354,24 @@
         (local.set $v (f32x4.abs (f32x4.sub
             (f32x4.mul (f32x4.sub (local.get $v) (f32x4.floor (local.get $v))) (v128.const f32x4 2 2 2 2))
             (v128.const f32x4 1 1 1 1))))
-        (local.set $d (f32x4.add
-            (f32x4.mul (v128.load (i32.add (local.get $k) (local.get $h))) (local.get $nt))
-            (f32x4.mul (local.get $depth) (local.get $v))))
+{{- end}}
+        (local.set $d (v128.load (i32.add (local.get $k) (local.get $h))))
+{{- if .SupportsParamValue "mcdelay" "notetracking" 1}}
+        (local.set $d (f32x4.mul (local.get $d) (local.get $nt)))
+{{- end}}
+{{- if .MCDelayMod}}
+        (local.set $d (f32x4.add (local.get $d) (f32x4.mul (local.get $depth) (local.get $v))))
+{{- end}}
+{{- if or .MCDelayMod (.SupportsParamValue "mcdelay" "notetracking" 1)}}
+        ;; a length that is neither modulated nor follows the note is within these already
         (local.set $d (f32x4.min (f32x4.max (local.get $d) (v128.const f32x4 1 1 1 1)) (local.get $max)))
+{{- end}}
         (local.set $i (i32x4.trunc_sat_f32x4_s (local.get $d)))
         (local.set $f (f32x4.sub (local.get $d) (f32x4.convert_i32x4_s (local.get $i))))
         ;; the addresses of the frames t-i and t-i-1 of the channels
         (local.set $ia (i32x4.sub (i32x4.splat (local.get $t)) (local.get $i)))
         (local.set $ib (i32x4.sub (local.get $ia) (i32x4.splat (i32.const 1))))
-        (local.set $w (i32x4.add (i32x4.splat (local.get $ring)) (v128.load offset={{add (index .Labels "su_mc_consts") 64}} (local.get $h))))
+        (local.set $w (i32x4.add (i32x4.splat (local.get $ring)) (v128.load offset={{add (index .Labels "su_mc_consts") .MCChannelOffsets}} (local.get $h))))
         (local.set $ia (i32x4.add (i32x4.shl (v128.and (local.get $ia) (i32x4.splat (local.get $mask))) (i32.const 5)) (local.get $w)))
         (local.set $ib (i32x4.add (i32x4.shl (v128.and (local.get $ib) (i32x4.splat (local.get $mask))) (i32.const 5)) (local.get $w)))
         (local.set $ya (f32x4.splat (f32.load (i32x4.extract_lane 0 (local.get $ia)))))

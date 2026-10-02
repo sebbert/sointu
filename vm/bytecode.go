@@ -291,7 +291,8 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 			case "mcspread", "mcsum", "mcdelay", "mcmix", "mcloop", "mcloopend", "mcfilter":
 				// operands: the index in MCUnits, and for mcspread add, for
 				// mcmix the type, for mcfilter highpass and for mcdelay the
-				// flags
+				// flags; each only in songs whose units differ in it (see
+				// operands.go)
 				if len(b.MCUnits) > 255 {
 					return nil, errors.New("Patch uses over 256 mc units")
 				}
@@ -301,15 +302,21 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				b.operand(len(b.MCUnits))
 				switch unit.Type {
 				case "mcspread":
-					b.operand(p["add"] & 1)
+					if MCSpreadAddOperand(featureSet) {
+						b.operand(p["add"] & 1)
+					}
 				case "mcmix":
 					typ := min(max(p["type"], 0), sointu.MCMixShuffle)
 					if typ == sointu.MCMixShuffle {
 						u.Shuffle = newMCShuffle(p["seed"])
 					}
-					b.operand(typ)
+					if MCMixTypeOperand(featureSet) {
+						b.operand(typ)
+					}
 				case "mcfilter":
-					b.operand(p["type"] & 1)
+					if MCFilterTypeOperand(featureSet) {
+						b.operand(p["type"] & 1)
+					}
 				case "mcdelay":
 					u.Delay = newMCDelay(p)
 					flags := 0
@@ -319,7 +326,9 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 					if p["allpass"] == 1 {
 						flags |= MCDelayAllpass
 					}
-					b.operand(flags)
+					if MCDelayFlagsOperand(featureSet) {
+						b.operand(flags)
+					}
 				}
 				b.MCUnits = append(b.MCUnits, u)
 			case "bufread", "bufwrite":
