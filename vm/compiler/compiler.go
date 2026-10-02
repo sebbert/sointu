@@ -28,6 +28,10 @@ type Compiler struct {
 	// JavaScript instead of computing them itself: a smaller player, but its
 	// output then differs slightly from the Go synth, and between browsers.
 	MathImports bool
+	// Progressive makes the wasm player render nothing at instantiation:
+	// it exports r(rows), which renders the next rows of the song and can be
+	// called until the song ends.
+	Progressive bool
 }
 
 // EncodedBuffer is the sample of a buffer encoded for the compiled player,

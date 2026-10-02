@@ -78,10 +78,25 @@ func TestBufreadWasmMatchesGoSynth(t *testing.T) {
 	if err != nil {
 		t.Skipf("ffmpeg not found: %v", err)
 	}
+	song := bufreadTestSong()
+	encoded, audio, runnerArgs, channels := encodeTestBuffers(t, ff, song)
+
+	want, err := sointu.PlayWithBuffers(vm.GoSynther{}, song, audio, nil)
+	if err != nil {
+		t.Fatalf("Go synth failed: %v", err)
+	}
+
+	got := renderWasm(t, node, wat2wasm, song, encoded, runnerArgs, channels)
+	compareWasmToGo(t, want, got)
+}
+
+// bufreadTestSong is a song that plays two buffers with samples, a missing
+// buffer and a loop with modulated points.
+func bufreadTestSong() sointu.Song {
 	sine := func(freq float64) func(int, int) float64 {
 		return func(i, c int) float64 { return math.Sin(2*math.Pi*freq*float64(i+c*7)/44100) * (1 - float64(i)/20000) }
 	}
-	song := sointu.Song{
+	return sointu.Song{
 		BPM:         120,
 		RowsPerBeat: 4,
 		EncodingPresets: sointu.EncodingPresets{
@@ -126,13 +141,17 @@ func TestBufreadWasmMatchesGoSynth(t *testing.T) {
 			}},
 		},
 	}
+}
 
+// encodeTestBuffers encodes the samples of a song with ffmpeg, and writes
+// them and their decoded audio to files: the arguments and the channels for
+// bufreadWasmRunner. It skips the test if an encoder is missing.
+func encodeTestBuffers(t *testing.T, ff *ffmpeg.FFmpeg, song sointu.Song) (encoded map[int]compiler.EncodedBuffer, audio map[int]sointu.BufferAudio, runnerArgs, channels []string) {
+	t.Helper()
 	dir := t.TempDir()
 	cache := ffmpeg.NewCache(ff, "")
-	encoded := map[int]compiler.EncodedBuffer{}
-	audio := map[int]sointu.BufferAudio{}
-	var runnerArgs []string
-	var channels []string
+	encoded = map[int]compiler.EncodedBuffer{}
+	audio = map[int]sointu.BufferAudio{}
 	for _, buf := range song.Buffers {
 		enc, err := song.SampleEncoding(buf.Sample)
 		if err != nil {
@@ -154,14 +173,7 @@ func TestBufreadWasmMatchesGoSynth(t *testing.T) {
 		runnerArgs = append(runnerArgs, encFile, audioFile)
 		channels = append(channels, string(rune('0'+buf.Channels)))
 	}
-
-	want, err := sointu.PlayWithBuffers(vm.GoSynther{}, song, audio, nil)
-	if err != nil {
-		t.Fatalf("Go synth failed: %v", err)
-	}
-
-	got := renderWasm(t, node, wat2wasm, song, encoded, runnerArgs, channels)
-	compareWasmToGo(t, want, got)
+	return
 }
 
 // renderWasm compiles a song to a wasm player and renders it with node,
@@ -170,20 +182,7 @@ func TestBufreadWasmMatchesGoSynth(t *testing.T) {
 func renderWasm(t *testing.T, node, wat2wasm string, song sointu.Song, encoded map[int]compiler.EncodedBuffer, runnerArgs, channels []string) []float32 {
 	t.Helper()
 	dir := t.TempDir()
-	com, err := compiler.New("", "wasm", false, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	com.Buffers = encoded
-	files, _, err := com.Song(&song)
-	if err != nil {
-		t.Fatalf("compiling failed: %v", err)
-	}
-	watFile, wasmFile := filepath.Join(dir, "song.wat"), filepath.Join(dir, "song.wasm")
-	os.WriteFile(watFile, []byte(files[".wat"]), 0o644)
-	if out, err := exec.Command(wat2wasm, wat2wasmArgs(wat2wasm, "-o", wasmFile, watFile)...).CombinedOutput(); err != nil {
-		t.Fatalf("wat2wasm failed: %v\n%s", err, out)
-	}
+	wasmFile, _ := compileWasm(t, wat2wasm, song, encoded, nil)
 	runner, outFile := filepath.Join(dir, "runner.js"), filepath.Join(dir, "out.raw")
 	os.WriteFile(runner, []byte(bufreadWasmRunner), 0o644)
 	cmd := exec.Command(node, append([]string{runner, wasmFile, outFile}, runnerArgs...)...)
@@ -200,6 +199,32 @@ func renderWasm(t *testing.T, node, wat2wasm string, song sointu.Song, encoded m
 		got[i] = math.Float32frombits(binary.LittleEndian.Uint32(raw[4*i:]))
 	}
 	return got
+}
+
+// compileWasm compiles a song to a wasm player, with the compiler changed by
+// configure if not nil, and returns the path of the .wasm and the compiled
+// files by extension.
+func compileWasm(t *testing.T, wat2wasm string, song sointu.Song, encoded map[int]compiler.EncodedBuffer, configure func(*compiler.Compiler)) (string, map[string]string) {
+	t.Helper()
+	dir := t.TempDir()
+	com, err := compiler.New("", "wasm", false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	com.Buffers = encoded
+	if configure != nil {
+		configure(com)
+	}
+	files, _, err := com.Song(&song)
+	if err != nil {
+		t.Fatalf("compiling failed: %v", err)
+	}
+	watFile, wasmFile := filepath.Join(dir, "song.wat"), filepath.Join(dir, "song.wasm")
+	os.WriteFile(watFile, []byte(files[".wat"]), 0o644)
+	if out, err := exec.Command(wat2wasm, wat2wasmArgs(wat2wasm, "-o", wasmFile, watFile)...).CombinedOutput(); err != nil {
+		t.Fatalf("wat2wasm failed: %v\n%s", err, out)
+	}
+	return wasmFile, files
 }
 
 // compareWasmToGo checks that the output of the wasm player is exactly that of

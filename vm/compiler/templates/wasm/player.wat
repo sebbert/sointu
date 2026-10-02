@@ -364,11 +364,22 @@
 ;;------------------------------------------------------------------------------
 ;; "Entry point" for the player
 ;;------------------------------------------------------------------------------
+{{- if .Progressive}}
+;; Progressive player: nothing renders at instantiation. r(rows) renders the
+;; next rows of the song after the rows rendered so far, and can be called
+;; until the end of the song. The first call fills the buffers and tables.
+
+(func $render (export "r") (param $rows i32)
+{{- else}}
 (start $render) ;; we run render automagically when the module is instantiated
 
 (func $render (param)
+{{- end}}
 {{- if  .Output16Bit }} (local $channel i32) {{- end }}
 {{- if .Buffers}} (local $k i32) {{- end }}
+{{- if and .Progressive (or .Buffers .SpectralTable)}}
+    (if (i32.eqz (global.get $globaltick)) (then ;; the first call
+{{- end}}
 {{- range $i, $b := .Buffers}}
 {{- if gt (mul $b.Frames $b.Channels) 0}}
     ;; fill buffer {{$i}} with the decoded audio from the host
@@ -388,9 +399,16 @@
 {{- if .SpectralTable}}
     (call $spectralInit)
 {{- end}}
+{{- if and .Progressive (or .Buffers .SpectralTable)}}
+    ))
+{{- end}}
+{{- if .Progressive}}
+        loop $row_loop
+{{- else}}
     loop $pattern_loop
         (global.set $row (i32.const 0))
         loop $row_loop
+{{- end}}
             (call $su_update_voices)
             (global.set $sample (i32.const 0))
             loop $sample_loop
@@ -419,11 +437,20 @@
                 (br_if $sample_loop (i32.lt_s (global.get $sample) (i32.const {{.Song.SamplesPerRow}})))
             end
             (global.set $row (i32.add (global.get $row) (i32.const 1)))
+{{- if .Progressive}}
+            (if (i32.eq (global.get $row) (i32.const {{.PatternLength}})) (then
+                (global.set $row (i32.const 0))
+                (global.set $pattern (i32.add (global.get $pattern) (i32.const 1)))
+            ))
+            (br_if $row_loop (local.tee $rows (i32.sub (local.get $rows) (i32.const 1))))
+        end
+{{- else}}
             (br_if $row_loop (i32.lt_s (global.get $row) (i32.const {{.PatternLength}})))
         end
         (global.set $pattern (i32.add (global.get $pattern) (i32.const 1)))
         (br_if $pattern_loop (i32.lt_s (global.get $pattern) (i32.const {{.SequenceLength}})))
     end
+{{- end}}
 )
 
 {{- if .MultiVoiceTracks}}
