@@ -32,6 +32,17 @@ type Compiler struct {
 	// it exports r(rows), which renders the next rows of the song and can be
 	// called until the song ends.
 	Progressive bool
+	// JS makes Song also write a JavaScript module (.js, with its types in
+	// .d.ts) that renders the song in the background with the progressive
+	// player, in workers, and plays it while it renders. It implies
+	// Progressive. The module has only the code this song needs.
+	JS bool
+	// SeparateSamples leaves the encoded samples of the buffers out of the
+	// wasm player, where they are custom sections by default: Song returns
+	// them as files with the extensions ".0.<format>", ".1.<format>" and so
+	// on, numbered in the order the player asks for them, and the host
+	// passes them to the JavaScript module.
+	SeparateSamples bool
 	// Stages makes the progressive wasm player able to render the song in
 	// a pipeline of up to this many stages, each a range of voices run by
 	// its own instance (see wasm_stages.go); StageCuts sets the first
@@ -83,6 +94,9 @@ type EncodedBuffer struct {
 	Encoded  []byte
 	Frames   int
 	Channels int
+	// Format is the extension of the file when the sample is written
+	// separately, e.g. "ogg"; "bin" if empty.
+	Format string
 }
 
 // wasmBuffer is a buffer in the wasm player: its encoded sample goes in a
@@ -91,6 +105,8 @@ type EncodedBuffer struct {
 type wasmBuffer struct {
 	Offset, Frames, Channels int
 	EncodedHex               string
+	encoded                  []byte
+	format                   string
 }
 
 // wasmBufferHeader is the runtime state of a buffer in the wasm player: the
@@ -270,6 +286,12 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 	if com.Arch != "386" && com.Arch != "amd64" && com.Arch != "wasm" {
 		return nil, nil, fmt.Errorf(`compiling a song player is supported only on 386, amd64 and wasm architectures (targeted architecture was %v)`, com.Arch)
 	}
+	if com.JS {
+		com.Progressive = true
+	}
+	if (com.Progressive || com.SeparateSamples) && com.Arch != "wasm" {
+		return nil, nil, fmt.Errorf(`the progressive player, its JavaScript module and separate samples are only for wasm (targeted architecture was %v)`, com.Arch)
+	}
 	var templates []string
 	if com.Arch == "386" || com.Arch == "amd64" {
 		templates = []string{"player.asm", "player.h", "player.inc"}
@@ -383,6 +405,35 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 			for _, s := range stages.Stages[:stages.NumStages] {
 				com.Layout.StageCells = append(com.Layout.StageCells, len(s.InCells))
 				com.Layout.StageVoices = append(com.Layout.StageVoices, [2]int{s.First, s.End})
+			}
+			if com.SeparateSamples && err == nil {
+				for i, b := range buffers.Buffers {
+					retmap[fmt.Sprintf(".%d.%s", i, b.format)] = string(b.encoded)
+				}
+			}
+			if com.JS && err == nil {
+				if _, ok := features.Opcode("speed"); ok {
+					return nil, nil, errors.New("the JavaScript module cannot play songs with the speed unit: the lengths of their rows are not known")
+				}
+				frameBytes := 8
+				if com.Output16Bit {
+					frameBytes = 4
+				}
+				jsData := struct {
+					*WasmLayout
+					Song                                      *sointu.Song
+					Frames                                    int // of the song
+					FrameBytes                                int // of the audio of a frame
+					Samples                                   int // buffers with samples
+					SeparateSamples, MathImports, Output16Bit bool
+				}{com.Layout, song, com.Layout.OutputBytes / frameBytes, frameBytes, len(buffers.Buffers), com.SeparateSamples, com.MathImports, com.Output16Bit}
+				for _, name := range []string{"player.js", "player.d.ts"} {
+					result := bytes.NewBufferString("")
+					if err := com.Template.ExecuteTemplate(result, name, &jsData); err != nil {
+						return nil, nil, fmt.Errorf(`could not execute template "%v": %v`, name, err)
+					}
+					retmap[strings.TrimPrefix(name, "player")] = result.String()
+				}
 			}
 		}
 		if err != nil {
@@ -583,7 +634,11 @@ func (com *Compiler) wasmBuffers(song *sointu.Song, b *vm.Bytecode) (ret wasmBuf
 				for _, c := range enc.Encoded {
 					fmt.Fprintf(&hex, "\\%02x", c)
 				}
-				ret.Buffers = append(ret.Buffers, wasmBuffer{Offset: ret.BufferBytes, Frames: enc.Frames, Channels: enc.Channels, EncodedHex: hex.String()})
+				format := enc.Format
+				if format == "" {
+					format = "bin"
+				}
+				ret.Buffers = append(ret.Buffers, wasmBuffer{Offset: ret.BufferBytes, Frames: enc.Frames, Channels: enc.Channels, EncodedHex: hex.String(), encoded: enc.Encoded, format: format})
 				header = wasmBufferHeader{Offset: uint32(ret.BufferBytes), Capacity: uint32(enc.Frames), Channels: uint32(enc.Channels), Filled: uint32(enc.Frames)}
 				ret.BufferBytes += enc.Frames * enc.Channels * 4
 			}

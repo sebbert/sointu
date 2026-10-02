@@ -663,8 +663,10 @@
 ;; All data is collected into a byte buffer and emitted at once
 (data (i32.const 0) "{{range .Data}}\{{. | printf "%02x"}}{{end}}")
 
+{{- if not .SeparateSamples}}
 {{- range .Buffers}}
 (@custom "sointu.buffer" "{{.EncodedHex}}")
+{{- end}}
 {{- end}}
 
 ;;(data (i32.const 8388610) "\52\49\46\46\b2\eb\0c\20\57\41\56\45\66\6d\74\20\12\20\20\20\03\20\02\20\44\ac\20\20\20\62\05\20\08\20\20\20\20\20\66\61\63\74\04\20\20\20\e0\3a\03\20\64\61\74\61\80\eb\0c\20")

@@ -89,15 +89,42 @@ type stageAccess struct {
 	clear, read   bool
 }
 
-// unitCosts are rough relative costs of running a unit for a sample in the
-// wasm player, for balancing the stages. Units not listed cost 1.
-var unitCosts = map[string]float64{
-	"oscillator": 3, "filter": 1.5, "envelope": 1.5, "delay": 2, "compressor": 2.5, "ott": 8, "limiter": 3,
-	"softclip": 2, "ladder": 5, "width": 1.5, "bufread": 3, "bufwrite": 1.5, "belleq": 2, "distort": 1.5,
-	"spfft": 12, "spifft": 12, "spfilter": 2, "spcompress": 4, "spblur": 3, "spgate": 2, "spphase": 3,
-	"spscale": 3, "spformant": 4, "spcross": 4, "spcomb": 4, "spcopy": 2,
-	"mcdelay": 12, "mcmix": 3, "mcfilter": 4, "mcspread": 1.5, "mcsum": 1.5, "mcloop": 1, "mcloopend": 1,
-	"spawn": 2, "noise": 1.5, "pan": 1, "send": 1, "out": 1, "aux": 1, "outaux": 1,
+// unitCost is a rough cost of running a unit for a sample in the wasm
+// player, in nanoseconds on a 2023 laptop, for balancing the stages: fitted
+// to the times of the voices of the example songs, where the bandlimited
+// oscillators (for each unison voice and channel), the ladder filters and
+// the envelopes take most of the time. The spectral units are guesses.
+func unitCost(u *sointu.Unit) float64 {
+	p := u.Parameters
+	stereo := float64(p["stereo"] & 1)
+	switch u.Type {
+	case "oscillator":
+		c := 12.0
+		if sointu.OscillatorBandlimited(*u) {
+			c = 46
+		}
+		return c * float64(p["unison"]+1) * (1 + stereo)
+	case "delay":
+		return 26 + 12*float64(len(u.VarArgs))
+	case "ladder":
+		return 83
+	case "envelope":
+		return 60
+	case "filter":
+		return 12 + 23*stereo
+	case "mcmix", "mcdelay", "mcfilter":
+		return 40
+	case "spfft", "spifft":
+		return 120 * (1 + stereo)
+	case "ott":
+		return 80 * (1 + stereo)
+	case "compressor", "limiter", "softclip", "bufread":
+		return 20 * (1 + stereo)
+	}
+	if len(sointu.SpectrumBufferParams(u.Type)) > 0 {
+		return 40
+	}
+	return 8
 }
 
 // stageUnits lists the units of the patch that run in the players, numbered
@@ -184,11 +211,7 @@ func wasmStages(song *sointu.Song, features vm.FeatureSet, numStages int, cuts [
 		u, p := su.unit, su.unit.Parameters
 		lo, hi := firstVoice[su.instr], firstVoice[su.instr+1]-1
 		stereo := p["stereo"] & 1
-		c, ok := unitCosts[u.Type]
-		if !ok {
-			c = 1
-		}
-		cost[su.instr] += c * float64(su.ops) * (1 + 0.5*float64(stereo))
+		cost[su.instr] += unitCost(u) * float64(su.ops)
 		stack[su.instr] += u.StackChange()
 		target := func() (int, int) { // the voices of the instrument parameter
 			if t := p["instrument"] - 1; t >= 0 && t < len(patch) {
@@ -207,7 +230,6 @@ func wasmStages(song *sointu.Song, features vm.FeatureSet, numStages int, cuts [
 				n = n / 2 * 2
 			}
 			delayLines[su.instr] += n
-			cost[su.instr] += float64(n)
 		case "ott":
 			otts[su.instr]++
 		case "limiter":
