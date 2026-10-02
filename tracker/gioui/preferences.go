@@ -17,6 +17,16 @@ type (
 	Preferences struct {
 		Window WindowPreferences
 		Rack   RackPreferences
+		MCP    MCPPreferences
+	}
+
+	// MCPPreferences are the settings of the MCP server, through which a
+	// language model like Claude reads and changes the patch: see
+	// tracker/mcp.
+	MCPPreferences struct {
+		// Enabled lets the MCP server reach the tracker and every plugin
+		// instance
+		Enabled bool `yaml:",omitempty"`
 	}
 
 	RackPreferences struct {
@@ -144,5 +154,48 @@ func (t *alwaysOnTop) SetValue(val bool) {
 	t.preferences.Window.AlwaysOnTop = val
 	if err := WriteCustomConfig("preferences.yml", val, "window", "alwaysontop"); err != nil {
 		(*Tracker)(t).Alerts().Add(fmt.Sprintf("Could not save preferences: %v", err), tracker.Error)
+	}
+}
+
+// RemoteControl is what lets a language model change the song, e.g. an
+// MCP server: see tracker/mcp.
+type RemoteControl interface {
+	Enabled() bool
+	SetEnabled(on bool) error
+}
+
+// SetRemoteControl gives the tracker the remote control, and turns it on if
+// the preferences say so. Call it before Main.
+func (t *Tracker) SetRemoteControl(rc RemoteControl) {
+	t.remoteControl = rc
+	if rc != nil && t.preferences.MCP.Enabled {
+		if err := rc.SetEnabled(true); err != nil {
+			t.Alerts().Add(fmt.Sprintf("Could not let Claude edit: %v", err), tracker.Error)
+		}
+	}
+}
+
+// LetClaudeEdit turns the remote control on and off, and saves the choice in
+// the custom preferences, for every tracker and plugin instance.
+func (t *Tracker) LetClaudeEdit() tracker.Bool { return tracker.MakeBool((*letClaudeEdit)(t)) }
+
+type letClaudeEdit Tracker
+
+func (t *letClaudeEdit) Enabled() bool { return t.remoteControl != nil }
+func (t *letClaudeEdit) Value() bool   { return t.remoteControl != nil && t.remoteControl.Enabled() }
+func (t *letClaudeEdit) SetValue(val bool) {
+	if t.remoteControl == nil {
+		return
+	}
+	if err := t.remoteControl.SetEnabled(val); err != nil {
+		(*Tracker)(t).Alerts().Add(fmt.Sprintf("Could not let Claude edit: %v", err), tracker.Error)
+		return
+	}
+	t.preferences.MCP.Enabled = val
+	if err := WriteCustomConfig("preferences.yml", val, "mcp", "enabled"); err != nil {
+		(*Tracker)(t).Alerts().Add(fmt.Sprintf("Could not save preferences: %v", err), tracker.Error)
+	}
+	if val {
+		(*Tracker)(t).Alerts().Add("Claude can now read and change the song, through the sointu-mcp command", tracker.Info)
 	}
 }

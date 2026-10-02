@@ -64,6 +64,10 @@ type (
 
 		preferences Preferences
 
+		// remoteControl lets a language model change the song: see
+		// SetRemoteControl
+		remoteControl RemoteControl
+
 		*tracker.Model
 
 		surfaceHeight int

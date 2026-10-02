@@ -1,7 +1,8 @@
 # Build sointu's command line tools, tracker and VST2 and CLAP plugins.
 #
 #   make                      build everything into out/
-#   make compile track play   build individual tools
+#   make compile track play mcp
+#                             build individual tools
 #   make vst clap             build the VST2 or CLAP plugin
 #   make install-vst          install a plugin into the user plugin directory
 #   make install-clap
@@ -66,7 +67,7 @@ clap_DIR  := $(CLAP_DIR)
 vst_PKG   := sointu-vsti
 clap_PKG  := sointu-clap
 
-TOOLS   := compile track play
+TOOLS   := compile track play mcp
 PLUGINS := vst clap
 
 .PHONY: all $(TOOLS) $(PLUGINS) clean FORCE \

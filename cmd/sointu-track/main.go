@@ -16,6 +16,7 @@ import (
 	"github.com/vsariola/sointu/oto"
 	"github.com/vsariola/sointu/tracker"
 	"github.com/vsariola/sointu/tracker/gioui"
+	"github.com/vsariola/sointu/tracker/mcp"
 )
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to `file`")
@@ -68,6 +69,8 @@ func main() {
 	}
 
 	trackerUi := gioui.NewTracker(model)
+	mcpHost := mcp.NewHost(model, "sointu-track")
+	trackerUi.SetRemoteControl(mcpHost)
 	audioCloser := audioContext.Play(func(buf sointu.AudioBuffer) error {
 		player.Process(buf, tracker.NullPlayerProcessContext{})
 		return nil
@@ -75,6 +78,7 @@ func main() {
 
 	go func() {
 		trackerUi.Main()
+		mcpHost.Close()
 		audioCloser.Close()
 		model.Close()
 		if *cpuprofile != "" {

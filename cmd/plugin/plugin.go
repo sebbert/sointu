@@ -16,6 +16,7 @@ import (
 	"github.com/vsariola/sointu/cmd"
 	"github.com/vsariola/sointu/tracker"
 	"github.com/vsariola/sointu/tracker/gioui"
+	"github.com/vsariola/sointu/tracker/mcp"
 )
 
 type (
@@ -26,6 +27,7 @@ type (
 		model          *tracker.Model
 		player         *tracker.Player
 		tracker        *gioui.Tracker
+		mcp            *mcp.Host
 		buf            sointu.AudioBuffer
 		totalFrames    int64
 		lastAlertCheck time.Time
@@ -57,6 +59,8 @@ func New(name string, markDirty func()) *Instance {
 	player := tracker.NewPlayer(broker, cmd.Synthers[0])
 
 	t := gioui.NewTracker(model)
+	host := mcp.NewHost(model, name)
+	t.SetRemoteControl(host)
 	model.Play().TrackerHidden().SetValue(true)
 	// since the plugin is usually working without any regard for the tracks
 	// until recording, disable the Instrument-Track linking by default
@@ -68,6 +72,7 @@ func New(name string, markDirty func()) *Instance {
 		model:          model,
 		player:         player,
 		tracker:        t,
+		mcp:            host,
 		buf:            make(sointu.AudioBuffer, 1024),
 		lastAlertCheck: time.Now(),
 	}
@@ -115,6 +120,7 @@ func (i *Instance) Process(left, right []float32, host Host) {
 
 // Close closes the tracker window and waits for it to finish.
 func (i *Instance) Close() {
+	i.mcp.Close()
 	tracker.TrySend(i.broker.CloseGUI, struct{}{})
 	i.model.Close()
 	tracker.TimeoutReceive(i.broker.FinishedGUI, 3*time.Second)

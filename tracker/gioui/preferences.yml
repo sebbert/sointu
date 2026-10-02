@@ -5,3 +5,5 @@ window:
   alwaysontop: false
 rack:
   bufferpreviews: true
+mcp:
+  enabled: false
