@@ -219,9 +219,13 @@ units at all. Its units count towards the 63 of the instrument.
 type) and `disabled`. The unit has two parameters: `stereo`, and `gain`, the
 gain of the whole eq in tenths of a decibel (±24 dB). Any number of bands;
 the tracker adds up to 16. The eq takes and leaves one signal, or two in
-stereo. In a module it is expanded first, so its units are units of the
-module like any other; its parameters cannot be bound, and it has no ports
-for sends.
+stereo. An eq unit of a module is copied with the other units of the module
+for every module unit, and expanded after that, like the eq units of the
+instruments; its parameters cannot be bound, and it has no ports for sends.
+`Expansion.EQs` tells where the units of each eq unit are in the expanded
+song, by its ID (of its copy, for a module unit): the instrument, the first
+unit and how many, which is where the tracker taps the signal before and
+after it (see [Taps](#taps)).
 
 **Bands.** What each compiles to, with the fewest units that do it:
 
@@ -342,7 +346,8 @@ written by hand, for wasm, 386 and amd64, and without a `ladder` band only
 for wasm; an eq that does nothing compiles like no eq; the wasm player
 renders it and `examples/eq.yml` exactly like the Go synth),
 `tracker/eq_test.go` (undo, a gesture as one step, numbers, saving, files,
-clipboard, modules) and `tracker/gioui/eq_editor_test.go` (the plot, the
+clipboard, modules), `tracker/taps_test.go` (the spectra before and after
+the eq) and `tracker/gioui/eq_editor_test.go` (the plot, the
 mouse and the keys, without a window).
 
 ## limiter
@@ -671,6 +676,110 @@ by operation, in float32:
 
 These change the Go synth's sound by tiny amounts, mostly below 1e-5.
 
+### State across changes of the patch
+
+When the tracker changes the patch while the synth plays (`GoSynth.Update`),
+the units that are still there keep their state, in every voice
+(`vm/carry.go`). Before, whenever the opcodes changed, e.g. a unit was
+added, the units of every voice started from nothing: envelopes began
+again, filters and compressors fell silent, and the delay lines, which are
+kept in the order the units run, belonged to other units than before. Only
+the Go synth does this; the compiled players have one patch.
+
+- What a unit keeps: its 8 floats of state and its 8 ports in each voice,
+  and its delay lines, `ott` and `limiter` states. Spectral units and mc
+  units already kept theirs, by their buffers.
+- **Instruments** are matched by the units they share, by ID and type, in
+  their order (the longest common sequence, weighted by the shared units).
+  An instrument that shares no unit with any is matched with the one in its
+  place, if the patch has as many instruments as before: so patches without
+  IDs work too. The voices of an instrument are matched in their order, and
+  keep their note with their units; voices that are new are silent.
+- **Units** of matched instruments are aligned in their order: units of the
+  same type can be matched, and of all such alignments the one with the most
+  matches wins, a match of units with the same ID counting as four. So IDs
+  decide where there are any; units without IDs (those that an eq unit
+  stands for) and units whose IDs changed (the copies made for module units
+  get new ones when a unit is added) are matched by type. A unit left over
+  that has the ID and the type of a unit left over in the old instrument
+  was moved, and is matched too.
+- A unit of another type than before, or a new one, starts from nothing; so
+  does a delay unit with another number of delay lines.
+- If nothing moved (only parameters changed, or IDs), nothing is copied.
+  Otherwise the voices are copied (1 MB) and the tables that changed are
+  built anew, which for delay lines is 256 KB each: a few milliseconds for a
+  patch with many, once per change.
+
+Tests (`vm/carry_test.go`): after a unit that leaves the signal as it is
+(a gain of 1) was added, removed, moved or disabled, with and without IDs,
+the render is exactly that of a synth that had the new patch all along, and
+an update that changes nothing leaves the render as it was; an instrument
+goes on exactly as it would have alone when instruments and voices before
+it come and go, are swapped, or lose a delay; a unit whose type changed
+starts like a unit added.
+
+### Taps
+
+`sointu.Tapper` (`vm/tap.go`): the Go synth, and the multithread synth
+around it, can record the signal at any place of the patch, for whatever
+shows it. It is meant for meters on every unit; so far the eq editor uses
+it.
+
+- A place is a `TapPoint{Instrument, Unit, Voice}`: before the unit with
+  that index among the units of the instrument, as the patch that the synth
+  got has them (disabled units count; the synth knows which it runs). That
+  is after the unit before it. `Voice` is a voice of the instrument, from 1,
+  or 0 for the sum of all its voices.
+- `SetTaps(points)` sets the places; `Tapped(i, dst)` returns the frames
+  that tap i recorded since they were last taken, one for every frame
+  rendered: the two signals on top of the stack there, the top one first,
+  which of a stereo signal is the left one. Of a mono signal only the first
+  is the signal; the synth does not know which it is, the tracker does. A
+  tap that nobody takes from keeps the latest 65536 frames at most.
+- Cost: `Render` asks `s.taps != nil` before every unit and after every
+  frame, and nothing else while there are no taps: no difference to be
+  measured (8.1 to 9.0 ms for 0.1 s of 8 voices of 8 units, with two taps
+  and without). With taps, each unit run is compared with each tap.
+- After `Update` the places are those of the new patch; the tracker sets
+  them again when the units before them changed.
+
+In the tracker (`tracker/taps.go`):
+
+1. Whoever shows a signal asks the model for it every time it is drawn:
+   `Model.watchTap(tapKey{Unit, After}, point)`. The key says what is
+   watched (the signal before or after the unit with that ID, as it is
+   played), the point where that is now; `Expansion.EQs` and `playedID`
+   give it for an eq unit, also for the copy played for a module unit.
+2. The model tells the player the places of all watches (`TapsMsg`), also
+   when one moved; the player sets them in the synth, and again when it
+   makes a new synth.
+3. After every buffer, the player takes what each tap recorded and sends it
+   to the model (`TapAudio`, in a buffer of the broker's pool), which gives
+   it to the watches of that place: `tapSpectrum`, the smoothed spectrum of
+   the windows it has got (`specAnalyzer`, as for the master).
+4. A watch that was not asked for in a second ends; with the last one the
+   player sets no taps, and the synth records nothing.
+
+A meter on every unit would be this with other watches: a unit of an
+instrument is at `TapPoint{instrument, index}` (after it: index + 1), a unit
+of a module at the place of its copy (`Model.playedUnit` finds the copy;
+its index in `Model.expanded` is the place), and a `tapWatch` would get a
+level, or a ring of frames for an oscilloscope, next to `spectrum`, filled
+in `Model.tapped`. Whether the signal there is mono or stereo is what
+`derivedInstrument.rails` knows. What is not there yet: a tap is the top of
+the stack, so for a unit that puts nothing on the stack (`send`, `out`,
+`pop`) it is the signal below; one place per watch, so every unit of a rack
+is as many taps, each compared with every unit run, which a table by unit
+would make cheap; the native synth and the compiled players have no taps.
+
+Tests: `vm/tap_test.go` (before and after a unit, one voice and all, stereo,
+the multithread synth, disabled units, after an update, the render as
+without taps) and `tracker/taps_test.go` (noise through an eq, with a model,
+a player and the Go synth: the spectrum after the eq is that before it
+moved by the curve of the editor, within 1.5 dB over three ranges; the
+taps follow the eq when its units change, also in a module; a second after
+the last time they were asked for, the synth records nothing).
+
 ## Tracker
 
 - **Buffers tab:** import samples, encoding presets and formats, preview,
@@ -969,12 +1078,20 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   - *While playing*, the player gets the new units with every change. When
     the units themselves change, not only their parameters (a band on or
     off, a bell through 0 dB, a Q through 1, the gain unit coming or going),
-    the Go synth starts the units of every voice anew, as it does when a
-    unit is added: a click.
-  - *Spectrum.* Behind the curves is the spectrum of the master, from the
-    spectrum analyzer of the song panel (the louder channel, 0 to -90 dB
-    over the height of the plot), not of the signal at the eq: the synth
-    reports no signal of a unit. The button next to the unit count hides it.
+    the units that are still there keep their state in the Go synth (see
+    [State across changes of the patch](#state-across-changes-of-the-patch)):
+    the notes go on, and only the new units start from nothing. The units
+    of an eq have no IDs and are matched by their type, in their order: when
+    one of several units of the same type goes, the ones after it can take
+    the state of their neighbour for a moment.
+  - *Spectra.* Behind the curves are the spectra of the signal at the eq,
+    as the synth plays it (see [Taps](#taps)): before the eq as an area,
+    after it as a line, so the line is the area moved by the curve. Of all
+    the voices of the instrument together, of a stereo eq the louder
+    channel; 0 to -90 dB over the height of the plot, 2048 bins of 10.8 Hz,
+    each new window counting a quarter. The button next to the unit count
+    hides them, and the synth then records nothing. With the native synth
+    there are none.
   - `tracker/eq.go` (`Model.EQ`), `tracker/gioui/eq_editor.go`
     (`eqGeometry`, `eqHit`, `eqDragged`: where things are and what a drag
     does, without a window).

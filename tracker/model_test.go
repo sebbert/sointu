@@ -224,6 +224,16 @@ func (s *modelFuzzState) Iterate(yield func(string, func(p string, t *testing.T)
 		}
 		eq.Info()
 		eq.Units()
+		eq.Spectra() // taps the signal at the eq in the player
+		for {
+			select {
+			case msg := <-s.model.Broker().ToModel:
+				s.model.ProcessMsg(msg)
+				continue
+			default:
+			}
+			break
+		}
 	})
 }
 

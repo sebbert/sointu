@@ -32,7 +32,8 @@ func TestEQEditorInTracker(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", home)
 	t.Setenv("AppData", home)
-	model := tracker.NewModel(tracker.NewBroker(), []sointu.Synther{vm.GoSynther{}}, tracker.NullMIDIContext{}, "")
+	broker := tracker.NewBroker()
+	model := tracker.NewModel(broker, []sointu.Synther{vm.GoSynther{}}, tracker.NullMIDIContext{}, "")
 	defer model.Close()
 	tr := NewTracker(model)
 	size := image.Pt(1500, 1000)
@@ -105,21 +106,47 @@ func TestEQEditorInTracker(t *testing.T) {
 	if row := model.Params().Cursor().Y; row < pos.First || row >= pos.First+pos.Count {
 		t.Errorf("the rack shows rows %d to %d, the eq unit is on row %d", pos.First, pos.First+pos.Count-1, row)
 	}
-	// with the pointer over the plot, and a spectrum of the master behind
-	// the curves
-	spectrum := &tracker.Spectrum{make([]float32, 1024), make([]float32, 1024)}
-	for i := range spectrum[0] {
-		f := float64(i+1) / 1024 * 22050
-		spectrum[0][i] = float32(-20 - 10*math.Log2(f/100) + 6*math.Sin(f/300))
-		spectrum[1][i] = spectrum[0][i] - 3
+	// with the pointer over the plot, and the spectra of the signal before
+	// and after the eq behind the curves: the editor has asked the player
+	// to tap the signal there, and gets what the synth recorded
+	var taps tracker.TapsMsg
+	for more := true; more; {
+		select {
+		case msg := <-broker.ToPlayer:
+			if m, ok := msg.(tracker.TapsMsg); ok {
+				taps = m
+			}
+		default:
+			more = false
+		}
 	}
-	model.ProcessMsg(tracker.MsgToModel{Data: spectrum})
+	if len(taps) != 2 || taps[0].Unit >= taps[1].Unit {
+		t.Fatalf("the editor asked for the taps %v", taps)
+	}
+	seed := uint32(1)
+	for i, point := range taps {
+		buf := broker.GetAudioBuffer()
+		low := float32(0)
+		for range 4 * 4096 {
+			seed = seed*1664525 + 1013904223
+			x := float32(int32(seed)) / (1 << 31) * 0.1
+			low += (x - low) * 0.1
+			if i == 1 { // after the eq: fewer highs
+				x = low
+			}
+			*buf = append(*buf, [2]float32{x, x})
+		}
+		model.ProcessMsg(tracker.MsgToModel{Data: tracker.TapAudio{Point: point, Buffer: buf}})
+	}
+	if before, after := eq.Spectra(); len(before) != 2048 || len(after) != 2048 {
+		t.Fatalf("the spectra have %d and %d bins", len(before), len(after))
+	}
 	g := ie.eqEditor.geometry
 	if g.w < 600 || g.h < 150 {
 		t.Fatalf("the plot is %v by %v pixels", g.w, g.h)
 	}
 	router.Queue(pointer.Event{Kind: pointer.Move, Source: pointer.Mouse, Position: f32.Pt(900, 300)})
-	frame("eq-3-hover-spectrum")
+	frame("eq-3-hover-spectra")
 	if !ie.eqEditor.hovered {
 		t.Error("the pointer is not over the plot at 900, 300")
 	}

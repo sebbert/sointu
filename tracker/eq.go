@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/vsariola/sointu"
 )
@@ -30,9 +29,6 @@ type eqState struct {
 	bands        []sointu.EQBand
 	compiled     sointu.EQCompiled
 	version      int
-	// spectrumAsked is when the editor last asked for the spectrum of the
-	// master, which it shows behind the curve
-	spectrumAsked time.Time
 }
 
 type eqGesture int
@@ -462,16 +458,24 @@ func (m *EQModel) Units() (units int, gain float64, hasGain bool) {
 	return len(c.Units), 20 * math.Log10(c.ActualGain), len(c.GainUnits) > 0
 }
 
-// Spectrum returns the spectrum of the master, as the spectrum analyzer has
-// it, which the editor shows behind the curve. Asking for it keeps the
-// spectrum analyzer running for a second, also when its own panel is closed.
-func (m *EQModel) Spectrum() Spectrum {
-	m.eq.spectrumAsked = time.Now()
-	return *m.spectrum
-}
-
-// spectrumWanted reports whether the editor of the eq unit has asked for the
-// spectrum of the master within the last second.
-func (m *Model) spectrumWanted() bool {
-	return !m.eq.spectrumAsked.IsZero() && time.Since(m.eq.spectrumAsked) < time.Second
+// Spectra returns the spectrum of the signal before the eq unit and after
+// it, as the synth plays it: in dB for each bin, bin i at (i+1)/len of half
+// the sample rate; of a stereo eq, of the louder channel. They are nil until
+// there is enough of the signal, or if the unit is not played, e.g. as it is
+// disabled. Asking for them keeps the synth recording the signal there, for
+// a second (see taps.go).
+func (m *EQModel) Spectra() (before, after []float32) {
+	u := m.unit()
+	if u == nil || m.expansion == nil {
+		return nil, nil
+	}
+	id := (*Model)(m).playedID((*Model)(m).rowOfUnit(m.d.UnitIndex))
+	at, ok := m.expansion.EQs[id]
+	if !ok {
+		return nil, nil
+	}
+	stereo := u.Parameters["stereo"] == 1
+	before = (*Model)(m).spectrumOfTap(tapKey{Unit: id}, sointu.TapPoint{Instrument: at.Instrument, Unit: at.First}, stereo)
+	after = (*Model)(m).spectrumOfTap(tapKey{Unit: id, After: true}, sointu.TapPoint{Instrument: at.Instrument, Unit: at.First + at.Count}, stereo)
+	return before, after
 }

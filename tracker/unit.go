@@ -465,8 +465,40 @@ func (m *Model) playedUnit(row int) *sointu.Unit {
 	if r.module < 0 {
 		return u
 	}
-	if m.expansion == nil {
+	id, instr := m.playedCopy(row)
+	if id == 0 || instr >= len(m.expanded) {
 		return nil
+	}
+	units := m.expanded[instr].Units
+	for i := range units {
+		if units[i].ID == id {
+			return &units[i]
+		}
+	}
+	return nil
+}
+
+// playedID returns the ID that the unit on a row of the unit editor has in
+// the patch that the synth plays: its own, or for a unit of a module, that
+// of the copy that playedUnit returns. It is 0 if the unit is not played.
+func (m *Model) playedID(row int) int {
+	u, r, ok := m.rowUnit(row)
+	if !ok || u.ID == 0 || u.Disabled {
+		return 0
+	}
+	if r.module < 0 {
+		return u.ID
+	}
+	id, _ := m.playedCopy(row)
+	return id
+}
+
+// playedCopy returns the ID of the copy of a unit of a module that is
+// played for the row, and its instrument, or 0: see playedUnit.
+func (m *Model) playedCopy(row int) (id, instr int) {
+	u, r, ok := m.rowUnit(row)
+	if !ok || m.expansion == nil || r.module < 0 {
+		return 0, 0
 	}
 	module := m.d.Song.Modules[r.module].ID
 	best, bestInstr, bestHere := 0, 0, false
@@ -482,16 +514,7 @@ func (m *Model) playedUnit(row int) *sointu.Unit {
 			best, bestInstr, bestHere = id, e.Instrument, here
 		}
 	}
-	if best == 0 || bestInstr >= len(m.expanded) {
-		return nil
-	}
-	units := m.expanded[bestInstr].Units
-	for i := range units {
-		if units[i].ID == best {
-			return &units[i]
-		}
-	}
-	return nil
+	return best, bestInstr
 }
 
 // selectedAsPlayed returns the selected unit as it is played: for an inner

@@ -80,6 +80,9 @@ type (
 		// eq is what the editor of the eq unit keeps: see EQModel
 		eq eqState
 
+		// taps are the watches of the signal at units: see taps.go
+		taps map[tapKey]*tapWatch
+
 		// modulePresets are the module presets: first those of the user,
 		// userModulePresets of them, read from modulePresetPath or, if it is
 		// empty, from the user's configuration directory; then those that
@@ -447,6 +450,8 @@ func (m *Model) ProcessMsg(msg MsgToModel) {
 		m.d.Song.Score = score
 		m.d.Song.BPM = int(e.BPM + 0.5)
 		m.trackerHidden = false
+	case TapAudio:
+		m.tapped(e)
 	case SpectrumMsg:
 		if m.spectra == nil {
 			m.spectra = map[SpectrumSource]SpectrumMsg{}
@@ -465,7 +470,7 @@ func (m *Model) ProcessMsg(msg MsgToModel) {
 	case *sointu.AudioBuffer:
 		m.Scope().processAudioBuffer(e)
 		// chain the messages: when we have a new audio buffer, send them to the detector and the spectrum analyzer
-		if m.specAnEnabled || m.spectrumWanted() { // send buffers to spectrum analyzer only if it's enabled, or the eq editor shows the spectrum
+		if m.specAnEnabled { // send buffers to spectrum analyzer only if it's enabled
 			clone := m.broker.GetAudioBuffer()
 			*clone = append(*clone, *e...)
 			if !TrySend(m.broker.ToSpecAn, MsgToSpecAn{Data: clone}) {

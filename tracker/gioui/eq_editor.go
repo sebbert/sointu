@@ -488,9 +488,12 @@ func (e *EQEditor) layoutPlot(gtx C) D {
 		o.Pop()
 	}
 
-	// the spectrum of the master, behind the curves
+	// behind the curves, the spectrum of the signal as the synth plays it:
+	// before the eq as an area, after it as a line
 	if e.spectrumOn {
-		e.drawSpectrum(gtx, g, eq.Spectrum(), withAlpha(offColor, 80))
+		before, after := eq.Spectra()
+		drawEQSpectrum(gtx, g, before, 0, withAlpha(offColor, 70))
+		drawEQSpectrum(gtx, g, after, float32(gtx.Dp(1)), withAlpha(offColor, 230))
 	}
 
 	// the curve of each band, and of all the units
@@ -596,50 +599,71 @@ func drawEQArea(gtx C, g eqGeometry, levels []float32, y float32, c color.NRGBA)
 	paint.FillShape(gtx.Ops, c, clip.Outline{Path: path.End()}.Op())
 }
 
-// The levels of the spectrum of the master at the top and the bottom of the
+// The levels of the spectrum of the signal at the top and the bottom of the
 // plot.
 const (
 	eqSpectrumDbMax = 0
 	eqSpectrumDbMin = -90
 )
 
-// drawSpectrum fills the area under the spectrum of the master: of the
-// louder of its channels, the bins of each pixel column at their highest.
-func (e *EQEditor) drawSpectrum(gtx C, g eqGeometry, spectrum tracker.Spectrum, c color.NRGBA) {
-	n := len(spectrum[0])
+// eqSpectrumRows returns the row of a spectrum every eqCurveStep pixels:
+// levels are in dB for each bin, bin i at (i+1)/len of half the sample rate;
+// the bins of each step at their highest, and between two bins, in between.
+func eqSpectrumRows(g eqGeometry, levels []float32, dst []float32) []float32 {
+	n := len(levels)
+	dst = dst[:0]
 	if n < 2 {
-		return
+		return dst
 	}
-	level := func(bin int) float32 {
-		l := spectrum[0][bin]
-		if len(spectrum[1]) == n {
-			l = max(l, spectrum[1][bin])
-		}
-		return l
-	}
-	var path clip.Path
-	path.Begin(gtx.Ops)
-	path.MoveTo(f32.Pt(0, g.h))
-	// bin i is at (i+1)/n of half the sample rate
 	pos := func(x float32) float64 { return g.Freq(x)/22050*float64(n) - 1 }
 	for x := 0; x < int(g.w)+eqCurveStep; x += eqCurveStep {
 		a, b := pos(float32(x)-eqCurveStep/2), pos(float32(x)+eqCurveStep/2)
 		var l float32
 		if lo, hi := int(math.Ceil(a)), int(math.Floor(b)); hi >= lo {
 			lo, hi = min(max(lo, 0), n-1), min(max(hi, 0), n-1)
-			l = level(lo)
+			l = levels[lo]
 			for i := lo + 1; i <= hi; i++ {
-				l = max(l, level(i))
+				l = max(l, levels[i])
 			}
-		} else { // between two bins
+		} else {
 			m := min(max((a+b)/2, 0), float64(n-1))
 			i := min(int(m), n-2)
-			l = smoothInterpolate(level(i), level(i+1), float32(m-float64(i)))
+			l = smoothInterpolate(levels[i], levels[i+1], float32(m-float64(i)))
 		}
 		y := (eqSpectrumDbMax - l) / (eqSpectrumDbMax - eqSpectrumDbMin) * (g.h - 1)
-		path.LineTo(f32.Pt(float32(x), min(max(y, 0), g.h)))
+		dst = append(dst, min(max(y, 0), g.h))
 	}
-	path.LineTo(f32.Pt(g.w+eqCurveStep, g.h))
+	return dst
+}
+
+// drawEQSpectrum draws a spectrum: with a width, as a line of that width,
+// and without, as the area under it. A spectrum that is below the plot
+// everywhere is not drawn.
+func drawEQSpectrum(gtx C, g eqGeometry, levels []float32, width float32, c color.NRGBA) {
+	var buf [1024]float32
+	rows := eqSpectrumRows(g, levels, buf[:0])
+	silent := true
+	for _, y := range rows {
+		silent = silent && y >= g.h-1
+	}
+	if silent {
+		return
+	}
+	var path clip.Path
+	path.Begin(gtx.Ops)
+	if width > 0 {
+		path.MoveTo(f32.Pt(0, rows[0]))
+	} else {
+		path.MoveTo(f32.Pt(0, g.h))
+	}
+	for i, y := range rows {
+		path.LineTo(f32.Pt(float32(i*eqCurveStep), y))
+	}
+	if width > 0 {
+		paint.FillShape(gtx.Ops, c, clip.Stroke{Path: path.End(), Width: width}.Op())
+		return
+	}
+	path.LineTo(f32.Pt(float32((len(rows)-1)*eqCurveStep), g.h))
 	path.Close()
 	paint.FillShape(gtx.Ops, c, clip.Outline{Path: path.End()}.Op())
 }
@@ -686,7 +710,7 @@ func (e *EQEditor) layoutBand(gtx C) D {
 		return btn.Layout(gtx, IntMenuChild(eq.Type(), icons.NavigationCheck))
 	}
 	onBtn := ToggleIconBtn(eq.On(), t.Theme, e.onBtn, icons.AVVolumeOff, icons.AVVolumeUp, "Switch the band on", "Switch the band off")
-	spectrumBtn := ToggleIconBtn(e.showSpectrum, t.Theme, e.spectrumBtn, icons.ImageBlurOff, icons.ImageBlurOn, "Show the spectrum of the master\nbehind the curve", "Hide the spectrum of the master")
+	spectrumBtn := ToggleIconBtn(e.showSpectrum, t.Theme, e.spectrumBtn, icons.ImageBlurOff, icons.ImageBlurOn, "Show the spectrum of the signal behind the curves:\nbefore the eq as an area, after it as a line", "Hide the spectrum of the signal")
 	addBtn := ActionIconBtn(eq.AddBand(), t.Theme, e.addBtn, icons.ContentAdd, "Add a band (Enter)")
 	deleteBtn := ActionIconBtn(eq.DeleteBand(), t.Theme, e.deleteBtn, icons.ActionDelete, "Delete the band (Delete)")
 	info := func(gtx C) D {
