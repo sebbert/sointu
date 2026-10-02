@@ -1375,6 +1375,11 @@ differently in another order.
 - Noise is no obstacle: the seed is multiplied by 16007 for each noise
   sample, so a stage steps it over the noise of the other stages with one
   multiplication.
+- Units with a state of their own are no obstacle either, also where the
+  states are in a table in the order the units run (delay lines, `ott`,
+  `limiter`, `reverb`): a stage starts at the place of its first voice in
+  each table. A `reverb` unit can be modulated from an earlier stage like
+  any unit.
 
 It then picks the cuts that make the most expensive stage cheapest, from a
 cost for each unit fitted to the example songs (`unitCost`), and prints the
@@ -1413,28 +1418,42 @@ for each stage.
 ### Numbers
 
 Apple M3 Pro, Chrome 154, `tests/wasm_runtime_browser.mjs --scenario
-measure`, best of two; the steady rate leaves out the start of the workers
-(0.3 to 0.4 s in a browser that just started).
+measure`, best of three, after the presets got the reverb unit; the steady
+rate leaves out the start of the workers (0.3 to 0.4 s in a browser that
+just started). The machine was not idle (other work took 3 to 4 of its 12
+cores), so the rates with 8 workers are on the low side.
 
 | Song | Workers | Seconds of song for a second | Ready (2 s runway) | All rendered |
 |---|---|---|---|---|
-| `soundset_loop` (13.7 s) | 1 | 9.1 | 0.59 s | 1.87 s |
-| | 2 | 16.9 | 0.43 s | 1.12 s |
-| | 4 | 30.9 | 0.45 s | 0.83 s |
-| | 8 | 35.9 | 0.41 s | 0.72 s |
-| `soundset` (68.6 s) | 1 | 3.3 | 0.88 s | 21.0 s |
-| | 2 | 6.4 | 0.74 s | 11.1 s |
-| | 4 | 10.1 | 0.60 s | 7.2 s |
-| | 8 | 16.4 | 0.58 s | 4.7 s |
-| `ducking` (6.9 s) | 1 | 28 | 0.43 s | 0.60 s |
-| | 5 (of 8 asked) | 94 | 0.46 s | 0.51 s |
-| `reverb_module` (14.4 s) | 1 | 31 | 0.40 s | 0.79 s |
-| | 5 (of 8 asked) | 56 | 0.34 s | 0.55 s |
+| `soundset_loop` (13.7 s) | 1 | 9.8 | 0.52 s | 1.84 s |
+| | 2 | 16.6 | 0.56 s | 1.26 s |
+| | 4 | 28.2 | 0.53 s | 0.94 s |
+| | 8 | 48.0 | 0.46 s | 0.74 s |
+| `soundset` (68.6 s) | 1 | 3.4 | 1.22 s | 21.0 s |
+| | 2 | 6.2 | 0.71 s | 11.5 s |
+| | 4 | 9.8 | 0.77 s | 7.6 s |
+| | 8 | 15.7 | 0.68 s | 4.9 s |
+| `ducking` (6.9 s) | 1 | 28 | 0.42 s | 0.92 s |
+| | 5 (of 8 asked) | 89 | 0.33 s | 0.39 s |
+| `reverb_module` (14.4 s) | 1 | 31 | 0.53 s | 0.92 s |
+| | 2 | 55 | 0.36 s | 0.61 s |
+| | 5 (of 8 asked) | 51 | 0.56 s | 0.81 s |
+| `reverb_unit` (14.4 s) | 1 | 41 | 0.40 s | 0.71 s |
+| | 4 | 81 | 0.35 s | 0.50 s |
+| | 5 (of 8 asked) | 102 | 0.49 s | 0.73 s |
+
+With the reverb unit, the voice of the master chain of `soundset_loop` costs
+less than a voice of the supersaw lead, which now bounds the pipeline: 8
+workers render 4.9 times as fast as one, where it was 3.9 with the reverb
+made of mc units. `soundset` spends its time in its 30 voices of
+oscillators, and is as before. Songs that render in well under a second
+gain nothing from more than 2 to 4 workers: the workers start as slowly, and
+a stage more delays the first audio.
 
 The sound starts 0.05 to 0.3 s after `start()`. While rendering, the main
-thread was not held for more than 13 ms in 15 of the 16 runs, and 48 ms in
-one. The player that renders at instantiation blocks the page for the whole
-render: 1.6 s for `soundset_loop` in Chrome.
+thread was held for at most 17 ms in 57 of the 60 runs, and for 30 to 40 ms
+in three. The player that renders at instantiation blocks the page for the
+whole render, about as long as one worker takes.
 
 Sizes, for `soundset_loop` with the smallest use (load, start, time), bundled
 with vite 7 and packed with rootsqz from GitHub (423821d, websqz 0.4.1,
@@ -1444,18 +1463,18 @@ envelope of the kick, and the page reads `sync(0)`.
 
 | | JavaScript, minified | wasm | Packed page |
 |---|---|---|---|
-| Before: render at instantiation, one buffer | 500 B | 8300 B | 5430 B |
-| `-js` | 1430 B | 8268 B | 5871 B |
-| `-js -stages 2` | 1771 B | 8692 B | 6198 B |
-| `-js -stages 4` | 1775 B | 8828 B | 6250 B |
-| `-js -stages 8` | 1783 B | 9092 B | 6329 B |
-| `-js`, a sync unit | 1670 B | 8330 B | 6000 B |
-| `-js -r`, a sync unit | 1670 B | 8361 B | 6020 B |
-| `-js -stages 4`, a sync unit | 2160 B | 8920 B | 6413 B |
+| Before: render at instantiation, one buffer | 500 B | 6151 B | 4908 B |
+| `-js` | 1430 B | 6119 B | 5351 B |
+| `-js -stages 2` | 1771 B | 6566 B | 5688 B |
+| `-js -stages 4` | 1775 B | 6710 B | 5736 B |
+| `-js -stages 8` | 1783 B | 6990 B | 5821 B |
+| `-js`, a sync unit | 1670 B | 6181 B | 5486 B |
+| `-js -r`, a sync unit | 1670 B | 6212 B | 5505 B |
+| `-js -stages 4`, a sync unit | 2160 B | 6802 B | 5904 B |
 
-With `--size-profile 64k` every one of these pages is about 235 B larger;
-that profile is made for larger inputs. The released websqz 0.4 packs these
-pages 60 to 80 B smaller.
+`soundset` packs to 5083 B before, 5525 B with `-js`, 5906 B with 4 stages
+and 5976 B with 8. With `--size-profile 64k` every one of these pages is
+about 250 B larger; that profile is made for larger inputs.
 
 ### Samples and the packer
 

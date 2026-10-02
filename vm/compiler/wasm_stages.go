@@ -125,7 +125,7 @@ func unitCost(u *sointu.Unit) float64 {
 	case "ott":
 		return 80 * (1 + stereo)
 	case "reverb":
-		return 330
+		return 150
 	case "compressor", "limiter", "softclip", "bufread":
 		return 20 * (1 + stereo)
 	}
