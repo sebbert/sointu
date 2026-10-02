@@ -52,6 +52,7 @@ func main() {
 	js := flag.Bool("js", false, "For wasm: also write a JavaScript module (.js and .d.ts) that renders the song in the background and plays it while it renders. The player then renders in parts when asked, instead of the whole song when instantiated.")
 	stages := flag.Int("stages", 0, "With -js: render in a pipeline of up to this many workers, each running a part of the voices. The output is the same.")
 	stageCuts := flag.String("cuts", "", "With -js: the first voices of the stages after the first, comma separated, instead of the balanced stages of -stages.")
+	outputClock := flag.Bool("outputclock", false, "With -js: time() of the module is the clock of the output, from AudioContext.getOutputTimestamp() carried on with performance.now(): behind the time of the audio context by the output latency, and moving between audio blocks. By default it is the time of the audio context.")
 	separateSamples := flag.Bool("samples", false, "For wasm: write the encoded samples of the buffers as separate files (.0.<format>, .1.<format>, ...) instead of custom sections of the wasm, e.g. to pack them as already compressed files.")
 	ffmpegPath := flag.String("ffmpeg", "", "Path of ffmpeg, for encoding the samples of songs that play buffers. By default, $"+ffmpeg.EnvVar+", PATH and common installation directories are searched.")
 	allowUnknown := flag.Bool("allow-unknown-units", false, "Compile songs with units of a type that this version does not have, e.g. songs of a newer version, without those units, with a warning for each. By default such songs are an error.")
@@ -90,6 +91,7 @@ func main() {
 		comp.MathImports = *mathImports
 		comp.JS = *js
 		comp.Stages = *stages
+		comp.OutputClock = *outputClock
 		comp.SeparateSamples = *separateSamples
 		if *stageCuts != "" {
 			for _, c := range strings.Split(*stageCuts, ",") {

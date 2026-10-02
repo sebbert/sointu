@@ -42,6 +42,12 @@ type Compiler struct {
 	// player, in workers, and plays it while it renders. It implies
 	// Progressive. The module has only the code this song needs.
 	JS bool
+	// OutputClock makes time() of the JavaScript module the clock of the
+	// output: the time that the audio context reports as being at the output
+	// (getOutputTimestamp), carried on with the time of the page, instead of
+	// the time of the context. It is behind that by the output latency, and
+	// moves between audio blocks. Only with JS.
+	OutputClock bool
 	// SeparateSamples leaves the encoded samples of the buffers out of the
 	// wasm player, where they are custom sections by default: Song returns
 	// them as files with the extensions ".0.<format>", ".1.<format>" and so
@@ -321,6 +327,9 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 	if com.JS {
 		com.Progressive = true
 	}
+	if com.OutputClock && !com.JS {
+		return nil, nil, errors.New("the clock of the output is that of the JavaScript module: it needs JS (-js)")
+	}
 	if (com.Progressive || com.SeparateSamples) && com.Arch != "wasm" {
 		return nil, nil, fmt.Errorf(`the progressive player, its JavaScript module and separate samples are only for wasm (targeted architecture was %v)`, com.Arch)
 	}
@@ -479,8 +488,8 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 					FrameBytes                                int // of the audio of a frame
 					Samples                                   int // buffers with samples
 					SeparateSamples, MathImports, Output16Bit bool
-					RowSync                                   bool
-				}{com.Layout, song, com.Layout.OutputBytes / frameBytes, frameBytes, len(buffers.Buffers), com.SeparateSamples, com.MathImports, com.Output16Bit, com.RowSync}
+					RowSync, OutputClock                      bool
+				}{com.Layout, song, com.Layout.OutputBytes / frameBytes, frameBytes, len(buffers.Buffers), com.SeparateSamples, com.MathImports, com.Output16Bit, com.RowSync, com.OutputClock}
 				for _, name := range []string{"player.js", "player.d.ts"} {
 					result := bytes.NewBufferString("")
 					if err := com.Template.ExecuteTemplate(result, name, &jsData); err != nil {

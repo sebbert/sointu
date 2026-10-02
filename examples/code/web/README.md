@@ -79,6 +79,16 @@ button.onclick = () => {
 - `song.time()` never goes back. If playing catches up with rendering, the
   sound stops until the next half second of audio is there, and the clock
   stops with it, so the visuals stay in sync.
+- By default `song.time()` is the time of the audio context: the seconds of
+  the song given to the output, ahead of the sound by the output latency
+  (tens of milliseconds, more with Bluetooth), in steps of an audio block.
+  Compiled with `-outputclock` (`node song.mjs song.yml -outputclock`), it
+  is the time at the output as the browser reports it
+  (`getOutputTimestamp()`), carried on between audio blocks with
+  `performance.now()`: behind by the latency, and smooth in Chrome (in
+  Firefox behind by the latency, in steps). 125 bytes more of JavaScript,
+  54 packed. Where the browser has no such timestamp it is the default
+  clock.
 - Songs with `sync` units get `song.sync(channel)`: the signal at the
   sync unit at the time of `song.time()`, with a value for every 256 samples
   (5.8 ms), e.g. an envelope to flash with the kick. The channels are the
