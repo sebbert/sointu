@@ -117,3 +117,11 @@ func (p *FeatureSetMacros) SpfilterTilt() bool { return p.set("spfilter", "tilt"
 func (p *FeatureSetMacros) SpblurFreeze() bool { return p.set("spblur", "freeze", 0) }
 func (p *FeatureSetMacros) SpscaleScale() bool { return p.set("spscale", "scale", 64) }
 func (p *FeatureSetMacros) SpscaleShift() bool { return p.set("spscale", "shift", 64) }
+
+// OttTime, OttUpward and OttDownward are true when an ott unit changes the
+// time or compresses upward or downward; SoftclipDrive when a softclip unit
+// has a gain before it.
+func (p *FeatureSetMacros) OttTime() bool       { return p.set("ott", "time", 64) }
+func (p *FeatureSetMacros) OttUpward() bool     { return p.set("ott", "upward", 0) }
+func (p *FeatureSetMacros) OttDownward() bool   { return p.set("ott", "downward", 0) }
+func (p *FeatureSetMacros) SoftclipDrive() bool { return p.set("softclip", "drive", 0) }

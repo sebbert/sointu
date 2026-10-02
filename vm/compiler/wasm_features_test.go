@@ -466,3 +466,71 @@ func spectralFeatureCases() []featureCase {
 func TestSpectralFeaturesWasmMatchGoSynth(t *testing.T) {
 	runFeatureCases(t, spectralFeatureCases())
 }
+
+// the code of the parts of ott, softclip and the bandlimited oscillators, as
+// it is in the player
+const (
+	ottTime       = ";; 1 / the time multiplier"
+	ottUpward     = ";; upward"
+	ottDownward   = ";; downward"
+	ottStereo     = "(f32.mul (local.get $l1) (local.get $l1))"
+	softclipDrive = "(f32.mul (call $peek) (local.get $drive))"
+	blSine        = ";; the slope changes by ±2π/color"
+	blTrisaw      = ";; the slope changes by ±2/(color·(1-color))"
+	blPulse       = "(call $polyblep (local.get $phase)"
+	blBlep        = "(func $polyblep"
+	blBlamp       = "(func $polyblamp"
+	blWindow      = "(func $polywindow"
+)
+
+var effectAllParts = []string{ottTime, ottUpward, ottDownward, ottStereo, softclipDrive, blSine, blTrisaw, blPulse, blBlep, blBlamp, blWindow}
+
+func effectFeatureCases() []featureCase {
+	type M = sointu.ParamMap
+	c := func(name string, has []string, song sointu.Song) featureCase {
+		return featureCase{name: name, song: song, has: has, not: without(effectAllParts, has...)}
+	}
+	fx := func(stereo int, units ...sointu.Unit) sointu.Song {
+		return fsong(nil, cat(fsource("noise", stereo), units, []sointu.Unit{fu("out", M{"stereo": stereo, "gain": 64})}))
+	}
+	osc := func(typ, bandlimit int) []sointu.Unit {
+		return []sointu.Unit{
+			fu("envelope", M{"attack": 32, "decay": 64, "sustain": 64, "release": 64}),
+			fu("oscillator", M{"type": typ, "color": 100, "transpose": 76, "gain": 128, "bandlimit": bandlimit}),
+			fu("mulp", M{"stereo": 0}),
+			fu("out", M{"stereo": 0, "gain": 64}),
+		}
+	}
+	return []featureCase{
+		c("ott", []string{ottUpward, ottDownward}, fx(0, fu("ott", nil))),
+		c("ott stereo", []string{ottUpward, ottDownward, ottStereo}, fx(1, fu("ott", M{"stereo": 1}))),
+		c("ott mono and stereo", []string{ottUpward, ottDownward, ottStereo}, fsong(nil, cat(fsource("noise", 1), []sointu.Unit{fu("ott", M{"stereo": 1}), fu("out", M{"stereo": 1, "gain": 64})}), cat(fsource("saw", 0), []sointu.Unit{fu("ott", nil), fu("out", M{"stereo": 0, "gain": 64})}))),
+		c("ott time", []string{ottUpward, ottDownward, ottTime}, fx(0, fu("ott", M{"time": 40}))),
+		c("ott time modulated", []string{ottUpward, ottDownward, ottTime}, fsong(nil, cat(fmod(9, 1, 100), fsource("noise", 0), []sointu.Unit{fu("ott", M{"id": 9}), fu("out", M{"stereo": 0, "gain": 64})}))),
+		c("ott downward", []string{ottDownward}, fx(0, fu("ott", M{"upward": 0}))),
+		c("ott upward", []string{ottUpward}, fx(0, fu("ott", M{"downward": 0}))),
+		c("ott with neither", nil, fx(0, fu("ott", M{"upward": 0, "downward": 0, "low": 80, "high": 50}))),
+		c("ott upward modulated", []string{ottUpward}, fsong(nil, cat(fmod(9, 2, 100), fsource("noise", 0), []sointu.Unit{fu("ott", M{"id": 9, "upward": 0, "downward": 0}), fu("out", M{"stereo": 0, "gain": 64})}))),
+		c("ott of both kinds", []string{ottUpward, ottDownward, ottTime, ottStereo}, fx(1, fu("ott", M{"stereo": 1, "upward": 0, "time": 90}), fu("ott", M{"stereo": 1, "downward": 0}))),
+		c("softclip", nil, fx(1, fu("softclip", M{"stereo": 1, "knee": 20}))),
+		c("softclip with drive", []string{softclipDrive}, fx(1, fu("softclip", M{"stereo": 1, "drive": 40}))),
+		c("softclip with drive modulated", []string{softclipDrive}, fsong(nil, cat(fmod(9, 0, 100), fsource("noise", 0), []sointu.Unit{fu("softclip", M{"id": 9}), fu("out", M{"stereo": 0, "gain": 64})}))),
+		c("softclip oversampled", nil, fx(1, fu("softclip", M{"stereo": 1, "knee": 20, "oversample": 1}), fu("softclip", M{"stereo": 1, "knee": 40}))),
+		c("softclip oversampled with drive", []string{softclipDrive}, fx(0, fu("softclip", M{"drive": 30, "oversample": 1}), fu("softclip", M{"knee": 40}))),
+		c("no bandlimit", nil, fsong(nil, osc(sointu.Sine, 0), osc(sointu.Trisaw, 0), osc(sointu.Pulse, 0))),
+		c("bandlimited sine", []string{blSine, blBlamp, blWindow}, fsong(nil, osc(sointu.Sine, 1))),
+		c("bandlimited trisaw", []string{blTrisaw, blBlamp, blWindow}, fsong(nil, osc(sointu.Trisaw, 1))),
+		c("bandlimited pulse", []string{blPulse, blBlep, blWindow}, fsong(nil, osc(sointu.Pulse, 1))),
+		c("bandlimited trisaw next to the others", []string{blTrisaw, blBlamp, blWindow}, fsong(nil, osc(sointu.Trisaw, 1), osc(sointu.Sine, 0), osc(sointu.Pulse, 0), osc(sointu.Trisaw, 0))),
+		c("bandlimited pulse next to the others", []string{blPulse, blBlep, blWindow}, fsong(nil, osc(sointu.Sine, 0), osc(sointu.Pulse, 1), osc(sointu.Trisaw, 0))),
+		c("bandlimited sine and pulse", []string{blSine, blPulse, blBlep, blBlamp, blWindow}, fsong(nil, osc(sointu.Sine, 1), osc(sointu.Pulse, 1), osc(sointu.Trisaw, 0))),
+		c("all bandlimited", []string{blSine, blTrisaw, blPulse, blBlep, blBlamp, blWindow}, fsong(nil, osc(sointu.Sine, 1), osc(sointu.Pulse, 1), osc(sointu.Trisaw, 1))),
+	}
+}
+
+// TestEffectFeaturesWasmMatchGoSynth checks the parts of ott, softclip and
+// the bandlimited oscillators that the wasm player only has when the song
+// uses them.
+func TestEffectFeaturesWasmMatchGoSynth(t *testing.T) {
+	runFeatureCases(t, effectFeatureCases())
+}
