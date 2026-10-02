@@ -1042,6 +1042,189 @@ The rule for adding one:
 Looked at and left, as not exact: the interpolation of `mcdelay` with whole
 lengths, its decay filter with decay 0, and depth 128 of `ott`.
 
+## Web runtime
+
+For intros in the browser: the song renders in the background while the page
+compiles shaders, starts as soon as a runway is rendered, and the intro reads
+the audio clock. `sointu-compile` writes the JavaScript for it, so it has only
+the code the song needs. Without the new flags, the output of
+`sointu-compile` is unchanged.
+
+```
+sointu-compile -arch wasm -js [-stages N] [-cuts a,b] [-samples] -o out/song song.yml
+wat2wasm -o out/song.wasm out/song.wat
+```
+
+writes `song.wat`, `song.js`, `song.d.ts` and, with `-samples`, `song.0.ogg`
+and so on. `examples/code/web` is a vite and websqz (rootsqz) project that
+uses them; its README has the usage.
+
+```js
+import wasm from "./song.wasm?websqz-bin";
+import { load, duration, rowsPerSecond } from "./song.js";
+const song = load(wasm);              // renders in workers; load(wasm, 4): 4 s of runway
+await song.ready;                     // the runway is rendered
+onclick = () => song.start();         // plays what is rendered, and the rest as it comes
+const t = song.time();                // seconds played: the clock of the visuals
+```
+
+`song.rendered` is the seconds rendered so far, `song.context` the
+`AudioContext`, and `song.start(node)` plays into a node of it.
+
+### The player
+
+- `Compiler.Progressive` (`-js`): the player has no start function. It
+  exports `r(rows)`, which renders the next rows and can be called until the
+  song ends. The state of the synth was in memory and globals already, so
+  only the loop changed. The first call fills the sample buffers and the FFT
+  tables. `s`, `l` and `t` are not exported with `-js`: the module has their
+  values. The player is 32 bytes smaller than the one that renders at
+  instantiation.
+- `Compiler.Layout` gives a host the addresses (output, tapes) and the
+  lengths, for hosts that do not use the module.
+- `Compiler.SeparateSamples` (`-samples`): the encoded samples are returned
+  as files instead of `sointu.buffer` sections.
+
+### The module
+
+- **Rendering** runs in a worker, made from a Blob of the source text of the
+  function `renderer` (`Function.prototype.toString`), so the bundler
+  minifies it with the rest and nothing is stored twice. The page compiles
+  the `WebAssembly.Module` once and posts it to the workers. This needs no
+  `SharedArrayBuffer` and no cross-origin isolation, and works from `http://`
+  and `file://`. If `new Worker` throws, the same function renders on the
+  main thread, a row for each timer tick.
+- **Playing**: the audio is posted in pieces of half a second, and each
+  piece is an `AudioBufferSourceNode` scheduled at its time. A piece starts
+  on a multiple of a quarter of a second of the context, because only such
+  start times are whole frames in floating point: from other times Chrome
+  got a fraction of a frame (1e-12) for one piece in seven and interpolated,
+  which changed a few samples in a million by their last bit. A single
+  `AudioBuffer` written ahead of the playhead was not tried: the Web Audio
+  specification lets the node take the contents of the buffer when it
+  starts. An `AudioWorklet` needs a secure context.
+- **Runway**: `ready` resolves when `runway` seconds are rendered (2 by
+  default) and rendering the rest at 0.8 times the speed measured so far
+  ends before the song gets there: `rendered >= duration * (1 - 0.8 *
+  speed)`, with the speed in seconds of song for a second. A song that
+  renders slower than it plays waits until enough is rendered.
+- **If playing catches up** with rendering anyway, the next piece plays
+  0.05 to 0.3 s after it arrives, and the clock stops until then: silence,
+  and visuals that wait, instead of visuals that run ahead.
+- **Clock**: `time()` is `context.currentTime` minus the start time, never
+  going back. The row is `time() * rowsPerSecond`. The wasm player has
+  neither the `sync` unit nor `-r`: with a fixed tempo, the row follows from
+  the time. Songs with the `speed` unit get no module.
+- **Samples** are decoded on the page (`decodeAudioData`, which workers do
+  not have) and posted to the workers.
+
+### Stages: rendering in several threads
+
+A song is rendered sample by sample, and every sample of a voice can depend
+on the voices before it, so the song cannot be cut in time. It is cut across
+the voices: with `-stages N`, the workers form a pipeline. Stage 1 runs the
+first voices for a chunk of rows and records, for every sample, the memory
+cells that both sides of the cut use: the output and aux ports, and the ports
+that earlier voices send to. Stage 2 starts every sample from those values,
+runs its voices and records its own cut, and so on; the last stage writes the
+audio. Every cell holds exactly the value it has when one instance runs all
+voices, so the output is the same, bit for bit. Adding the outputs of
+independent groups of instruments would not be: float addition rounds
+differently in another order.
+
+`vm/compiler/wasm_stages.go` finds where a song can be cut:
+
+- Not where something flows back: a send to an earlier voice, an aux channel
+  written after the `in` that reads it or never read, a send to a port that
+  its unit does not clear.
+- Not between voices that share memory: a `spawn` and its instrument, the
+  units of a spectrum, a bus or a written buffer, signals left on the stack.
+- Not at all with the `speed` unit.
+- Noise is no obstacle: the seed is multiplied by 16007 for each noise
+  sample, so a stage steps it over the noise of the other stages with one
+  multiplication.
+
+It then picks the cuts that make the most expensive stage cheapest, from a
+cost for each unit fitted to the example songs (`unitCost`), and prints the
+stages. `-cuts` sets them by hand. A song with fewer possible cuts gets
+fewer stages. The player gets a table of the stages, the code that copies
+the cells, and `g(stage)`; without the call an instance runs all voices,
+which is the fallback.
+
+Limits: the speedup ends at the most expensive voice (a master chain with a
+reverb is one stage), a stage that falls behind queues tapes without bound
+(4 bytes for each cell and sample), and the first audio comes a chunk later
+for each stage.
+
+### Numbers
+
+Apple M3 Pro, Chrome 154, `tests/wasm_runtime_browser.mjs --scenario
+measure`, best of two; the steady rate leaves out the start of the workers
+(0.3 to 0.4 s in a browser that just started).
+
+| Song | Workers | Seconds of song for a second | Ready (2 s runway) | All rendered |
+|---|---|---|---|---|
+| `soundset_loop` (13.7 s) | 1 | 9.1 | 0.59 s | 1.87 s |
+| | 2 | 16.9 | 0.43 s | 1.12 s |
+| | 4 | 30.9 | 0.45 s | 0.83 s |
+| | 8 | 35.9 | 0.41 s | 0.72 s |
+| `soundset` (68.6 s) | 1 | 3.3 | 0.88 s | 21.0 s |
+| | 2 | 6.4 | 0.74 s | 11.1 s |
+| | 4 | 10.1 | 0.60 s | 7.2 s |
+| | 8 | 16.4 | 0.58 s | 4.7 s |
+| `ducking` (6.9 s) | 1 | 28 | 0.43 s | 0.60 s |
+| | 5 (of 8 asked) | 94 | 0.46 s | 0.51 s |
+| `reverb_module` (14.4 s) | 1 | 31 | 0.40 s | 0.79 s |
+| | 5 (of 8 asked) | 56 | 0.34 s | 0.55 s |
+
+The sound starts 0.05 to 0.3 s after `start()`. While rendering, the main
+thread was not held for more than 13 ms in 15 of the 16 runs, and 48 ms in
+one. The player that renders at instantiation blocks the page for the whole
+render: 1.6 s for `soundset_loop` in Chrome.
+
+Sizes, for `soundset_loop` with the smallest use (load, start, time), bundled
+with vite 7 and packed with websqz 0.4:
+
+| | JavaScript, minified | wasm | Packed page |
+|---|---|---|---|
+| Before: render at instantiation, one buffer | 479 B | 8300 B | 5366 B |
+| `-js` | 1402 B | 8268 B | 5800 B |
+| `-js -stages 4` | 1747 B | 8828 B | 6168 B |
+| `-js -stages 8` | 1755 B | 9092 B | 6243 B |
+
+### Samples and the packer
+
+websqz stores `--pre-compressed-files` (`?websqz-bin&compressed` with the
+plugin) as they are, after the compressed data. Measured with Opus files of 9
+to 62 KB: compressing them with the rest never makes them larger, it gains
+0.2 to 1 % (the Ogg pages), so samples inside the wasm are the smallest:
+43104 B of Opus cost 42989 B compressed and 43126 B stored. But the
+decompressor of websqz takes about 25 µs for each byte: that file delays the
+start of the intro by 1.05 s compressed, and not at all stored. `-samples`
+is for that: 0.3 % more bytes for the samples, a second less for each 40 KB.
+
+### Verified, and not
+
+- The progressive player renders, in parts of any size, the bytes of the
+  one-shot player, for all regression and example songs
+  (`wasm_progressive_test.go`), which other tests compare with the Go synth.
+- The pipeline renders the same bytes for every cut the compiler allows in
+  those songs (soundset: all 29), and for songs made for each kind of
+  dependency, where the cuts found are checked too (`wasm_stages_test.go`).
+- In headless Chrome 154 and Firefox 157 (`TestRuntimeInBrowser`, with
+  `SOINTU_TEST_BROWSER=1` or `=firefox`): an AudioWorklet records what the
+  audio context plays, and it is the one-shot render sample for sample,
+  without a gap, in a worker, in 4 stages, on the main thread, with 16 bit
+  output, with samples in the wasm and as files; with audio held back for 3
+  s, the sound has one gap of silence, the clock stops and never goes back.
+- The packed example runs in headless Chrome from http (4 workers), not
+  from `file://`, where websqz cannot read the page; an unpacked single file
+  runs from `file://` with workers.
+- Not verified: Safari, a real sound card (the browsers ran muted and
+  headless), x86 processors (denormals may slow the wasm player there, which
+  has no flush-to-zero), mobile browsers, and how the clock steps on audio
+  hardware with large buffers.
+
 ## Updating the x86 backend
 
 What the x86 players (`vm/compiler/templates/amd64-386`) and the native bridge

@@ -60,10 +60,13 @@ button.onclick = () => {
 - `song.time()` never goes back. If playing catches up with rendering, the
   sound stops until the next half second of audio is there, and the clock
   stops with it, so the visuals stay in sync.
-- The module must be minified without changing what the function `renderer`
-  refers to: its source text is the worker. The default minifiers of vite
-  (esbuild, oxc) and terser keep it self-contained. Do not lower the build
-  target below ES2018, which would add helper functions to it.
+- The source text of the function `renderer` is the worker, so the bundler
+  must leave it using nothing outside itself. The default minifier of vite
+  does. A build target old enough to make the bundler add helper functions
+  for arrow functions or destructuring would break it.
+- `-stages N` renders in a pipeline of N workers (see `FORK.md`): pick N for
+  the machine the intro runs on, as stages beyond its cores do not help.
+  `sointu-compile` prints how it cut the song.
 
 Without websqz, give `load` the bytes any other way:
 
