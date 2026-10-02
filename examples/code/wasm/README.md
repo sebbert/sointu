@@ -22,3 +22,7 @@ module. Compiling such songs needs [ffmpeg](https://ffmpeg.org/).
 
 Older wabt versions need `--enable-bulk-memory` as well; newer ones enable it by
 default and reject the flag.
+
+This example renders the whole song when the module is instantiated, on the
+main thread. `examples/code/web` renders in the background and plays while it
+renders, with the JavaScript module of `sointu-compile -js`.

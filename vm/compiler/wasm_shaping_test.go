@@ -86,6 +86,7 @@ func shapingTestSong(optional bool) sointu.Song {
 }
 
 func TestShapingWasmMatchesGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")
@@ -108,6 +109,7 @@ func TestShapingWasmMatchesGoSynth(t *testing.T) {
 // the lowcut of width and the drive of ladder are in the bytecode and the
 // player only for songs that use them.
 func TestShapingOptionalOnlyWhenUsed(t *testing.T) {
+	t.Parallel()
 	for _, optional := range []bool{false, true} {
 		song := shapingTestSong(optional)
 		features := vm.NecessaryFeaturesFor(song.Patch)
@@ -171,6 +173,7 @@ func TestShapingOptionalOnlyWhenUsed(t *testing.T) {
 }
 
 func TestShapingX86Refused(t *testing.T) {
+	t.Parallel()
 	for _, unit := range []string{"softclip", "width", "ladder"} {
 		song := shapingTestSong(false)
 		for i := range song.Patch {

@@ -9,6 +9,7 @@ import (
 )
 
 func TestSpectralWasmMatchesGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")
@@ -49,6 +50,7 @@ func TestSpectralWasmMatchesGoSynth(t *testing.T) {
 }
 
 func TestSpectralModifiersWasmMatchGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")
@@ -86,6 +88,7 @@ func TestSpectralModifiersWasmMatchGoSynth(t *testing.T) {
 }
 
 func TestSpectralModifiers2WasmMatchGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")
@@ -124,6 +127,7 @@ func TestSpectralModifiers2WasmMatchGoSynth(t *testing.T) {
 }
 
 func TestSpectralCombineWasmMatchGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")
@@ -166,6 +170,7 @@ func TestSpectralCombineWasmMatchGoSynth(t *testing.T) {
 }
 
 func TestSpectralStereoWasmMatchesGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")
@@ -217,6 +222,7 @@ func TestSpectralStereoWasmMatchesGoSynth(t *testing.T) {
 }
 
 func TestSpcompressSmoothingWasmMatchesGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")

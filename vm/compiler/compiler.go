@@ -33,6 +33,91 @@ type Compiler struct {
 	// version of Sointu does not have, with a warning for each, instead of
 	// refusing the song.
 	AllowUnknownUnits bool
+	// Progressive makes the wasm player render nothing at instantiation:
+	// it exports r(rows), which renders the next rows of the song and can be
+	// called until the song ends.
+	Progressive bool
+	// JS makes Song also write a JavaScript module (.js, with its types in
+	// .d.ts) that renders the song in the background with the progressive
+	// player, in workers, and plays it while it renders. It implies
+	// Progressive. The module has only the code this song needs.
+	JS bool
+	// SeparateSamples leaves the encoded samples of the buffers out of the
+	// wasm player, where they are custom sections by default: Song returns
+	// them as files with the extensions ".0.<format>", ".1.<format>" and so
+	// on, numbered in the order the player asks for them, and the host
+	// passes them to the JavaScript module.
+	SeparateSamples bool
+	// Stages makes the progressive wasm player able to render the song in
+	// a pipeline of up to this many stages, each a range of voices run by
+	// its own instance (see wasm_stages.go); StageCuts sets the first
+	// voices of the stages after the first instead. ChunkRows is the most
+	// rows a stage renders in a call; by default, the rows of about half a
+	// second. The player without stages is the same.
+	Stages    int
+	StageCuts []int
+	ChunkRows int
+	// Log, if not nil, is told how the compiler laid out the stages.
+	Log func(string)
+	// Layout is set by Song to the layout of the wasm player it compiled.
+	Layout *WasmLayout
+}
+
+// WasmLayout tells a host where the wasm player keeps what the host reads
+// and writes, as addresses in the memory of the player.
+type WasmLayout struct {
+	Output      int // address of the audio: interleaved stereo float32, or int16 with Output16Bit
+	OutputBytes int // size of the audio of the song
+	Rows        int // rows of the song
+	RowSamples  int // samples of a row
+	ChunkRows   int // the rows to render at a time; with stages, the most a call to r may render
+	// Stages is the number of stages of the pipeline, 0 without. TapeIn and
+	// TapeOut are the addresses of the tapes a stage reads and writes, and
+	// StageCells the number of cells (4 bytes) that each stage reads for
+	// every sample, which the stage before it writes.
+	Stages          int
+	TapeIn, TapeOut int
+	StageCells      []int
+	StageVoices     [][2]int // first voice and the voice after the last of each stage
+	// Sync is the address of the sync values, float32s: SyncValues for
+	// every 256th sample of the song, SyncTicks times. The values are the
+	// row with RowSync, then the signals at the sync units in the order
+	// they run. SyncValues is 0 in songs without.
+	Sync, SyncValues, SyncTicks int
+}
+
+// wasmSyncData is the layout of the sync values in the wasm player.
+type wasmSyncData struct {
+	NumSyncs  int // sync values of a sample: the sync units of all voices, and the row with RowSync
+	SyncBytes int // size of su_syncbuffer
+}
+
+// wasmSync counts the sync values of the song. The patch is expanded.
+func wasmSync(song *sointu.Song, rowSync bool) (ret wasmSyncData) {
+	for _, instr := range song.Patch {
+		for _, u := range instr.Units {
+			if u.Type == "sync" && !u.Disabled {
+				ret.NumSyncs += instr.NumVoices
+			}
+		}
+	}
+	if rowSync {
+		ret.NumSyncs++
+	}
+	ret.SyncBytes = (song.Score.LengthInRows()*song.SamplesPerRow() + 255) >> 8 * ret.NumSyncs * 4
+	return
+}
+
+// chunkRows returns the rows the players render at a time: ChunkRows, or
+// by default the rows of about half a second.
+func (com *Compiler) chunkRows(song *sointu.Song) int {
+	if com.ChunkRows > 0 {
+		return com.ChunkRows
+	}
+	if spr := song.SamplesPerRow(); spr > 0 {
+		return max(1, (22050+spr/2)/spr)
+	}
+	return 1
 }
 
 // EncodedBuffer is the sample of a buffer encoded for the compiled player,
@@ -41,6 +126,9 @@ type EncodedBuffer struct {
 	Encoded  []byte
 	Frames   int
 	Channels int
+	// Format is the extension of the file when the sample is written
+	// separately, e.g. "ogg"; "bin" if empty.
+	Format string
 }
 
 // wasmBuffer is a buffer in the wasm player: its encoded sample goes in a
@@ -49,6 +137,8 @@ type EncodedBuffer struct {
 type wasmBuffer struct {
 	Offset, Frames, Channels int
 	EncodedHex               string
+	encoded                  []byte
+	format                   string
 }
 
 // wasmBufferHeader is the runtime state of a buffer in the wasm player: the
@@ -228,6 +318,12 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 	if com.Arch != "386" && com.Arch != "amd64" && com.Arch != "wasm" {
 		return nil, nil, fmt.Errorf(`compiling a song player is supported only on 386, amd64 and wasm architectures (targeted architecture was %v)`, com.Arch)
 	}
+	if com.JS {
+		com.Progressive = true
+	}
+	if (com.Progressive || com.SeparateSamples) && com.Arch != "wasm" {
+		return nil, nil, fmt.Errorf(`the progressive player, its JavaScript module and separate samples are only for wasm (targeted architecture was %v)`, com.Arch)
+	}
 	var templates []string
 	if com.Arch == "386" || com.Arch == "amd64" {
 		templates = []string{"player.asm", "player.h", "player.inc"}
@@ -315,6 +411,18 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 			}
 			buffers.wasmBufferFeatures = bufferFeatures(song, features, encodedPatch, &buffers)
 			units := unitFeatures(song, encodedPatch)
+			if (com.Stages > 1 || len(com.StageCuts) > 0) && !com.Progressive {
+				return nil, nil, errors.New("only the progressive player renders in stages")
+			}
+			stages, report, stageErr := wasmStages(song, features, com.Stages, com.StageCuts, com.chunkRows(song), com.RowSync)
+			if stageErr != nil {
+				return nil, nil, stageErr
+			}
+			if com.Log != nil {
+				for _, line := range report {
+					com.Log(line)
+				}
+			}
 			data := struct {
 				CompilerMacros
 				FeatureSetMacros
@@ -331,8 +439,53 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 				wasmMCData
 				wasmReverbData
 				wasmUnitFeatures
-			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers, wasmSpectral(encodedPatch, units), wasmMC(encodedPatch, units, featureSetMacros.MCDelayMod()), wasmReverb(encodedPatch, &featureSetMacros, units), units}
+				wasmStageData
+				wasmSyncData
+			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers, wasmSpectral(encodedPatch, units), wasmMC(encodedPatch, units, featureSetMacros.MCDelayMod()), wasmReverb(encodedPatch, &featureSetMacros, units), units, stages, wasmSync(song, com.RowSync)}
 			populatedTemplate, extension, err = com.compile(templateName, &data)
+			com.Layout = &WasmLayout{
+				Output: wasmMacros.Labels["su_outputbuffer"], OutputBytes: wasmMacros.Labels["su_outputend"] - wasmMacros.Labels["su_outputbuffer"],
+				Rows: song.Score.LengthInRows(), RowSamples: song.SamplesPerRow(), ChunkRows: com.chunkRows(song),
+				Stages: stages.NumStages, TapeIn: wasmMacros.Labels["su_tape_in"], TapeOut: wasmMacros.Labels["su_tape_out"],
+				Sync: wasmMacros.Labels["su_syncbuffer"], SyncValues: data.NumSyncs,
+			}
+			if data.NumSyncs > 0 {
+				com.Layout.SyncTicks = data.SyncBytes / (4 * data.NumSyncs)
+			}
+			for _, s := range stages.Stages[:stages.NumStages] {
+				com.Layout.StageCells = append(com.Layout.StageCells, len(s.InCells))
+				com.Layout.StageVoices = append(com.Layout.StageVoices, [2]int{s.First, s.End})
+			}
+			if com.SeparateSamples && err == nil {
+				for i, b := range buffers.Buffers {
+					retmap[fmt.Sprintf(".%d.%s", i, b.format)] = string(b.encoded)
+				}
+			}
+			if com.JS && err == nil {
+				if _, ok := features.Opcode("speed"); ok {
+					return nil, nil, errors.New("the JavaScript module cannot play songs with the speed unit: the lengths of their rows are not known")
+				}
+				frameBytes := 8
+				if com.Output16Bit {
+					frameBytes = 4
+				}
+				jsData := struct {
+					*WasmLayout
+					Song                                      *sointu.Song
+					Frames                                    int // of the song
+					FrameBytes                                int // of the audio of a frame
+					Samples                                   int // buffers with samples
+					SeparateSamples, MathImports, Output16Bit bool
+					RowSync                                   bool
+				}{com.Layout, song, com.Layout.OutputBytes / frameBytes, frameBytes, len(buffers.Buffers), com.SeparateSamples, com.MathImports, com.Output16Bit, com.RowSync}
+				for _, name := range []string{"player.js", "player.d.ts"} {
+					result := bytes.NewBufferString("")
+					if err := com.Template.ExecuteTemplate(result, name, &jsData); err != nil {
+						return nil, nil, fmt.Errorf(`could not execute template "%v": %v`, name, err)
+					}
+					retmap[strings.TrimPrefix(name, "player")] = result.String()
+				}
+			}
 		}
 		if err != nil {
 			return nil, nil, fmt.Errorf(`could not execute template "%v": %v`, templateName, err)
@@ -597,7 +750,11 @@ func (com *Compiler) wasmBuffers(song *sointu.Song, b *vm.Bytecode) (ret wasmBuf
 				for _, c := range enc.Encoded {
 					fmt.Fprintf(&hex, "\\%02x", c)
 				}
-				ret.Buffers = append(ret.Buffers, wasmBuffer{Offset: ret.BufferBytes, Frames: enc.Frames, Channels: enc.Channels, EncodedHex: hex.String()})
+				format := enc.Format
+				if format == "" {
+					format = "bin"
+				}
+				ret.Buffers = append(ret.Buffers, wasmBuffer{Offset: ret.BufferBytes, Frames: enc.Frames, Channels: enc.Channels, EncodedHex: hex.String(), encoded: enc.Encoded, format: format})
 				header = wasmBufferHeader{Offset: uint32(ret.BufferBytes), Capacity: uint32(enc.Frames), Channels: uint32(enc.Channels), Filled: uint32(enc.Frames)}
 				ret.BufferBytes += enc.Frames * enc.Channels * 4
 			}

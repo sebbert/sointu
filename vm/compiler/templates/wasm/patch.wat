@@ -47,7 +47,11 @@
             (global.set $VAL_instr_start (global.get $VAL))
             (global.set $COM_instr_start (global.get $COM))
 {{- end}}
+{{- if .NumStages}}
+            (br_if 2 (i32.eq (global.get $voicesRemain) (i32.load offset=16 (global.get $stage)))) ;; if no more voices of the stage remain, return from function
+{{- else}}
             (br_if 2 (i32.eqz (global.get $voicesRemain))) ;; if no more voices remain, return from function
+{{- end}}
         ))
         br $vm_loop
     end

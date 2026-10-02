@@ -189,3 +189,45 @@ func BenchmarkRenderTaps(b *testing.B) {
 		})
 	}
 }
+
+// TestSyncsWithTapsAndUpdate checks that the sync values that the Go synth
+// records are the same with taps as without, and go on as those of a synth
+// that had the patch all along when a unit is added before the sync unit.
+func TestSyncsWithTapsAndUpdate(t *testing.T) {
+	const n = 4096
+	units := carryVoice(1)[:4] // envelope, oscillator, mulp, filter
+	units = append(units, carryUnit("sync", 8, nil), carryUnit("out", 9, sointu.ParamMap{"stereo": 0, "gain": 128}))
+	patch := sointu.Patch{{NumVoices: 1, Units: units}}
+	added := sointu.Patch{{NumVoices: 1, Units: withUnit(units, 3, unity(20))}}
+	run := func(first, second sointu.Patch, taps bool) ([]float32, sointu.AudioBuffer) {
+		var syncs []float32
+		synth, err := vm.GoSynther{Syncs: &syncs}.Synth(first, 120)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if taps {
+			synth.(sointu.Tapper).SetTaps([]sointu.TapPoint{{Unit: 4}, {Unit: 5}})
+		}
+		synth.Trigger(0, 60)
+		audio := tapRender(t, synth, n)
+		if err := synth.Update(second, 120); err != nil {
+			t.Fatal(err)
+		}
+		return syncs, append(audio, tapRender(t, synth, n)...)
+	}
+	want, audio := run(added, added, false)
+	if len(want) != 2*n/256 {
+		t.Fatalf("%d sync values of %d frames", len(want), 2*n)
+	}
+	loud(t, "sync", audio)
+	for _, test := range []struct {
+		name          string
+		first, second sointu.Patch
+		taps          bool
+	}{{"with taps", added, added, true}, {"a unit added", patch, added, false}, {"a unit added, with taps", patch, added, true}} {
+		got, gotAudio := run(test.first, test.second, test.taps)
+		if !reflect.DeepEqual(got, want) || !reflect.DeepEqual(gotAudio, audio) {
+			t.Errorf("%s: the sync values or the render differ", test.name)
+		}
+	}
+}

@@ -73,6 +73,7 @@ func envelopeCurveSong() sointu.Song {
 }
 
 func TestEnvelopeCurveWasmMatchesGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")
@@ -92,6 +93,7 @@ func TestEnvelopeCurveWasmMatchesGoSynth(t *testing.T) {
 // TestEnvelopeCurveOnlyWhenUsed checks that the players get the curve only
 // when a song curves or modulates it, and that x86 refuses those songs.
 func TestEnvelopeCurveOnlyWhenUsed(t *testing.T) {
+	t.Parallel()
 	linear := sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{
 		{Type: "envelope", Parameters: sointu.ParamMap{"stereo": 0, "attack": 64, "decay": 64, "sustain": 64, "release": 64, "gain": 64, "curve": 0}},
 		{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 64}},

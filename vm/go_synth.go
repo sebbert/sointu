@@ -40,11 +40,17 @@ type (
 		cpuLoad    sointu.CPULoad
 		layout     synthLayout // of the patch, for the states of its units: see carry.go
 		taps       []tap       // where the signal is recorded: see tap.go; nil if nowhere
+		syncs      *[]float32
 	}
 
 	// GoSynther is a Synther implementation that can converts patches into
 	// GoSynths.
 	GoSynther struct {
+		// Syncs, if not nil, gets the values of the sync units of the
+		// synths: the signal at each sync unit, in the order the units
+		// run, every 256th sample, like the sync buffer of the compiled
+		// players.
+		Syncs *[]float32
 	}
 )
 
@@ -128,6 +134,7 @@ func (s GoSynther) Synth(patch sointu.Patch, bpm int) (sointu.Synth, error) {
 	ret := &GoSynth{bytecode: *bytecode, stack: make([]float32, 0, 4), delaylines: make([]delayline, patch.NumDelayLines()), otts: make([]ottState, patch.NumOtts()), limiters: make([]limiterState, patch.NumLimiters()), reverbs: make([]reverbState, patch.NumReverbs())}
 	ret.state.randSeed = 1
 	ret.layout = newSynthLayout(patch)
+	ret.syncs = s.Syncs
 	ret.setSpectra(nil)
 	ret.setMC(nil)
 	return ret, nil
@@ -884,7 +891,9 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 					stack[l-1-i] = y
 				}
 			case opSync:
-				break
+				if s.syncs != nil && synth.globalTime&255 == 0 {
+					*s.syncs = append(*s.syncs, stack[l-1])
+				}
 			default:
 				return samples, renderTime, errors.New("invalid / unimplemented opcode")
 			}

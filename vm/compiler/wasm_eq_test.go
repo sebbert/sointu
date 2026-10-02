@@ -93,6 +93,7 @@ func eqTestSongs(ladder bool) (withEQ, byHand sointu.Song) {
 // to the same song written with the units by hand, and renders and compiles
 // the same: for wasm, and without a ladder, for 386 and amd64.
 func TestEQExpandsToHandWrittenSong(t *testing.T) {
+	t.Parallel()
 	for _, ladder := range []bool{false, true} {
 		withEQ, plain := eqTestSongs(ladder)
 		expanded, expansion := withEQ.Expand()
@@ -137,8 +138,30 @@ func TestEQExpandsToHandWrittenSong(t *testing.T) {
 			}
 		}
 	}
+	// and with the progressive player, its JavaScript module and stages
+	withEQ, plain := eqTestSongs(true)
+	for _, option := range []func(*compiler.Compiler){
+		func(c *compiler.Compiler) { c.Progressive = true },
+		func(c *compiler.Compiler) { c.JS = true },
+		func(c *compiler.Compiler) { c.Progressive, c.Stages = true, 2 },
+	} {
+		var out [2]map[string]string
+		for i, song := range []*sointu.Song{&withEQ, &plain} {
+			com, err := compiler.New("linux", "wasm", false, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			option(com)
+			if out[i], _, err = com.Song(song); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if !reflect.DeepEqual(out[0], out[1]) || len(out[0]) == 0 {
+			t.Errorf("with an option of the progressive player, the song with the eq compiles differently")
+		}
+	}
 	// an eq that does nothing compiles like no eq at all
-	withEQ, _ := eqTestSongs(false)
+	withEQ, _ = eqTestSongs(false)
 	units := withEQ.Patch[0].Units
 	eq := &units[len(units)-2]
 	for i := range eq.Bands {
@@ -168,6 +191,7 @@ func TestEQExpandsToHandWrittenSong(t *testing.T) {
 }
 
 func TestEQWasmMatchesGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")
@@ -190,6 +214,7 @@ func TestEQWasmMatchesGoSynth(t *testing.T) {
 // renders, compiles for wasm, 386 and amd64, and that the wasm player
 // renders it like the Go synth.
 func TestEQExample(t *testing.T) {
+	t.Parallel()
 	data, err := os.ReadFile("../../examples/eq.yml")
 	if err != nil {
 		t.Fatal(err)

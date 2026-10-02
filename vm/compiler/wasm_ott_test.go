@@ -10,6 +10,7 @@ import (
 )
 
 func TestOttWasmMatchesGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")
@@ -68,6 +69,7 @@ func TestOttWasmMatchesGoSynth(t *testing.T) {
 }
 
 func TestOttX86Refused(t *testing.T) {
+	t.Parallel()
 	song := sointu.Song{
 		BPM:         120,
 		RowsPerBeat: 4,

@@ -17,6 +17,7 @@ import (
 // AllowUnknownUnits it compiles to the player of the song without the unit,
 // with a warning.
 func TestCompilerRefusesUnknownUnits(t *testing.T) {
+	t.Parallel()
 	unit := func(typ string, params sointu.ParamMap) sointu.Unit {
 		u := sointu.MakeUnit(typ)
 		for k, v := range params {

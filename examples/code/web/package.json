@@ -1,0 +1,15 @@
+{
+  "name": "sointu-web-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "song": "node song.mjs",
+    "dev": "node song.mjs && vite",
+    "build": "node song.mjs && vite build",
+    "serve": "node serve.mjs"
+  },
+  "devDependencies": {
+    "rollup-plugin-websqz": "^1.1.3",
+    "vite": "^7.3.1"
+  }
+}
