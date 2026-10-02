@@ -13,14 +13,14 @@ import (
 
 // soundsetPresets returns the presets of the sound set that the tracker
 // comes with, by name: the Club presets and the Global presets with the
-// drum bus.
+// drum bus, Global mastering 2 buses among them.
 func soundsetPresets(t *testing.T) map[string]*preset {
 	t.Helper()
 	m, _ := newModuleTestModel(t)
 	ret := map[string]*preset{}
 	for i := range m.presetData.presets {
 		p := &m.presetData.presets[i]
-		if !p.user && (strings.HasPrefix(p.instr.Name, "Club ") || strings.HasPrefix(p.instr.Name, "Global mastering 2 drumbus")) {
+		if !p.user && (strings.HasPrefix(p.instr.Name, "Club ") || strings.HasPrefix(p.instr.Name, "Global mastering 2 drumbus") || p.instr.Name == "Global mastering 2 buses") {
 			ret[p.instr.Name] = p
 		}
 	}
@@ -30,7 +30,8 @@ func soundsetPresets(t *testing.T) map[string]*preset {
 // The tracker lists every preset of the sound set, in the directory of its
 // kind, and each is a complete instrument: it expands and encodes. The
 // drums end in an out unit, which their comments tell to make an aux unit
-// to route them to the drum bus; so routed, they still encode.
+// to route them to the drum bus, on channels 8 and 9; so routed, they still
+// encode.
 func TestSoundsetPresets(t *testing.T) {
 	presets := soundsetPresets(t)
 	want := map[string]string{
@@ -39,7 +40,7 @@ func TestSoundsetPresets(t *testing.T) {
 		"Club sub bass": "BA", "Club acid bass": "BA", "Club reese bass": "BA", "Club dist bass": "BA",
 		"Club supersaw lead": "LEAD", "Club hoover": "LEAD", "Club supersaw pad": "PAD", "Club supersaw pluck": "PL",
 		"Club riser": "FX", "Club noise sweep up": "FX", "Club downlifter": "FX", "Club impact": "FX",
-		"Global mastering 2 drumbus": "UTIL", "Global mastering 2 drumbus reverb": "UTIL",
+		"Global mastering 2 drumbus": "UTIL", "Global mastering 2 drumbus reverb": "UTIL", "Global mastering 2 buses": "UTIL",
 	}
 	for name := range presets {
 		if _, ok := want[name]; !ok {
@@ -76,17 +77,17 @@ func TestSoundsetPresets(t *testing.T) {
 			if last.Type != "out" || last.Parameters["stereo"] != 1 {
 				t.Errorf("the preset %s ends in %s, want a stereo out", name, last.Type)
 			}
-			if !strings.Contains(p.instr.Comment, "aux, channel 6") {
+			if !strings.Contains(p.instr.Comment, "aux, channel 8") {
 				t.Errorf("the comment of the preset %s does not tell how to route it to the drum bus", name)
 			}
 			bus := p.instr.Copy()
-			bus.Units[len(bus.Units)-1] = sointu.Unit{Type: "aux", ID: last.ID, Parameters: sointu.ParamMap{"stereo": 1, "gain": last.Parameters["gain"], "channel": 6}}
+			bus.Units[len(bus.Units)-1] = sointu.Unit{Type: "aux", ID: last.ID, Parameters: sointu.ParamMap{"stereo": 1, "gain": last.Parameters["gain"], "channel": 8}}
 			encode(bus)
 		case "UTIL":
 			// the bus is read and sent to the mix before the mix is read
 			bus, mix := -1, -1
 			for i, u := range p.instr.Units {
-				if u.Type == "in" && u.Parameters["channel"] == 6 {
+				if u.Type == "in" && u.Parameters["channel"] == 8 {
 					bus = i
 				}
 				if u.Type == "in" && u.Parameters["channel"] == 0 {
@@ -132,7 +133,7 @@ func TestSoundsetExamplesUseThePresets(t *testing.T) {
 				}
 				delete(c.Parameters, "target")
 				if bus && i == len(units)-1 && c.Type == "out" {
-					c.Type, c.Parameters["channel"] = "aux", 6
+					c.Type, c.Parameters["channel"] = "aux", 8
 				}
 				ret = append(ret, c)
 			}

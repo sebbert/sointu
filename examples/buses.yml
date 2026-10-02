@@ -1,0 +1,327 @@
+bpm: 140
+rowsperbeat: 4
+score:
+    tracks:
+        - numvoices: 1
+          order: [0, 0, 0, 0]
+          patterns: [[45, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 48, 1]]
+        - numvoices: 1
+          order: [0, 1, 0, 1]
+          patterns: [[72, 0, 0, 0, 0, 0, 75, 0, 0, 0, 0, 0, 0, 0, 0, 0], [79, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]
+        - numvoices: 1
+          order: [0, 1, 1, 1]
+          patterns: [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 84, 0, 0, 0, 84, 0, 0, 0, 84, 0, 0, 0, 84, 84]]
+        - numvoices: 1
+          order: [0, 1, 1, 1]
+          patterns: [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [55, 1, 1, 1, 55, 1, 1, 1, 55, 1, 1, 1, 55, 1, 1, 1]]
+        - numvoices: 1
+          order: [0, 0, 0, 0]
+          patterns: [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]
+    rowsperpattern: 16
+    length: 4
+patch:
+    - name: bass
+      comment: 'A held saw bass, 55 Hz, on the bus that the kick ducks: aux 4/5'
+      numvoices: 1
+      units:
+        - type: envelope
+          id: 101
+          parameters: {attack: 32, decay: 64, gain: 128, release: 48, stereo: 0, sustain: 128}
+        - type: oscillator
+          id: 102
+          parameters: {bandlimit: 1, color: 0, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 1, unison: 0}
+        - type: mulp
+          id: 103
+          parameters: {stereo: 0}
+        - type: filter
+          id: 104
+          parameters: {bandpass: 0, frequency: 28, highpass: 0, lowpass: 1, resonance: 100, stereo: 0}
+        - type: pan
+          id: 105
+          parameters: {panning: 64, stereo: 0}
+        - type: aux
+          id: 106
+          parameters: {channel: 4, gain: 40, stereo: 1}
+          comment: 'To aux 4/5, the bus that the kick ducks, instead of out'
+    - name: stab
+      comment: 'Short saw notes, to the mix, to the reverb on aux 2/3 and to the delay on aux 6/7'
+      numvoices: 1
+      units:
+        - type: envelope
+          id: 111
+          parameters: {attack: 16, decay: 60, gain: 128, release: 56, stereo: 1, sustain: 0}
+        - type: oscillator
+          id: 112
+          parameters: {bandlimit: 1, color: 0, detune: 70, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 2}
+        - type: mulp
+          id: 113
+          parameters: {stereo: 1}
+        - type: filter
+          id: 114
+          parameters: {bandpass: 0, frequency: 80, highpass: 0, lowpass: 1, resonance: 110, stereo: 1}
+        - type: push
+          id: 115
+          parameters: {stereo: 1}
+        - type: aux
+          id: 116
+          parameters: {channel: 6, gain: 64, stereo: 1}
+          comment: 'To aux 6/7, the delay of the Global instrument'
+        - type: outaux
+          id: 117
+          parameters: {auxgain: 40, outgain: 40, stereo: 1}
+          comment: 'To the mix, and to aux 2/3, the reverb of the Global instrument'
+    - name: hat
+      comment: 'A noise hat on the offbeats, to the drum bus on aux 8/9'
+      numvoices: 1
+      units:
+        - type: envelope
+          id: 121
+          parameters: {attack: 0, decay: 50, gain: 128, release: 50, stereo: 0, sustain: 0}
+        - type: noise
+          id: 122
+          parameters: {gain: 128, shape: 64, stereo: 0}
+        - type: mulp
+          id: 123
+          parameters: {stereo: 0}
+        - type: filter
+          id: 124
+          parameters: {bandpass: 0, frequency: 110, highpass: 1, lowpass: 0, resonance: 128, stereo: 0}
+        - type: pan
+          id: 125
+          parameters: {panning: 72, stereo: 0}
+        - type: aux
+          id: 126
+          parameters: {channel: 8, gain: 40, stereo: 1}
+          comment: 'To aux 8/9 (aux4 left), the drum bus of the Global instrument, instead of out'
+    - name: Kick ducker
+      comment: 'The preset Kick ducker, with the kick sent to the drum bus on aux 8/9 instead of out. It reads the bus on aux 4/5 and ducks it'
+      numvoices: 1
+      units:
+        - id: 1
+          parameters: {}
+          comment: Pitch drop
+        - type: envelope
+          id: 202
+          parameters: {attack: 0, curve: 96, decay: 64, gain: 128, release: 64, stereo: 0, sustain: 0}
+          comment: 'decay is the time of the drop, 93 ms, curve how much of it happens at once'
+        - type: send
+          id: 203
+          parameters: {amount: 90, port: 0, sendpop: 1, target: 205}
+          comment: 'amount is where the drop starts: 52 semitones up'
+        - id: 4
+          parameters: {}
+          comment: Body
+        - type: oscillator
+          id: 205
+          parameters: {color: 128, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 52, type: 0, unison: 0}
+          comment: A sine, an octave below the note
+        - type: envelope
+          id: 206
+          parameters: {attack: 0, curve: 64, decay: 72, gain: 128, release: 72, stereo: 0, sustain: 0}
+          comment: 'decay is the length, 263 ms: 70 for fast dnb, 74 for techno'
+        - type: mulp
+          id: 207
+          parameters: {stereo: 0}
+        - type: distort
+          id: 208
+          parameters: {drive: 116, stereo: 0}
+          comment: 'Harmonics and a flat, loud body: less drive is rounder and quieter'
+        - id: 9
+          parameters: {}
+          comment: Click
+        - type: envelope
+          id: 210
+          parameters: {attack: 0, decay: 36, gain: 48, release: 36, stereo: 0, sustain: 0}
+          comment: '2.4 ms of noise; gain is its level'
+        - type: noise
+          id: 211
+          parameters: {gain: 128, shape: 64, stereo: 0}
+        - type: mulp
+          id: 212
+          parameters: {stereo: 0}
+        - type: filter
+          id: 213
+          parameters: {bandpass: 0, frequency: 100, highpass: 1, lowpass: 0, resonance: 128, stereo: 0}
+          comment: Only its highs, above 4.4 kHz
+        - type: addp
+          id: 214
+          parameters: {stereo: 0}
+        - id: 15
+          parameters: {}
+          comment: Output
+        - type: pan
+          id: 216
+          parameters: {panning: 64, stereo: 0}
+        - type: aux
+          id: 217
+          parameters: {channel: 8, gain: 100, stereo: 1}
+          comment: 'The level of the kick, to the drum bus on aux 8/9; in the preset this is an out unit'
+        - id: 18
+          parameters: {}
+          comment: The ducked bus
+        - type: in
+          id: 219
+          parameters: {channel: 4, stereo: 1}
+          comment: 'What the other instruments send to aux 4/5. The reverb presets read aux 2/3'
+        - type: module
+          id: 220
+          parameters: {module: 1}
+          comment: 'The Ducker module: depth, release (the time back to full level) and curve. It follows the note of the kick'
+        - type: out
+          id: 221
+          parameters: {gain: 128, stereo: 1}
+          comment: 'The level of the bus. An outaux here sends it to the reverb too'
+    - name: Global mastering 2 buses
+      comment: 'The preset Global mastering 2 buses: the delay on aux 6/7, the reverb on aux 2/3, the drum bus on aux 8/9, then the master chain'
+      numvoices: 1
+      units:
+        - id: 1
+          parameters: {}
+          comment: 'Global mastering 2 with every bus - set this preset as last instrument. Aux 6/7 (aux, channel 6) goes through the Ping pong delay module, aux 2/3 (outaux or aux) through the reverb unit, aux 8/9 (aux, channel 8: aux4 left) is the drum bus of Global mastering 2 drumbus, a compressor and a soft clipper, then Global mastering 2. Aux 4/5 is left to the bus that Kick ducker ducks. reverb, limiter and softclip units, and the channels above 7: Go synth and wasm player only.'
+        - type: in
+          id: 302
+          parameters: {channel: 6, stereo: 1}
+          comment: The signal the instruments send to aux 6/7
+        - type: module
+          id: 303
+          parameters: {module: 2}
+          comment: 'The Ping pong delay module: its parameters are time, feedback, tone, lowcut and pan'
+        - type: outaux
+          id: 304
+          parameters: {auxgain: 32, outgain: 128, stereo: 1}
+          comment: 'outgain is the level of the repeats, auxgain how much of them goes to the reverb below'
+        - type: in
+          id: 305
+          parameters: {channel: 2, stereo: 1}
+          comment: The aux signal the instruments send, with outaux or aux
+        - type: reverb
+          id: 306
+          parameters: {allpass: 0, bypass: 0, decay: 90, diffuser: 0, early: 52, earlywidth: 80, gain: 76, highcut: 98, highs: 48, loopgain: 0, loopmod: 0, looprate: 64, loopsize: 0, lowcut: 56, lows: 72, mod: 24, modrate: 56, network: 0, predelay: 13, pretime: 0, size: 64, spread: 77, steps: 4, tailwidth: 96}
+          comment: 'The reverb: size, decay, highs, lows, predelay, mod, highcut and lowcut are those of the Reverb module, which this unit renders; the parameters after them are what the module fixes'
+        - type: out
+          id: 307
+          parameters: {gain: 128, stereo: 1}
+          comment: The level of the reverb, into the mix that is mastered below
+        - type: in
+          id: 320
+          parameters: {channel: 8, stereo: 1}
+          comment: 'The drum bus: what the drums send to channel 8 with an aux unit in place of their out unit'
+        - type: compressor
+          id: 321
+          parameters: {attack: 52, invgain: 102, ratio: 64, release: 64, stereo: 1, threshold: 36}
+          comment: 'Glue: about 2:1 above -11 dB, with 20 ms attack, which lets the hits through, 93 ms release and +2 dB makeup (invgain)'
+        - type: mulp
+          id: 322
+          parameters: {stereo: 1}
+        - type: softclip
+          id: 323
+          parameters: {drive: 8, knee: 64, oversample: 0, stereo: 1}
+          comment: 'Saturation: drive, +3.2 dB, pushes the hits into the knee at -6 dB, which rounds them off. More drive is denser and louder'
+        - type: out
+          id: 324
+          parameters: {gain: 108, stereo: 1}
+          comment: 'The level of the drums in the mix that is mastered below: the clipper stops at full scale, so at 108 they peak at -1.5 dB at most'
+        - type: in
+          id: 310
+          parameters: {channel: 0, stereo: 1}
+        - type: filter
+          id: 311
+          parameters: {bandpass: 0, frequency: 8, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: Low cut, 12 dB per octave below 27 Hz
+        - type: compressor
+          id: 312
+          parameters: {attack: 47, invgain: 54, ratio: 100, release: 68, stereo: 1, threshold: 64}
+          comment: 'About 4.6:1 above -6 dB, 10 ms attack and 150 ms release, +7.5 dB makeup (invgain). A shorter release distorts the bass more'
+        - type: mulp
+          id: 313
+          parameters: {stereo: 1}
+        - type: limiter
+          id: 316
+          parameters: {drive: 12, lookahead: 32, release: 64, stereo: 1, threshold: 124}
+          comment: 'Turns the gain down ahead of the peaks that the attack lets through, 2.9 ms ahead, to -0.3 dB. drive, +4.4 dB, is the loudness: more of it is louder and flatter'
+        - type: clip
+          id: 314
+          parameters: {stereo: 1}
+          comment: What little the limiter lets through is clipped at full scale
+        - type: out
+          id: 315
+          parameters: {gain: 128, stereo: 1}
+          comment: Master gain
+modules:
+    - id: 1
+      name: Ducker
+      comment: 'Sidechain ducking without a compressor: the stereo signal times 1 - depth·envelope, the envelope triggered by the note of the instrument it is in. Put it in the kick instrument, between an in from the bus of what should duck and an out. Go synth and wasm player only if curve is not 0.'
+      inputs: 2
+      params:
+        - {name: depth, default: 128, display: ott.depth}
+        - {name: release, default: 70}
+        - {name: curve, default: 0}
+      units:
+        - type: envelope
+          id: 1
+          parameters: {attack: 30, curve: 0, decay: 70, gain: 128, release: 70, stereo: 0, sustain: 0}
+          bind: {curve: 3, decay: 2, gain: 1, release: 2}
+          comment: 'How far the gain is turned down: depth is its gain, release the time back to full level, curve bends the way back (fast first). attack is the time down, 1 ms: 0 steps in one sample and clicks'
+        - type: send
+          id: 2
+          parameters: {amount: 0, port: 0, sendpop: 1, target: 3}
+          comment: Minus the envelope to the gain below
+        - type: gain
+          id: 3
+          parameters: {gain: 128, stereo: 1}
+          comment: 'The ducked signal: 1 minus the envelope'
+    - id: 2
+      name: Ping pong delay
+      comment: 'Tempo-synced ping-pong delay, wet only: the sum of the stereo input goes into one side, and each repeat goes through a low-pass and a low cut into the other side.'
+      inputs: 2
+      params:
+        - {name: time, default: 36}
+        - {name: feedback, default: 80}
+        - {name: tone, default: 80}
+        - {name: lowcut, default: 32}
+        - {name: pan, default: 0}
+      units:
+        - type: addp
+          id: 1
+          parameters: {stereo: 0}
+          comment: Left plus right
+        - type: pan
+          id: 2
+          parameters: {panning: 0, stereo: 0}
+          bind: {panning: 5}
+          comment: 'The side of the first repeat: 0 left, 128 right, 64 both, which is a mono delay'
+        - type: receive
+          id: 3
+          parameters: {stereo: 1}
+          comment: The repeats coming back, a sample late
+        - type: addp
+          id: 4
+          parameters: {stereo: 1}
+        - type: delay
+          id: 5
+          parameters: {damp: 0, dry: 0, feedback: 0, notetracking: 2, pregain: 128, stereo: 1}
+          varargs: [36, 36]
+          bind: {delaytime1: 1, delaytime2: 1}
+          comment: 'One line per side, of the same time: 36 is a dotted eighth, 24 an eighth, 48 a quarter'
+        - type: push
+          id: 6
+          parameters: {stereo: 1}
+        - type: filter
+          id: 7
+          parameters: {bandpass: 0, frequency: 89, highpass: 0, lowpass: 1, resonance: 128, stereo: 1}
+          bind: {frequency: {p: 3, min: 24, max: 128}}
+          comment: 'tone: each repeat darker'
+        - type: filter
+          id: 8
+          parameters: {bandpass: 0, frequency: 16, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          bind: {frequency: {p: 4, min: 0, max: 64}}
+          comment: 'lowcut: each repeat thinner; 0 is off'
+        - type: xch
+          id: 9
+          parameters: {stereo: 0}
+          comment: Left to right and right to left
+        - type: send
+          id: 10
+          parameters: {amount: 92, port: 0, sendpop: 1, stereo: 1, target: 3}
+          bind: {amount: {p: 2, min: 64, max: 109}}
+          comment: 'feedback: the level of a repeat relative to the one before, up to 70 %. More would ring: where the two filters meet they raise the level by up to 2.7 dB'

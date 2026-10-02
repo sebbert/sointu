@@ -562,7 +562,7 @@ var UnitTypes = map[string]UnitType{
 		Params: []UnitParameter{
 			{Name: "stereo", MinValue: 0, Default: 1, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "gain", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
-			{Name: "channel", MinValue: 0, Default: 2, MaxValue: 6, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc(channelNames[:])},
+			{Name: "channel", MinValue: 0, Default: 2, MaxValue: NumChannels - 2, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc(channelNames[:])},
 		},
 		StackUse: stackUseSink,
 	},
@@ -952,7 +952,7 @@ var UnitTypes = map[string]UnitType{
 	"in": {
 		Params: []UnitParameter{
 			{Name: "stereo", MinValue: 0, Default: 1, MaxValue: 1, CanSet: true, CanModulate: false},
-			{Name: "channel", MinValue: 0, Default: 2, MaxValue: 6, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc(channelNames[:])},
+			{Name: "channel", MinValue: 0, Default: 2, MaxValue: NumChannels - 2, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc(channelNames[:])},
 		},
 		StackUse: stackUseSource,
 	},
@@ -1364,7 +1364,33 @@ func (a *ParamMap) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-var channelNames = [...]string{"left", "right", "aux1 left", "aux1 right", "aux2 left", "aux2 right", "aux3 left", "aux3 right"}
+// The synth has NumChannels output channels: left and right, and seven aux
+// pairs after them, which the out, outaux, aux and in units write and read.
+// The x86 players have only the first NarrowChannels of them, and so does
+// the wasm player of a song that uses no channel above those.
+const (
+	NumChannels    = 16
+	NarrowChannels = 8
+)
+
+var channelNames = [NumChannels]string{"left", "right", "aux1 left", "aux1 right", "aux2 left", "aux2 right", "aux3 left", "aux3 right",
+	"aux4 left", "aux4 right", "aux5 left", "aux5 right", "aux6 left", "aux6 right", "aux7 left", "aux7 right"}
+
+// MaxChannel returns the highest output channel that the aux and in units of
+// the patch write or read; a stereo unit uses its channel and the next. It is
+// at least 1: left and right are always there. It does not look inside
+// module units: expand the song first.
+func (p Patch) MaxChannel() int {
+	ret := 1
+	for _, instr := range p {
+		for _, unit := range instr.Units {
+			if (unit.Type == "aux" || unit.Type == "in") && !unit.Disabled {
+				ret = max(ret, unit.Parameters["channel"]+unit.Parameters["stereo"]&1)
+			}
+		}
+	}
+	return ret
+}
 
 // MaxSpawnArgs is the maximum number of values a spawn unit passes to the
 // voices it spawns.

@@ -186,11 +186,16 @@ func wasmStages(song *sointu.Song, features vm.FeatureSet, numStages int, cuts [
 	for i, instr := range patch {
 		firstVoice[i+1] = firstVoice[i] + instr.NumVoices
 	}
-	// cells are offsets from su_synth: the 8 global ports at 32, the voices
-	// at 64
+	// cells are offsets from su_synth: the global ports at 32, 8 of them or
+	// 16 in songs that use a channel above 7, and the voices after them
+	numPorts := sointu.NarrowChannels
+	if patch.MaxChannel() >= sointu.NarrowChannels {
+		numPorts = sointu.NumChannels
+	}
+	voicesAt := uint32(32 + 4*numPorts)
 	accesses := map[uint32][]stageAccess{}
 	access := func(cell uint32, a stageAccess) { accesses[cell] = append(accesses[cell], a) }
-	port := func(channel int) uint32 { return uint32(32 + 4*(channel&7)) }
+	port := func(channel int) uint32 { return uint32(32 + 4*(channel&(numPorts-1))) }
 	// forbidden[b] is why there can be no cut before voice b
 	forbidden := make([]string, numVoices+1)
 	bind := func(why string, lo, hi int) { // the voices lo to hi share state
@@ -297,7 +302,7 @@ func wasmStages(song *sointu.Song, features vm.FeatureSet, numStages int, cuts [
 				for tv := tlo; tv <= thi; tv++ {
 					for ch := 0; ch <= stereo; ch++ {
 						n := p["port"]&7 + ch
-						cell := uint32(64 + tv*4096 + (t.unitNo+1)*64 + 32 + 4*n)
+						cell := voicesAt + uint32(tv*4096+(t.unitNo+1)*64+32+4*n)
 						access(cell, a)
 						// the unit clears the ports of its transformed
 						// parameters when it reads them, and receive its
@@ -346,7 +351,7 @@ func wasmStages(song *sointu.Song, features vm.FeatureSet, numStages int, cuts [
 			clean = append(clean, liveCell{cell, lo, hi})
 		default:
 			what := "a send"
-			if cell < 64 {
+			if cell < voicesAt {
 				what = fmt.Sprintf("aux channel %d", (cell-32)/4)
 			}
 			bind(what+" that reaches the next sample", lo, hi)

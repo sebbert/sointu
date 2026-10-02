@@ -295,6 +295,22 @@ func TestStageCuts(t *testing.T) {
 			voice, []sointu.Unit{in(4), stereoOut}, noisy, []sointu.Unit{env, osc(0), mulp, pan, aux(4)}, voice), []int{1, 4}},
 		{"aux that nothing reads", stageTestSong(
 			[]sointu.Unit{env, osc(0), mulp, pan, aux(6), env, osc(0), mulp, out}, voice, []sointu.Unit{env, osc(0), mulp, pan, aux(6), env, noise, mulp, out}, voice), []int{3}},
+		// channels above 7: the player has 16 global ports, and its voices
+		// start 32 bytes later
+		{"aux above 7 read by the last voice", stageTestSong(
+			[]sointu.Unit{env, osc(0), mulp, pan, aux(8)}, noisy, []sointu.Unit{env, noise, mulp, pan, aux(8)},
+			[]sointu.Unit{in(8), delay, stereoOut}), []int{1, 2, 3}},
+		{"aux across channels 7 and 8", stageTestSong(
+			[]sointu.Unit{env, osc(0), mulp, pan, aux(7)}, noisy, []sointu.Unit{env, noise, mulp, pan, aux(7)},
+			[]sointu.Unit{in(7), delay, stereoOut}), []int{1, 2, 3}},
+		{"aux above 7 read by an earlier voice", stageTestSong(
+			voice, []sointu.Unit{in(12), stereoOut}, noisy, []sointu.Unit{env, osc(0), mulp, pan, aux(12)}, voice), []int{1, 4}},
+		{"aux above 7 that nothing reads", stageTestSong(
+			[]sointu.Unit{env, osc(0), mulp, pan, aux(14), env, osc(0), mulp, out}, voice, []sointu.Unit{env, osc(0), mulp, pan, aux(14), env, noise, mulp, out}, voice), []int{3}},
+		{"send to a later voice and an aux above 7", stageTestSong(
+			[]sointu.Unit{env, send(7, 1, 0), osc(0), mulp, pan, aux(10)}, voice, []sointu.Unit{env, osc(7), mulp, out}, []sointu.Unit{in(10), stereoOut}), []int{1, 2, 3}},
+		{"send to an earlier voice and an aux above 7", stageTestSong(
+			[]sointu.Unit{env, osc(0), mulp, pan, aux(10)}, []sointu.Unit{env, osc(7), mulp, out}, voice, []sointu.Unit{env, send(7, 1, 0), osc(0), mulp, out}, []sointu.Unit{in(10), stereoOut}), []int{1, 4}},
 		{"main output read and written again", stageTestSong(
 			voice, noisy, []sointu.Unit{in(0), delay, stereoOut}, voice), []int{1, 2, 3}},
 		{"send to a later voice", stageTestSong(

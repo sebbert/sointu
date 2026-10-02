@@ -1,5 +1,5 @@
 name: Club kick hard
-comment: 'A hard techno kick with a rumble: the kick, driven hard, and behind it its own echoes in 16th notes, low-passed, driven and faded in after each hit. Suggested notes: F-1 to A-1. Hold the note for as long as the rumble should last. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes, softclip and ladder: Go synth and wasm player only.'
+comment: 'A hard techno kick with a rumble: the kick, driven hard, and behind it its own echoes in 16th notes, low-passed, driven and faded in after each hit. Suggested notes: F-1 to A-1. Hold the note for as long as the rumble should last. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 8 (aux4 left; Go synth and wasm player only). Curved envelopes, softclip and ladder: Go synth and wasm player only.'
 numvoices: 1
 units:
     - type: envelope
@@ -53,4 +53,4 @@ units:
     - type: out
       id: 14
       parameters: {gain: 128, stereo: 1}
-      comment: 'The level. For the drum bus, make this an aux unit with channel 6'
+      comment: 'The level. For the drum bus, make this an aux unit with channel 8'

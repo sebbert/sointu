@@ -2,7 +2,8 @@
 
 This branch of Sointu adds macOS and CLAP plugins, audio samples and buffers,
 granular synthesis, spectral processing, modules (reusable blocks of units),
-a graphical parametric equalizer and up to 255 voices. Most of the new
+a graphical parametric equalizer, up to 255 voices and 16 output channels
+(seven aux pairs). Most of the new
 synthesis features exist only in the Go synth and the WebAssembly player; the
 x86 players (`vm/compiler/templates/amd64-386`) and the native bridge were left
 behind on purpose. The [x86 backend](#updating-the-x86-backend) section lists
@@ -824,6 +825,45 @@ envelope of the song has the curve operand. The Go synth, which encodes with
     bitmasks;
   - the voice memory is sized by the number of voices.
 
+## Output channels
+
+- 16 output channels in the Go synth and the wasm player
+  (`sointu.NumChannels`): left and right, and seven aux pairs instead of
+  three. `aux` and `in` take a `channel` up to 14 (aux7 left; a stereo unit
+  uses its channel and the next), named aux4 left to aux7 right after the
+  first eight. `out` and `outaux` are as they were: 0/1, and 0/1 with 2/3.
+- The Go synth always has the 16 (`synthState.outputs`). The wasm player has
+  them only in a song where an enabled `aux` or `in` unit, after the modules
+  are expanded, reaches a channel above 7 (`Patch.MaxChannel`,
+  `wasmUnitFeatures.WideAux`): `su_globalports` is then 64 bytes instead of
+  32, and the voices start 32 bytes later, at `su_synth` + 96. The addresses
+  of global sends, which count from 64 bytes before the voices, take that
+  constant from the place of the voices; nothing else in the player knows
+  the difference, and the bytecode is the same. A stereo unit on channel 7
+  uses channel 8 and counts.
+- A song that uses no channel above 7 compiles to exactly the player it
+  compiled to before. One that does costs no bytes of wasm in the songs
+  measured (`examples/soundset_loop.yml`, 6151 bytes with its drum bus on 6/7
+  and on 8/9; `examples/ducking.yml` and others with their channels moved):
+  the code is the same, with other addresses, and the 32 bytes of ports are
+  memory, not data. The voices are followed by an alignment to 128 bytes
+  that takes the 32 bytes up, so nothing after them moves.
+- The stages (`-js -stages`) know both layouts: the cells of the ports and
+  of the voices are where the player has them
+  (`vm/compiler/wasm_stages.go`), and a channel above 7 is cut like any aux
+  channel.
+- The x86 players and the native bridge keep 8 channels: the compiler refuses
+  a song that uses a channel above 7 for 386 and amd64, and the bridge
+  refuses the patch. See [Updating the x86 backend](#updating-the-x86-backend).
+- The tracker shows the names; it has no meter or check of its own that
+  counts the channels.
+- Tests: `vm/compiler/wasm_aux16_test.go` (each channel is one of its own in
+  the Go synth; mono and stereo `aux` and `in` on every new pair, in a
+  polyphonic instrument, with global sends and more than 32 voices, rendered
+  alike by both synths, in parts and in stages; the layout only when used,
+  and the x86 refusal), cuts with channels above 7 in `TestStageCuts`, and
+  `channels_test.go`.
+
 ## Go synth behavior changes
 
 The Go synth now computes every unit the way the wasm player does, operation
@@ -1100,9 +1140,11 @@ the last time they were asked for, the synth records nothing).
   out: `in`, the module unit, `out`. No second pattern and no compressor.
   An `outaux` in place of that `out` sends the ducked bus to the reverb too.
   `examples/ducking.yml` is a bass and a pad on the bus. Two limits:
-  - A bus is an aux pair, and there are three: 2/3, which the reverb presets
-    read, 4/5, which Kick ducker reads, and 6/7, which the delay presets
-    read. `in` clears the pair, so one instrument reads a bus.
+  - A bus is an aux pair, and there are seven (three for x86): 2/3, which
+    the reverb presets read, 4/5, which Kick ducker reads, 6/7, which the
+    delay presets read, 8/9, which the drum bus presets read, and 10/11 to
+    14/15, which no preset uses. `in` clears the pair, so one instrument
+    reads a bus.
   - The kick instrument has to come after the instruments on the bus in the
     instrument list, and before a mastering preset. Before them, it reads
     what they sent in the sample before: the bus is one sample late.
@@ -1229,7 +1271,9 @@ the last time they were asked for, the synth records nothing).
   units; its `outaux` can send the repeats on to the reverb) and Global
   mastering 2 ducking (aux 6/7 through `Ducking delay`, a quarter of it on
   to the reverb, aux 2/3 through `Ducking reverb`, then Global mastering 2;
-  28 units, 50 with the Reverb module).
+  28 units, 50 with the Reverb module). Global mastering 2 buses has the
+  `Ping pong delay` on aux 6/7 next to a reverb unit and the drum bus: see
+  the drum bus below.
 
   All of this is measured on rendered audio, not judged by ear. Tests:
   `vm/compiler/wasm_ducking_test.go` (what the modules do, and that the
@@ -1469,12 +1513,26 @@ the last time they were asked for, the synth records nothing).
   drumbus reverb with the reverb unit (15 units; 37 with the Reverb
   module), are Global mastering 2 with a
   group bus for the drums in front. The channels: 0/1 the mix, 2/3 the
-  reverb send, 4/5 left free for a sidechain bus, 6/7 the drum bus.
-  - The drums send to the bus with an `aux` unit, channel 6, in place of
-    their `out` unit. The drum presets come with `out`, so that a preset
+  reverb send, 4/5 left free for the bus that Kick ducker ducks, 6/7 left
+  free for the delay send, 8/9 the drum bus. The bus was on 6/7, where it
+  could not be used with the delay presets; on 8/9 it renders the same
+  (`TestDrumBusChannel`), and makes these presets Go synth and wasm player
+  only also for their channels (see [Output channels](#output-channels)).
+  - The drums send to the bus with an `aux` unit, channel 8 (aux4 left), in
+    place of their `out` unit. The drum presets come with `out`, so that a preset
     makes sound in any song, also one without this Global instrument; the
     comment of each says which unit to change, and `gain` stays as it is.
-  - The Global instrument reads the bus (`in`, channel 6), compresses it
+  - Global mastering 2 buses is the Global preset with every bus, for a
+    song that uses the four of them: aux 6/7 through the `Ping pong delay`
+    module, a quarter of its repeats on to the reverb; aux 2/3 through the
+    reverb unit; the drum bus on aux 8/9; then Global mastering 2. 27 units
+    (49 with the Reverb module in place of the reverb unit). The bus on
+    4/5 is read by the Kick ducker itself, which comes before this
+    instrument. `examples/buses.yml` has a bass on 4/5, a stab sent to the
+    reverb and the delay, a hat and the kick on the drum bus, and this
+    preset; without what is sent to any one of the four buses it renders
+    differently (`TestBusesExample`).
+  - The Global instrument reads the bus (`in`, channel 8), compresses it
     (about 2:1 above -11 dB, 20 ms attack, 93 ms release, +2 dB makeup),
     clips it softly (`softclip`: +3.2 dB drive, knee at -6 dB) and adds it
     to the mix (`out`, gain 108) before the mix is read and mastered.
@@ -1551,6 +1609,7 @@ ways, and the templates test them:
 | `reverb` | the modulation of its lines; each filter of its input, and the test for it when only some units have it; the levels, widths and rate as constants of the unit instead of the code; the number of steps; allpasses in the diffuser, and plain delays; the second set of lines. See [reverb unit](#reverb-unit) |
 | `softclip`, `limiter`, `width`, `ladder`, `envelope` | drive and oversampling of `softclip`; drive of `limiter` and `ladder`, lowcut of `width`, curve of `envelope` (optional last parameters, `optionalParams`) |
 | `oscillator` | the corrections of each bandlimited waveform; the LFO code |
+| `aux`, `in` | the global ports of the channels above 7, 16 ports instead of 8, which move the voices by 32 bytes (see [Output channels](#output-channels)) |
 | shared | `$swap`, `$peek2`, `$stereoHelper`, each only when a unit calls it; stereo and mono `xch` |
 
 The rule for adding one:
@@ -1838,7 +1897,9 @@ song can render until then.
 - The pipeline renders the same bytes for every cut the compiler allows in
   the first second of those songs (soundset: all 29), and for songs made for
   each kind of dependency, where the cuts found are checked too
-  (`wasm_stages_test.go`).
+  (`wasm_stages_test.go`). That includes songs with channels above 7,
+  whose player has 16 global ports and its voices 32 bytes later
+  (`wasm_aux16_test.go`).
 - The sync values of the wasm player are those of the Go synth, also
   rendered in parts and in stages (`wasm_syncunit_test.go`, and the two
   tests above).
@@ -2014,6 +2075,17 @@ songs that need any of it for x86.
    the units differ in them (`vm/operands.go`). The x86 templates have no stubs for them, as for
    the spectral units, so the x86 library does not assemble with
    `AllFeatures`; the compiler refuses songs with mc units for x86.
+
+12. **16 output channels.** `su_synthworkspace` has left, right and
+   `.aux resd 6`; the voices follow it, and global send addresses count
+   from there. For channels above 7 (`Patch.MaxChannel`): `.aux resd 14`,
+   in songs that use them only, the voices 32 bytes later, and the base of
+   the global sends with them, as in the wasm player (`WideAux` in
+   `player.wat` and `sinks.wat`). `su_op_aux` and `su_op_in` index the
+   ports with their operand and need no change. The `SynthWorkspace` of
+   the native bridge (`library.h`, `Aux[6]`) would always have the 14. The
+   compiler refuses songs with a channel above 7 for x86, and the bridge
+   such patches.
 
 ## Known differences left
 

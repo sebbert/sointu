@@ -38,6 +38,9 @@ func Synth(patch sointu.Patch, bpm int) (*NativeSynth, error) {
 	if n := patch.NumVoices(); n > vm.MAX_VOICES_NARROW {
 		return nil, fmt.Errorf("native bridge supports at most %v voices; patch uses %v", vm.MAX_VOICES_NARROW, n)
 	}
+	if n := patch.MaxChannel(); n >= sointu.NarrowChannels {
+		return nil, fmt.Errorf("native bridge supports output channels up to %v; patch uses channel %v", sointu.NarrowChannels-1, n)
+	}
 	comPatch, err := vm.NewBytecode(patch, vm.AllFeatures{}, bpm)
 	if err != nil {
 		return nil, fmt.Errorf("error compiling patch: %v", err)

@@ -87,7 +87,7 @@ score:
     length: 40
 patch:
     - name: Club 909 kick
-      comment: 'A 909-style kick: a sine that sweeps down to the note. Suggested notes: G-1 to A-1. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes and softclip: Go synth and wasm player only.'
+      comment: 'A 909-style kick: a sine that sweeps down to the note. Suggested notes: G-1 to A-1. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 8 (aux4 left; Go synth and wasm player only). Curved envelopes and softclip: Go synth and wasm player only.'
       numvoices: 1
       units:
         - type: envelope
@@ -118,9 +118,9 @@ patch:
         - type: out
           id: 8
           parameters: {gain: 128, stereo: 1}
-          comment: The level. For the drum bus, make this an aux unit with channel 6
+          comment: The level. For the drum bus, make this an aux unit with channel 8
     - name: Club kick hard
-      comment: 'A hard techno kick with a rumble: the kick, driven hard, and behind it its own echoes in 16th notes, low-passed, driven and faded in after each hit. Suggested notes: F-1 to A-1. Hold the note for as long as the rumble should last. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes, softclip and ladder: Go synth and wasm player only.'
+      comment: 'A hard techno kick with a rumble: the kick, driven hard, and behind it its own echoes in 16th notes, low-passed, driven and faded in after each hit. Suggested notes: F-1 to A-1. Hold the note for as long as the rumble should last. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 8 (aux4 left; Go synth and wasm player only). Curved envelopes, softclip and ladder: Go synth and wasm player only.'
       numvoices: 1
       units:
         - type: envelope
@@ -174,9 +174,9 @@ patch:
         - type: out
           id: 22
           parameters: {gain: 128, stereo: 1}
-          comment: The level. For the drum bus, make this an aux unit with channel 6
+          comment: The level. For the drum bus, make this an aux unit with channel 8
     - name: Club 909 snare
-      comment: 'A 909-style snare: a sine body with a short pitch drop and band-passed noise. Suggested notes: around F#3; the note tunes the body. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes and softclip: Go synth and wasm player only.'
+      comment: 'A 909-style snare: a sine body with a short pitch drop and band-passed noise. Suggested notes: around F#3; the note tunes the body. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 8 (aux4 left; Go synth and wasm player only). Curved envelopes and softclip: Go synth and wasm player only.'
       numvoices: 1
       units:
         - type: envelope
@@ -224,9 +224,9 @@ patch:
         - type: out
           id: 35
           parameters: {gain: 100, stereo: 1}
-          comment: The level. For the drum bus, make this an aux unit with channel 6
+          comment: The level. For the drum bus, make this an aux unit with channel 8
     - name: Club 909 clap
-      comment: 'A 909-style clap: band-passed noise in four bursts, then a tail. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes: Go synth and wasm player only.'
+      comment: 'A 909-style clap: band-passed noise in four bursts, then a tail. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 8 (aux4 left; Go synth and wasm player only). Curved envelopes: Go synth and wasm player only.'
       numvoices: 1
       units:
         - type: envelope
@@ -261,9 +261,9 @@ patch:
         - type: out
           id: 44
           parameters: {gain: 118, stereo: 1}
-          comment: The level. For the drum bus, make this an aux unit with channel 6
+          comment: The level. For the drum bus, make this an aux unit with channel 8
     - name: Club 909 hat closed
-      comment: 'A closed hi-hat: frequency modulated square waves and noise, through a low cut and a band-pass. Suggested note: C-5; the note tunes the metal. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes: Go synth and wasm player only.'
+      comment: 'A closed hi-hat: frequency modulated square waves and noise, through a low cut and a band-pass. Suggested note: C-5; the note tunes the metal. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 8 (aux4 left; Go synth and wasm player only). Curved envelopes: Go synth and wasm player only.'
       numvoices: 1
       units:
         - type: oscillator
@@ -306,9 +306,9 @@ patch:
         - type: out
           id: 55
           parameters: {gain: 23, stereo: 1}
-          comment: The level. For the drum bus, make this an aux unit with channel 6
+          comment: The level. For the drum bus, make this an aux unit with channel 8
     - name: Club 909 hat open
-      comment: 'An open hi-hat: like Club 909 hat closed with a long decay. Releasing the note chokes it. Suggested note: C-5; the note tunes the metal. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes: Go synth and wasm player only.'
+      comment: 'An open hi-hat: like Club 909 hat closed with a long decay. Releasing the note chokes it. Suggested note: C-5; the note tunes the metal. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 8 (aux4 left; Go synth and wasm player only). Curved envelopes: Go synth and wasm player only.'
       numvoices: 1
       units:
         - type: oscillator
@@ -351,9 +351,9 @@ patch:
         - type: out
           id: 66
           parameters: {gain: 15, stereo: 1}
-          comment: The level. For the drum bus, make this an aux unit with channel 6
+          comment: The level. For the drum bus, make this an aux unit with channel 8
     - name: Club 909 ride
-      comment: 'A ride cymbal: more metal than noise, long. Suggested note: C-5; the note tunes the metal. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes: Go synth and wasm player only.'
+      comment: 'A ride cymbal: more metal than noise, long. Suggested note: C-5; the note tunes the metal. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 8 (aux4 left; Go synth and wasm player only). Curved envelopes: Go synth and wasm player only.'
       numvoices: 1
       units:
         - type: oscillator
@@ -396,9 +396,9 @@ patch:
         - type: out
           id: 77
           parameters: {gain: 20, stereo: 1}
-          comment: The level. For the drum bus, make this an aux unit with channel 6
+          comment: The level. For the drum bus, make this an aux unit with channel 8
     - name: Club 909 crash
-      comment: 'A crash cymbal: more noise than metal, long. Suggested note: C-5; the note tunes the metal. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes: Go synth and wasm player only.'
+      comment: 'A crash cymbal: more noise than metal, long. Suggested note: C-5; the note tunes the metal. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 8 (aux4 left; Go synth and wasm player only). Curved envelopes: Go synth and wasm player only.'
       numvoices: 1
       units:
         - type: oscillator
@@ -441,9 +441,9 @@ patch:
         - type: out
           id: 88
           parameters: {gain: 22, stereo: 1}
-          comment: The level. For the drum bus, make this an aux unit with channel 6
+          comment: The level. For the drum bus, make this an aux unit with channel 8
     - name: Club 909 tom
-      comment: 'A 909-style tom: a sine with a pitch drop. Suggested notes: E-2 (low) to A-3 (high). To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes and softclip: Go synth and wasm player only.'
+      comment: 'A 909-style tom: a sine with a pitch drop. Suggested notes: E-2 (low) to A-3 (high). To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 8 (aux4 left; Go synth and wasm player only). Curved envelopes and softclip: Go synth and wasm player only.'
       numvoices: 1
       units:
         - type: envelope
@@ -473,7 +473,7 @@ patch:
         - type: out
           id: 96
           parameters: {gain: 90, stereo: 1}
-          comment: The level. For the drum bus, make this an aux unit with channel 6
+          comment: The level. For the drum bus, make this an aux unit with channel 8
     - name: Club sub bass
       comment: 'A clean sub bass: a sine with an attack and release just long enough not to click. Suggested notes: C-1 to C-2. Mono. It uses nothing that only this fork has, so it plays on every target.'
       numvoices: 1

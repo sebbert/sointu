@@ -3,11 +3,11 @@ numvoices: 1
 units:
     - id: 1
       parameters: {}
-      comment: 'Global mastering 2 with a drum bus - Global mastering 2, and before it a group bus for the drums: aux channels 6 and 7 through a compressor and a soft clipper into the mix. Send the drums to it by making their last unit, out, an aux unit with channel 6. Set this preset as last instrument, load reverbs before this. Limiter and softclip: Go synth and wasm player only.'
+      comment: 'Global mastering 2 with a drum bus - Global mastering 2, and before it a group bus for the drums: aux channels 8 and 9 through a compressor and a soft clipper into the mix. Send the drums to it by making their last unit, out, an aux unit with channel 8 (aux4 left). Aux 2/3 is left to the reverb presets, aux 4/5 to the bus that Kick ducker ducks and aux 6/7 to the delay presets. Set this preset as last instrument, load reverbs before this. Limiter, softclip and the channels above 7: Go synth and wasm player only.'
     - type: in
       id: 20
-      parameters: {channel: 6, stereo: 1}
-      comment: 'The drum bus: what the drums send to channel 6 with an aux unit in place of their out unit'
+      parameters: {channel: 8, stereo: 1}
+      comment: 'The drum bus: what the drums send to channel 8 with an aux unit in place of their out unit'
     - type: compressor
       id: 21
       parameters: {attack: 52, invgain: 102, ratio: 64, release: 64, stereo: 1, threshold: 36}

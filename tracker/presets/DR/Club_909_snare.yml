@@ -1,5 +1,5 @@
 name: Club 909 snare
-comment: 'A 909-style snare: a sine body with a short pitch drop and band-passed noise. Suggested notes: around F#3; the note tunes the body. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes and softclip: Go synth and wasm player only.'
+comment: 'A 909-style snare: a sine body with a short pitch drop and band-passed noise. Suggested notes: around F#3; the note tunes the body. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 8 (aux4 left; Go synth and wasm player only). Curved envelopes and softclip: Go synth and wasm player only.'
 numvoices: 1
 units:
     - type: envelope
@@ -47,4 +47,4 @@ units:
     - type: out
       id: 13
       parameters: {gain: 100, stereo: 1}
-      comment: 'The level. For the drum bus, make this an aux unit with channel 6'
+      comment: 'The level. For the drum bus, make this an aux unit with channel 8'

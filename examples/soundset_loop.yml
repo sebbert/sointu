@@ -42,7 +42,7 @@ score:
     length: 8
 patch:
     - name: Club 909 kick
-      comment: 'A 909-style kick: a sine that sweeps down to the note. Suggested notes: G-1 to A-1. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes and softclip: Go synth and wasm player only.'
+      comment: 'A 909-style kick: a sine that sweeps down to the note. Suggested notes: G-1 to A-1. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 8 (aux4 left; Go synth and wasm player only). Curved envelopes and softclip: Go synth and wasm player only.'
       numvoices: 1
       units:
         - type: envelope
@@ -72,10 +72,10 @@ patch:
           parameters: {panning: 64, stereo: 0}
         - type: aux
           id: 8
-          parameters: {channel: 6, gain: 128, stereo: 1}
+          parameters: {channel: 8, gain: 128, stereo: 1}
           comment: To the drum bus of the Global instrument; in the preset this is an out unit
     - name: Club 909 clap
-      comment: 'A 909-style clap: band-passed noise in four bursts, then a tail. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes: Go synth and wasm player only.'
+      comment: 'A 909-style clap: band-passed noise in four bursts, then a tail. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 8 (aux4 left; Go synth and wasm player only). Curved envelopes: Go synth and wasm player only.'
       numvoices: 1
       units:
         - type: envelope
@@ -109,10 +109,10 @@ patch:
           parameters: {panning: 64, stereo: 0}
         - type: aux
           id: 17
-          parameters: {channel: 6, gain: 118, stereo: 1}
+          parameters: {channel: 8, gain: 118, stereo: 1}
           comment: To the drum bus of the Global instrument; in the preset this is an out unit
     - name: Club 909 hat closed
-      comment: 'A closed hi-hat: frequency modulated square waves and noise, through a low cut and a band-pass. Suggested note: C-5; the note tunes the metal. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes: Go synth and wasm player only.'
+      comment: 'A closed hi-hat: frequency modulated square waves and noise, through a low cut and a band-pass. Suggested note: C-5; the note tunes the metal. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 8 (aux4 left; Go synth and wasm player only). Curved envelopes: Go synth and wasm player only.'
       numvoices: 1
       units:
         - type: oscillator
@@ -154,10 +154,10 @@ patch:
           parameters: {panning: 64, stereo: 0}
         - type: aux
           id: 28
-          parameters: {channel: 6, gain: 23, stereo: 1}
+          parameters: {channel: 8, gain: 23, stereo: 1}
           comment: To the drum bus of the Global instrument; in the preset this is an out unit
     - name: Club 909 hat open
-      comment: 'An open hi-hat: like Club 909 hat closed with a long decay. Releasing the note chokes it. Suggested note: C-5; the note tunes the metal. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes: Go synth and wasm player only.'
+      comment: 'An open hi-hat: like Club 909 hat closed with a long decay. Releasing the note chokes it. Suggested note: C-5; the note tunes the metal. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 8 (aux4 left; Go synth and wasm player only). Curved envelopes: Go synth and wasm player only.'
       numvoices: 1
       units:
         - type: oscillator
@@ -199,10 +199,10 @@ patch:
           parameters: {panning: 64, stereo: 0}
         - type: aux
           id: 39
-          parameters: {channel: 6, gain: 15, stereo: 1}
+          parameters: {channel: 8, gain: 15, stereo: 1}
           comment: To the drum bus of the Global instrument; in the preset this is an out unit
     - name: Club 909 snare
-      comment: 'A 909-style snare: a sine body with a short pitch drop and band-passed noise. Suggested notes: around F#3; the note tunes the body. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes and softclip: Go synth and wasm player only.'
+      comment: 'A 909-style snare: a sine body with a short pitch drop and band-passed noise. Suggested notes: around F#3; the note tunes the body. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 8 (aux4 left; Go synth and wasm player only). Curved envelopes and softclip: Go synth and wasm player only.'
       numvoices: 1
       units:
         - type: envelope
@@ -249,10 +249,10 @@ patch:
           parameters: {panning: 64, stereo: 0}
         - type: aux
           id: 52
-          parameters: {channel: 6, gain: 100, stereo: 1}
+          parameters: {channel: 8, gain: 100, stereo: 1}
           comment: To the drum bus of the Global instrument; in the preset this is an out unit
     - name: Club 909 tom
-      comment: 'A 909-style tom: a sine with a pitch drop. Suggested notes: E-2 (low) to A-3 (high). To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes and softclip: Go synth and wasm player only.'
+      comment: 'A 909-style tom: a sine with a pitch drop. Suggested notes: E-2 (low) to A-3 (high). To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 8 (aux4 left; Go synth and wasm player only). Curved envelopes and softclip: Go synth and wasm player only.'
       numvoices: 1
       units:
         - type: envelope
@@ -281,10 +281,10 @@ patch:
           parameters: {panning: 64, stereo: 0}
         - type: aux
           id: 60
-          parameters: {channel: 6, gain: 90, stereo: 1}
+          parameters: {channel: 8, gain: 90, stereo: 1}
           comment: To the drum bus of the Global instrument; in the preset this is an out unit
     - name: Club 909 crash
-      comment: 'A crash cymbal: more noise than metal, long. Suggested note: C-5; the note tunes the metal. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes: Go synth and wasm player only.'
+      comment: 'A crash cymbal: more noise than metal, long. Suggested note: C-5; the note tunes the metal. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 8 (aux4 left; Go synth and wasm player only). Curved envelopes: Go synth and wasm player only.'
       numvoices: 1
       units:
         - type: oscillator
@@ -326,7 +326,7 @@ patch:
           parameters: {panning: 64, stereo: 0}
         - type: aux
           id: 71
-          parameters: {channel: 6, gain: 22, stereo: 1}
+          parameters: {channel: 8, gain: 22, stereo: 1}
           comment: To the drum bus of the Global instrument; in the preset this is an out unit
     - name: Club acid bass
       comment: 'An acid bass line sound: a saw through a resonant ladder filter, with an envelope on the cutoff. Suggested notes: C-1 to C-3. Bandlimited oscillator, curved envelopes and ladder: Go synth and wasm player only.'
@@ -398,7 +398,7 @@ patch:
       units:
         - id: 88
           parameters: {}
-          comment: 'Global mastering 2 with a drum bus and reverb - Global mastering 2, and before it the aux signal (channels 2 and 3) through the reverb unit, and a group bus for the drums: aux channels 6 and 7 through a compressor and a soft clipper into the mix. Send the drums to it by making their last unit, out, an aux unit with channel 6. Set this preset as last instrument. reverb, limiter and softclip units: Go synth and wasm player only.'
+          comment: 'Global mastering 2 with a drum bus and reverb - Global mastering 2, and before it the aux signal (channels 2 and 3) through the reverb unit, and a group bus for the drums: aux channels 8 and 9 through a compressor and a soft clipper into the mix. Send the drums to it by making their last unit, out, an aux unit with channel 8 (aux4 left). Aux 4/5 is left to the bus that Kick ducker ducks and aux 6/7 to the delay presets. Set this preset as last instrument. reverb, limiter and softclip units, and the channels above 7: Go synth and wasm player only.'
         - type: in
           id: 89
           parameters: {channel: 2, stereo: 1}
@@ -413,8 +413,8 @@ patch:
           comment: The level of the reverb, into the mix that is mastered below
         - type: in
           id: 92
-          parameters: {channel: 6, stereo: 1}
-          comment: 'The drum bus: what the drums send to channel 6 with an aux unit in place of their out unit'
+          parameters: {channel: 8, stereo: 1}
+          comment: 'The drum bus: what the drums send to channel 8 with an aux unit in place of their out unit'
         - type: compressor
           id: 93
           parameters: {attack: 52, invgain: 102, ratio: 64, release: 64, stereo: 1, threshold: 36}

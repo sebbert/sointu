@@ -41,11 +41,17 @@ type wasmUnitFeatures struct {
 	ReverbAllpass       bool // the diffuser of a reverb unit is of allpasses
 	ReverbPlain         bool // that of one is of plain delays
 	ReverbLoop          bool // a reverb unit has a second set of lines in its network
+
+	// WideAux: an aux or in unit uses a channel above the first
+	// sointu.NarrowChannels. The player then has all sointu.NumChannels
+	// global ports, and its voices start 32 bytes later.
+	WideAux bool
 }
 
 // unitFeatures finds the parts that the units of the song use. The song has
 // no module units: it is expanded.
 func unitFeatures(song *sointu.Song, b *vm.Bytecode) (f wasmUnitFeatures) {
+	f.WideAux = song.Patch.MaxChannel() >= sointu.NarrowChannels
 	for _, sp := range b.Spectra {
 		f.SpectralStereo = f.SpectralStereo || sp.Channels > 1
 	}

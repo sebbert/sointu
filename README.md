@@ -452,9 +452,19 @@ a plot of what those units do to each frequency, with a handle for every
 band; see [FORK.md](FORK.md#eq) for what each band costs and how near it
 comes, and `examples/eq.yml`.
 
+There are 16 output channels: left and right, and seven aux pairs, which
+`aux` writes and `in` reads (`channel` 0 to 14; aux1 to aux7), for buses like
+a reverb send, a delay send, a bus that the kick ducks and a drum bus in one
+song. The presets use 2/3 for the reverb, 4/5 for the ducked bus, 6/7 for the
+delay and 8/9 for the drum bus; the preset Global mastering 2 buses reads all
+of them, and `examples/buses.yml` uses it. The x86 players have the first 8
+channels (three aux pairs); a song that uses no channel above 7 compiles as
+before. See [FORK.md](FORK.md#output-channels).
+
 `bufread`, `bufwrite`, `spawn`, `arg`, `window`, `ott`, `limiter`, `softclip`,
 `width`, `ladder`, `reverb`, the spectral units,
-the mc units, bandlimited oscillators and curved envelopes are WebAssembly only
+the mc units, bandlimited oscillators, curved envelopes and the output
+channels above 7 are WebAssembly only
 for now; envelopes with `curve` 0 compile for x86 as before.
 
 If you are looking for an easy way to compile an executable from a Sointu song
@@ -692,8 +702,9 @@ New features since fork
     except that RECEIVE can also handle stereo signals. Additionally, we have
     OUTAUX, AUX and IN opcodes, which route the signals through global main or
     aux ports, more closer to how 4klang does. But this time we have 8 mono
-    ports / 4 stereo ports, so even this method of routing is unlikely to run
-    out of ports in small intros.
+    ports / 4 stereo ports (16 / 8 in the Go synth and the WebAssembly
+    player), so even this method of routing is unlikely to run out of ports
+    in small intros.
   - **Pattern length does not have to be a power of 2**.
   - **Sample-based oscillators, with samples imported from gm.dls**. The
     gm.dls is available from system folder only on Windows, but the
