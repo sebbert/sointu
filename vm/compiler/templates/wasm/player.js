@@ -15,71 +15,51 @@ export const rowsPerSecond = 44100 / {{.RowSamples}};
 /** Rows of a pattern. */
 export const rowsPerPattern = {{.Song.Score.RowsPerPattern}};
 
-// The renderer instantiates the player and renders the song chunk by chunk.
-// It runs in a worker made from its source text, and on the main thread in
-// time slices when there are no workers: it must use nothing outside itself.
-// post gets the audio in pieces of half a second, as the samples of the left
-// and the right channel: a piece that starts on a quarter of a second has a
-// start time that the browser turns into exactly its frame; from any other
-// time it may get a fraction of a frame, and interpolate the samples.
+// The renderer instantiates the player and renders the song. It runs in a
+// worker made from its source text, and on the main thread when there are no
+// workers, a row at a time with the page running in between (slow): it must
+// use nothing outside itself. post gets the audio in pieces of half a
+// second, as interleaved stereo samples: a piece that starts on a quarter of
+// a second has a start time that the browser turns into exactly its frame;
+// from any other time it may get a fraction of a frame, and interpolate.
 {{- if .Stages}}
 // With a stage, the instance renders the voices of that stage of the pipeline:
-// it reads the tape of each chunk from source, unless it is the first stage,
-// and sends its own tape to sink, unless it is the last, which posts the
-// audio.
+// for each chunk of rows, it reads the tape from source, unless it is the
+// first stage, and sends its own tape to sink, unless it is the last, which
+// posts the audio.
 {{- end}}
 const renderer = (post, slow) => (module{{if .Stages}}, stage, source, sink{{end}}{{if .Samples}}, samples{{end}}) =>
   WebAssembly.instantiate(module, { {{- if .MathImports}} m: Math{{if .Samples}},{{end}}{{end}}{{if .Samples}} s: { b: (i, f, c) => samples[i][c][f] || 0 }{{end}} }).then(({ exports: { m, r{{if .Stages}}, g{{end}} } }) => {
     let row = 0,
       sent = 0; // frames posted
-    const chunk = ({{if .Stages}}tape{{end}}) => {
-      const rows = Math.min({{.ChunkRows}}, {{.Rows}} - row);
-      const finish = () => {
+    const step = ({{if .Stages}}tape{{end}}) => {
 {{- if .Stages}}
-        if (sink) {
-          const out = new Uint8Array(m.buffer, {{.TapeOut}}, rows * {{.RowSamples}} * [{{range $i, $c := .StageCells}}{{if $i}}, {{end}}{{$c}}{{end}}][stage + 1] * 4).slice();
-          sink.postMessage(out, [out.buffer]);
-        } else {
-{{- end}}
-        // every whole piece rendered, and at the end of the song the rest
-        for (let n; (n = Math.min(22050, (row + rows) * {{.RowSamples}} - sent)) > (row + rows < {{.Rows}} ? 22049 : 0); sent += n) {
-          const a = new {{if .Output16Bit}}Int16Array{{else}}Float32Array{{end}}(m.buffer, {{.Output}} + sent * {{.FrameBytes}}, n * 2),
-            left = new Float32Array(n),
-            right = new Float32Array(n);
-          for (let i = 0; i < n; i++) {
-            left[i] = a[2 * i]{{if .Output16Bit}} / 32767{{end}};
-            right[i] = a[2 * i + 1]{{if .Output16Bit}} / 32767{{end}};
-          }
-          post([left, right], [left.buffer, right.buffer]);
-        }
-{{- if .Stages}}
-        }
-{{- end}}
-        row += rows;
-      };
-      if (slow) {
-        // a row at a time, and the page gets to run in between
-        let k = rows;
-        const one = () => {
-          r(1);
-          --k ? setTimeout(one) : (finish(), row < {{.Rows}} && setTimeout(chunk));
-        };
-        one();
-      } else {
-{{- if .Stages}}
-        tape && new Uint8Array(m.buffer, {{.TapeIn}}).set(tape.data);
-{{- end}}
-        r(rows);
-        finish();
+      const rows = slow ? 1 : Math.min({{.ChunkRows}}, {{.Rows}} - row);
+      tape && new Uint8Array(m.buffer, {{.TapeIn}}).set(tape.data);
+      r(rows);
+      row += rows;
+      if (sink) {
+        const out = new Uint8Array(m.buffer, {{.TapeOut}}, rows * {{.RowSamples}} * [{{range $i, $c := .StageCells}}{{if $i}}, {{end}}{{$c}}{{end}}][stage + 1] * 4).slice();
+        sink.postMessage(out, [out.buffer]);
       }
+{{- else}}
+      r(1);
+      row++;
+{{- end}}
+      // every whole piece rendered, and at the end of the song the rest
+      for (let n; {{if .Stages}}!sink && {{end}}(n = Math.min(22050, row * {{.RowSamples}} - sent)) > (row < {{.Rows}} ? 22049 : 0); sent += n) {
+        const audio = new {{if .Output16Bit}}Int16Array{{else}}Float32Array{{end}}(m.buffer, {{.Output}} + sent * {{.FrameBytes}}, n * 2).slice();
+        post(audio, [audio.buffer]);
+      }
+      slow && row < {{.Rows}} && setTimeout(step);
     };
 {{- if .Stages}}
     if (stage + 1) g(stage);
-    if (source) source.onmessage = chunk;
+    if (source) source.onmessage = step;
     else
 {{- end}}
-    if (slow) chunk();
-    else while (row < {{.Rows}}) chunk();
+    do step();
+    while (!slow && row < {{.Rows}});
   });
 
 /**
@@ -94,30 +74,32 @@ export const load = (wasm{{if .SeparateSamples}}, sampleFiles{{end}}, runway = 2
   let end = 0, // frames rendered
     top = 0, // the latest time reported
     waiting = [], // pieces rendered before the start
-    workers = [],
-    f0, // frame of the context where the song starts, a multiple of 11025
+    t0, // context time where the song starts, a multiple of a quarter of a second
     began,
     ready,
-    output,
-    failed;
+    output;
   const schedule = (buffer, at) => {
     const source = context.createBufferSource();
     source.buffer = buffer;
     source.connect(output);
     // a piece that comes after its time makes the song wait for it
-    if ((f0 + at) / 44100 < context.currentTime) f0 = Math.ceil(context.currentTime * 4 + 0.2) * 11025 - at;
-    source.start((f0 + at) / 44100);
+    if (t0 + at < context.currentTime) t0 = Math.ceil(context.currentTime * 4 + 0.2) / 4 - at;
+    source.start(t0 + at);
   };
-  const add = ([left, right]) => {
-    const buffer = context.createBuffer(2, left.length, 44100);
-    buffer.copyToChannel(left, 0);
-    buffer.copyToChannel(right, 1);
-    output ? schedule(buffer, end) : waiting.push([buffer, end]);
-    end += left.length;
-    song.rendered = end / 44100;
+  const add = (audio) => {
+    const n = audio.length / 2,
+      buffer = context.createBuffer(2, n, 44100),
+      left = buffer.getChannelData(0),
+      right = buffer.getChannelData(1);
+    for (let i = 0; i < n; i++) {
+      left[i] = audio[2 * i]{{if .Output16Bit}} / 32767{{end}};
+      right[i] = audio[2 * i + 1]{{if .Output16Bit}} / 32767{{end}};
+    }
+    output ? schedule(buffer, song.rendered) : waiting.push([buffer, song.rendered]);
+    song.rendered = (end += n) / 44100;
     // ready with the runway, and when rendering the rest at 0.8 times the
     // speed so far ends before the song gets there
-    if (song.rendered >= Math.min(duration, Math.max(runway, duration * (1 - (0.8 * song.rendered * 1000) / (performance.now() - began))))) ready();
+    if (song.rendered >= Math.min(duration, Math.max(runway, duration * (1 - (800 * song.rendered) / (performance.now() - began))))) ready();
   };
   const song = {
     context,
@@ -127,10 +109,10 @@ export const load = (wasm{{if .SeparateSamples}}, sampleFiles{{end}}, runway = 2
       context.resume();
       output = destination;
       // on the next quarter of a second that is 50 ms away or more
-      f0 = Math.ceil(context.currentTime * 4 + 0.2) * 11025;
-      waiting.map((c) => schedule(...c));
+      t0 = Math.ceil(context.currentTime * 4 + 0.2) / 4;
+      waiting.map((piece) => schedule(...piece));
     },
-    time: () => (top = Math.max(top, Math.min(context.currentTime - f0 / 44100, end / 44100)) || 0),
+    time: () => (top = Math.max(top, Math.min(context.currentTime - t0, song.rendered)) || 0),
   };
   WebAssembly.compile(wasm).then({{if .Samples}}async {{end}}(module) => {
 {{- if .Samples}}
@@ -142,35 +124,24 @@ export const load = (wasm{{if .SeparateSamples}}, sampleFiles{{end}}, runway = 2
     ).map((b) => [b.getChannelData(0), b.getChannelData(b.numberOfChannels - 1)]);
 {{- end}}
     began = performance.now();
-    // without workers, or when one fails before anything is rendered
-    const fallback = () => {
-      if (!failed && !end) {
-        failed = 1;
-        workers.map((w) => w.terminate());
-        renderer(add, 1)(module{{if .Stages}}, -1, 0, 0{{end}}{{if .Samples}}, samples{{end}});
-      }
-    };
     try {
       const url = URL.createObjectURL(new Blob([`onmessage=e=>(${renderer})(postMessage)(...e.data)`]));
 {{- if .Stages}}
       for (let stage = 0, source; stage < {{.Stages}}; stage++) {
         const worker = new Worker(url),
           channel = stage < {{.Stages}} - 1 && new MessageChannel();
-        workers.push(worker);
         worker.onmessage = (e) => add(e.data);
-        worker.onerror = fallback;
         worker.postMessage([module, stage, source, channel.port1{{if .Samples}}, samples{{end}}], [source, channel.port1].filter((p) => p));
         source = channel.port2;
       }
 {{- else}}
       const worker = new Worker(url);
-      workers.push(worker);
       worker.onmessage = (e) => add(e.data);
-      worker.onerror = fallback;
       worker.postMessage([module{{if .Samples}}, samples{{end}}]);
 {{- end}}
     } catch {
-      fallback();
+      // no workers: on the main thread
+      renderer(add, 1)(module{{if .Stages}}, -1, 0, 0{{end}}{{if .Samples}}, samples{{end}});
     }
   });
   return song;

@@ -337,11 +337,13 @@
 (global $randseed (mut i32) (i32.const 1))
 (global $sp (mut i32) (i32.const {{index .Labels "su_stack"}}))
 (global $outputBufPtr (mut i32) (i32.const {{index .Labels "su_outputbuffer"}}))
+{{- if not .JS}}
 ;; TODO: only export start and length with certain compiler options; in demo use, they can be hard coded
 ;; in the intro
 (global $outputStart (export "s") i32 (i32.const {{index .Labels "su_outputbuffer"}}))
 (global $outputLength (export "l") i32 (i32.const {{if .Output16Bit}}{{mul .PatternLength .SequenceLength .Song.SamplesPerRow 4}}{{else}}{{mul .PatternLength .SequenceLength .Song.SamplesPerRow 8}}{{end}}))
 (global $output16bit (export "t") i32 (i32.const {{if .Output16Bit}}1{{else}}0{{end}}))
+{{- end}}
 {{- if .NumStages}}
 ;; the stage this instance runs, as the address of its 13 i32s in su_stages:
 ;; at first the stage after those of the pipeline, which runs all voices
