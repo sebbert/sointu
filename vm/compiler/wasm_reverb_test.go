@@ -183,8 +183,14 @@ func TestReverbPartsOnlyWhenUsed(t *testing.T) {
 		highcut  = "(f32.load offset=16 (local.get $q))"
 		coef     = "(func $reverbCoef"
 		switches = "(if (i32.eqz (i32.and (i32.load8_u offset="
+		allpass  = ";; a tap of an allpass"
+		plain    = ";; a tap: how far behind frame t it reads"
+		unitAP   = "(local $ap i32)" // tells a unit with allpasses from one without
+		line     = "(func $reverbLine"
 	)
 	ringAfter := "fewer steps, the ring starts where the one after the last step would.\n    (local.set $r (i32.add (i32.add"
+	plate := sointu.ParamMap{"gain": 85, "early": 40, "earlywidth": 64, "tailwidth": 64, "modrate": 64, "steps": 2, "spread": 64, "diffuser": 90, "network": 1100, "bypass": 5, "highcut": 91, "decay": 98, "highs": 80, "lows": 56, "mod": 10,
+		"allpass": 96, "loopsize": 300, "loopgain": 64, "loopmod": 12, "looprate": 70}
 	room := sointu.ParamMap{"gain": 74, "early": 58, "earlywidth": 64, "tailwidth": 64, "modrate": 64, "steps": 3, "spread": 64, "diffuser": 200, "network": 400, "bypass": 7, "decay": 58, "highs": 48, "lows": 64, "mod": 8}
 	for _, c := range []struct {
 		name    string
@@ -194,7 +200,7 @@ func TestReverbPartsOnlyWhenUsed(t *testing.T) {
 		hasNot  []string
 		reverbs int // sets of constants
 	}{
-		{"defaults", []sointu.ParamMap{{}}, 192, []string{lowcut, highcut, coef, "(f32.const 2.3713737)", "(f32.const 1.25) (f32.const 0.4216965)", "(f32.const 1.5)", "(i32.const 128)"}, []string{levels, ringAfter, switches}, 1},
+		{"defaults", []sointu.ParamMap{{}}, 192, []string{lowcut, highcut, coef, "(f32.const 2.3713737)", "(f32.const 1.25) (f32.const 0.4216965)", "(f32.const 1.5)", "(i32.const 128)"}, []string{levels, ringAfter, switches, allpass, unitAP, line}, 1},
 		{"gain", []sointu.ParamMap{{"gain": 60}}, 212, []string{levels, "offset=196", "offset=200", "offset=204", "offset=208", lowcut, highcut}, []string{ringAfter, switches, "(f32.const 2.3713737)"}, 1},
 		{"widths", []sointu.ParamMap{{}, {"earlywidth": 64, "tailwidth": 64, "size": 30}}, 212, []string{levels}, []string{ringAfter, switches}, 2},
 		{"modrate", []sointu.ParamMap{{"modrate": 90, "mod": 60}}, 212, []string{levels}, []string{"(f32.const 1.603417e-05)"}, 1},
@@ -207,7 +213,12 @@ func TestReverbPartsOnlyWhenUsed(t *testing.T) {
 		{"filters in some", []sointu.ParamMap{{"bypass": 3}, {}, {"bypass": 1, "size": 90}, {"bypass": 2, "size": 20}}, 193, []string{lowcut, highcut, coef, "(i32.load8_u offset=192 (local.get $k)) (i32.const 1)", "(i32.load8_u offset=192 (local.get $k)) (i32.const 2)"}, []string{levels}, 4},
 		{"low cut in some", []sointu.ParamMap{{"bypass": 2}, {"bypass": 3}}, 193, []string{lowcut, "(i32.const 1)))"}, []string{highcut}, 2},
 		{"room", []sointu.ParamMap{room}, 213, []string{levels, ringAfter, "(i32.load8_u offset=212 (local.get $k))"}, []string{lowcut, highcut, coef}, 1},
-		{"everything", []sointu.ParamMap{room, {}, {"bypass": 1, "steps": 2, "gain": 128, "early": 0, "mod": 0}}, 214, []string{levels, ringAfter, lowcut, highcut, "(i32.load8_u offset=212 (local.get $k))", "(i32.load8_u offset=213 (local.get $k))"}, nil, 3},
+		{"allpass", []sointu.ParamMap{{"allpass": 96}, {"allpass": 20, "predelay": 128, "size": 128}}, 200, []string{allpass, "(local $g f32)", "(f32.store offset=131232", "(f32.const 2.3713737)"}, []string{plain, unitAP, line}, 2},
+		{"allpass in some", []sointu.ParamMap{{"allpass": 96}, {}, {"allpass": 40, "size": 20, "bypass": sointu.ReverbBypassPredelay}}, 200, []string{allpass, plain, unitAP, "(f32.const 2.3713737)"}, []string{line}, 3},
+		{"second lines", []sointu.ParamMap{{"loopsize": 300, "loopgain": 64, "loopmod": 12, "looprate": 70}}, 332, []string{line, plain}, []string{allpass, levels}, 1},
+		{"second lines in some, no mod", []sointu.ParamMap{{"loopsize": 2800, "loopmod": 128, "looprate": 128, "mod": 0}, {"mod": 0, "size": 20}, {"loopsize": 1, "mod": 0, "size": 100}}, 332, []string{line, "(f32.const 0) (f32.const 1.603417e-05) (f32.const 0)"}, []string{allpass, "(local.set $depth"}, 3},
+		{"plate", []sointu.ParamMap{plate}, 361, []string{allpass, line, highcut, levels, "(i32.load8_u offset=360 (local.get $k))"}, []string{plain, unitAP, lowcut, switches}, 1},
+		{"everything", []sointu.ParamMap{room, {}, {"bypass": 1, "steps": 2, "gain": 128, "early": 0, "mod": 0}, plate}, 362, []string{levels, ringAfter, lowcut, highcut, allpass, plain, unitAP, line, "(i32.load8_u offset=360 (local.get $k))", "(i32.load8_u offset=361 (local.get $k))"}, nil, 4},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			units := []sointu.Unit{

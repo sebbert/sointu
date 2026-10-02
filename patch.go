@@ -416,6 +416,13 @@ var UnitTypes = map[string]UnitType{
 		// renders the presets Reverb FDN Room, Hall and Ambient. They are
 		// all read when the patch is encoded; a song whose units leave them
 		// at their defaults compiles to the same player as without them.
+		//
+		// allpass makes the delays of the diffuser Schroeder allpasses with
+		// that coefficient, as allpass and apgain of mcdelay. loopsize puts
+		// a second set of 8 lines into the network, before the others, with
+		// lengths up to it, loopgain as their allpass coefficient, loopmod
+		// and looprate as their modulation, and the decay of the network.
+		// With these the unit renders the preset Reverb FDN Plate.
 		Params: []UnitParameter{
 			{Name: "size", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
 				return strconv.FormatFloat(float64(ReverbScale(v, 400, 2800))/10, 'f', 0, 64), "ms"
@@ -457,6 +464,15 @@ var UnitTypes = map[string]UnitType{
 			{Name: "diffuser", MinValue: 0, MaxValue: 700, CanSet: true, CanModulate: false, DisplayFunc: reverbTimeDispFunc("by size")},
 			{Name: "pretime", MinValue: 0, MaxValue: 2000, CanSet: true, CanModulate: false, DisplayFunc: reverbTimeDispFunc("by predelay")},
 			{Name: "bypass", MinValue: 0, MaxValue: 7, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"none", "lowcut", "highcut", "low+highcut", "predelay", "lowcut+pre", "highcut+pre", "all"})},
+			{Name: "allpass", MinValue: 0, MaxValue: MCAllpassGainMax, CanSet: true, CanModulate: false, DisplayFunc: reverbAllpassDispFunc},
+			{Name: "loopsize", MinValue: 0, MaxValue: 2800, CanSet: true, CanModulate: false, DisplayFunc: reverbTimeDispFunc("none")},
+			{Name: "loopgain", MinValue: 0, MaxValue: MCAllpassGainMax, CanSet: true, CanModulate: false, DisplayFunc: reverbAllpassDispFunc},
+			{Name: "loopmod", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(MCModDepthMs(float64(v)/128), 'g', 3, 64), "ms"
+			}},
+			{Name: "looprate", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(MCModRateHz(float64(v)/128), 'g', 3, 64), "Hz"
+			}},
 		},
 		StackUse: func(u *Unit) StackUse {
 			return StackUse{Inputs: [][]int{{0, 1}, {0, 1}}, Modifies: []bool{true, true}, NumOutputs: 2}
@@ -1674,6 +1690,13 @@ func reverbTimeDispFunc(zero string) func(int) (string, string) {
 		}
 		return strconv.FormatFloat(float64(v)/10, 'f', 1, 64), "ms"
 	}
+}
+
+func reverbAllpassDispFunc(v int) (string, string) {
+	if v <= 0 {
+		return "off", ""
+	}
+	return strconv.FormatFloat(float64(v)/128, 'f', 3, 64), ""
 }
 
 func reverbHzDispFunc(v int) (string, string) {

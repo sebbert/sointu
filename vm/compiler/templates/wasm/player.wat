@@ -247,13 +247,13 @@
 {{- if .HasOp "reverb"}}
 {{- /*
 ;-------------------------------------------------------------------------------
-;    The states of the reverb units, 778400 bytes each, in the order the
-;    units run, voice by voice; see $su_op_reverb
+;    The states of the reverb units, in the order the units run, voice by
+;    voice; see $su_op_reverb
 ;-------------------------------------------------------------------------------
 */}}
 {{- .Align}}
 {{- .SetBlockLabel "su_reverb"}}
-{{- .Block (int (mul 778400 .Song.Patch.NumReverbs))}}
+{{- .Block (int (mul .ReverbState .Song.Patch.NumReverbs))}}
 {{- end}}
 {{- if or (.HasOp "bufread") (.HasOp "bufwrite")}}
 {{- .Align}}

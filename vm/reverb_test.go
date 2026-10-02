@@ -97,8 +97,8 @@ func presetSong(t testing.TB, file string) sointu.Song {
 }
 
 // TestReverbUnitRendersLikeThePresets checks that the presets Reverb unit
-// Room, Hall and Ambient, a reverb unit each, render exactly what the
-// presets Reverb FDN Room, Hall and Ambient render, chains of mc units; and
+// Room, Hall, Ambient and Plate, a reverb unit each, render exactly what the
+// presets Reverb FDN Room, Hall, Ambient and Plate render, chains of mc units; and
 // that the unit renders the chain of examples/reverb.yml.
 func TestReverbUnitRendersLikeThePresets(t *testing.T) {
 	compare := func(name string, unit, mc sointu.Song) {
@@ -124,7 +124,7 @@ func TestReverbUnitRendersLikeThePresets(t *testing.T) {
 			t.Errorf("%s: %d samples of the unit differ from the mc units' (peak %v, %d and %d frames)", name, differing, peak, len(got), len(want))
 		}
 	}
-	for _, name := range []string{"Room", "Hall", "Ambient"} {
+	for _, name := range []string{"Room", "Hall", "Ambient", "Plate"} {
 		compare(name, presetSong(t, "../tracker/presets/UTIL/Reverb_unit_"+name+".yml"), presetSong(t, "../tracker/presets/UTIL/Reverb_FDN_"+name+".yml"))
 	}
 	// examples/reverb.yml: the chain of the Reverb module without the high

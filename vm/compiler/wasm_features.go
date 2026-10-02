@@ -38,6 +38,9 @@ type wasmUnitFeatures struct {
 	ReverbHighcut       bool // a reverb unit has the high cut
 	ReverbLowcutSwitch  bool // and another leaves it out: a bit of the unit tells
 	ReverbHighcutSwitch bool
+	ReverbAllpass       bool // the diffuser of a reverb unit is of allpasses
+	ReverbPlain         bool // that of one is of plain delays
+	ReverbLoop          bool // a reverb unit has a second set of lines in its network
 }
 
 // unitFeatures finds the parts that the units of the song use. The song has
@@ -50,6 +53,9 @@ func unitFeatures(song *sointu.Song, b *vm.Bytecode) (f wasmUnitFeatures) {
 	for _, r := range b.Reverbs {
 		lowcut[r.Bypass&sointu.ReverbBypassLowcut] = true
 		highcut[r.Bypass&sointu.ReverbBypassHighcut/sointu.ReverbBypassHighcut] = true
+		f.ReverbAllpass = f.ReverbAllpass || r.APGain != 0
+		f.ReverbPlain = f.ReverbPlain || r.APGain == 0
+		f.ReverbLoop = f.ReverbLoop || r.Loop.Lengths[0] != 0
 	}
 	f.ReverbLowcut, f.ReverbLowcutSwitch = lowcut[0], lowcut[0] && lowcut[1]
 	f.ReverbHighcut, f.ReverbHighcutSwitch = highcut[0], highcut[0] && highcut[1]
