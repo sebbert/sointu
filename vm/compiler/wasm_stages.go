@@ -33,6 +33,7 @@ type wasmStage struct {
 	DelayLines      int    // delay lines of the voices before it
 	Otts            int    // ott states of the voices before it
 	Limiters        int    // limiter states of the voices before it
+	Reverbs         int    // reverb states of the voices before it
 	SeedInit        uint32 // 16007 to the number of noise samples of the voices before it
 	SeedStep        uint32 // 16007 to the number of noise samples of the voices of the other stages
 	InCells         []uint32
@@ -65,10 +66,12 @@ type wasmStageData struct {
 	StageRows      int
 	// NumStages is the number of stages of the pipeline, 0 without stages.
 	NumStages int
-	// StageRecordSize is the size of a stage in StageTable in bytes: in
-	// songs with sync values, a stage has a 14th i32, the offset of its
-	// first sync value among the values of a sample.
-	StageRecordSize int
+	// StageRecordSize is the size of a stage in StageTable in bytes. After
+	// the 13 i32s, a stage has, in songs with reverb units, the number of
+	// reverb states of the voices before it, at StageReverbAt, and in songs
+	// with sync values the offset of its first sync value among the values
+	// of a sample, at StageSyncAt.
+	StageRecordSize, StageReverbAt, StageSyncAt int
 }
 
 // StageTapeBytes is the size of a tape: StageRows rows of StageTapeCells
@@ -121,6 +124,8 @@ func unitCost(u *sointu.Unit) float64 {
 		return 120 * (1 + stereo)
 	case "ott":
 		return 80 * (1 + stereo)
+	case "reverb":
+		return 330
 	case "compressor", "limiter", "softclip", "bufread":
 		return 20 * (1 + stereo)
 	}
@@ -209,6 +214,7 @@ func wasmStages(song *sointu.Song, features vm.FeatureSet, numStages int, cuts [
 	otts := make([]int, len(patch))
 	syncs := make([]int, len(patch)) // sync values of a voice
 	limiters := make([]int, len(patch))
+	reverbs := make([]int, len(patch))
 	cost := make([]float64, len(patch))
 	stack := make([]int, len(patch))
 	for _, su := range units {
@@ -240,6 +246,8 @@ func wasmStages(song *sointu.Song, features vm.FeatureSet, numStages int, cuts [
 			syncs[su.instr]++
 		case "limiter":
 			limiters[su.instr]++
+		case "reverb":
+			reverbs[su.instr]++
 		case "spawn", "spcomb":
 			tlo, thi := target()
 			bind(fmt.Sprintf("%s of %q and its instrument", u.Type, patch[su.instr].Name), min(lo, tlo), max(hi, thi))
@@ -413,7 +421,7 @@ func wasmStages(song *sointu.Song, features vm.FeatureSet, numStages int, cuts [
 	stage := func(first, end int) wasmStage {
 		s := wasmStage{First: first, End: end,
 			Opcodes: starts[voiceInstr[first]][0], Operands: starts[voiceInstr[first]][1],
-			DelayLines: sum(delayLines, first), Otts: sum(otts, first), Limiters: sum(limiters, first),
+			DelayLines: sum(delayLines, first), Otts: sum(otts, first), Limiters: sum(limiters, first), Reverbs: sum(reverbs, first),
 			SeedInit: pow(sum(noise, first)), SeedStep: pow(sum(noise, numVoices) - sum(noise, end) + sum(noise, first)),
 			Cost: (voiceCost[end] - voiceCost[first]) / total, Syncs: sum(syncs, first),
 		}
@@ -448,8 +456,14 @@ func wasmStages(song *sointu.Song, features vm.FeatureSet, numStages int, cuts [
 	offsets = append(offsets, end, end, end) // the last stage writes no cells; the stage of all voices reads and writes none
 	ret.Stages = append(ret.Stages, stage(0, numVoices))
 	ret.StageRecordSize = 13 * 4
+	hasReverbs := sum(reverbs, numVoices) > 0
+	if hasReverbs {
+		ret.StageReverbAt = ret.StageRecordSize
+		ret.StageRecordSize += 4
+	}
 	hasSyncs := rowSync || sum(syncs, numVoices) > 0
 	if hasSyncs {
+		ret.StageSyncAt = ret.StageRecordSize
 		ret.StageRecordSize += 4
 	}
 	for i, s := range ret.Stages {
@@ -457,6 +471,9 @@ func wasmStages(song *sointu.Song, features vm.FeatureSet, numStages int, cuts [
 			uint32(s.Opcodes), uint32(s.Operands), uint32(s.First*4096), uint32(numVoices-s.First), uint32(numVoices-s.End),
 			uint32(s.DelayLines*262156), uint32(s.Otts*44), uint32(s.Limiters*4112), s.SeedInit, s.SeedStep,
 			offsets[i], offsets[i+1], offsets[i+2])
+		if hasReverbs {
+			ret.StageTable = append(ret.StageTable, uint32(s.Reverbs))
+		}
 		if hasSyncs {
 			ret.StageTable = append(ret.StageTable, uint32(4*s.Syncs))
 		}

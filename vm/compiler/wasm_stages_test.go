@@ -252,6 +252,9 @@ func TestStageCuts(t *testing.T) {
 		return sointu.Unit{Type: "send", Parameters: p("stereo", 0, "amount", 96, "target", target, "port", port, "voice", voice, "sendpop", 0)}
 	}
 	delay := sointu.Unit{Type: "delay", Parameters: p("stereo", 0, "pregain", 64, "dry", 100, "feedback", 80, "damp", 64, "notetracking", 0), VarArgs: []int{3000, 4411}}
+	reverb := func(id, size int) sointu.Unit {
+		return sointu.Unit{ID: id, Type: "reverb", Parameters: reverbParams(sointu.ParamMap{"size": size, "decay": 70, "highs": 60, "lows": 70, "predelay": 20, "mod": 30, "highcut": 100, "lowcut": 40})}
+	}
 	voice := []sointu.Unit{env, osc(0), mulp, out}
 	noisy := []sointu.Unit{env, noise, mulp, delay, out}
 	for _, tc := range []struct {
@@ -280,6 +283,11 @@ func TestStageCuts(t *testing.T) {
 			[]sointu.Unit{env, send(7, 7, 0), osc(0), mulp, out}, voice, []sointu.Unit{env, osc(7), mulp, out}, voice), []int{3}},
 		{"sync units on both sides", stageTestSong(
 			[]sointu.Unit{env, sync, osc(0), mulp, out}, []sointu.Unit{env, noise, mulp, sync, out}, voice, []sointu.Unit{env, sync, osc(0), sync, mulp, out}), []int{1, 2, 3}},
+		{"reverb units on both sides", stageTestSong(
+			[]sointu.Unit{env, osc(0), mulp, pan, reverb(0, 20), stereoOut}, voice,
+			[]sointu.Unit{env, noise, mulp, pan, reverb(0, 40), reverb(0, 10), stereoOut}, []sointu.Unit{env, osc(0), mulp, pan, reverb(0, 20), stereoOut}), []int{1, 2, 3}},
+		{"send to a reverb of a later voice", stageTestSong(
+			[]sointu.Unit{env, send(9, 1, 0), osc(0), mulp, out}, voice, []sointu.Unit{env, noise, mulp, pan, reverb(9, 30), stereoOut}, voice), []int{1, 2, 3}},
 		{"signal passed on the stack", stageTestSong(
 			[]sointu.Unit{env, osc(0), mulp}, voice, []sointu.Unit{env, osc(0), mulp, addp, out}, voice), []int{3}},
 	} {
@@ -300,6 +308,16 @@ func TestStageCuts(t *testing.T) {
 			song.Score.Tracks[i].Patterns = []sointu.Pattern{{60, 64, 67, 1, 72, 0, 62, 65}}
 		}
 		if got := testStages(t, node, wat2wasm, song); fmt.Sprint(got) != "[1 2 3 4 5]" {
+			t.Errorf("cuts before voices %v", got)
+		}
+	})
+	t.Run("reverb polyphony", func(t *testing.T) {
+		// an instrument of three voices, each with a reverb of its own, and
+		// one after it: cuts inside the instrument too
+		song := stageTestSong([]sointu.Unit{env, noise, mulp, pan, reverb(0, 20), stereoOut}, []sointu.Unit{env, osc(0), mulp, pan, reverb(0, 50), stereoOut})
+		song.Patch[0].NumVoices, song.Score.Tracks[0].NumVoices = 3, 3
+		song.Score.Tracks[0].Patterns = []sointu.Pattern{{60, 64, 67, 1, 72, 0, 62, 65}}
+		if got := testStages(t, node, wat2wasm, song); fmt.Sprint(got) != "[1 2 3]" {
 			t.Errorf("cuts before voices %v", got)
 		}
 	})

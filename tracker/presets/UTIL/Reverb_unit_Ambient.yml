@@ -1,0 +1,17 @@
+name: Reverb unit Ambient
+numvoices: 1
+units:
+    - id: 1
+      parameters: {}
+      comment: 'The preset Reverb FDN Ambient as one reverb unit, for comparing: it renders the same. Go synth and wasm player only. Load this before Global mastering.'
+    - type: in
+      id: 2
+      parameters: {channel: 2, stereo: 1}
+      comment: Set channel to 4 for a second reverb; send to it with aux
+    - type: reverb
+      id: 3
+      parameters: {bypass: 7, decay: 120, diffuser: 600, early: 40, earlywidth: 64, gain: 75, highcut: 98, highs: 40, lowcut: 56, lows: 64, mod: 28, modrate: 48, network: 2500, predelay: 13, pretime: 0, size: 64, spread: 64, steps: 4, tailwidth: 64}
+      comment: 'bypass leaves the filters and the predelay out; network and diffuser set the lengths instead of size'
+    - type: out
+      id: 4
+      parameters: {gain: 128, stereo: 1}

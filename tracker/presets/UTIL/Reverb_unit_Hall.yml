@@ -1,0 +1,17 @@
+name: Reverb unit Hall
+numvoices: 1
+units:
+    - id: 1
+      parameters: {}
+      comment: 'The preset Reverb FDN Hall as one reverb unit, for comparing: it renders the same. Go synth and wasm player only. Load this before Global mastering.'
+    - type: in
+      id: 2
+      parameters: {channel: 2, stereo: 1}
+      comment: Set channel to 4 for a second reverb; send to it with aux
+    - type: reverb
+      id: 3
+      parameters: {bypass: 7, decay: 90, diffuser: 400, early: 52, earlywidth: 64, gain: 76, highcut: 98, highs: 56, lowcut: 56, lows: 72, mod: 16, modrate: 56, network: 1500, predelay: 13, pretime: 0, size: 64, spread: 77, steps: 4, tailwidth: 64}
+      comment: 'bypass leaves the filters and the predelay out; network and diffuser set the lengths instead of size'
+    - type: out
+      id: 4
+      parameters: {gain: 128, stereo: 1}
