@@ -4,7 +4,7 @@
 // (the same song compiled without -js), sample by sample.
 //
 // Usage:
-//   node tests/wasm_runtime_browser.mjs dir [--scenario play] [--runway 0.5] [--margin 0.8] [--out result.json] [--firefox]
+//   node tests/wasm_runtime_browser.mjs dir [--scenario play] [--runway 0.5] [--margin 0.8] [--clock output] [--out result.json] [--firefox]
 //
 // dir has song.js and song.wasm (compiled with -js), oneshot.wasm (compiled
 // without) and, for songs compiled with -samples, the sample files song.0.*,
@@ -16,6 +16,17 @@
 //   measure   no recording: only the times from load to ready and to the end
 //             of rendering
 // With --margin 0 the song must not be ready before all of it is rendered.
+//
+// The clock, time(), is compared with the time of the audio context, read
+// before and after it. By default it must be that time. With --clock:
+//   output   the module is compiled with -outputclock: its clock is never
+//            ahead of the time of the context, and behind it by about the
+//            output latency that the context reports (outputLatency)
+//   zeros    such a module in a browser whose getOutputTimestamp() gives
+//            zeros: the clock must be the time of the context
+//   missing  and in one without getOutputTimestamp
+// In songs with sync values, sync(channel) must be the value at the time of
+// the clock when it is called.
 // Prints a JSON summary and exits with 1 if the played audio differs. The
 // song plays in real time. Chrome is found from $CHROME or the usual install
 // locations; it runs muted, with a temporary profile. With --firefox, Firefox
@@ -38,6 +49,7 @@ const opt = (name, def) => {
 const scenario = opt("--scenario", "play");
 const runway = opt("--runway", "0.5");
 const margin = opt("--margin", "0.8");
+const clockMode = opt("--clock", "");
 const outFile = opt("--out");
 const timeout = +opt("--timeout", "120") * 1000;
 const firefox = args.includes("--firefox");
@@ -73,7 +85,7 @@ const sampleFiles = readdirSync(dir)
   .sort((a, b) => parseInt(a.split(".")[1]) - parseInt(b.split(".")[1]));
 
 const page = `<!DOCTYPE html><script type="module">
-const scenario = ${JSON.stringify(scenario)}, runway = ${runway}, margin = ${margin}, sampleFiles = ${JSON.stringify(sampleFiles)};
+const scenario = ${JSON.stringify(scenario)}, runway = ${runway}, margin = ${margin}, sampleFiles = ${JSON.stringify(sampleFiles)}, clockMode = ${JSON.stringify(clockMode)};
 const bytes = async (name) => new Uint8Array(await (await fetch("/" + name)).arrayBuffer());
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 try {
@@ -116,6 +128,9 @@ try {
     };
   }
 
+  if (clockMode == "zeros") AudioContext.prototype.getOutputTimestamp = () => ({ contextTime: 0, performanceTime: 0 });
+  if (clockMode == "missing") AudioContext.prototype.getOutputTimestamp = undefined;
+
   const lib = await import("/song.js");
   const wasm = await bytes("song.wasm");
   const samples = await Promise.all(sampleFiles.map(bytes));
@@ -155,19 +170,35 @@ try {
     rec.port.onmessage = (e) => blocks.push(e.data);
     rec.connect(ctx.destination);
     if (song.time() !== 0) throw new Error("time() is " + song.time() + " before the start");
+    // where the song starts in the time of the context, as the module
+    // picks it: known if the time did not pass a quarter of a second meanwhile
+    const quarter = (c) => Math.ceil(c * 4 + 0.2) / 4;
+    const c0 = ctx.currentTime;
     song.start(rec);
+    const songStart = quarter(c0) == quarter(ctx.currentTime) ? quarter(c0) : NaN;
     summary.startMs = performance.now() - t0;
     // the clock: never back, and it reaches the end of the song
-    let prev = 0, back = 0, stalledMs = 0, stallFrom = 0;
-    const clock = [];
+    let prev = 0, back = 0, stalledMs = 0, stallFrom = 0, syncNowDiffers = 0, syncNowRead = 0;
+    const clock = [], latencies = [];
+    const tick = (t) => Math.min(Math.floor((t * 44100) / 256), Math.ceil((lib.duration * 44100) / 256) - 1);
     const began = performance.now();
     while (song.time() < lib.duration && performance.now() - began < (lib.duration + 8) * 1000) {
-      const t = song.time(), now = performance.now();
+      const before = ctx.currentTime, t = song.time(), after = ctx.currentTime, now = performance.now();
       if (t < prev) back++;
       if (t == prev && t > 0) stallFrom = stallFrom || now;
       else if (stallFrom) (stalledMs = Math.max(stalledMs, now - stallFrom)), (stallFrom = 0);
       prev = t;
-      clock.push([now - began, t]);
+      clock.push([now - began, t, before, after]);
+      if (ctx.outputLatency >= 0) latencies.push(ctx.outputLatency);
+      if (lib.syncChannels) {
+        // sync(channel) is the value at the time of the clock: at a time
+        // between those of the clock before and after it
+        const c = clock.length % lib.syncChannels, a = song.time(), v = song.sync(c), b = song.time();
+        let found = false;
+        for (let k = tick(a); k <= tick(b); k++) found = found || song.sync(c, (k * 256 + 0.5) / 44100) === v;
+        syncNowRead++;
+        if (!found) syncNowDiffers++;
+      }
       await sleep(5);
     }
     summary.playedMs = performance.now() - began;
@@ -177,6 +208,27 @@ try {
     // the drift of the clock against the wall clock, after the start
     const steady = clock.filter(([, t]) => t > 0.2);
     if (steady.length > 2) summary.clockRate = (steady.at(-1)[1] - steady[0][1]) / ((steady.at(-1)[0] - steady[0][0]) / 1000);
+    // the clock against the time of the context: while the song plays, and
+    // not at its start, where the output has not got there yet
+    const median = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
+    const playing = clock.filter(([, t]) => t > 0.3 && t < lib.duration - 0.3);
+    if (songStart >= 0 && scenario != "stall" && playing.length > 10) {
+      const lags = playing.map(([, t, before]) => before - songStart - t);
+      const steps = (i) => playing.slice(1).map((s, k) => Math.abs(s[i] - playing[k][i] - (s[0] - playing[k][0]) / 1000));
+      Object.assign(summary, {
+        clockSamples: playing.length,
+        clockAhead: playing.filter(([, t, , after]) => t > after - songStart + 1e-9).length, // of the time of the context
+        clockBehind: playing.filter(([, t, before]) => t < before - songStart - 1e-9).length,
+        clockLagMs: [Math.min(...lags), median(lags), Math.max(...lags)].map((v) => v * 1000), // least, median, most
+        reportedLatencyMs: latencies.length ? median(latencies) * 1000 : null,
+        // how far the steps of the clock are from those of the time of the page: mean and most, and the same for the time of the context
+        clockJitterMs: [steps(1).reduce((a, b) => a + b) / steps(1).length, Math.max(...steps(1))].map((v) => v * 1000),
+        contextJitterMs: [steps(2).reduce((a, b) => a + b) / steps(2).length, Math.max(...steps(2))].map((v) => v * 1000),
+      });
+      const ts = ctx.getOutputTimestamp && ctx.getOutputTimestamp();
+      summary.outputTimestamp = ts ? [ts.contextTime, ts.performanceTime, ctx.currentTime, performance.now()] : null;
+    }
+    Object.assign(summary, { clockMode, syncNowRead, syncNowDiffers });
     await sleep(400);
     const frames = blocks.length * 128;
     const got = new Float32Array(frames * 2);
@@ -241,6 +293,11 @@ try {
       want.sync && !syncPeak && "the sync values are all zero",
       !want.sync != !lib.syncChannels && "the module and the one-shot player differ in having sync values",
       back && "the clock went back",
+      syncNowDiffers && "sync(channel) is not the value at the time of the clock",
+      summary.clockAhead && "the clock is ahead of the time of the context",
+      clockMode != "output" && summary.clockBehind && !gaps.length && "the clock is behind the time of the context",
+      clockMode == "output" && scenario != "stall" && !("clockLagMs" in summary) && "the clock could not be compared with the time of the context",
+      clockMode == "output" && summary.reportedLatencyMs != null && Math.abs(summary.clockLagMs[1] - summary.reportedLatencyMs) > 10 && "the clock is not behind the time of the context by the output latency",
       Math.abs(summary.clockEnd - lib.duration) > 1e-6 && "the clock did not reach the end of the song",
       !gaps.every((g) => g.silent) && "a gap is not silent",
       scenario == "stall" ? (!gaps.length || stalledMs < 300) && "the song did not wait for the late audio" : gaps.length && "playing caught up with rendering",

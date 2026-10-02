@@ -1071,11 +1071,12 @@ func TestBuiltinModulePresetsCanonical(t *testing.T) {
 
 // The presets with the ducking modules: Kick ducker, Global ducking reverb,
 // Global ping pong delay and Global mastering 2 ducking, and Global
-// mastering 2 buses, which has the Ping pong delay. Every preset that the
-// tracker comes with carries its modules as the module presets have them;
-// these five are complete instruments, within 63 units; and a song with all
-// of them has each module once, also after the module presets are added to
-// it.
+// mastering 2 buses, which has the Ping pong delay, and Global mastering 2
+// buses ducking, which has the Ducking delay and the Ducking reverb. Every
+// preset that the tracker comes with carries its modules as the module
+// presets have them; these six are complete instruments, within 63 units;
+// and a song with all of them has each module once, also after the module
+// presets are added to it.
 func TestDuckingPresets(t *testing.T) {
 	m, _ := newModuleTestModel(t)
 	m.modulePresetPath = t.TempDir()
@@ -1087,11 +1088,12 @@ func TestDuckingPresets(t *testing.T) {
 		last           string
 	}
 	want := map[string]preset{
-		"Kick ducker":                {1, 18, "out"},
-		"Global ducking reverb":      {1, 6, "out"},
-		"Global ping pong delay":     {1, 12, "outaux"},
-		"Global mastering 2 ducking": {3, 28, "out"},
-		"Global mastering 2 buses":   {1, 27, "out"},
+		"Kick ducker":                      {1, 18, "out"},
+		"Global ducking reverb":            {1, 6, "out"},
+		"Global ping pong delay":           {1, 12, "outaux"},
+		"Global mastering 2 ducking":       {3, 28, "out"},
+		"Global mastering 2 buses":         {1, 27, "out"},
+		"Global mastering 2 buses ducking": {3, 33, "out"},
 	}
 	var patch sointu.Patch
 	var modules []sointu.Modules
@@ -1158,7 +1160,7 @@ func TestDuckingPresets(t *testing.T) {
 		return strings.Join(ret, ", ")
 	}
 	if got := names(); got != "Ducker, Ducking delay, Ducking reverb, Ping pong delay" {
-		t.Errorf("the modules of a song with the five presets: %s", got)
+		t.Errorf("the modules of a song with the six presets: %s", got)
 	}
 	for _, instr := range m.d.Song.Patch {
 		for _, u := range instr.Units {

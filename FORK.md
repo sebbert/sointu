@@ -1272,8 +1272,9 @@ the last time they were asked for, the synth records nothing).
   mastering 2 ducking (aux 6/7 through `Ducking delay`, a quarter of it on
   to the reverb, aux 2/3 through `Ducking reverb`, then Global mastering 2;
   28 units, 50 with the Reverb module). Global mastering 2 buses has the
-  `Ping pong delay` on aux 6/7 next to a reverb unit and the drum bus: see
-  the drum bus below.
+  `Ping pong delay` on aux 6/7 next to a reverb unit and the drum bus, and
+  Global mastering 2 buses ducking is Global mastering 2 ducking with the
+  drum bus: see the drum bus below.
 
   All of this is measured on rendered audio, not judged by ear. Tests:
   `vm/compiler/wasm_ducking_test.go` (what the modules do, and that the
@@ -1532,6 +1533,16 @@ the last time they were asked for, the synth records nothing).
     reverb and the delay, a hat and the kick on the drum bus, and this
     preset; without what is sent to any one of the four buses it renders
     differently (`TestBusesExample`).
+  - Global mastering 2 buses ducking is the same with the delay and the
+    reverb ducked: aux 6/7 through the `Ducking delay` module, a quarter of
+    its repeats on to the reverb; aux 2/3 through the `Ducking reverb`
+    module; the drum bus on aux 8/9; then Global mastering 2. 33 units (55
+    with the Reverb module), three modules. It is Global mastering 2
+    ducking with the drum bus chain between the reverb and the master
+    chain: with nothing sent to the drum bus it renders exactly what that
+    preset renders, and with only the drum bus sent to, exactly what Global
+    mastering 2 buses renders (`TestBusesDuckingPreset`). Go synth and wasm
+    player only, like the others with the drum bus.
   - The Global instrument reads the bus (`in`, channel 8), compresses it
     (about 2:1 above -11 dB, 20 ms attack, 93 ms release, +2 dB makeup),
     clips it softly (`softclip`: +3.2 dB drive, knee at -6 dB) and adds it
@@ -1641,7 +1652,7 @@ the code the song needs. Without the new flags, the output of
 `sointu-compile` is unchanged.
 
 ```
-sointu-compile -arch wasm -js [-stages N] [-cuts a,b] [-samples] [-r] -o out/song song.yml
+sointu-compile -arch wasm -js [-stages N] [-cuts a,b] [-samples] [-r] [-outputclock] -o out/song song.yml
 wat2wasm -o out/song.wasm out/song.wat
 ```
 
@@ -1711,12 +1722,65 @@ the measured speed that the rest of the song is expected to render at (0.8).
   and visuals that wait, instead of visuals that run ahead.
 - **Clock**: `time()` is `context.currentTime` minus the start time, never
   going back. The row is `time() * rowsPerSecond`. Songs with the `speed`
-  unit get no module.
+  unit get no module. This clock is the time of the audio given to the
+  output: it is ahead of the sound by the output latency, and advances an
+  audio block at a time (5.8 ms steps in Chrome and Firefox on the test
+  machine). `-outputclock` gives the other one: see
+  [The clock of the output](#the-clock-of-the-output).
 - **Sync values**: in songs with `sync` units, `sync(channel)` is the signal
   at a sync unit at the time of `time()`, and `sync(channel, t)` at another
   time: see below.
 - **Samples** are decoded on the page (`decodeAudioData`, which workers do
   not have) and posted to the workers.
+
+### The clock of the output
+
+`-outputclock` (`Compiler.OutputClock`, with `-js`) makes `time()` follow
+what is heard instead of what is given to the output. It is off by default
+and costs nothing then: the code is only in modules compiled with the flag,
+and the module and its types without it are the same bytes as before.
+
+- `AudioContext.getOutputTimestamp()` gives a pair: a time of the context,
+  and the time of the page (`performance.now()`) at which that time was at
+  the output. The clock is the first carried on by the time of the page
+  since the second: behind `context.currentTime` by the output latency, and
+  moving between audio blocks.
+- It never goes back and stops while the song waits for late audio, as the
+  plain clock does: the same maximum over the times reported, the same
+  limit at what is rendered, the same start time, which moves when a piece
+  comes late. It ends at `duration`, an output latency after the plain
+  clock would.
+- `sync(channel)` without a time reads at `time()`, so it follows.
+- Fallback to the plain clock: where the browser has no
+  `getOutputTimestamp`, or where it gives zeros (Chrome before the context
+  runs).
+- Firefox takes the timestamp when asked: the time of the context less the
+  latency, and the time of the page less the latency. Carried on, that is
+  the time of the context again, without the latency. So when the time
+  carried on comes within a millisecond of `context.currentTime`, the clock
+  is the time of the timestamp alone: in Firefox it is behind by the
+  latency, and still advances a block at a time. The same holds the clock
+  in any browser while the context stands still.
+- Cost, `soundset_loop` with the smallest use (load, start, time), minified
+  by vite 7 and packed with websqz 0.4.1 (423821d): 125 B of JavaScript and
+  54 B of the packed page (1389 → 1514 B and 5334 → 5388 B with `-js`;
+  1734 → 1859 B and 5715 → 5769 B with `-js -stages 4`).
+- Measured in headless browsers on the test machine, over a song of 5 s,
+  sampled every 5 ms: in Chrome 154 the clock is 29 to 35 ms behind the
+  time of the context (median 32.6 ms), where the context reports an output
+  latency of 32 ms, and its steps are within 0.2 ms of those of the time
+  of the page, where the time of the context steps by 5.8 ms. In Firefox
+  157 it is 23.4 ms behind, the latency reported, in steps of about 7 ms.
+  `sync(channel)` was the value at the time of the clock in every one of
+  some 750 reads of a run.
+  It is never ahead of the time of the context.
+- Not verified: whether the latency a browser reports is the latency of
+  the device. A headless browser has no sound card, and the test compares
+  the clock with what the browser itself reports (`outputLatency`), so it
+  shows that the module uses the timestamp right, not that the timestamp
+  is right. That needs a microphone or a loopback on real hardware; with
+  Bluetooth output browsers are known to report too little. Safari is not
+  tested: it has `getOutputTimestamp` and no `outputLatency`.
 
 ### Sync values
 
@@ -1911,6 +1975,12 @@ song can render until then.
   s, the sound has one gap of silence, the clock stops and never goes back.
   `sync()` returns the values of the one-shot player for every 256th
   sample, in a worker, in 3 stages, on the main thread and with late audio.
+  `time()` is exactly the time of the context less the start, read before
+  and after it, and `sync(channel)` the value at that time. With
+  `-outputclock`: see [The clock of the output](#the-clock-of-the-output);
+  also in stages, on the main thread, with late audio (one stop, never
+  back), and with a timestamp of zeros or none, where it is the plain
+  clock exactly.
 - The example packed with rootsqz from GitHub runs in headless Chrome from
   http (4 workers). From `file://` the packed page does not start, with
   that packer as with websqz 0.4: it reads itself with `fetch`. An unpacked

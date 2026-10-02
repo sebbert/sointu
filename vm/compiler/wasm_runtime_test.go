@@ -39,7 +39,9 @@ func TestRuntimeModule(t *testing.T) {
 		has, not  []string // in the module
 		files     []string
 	}{
-		{"plain", plain, func(c *compiler.Compiler) {}, []string{"new Worker(", "Float32Array(m.buffer", "runway = 2, margin = 0.8"}, []string{"MessageChannel", "decodeAudioData", "sampleFiles", "Int16Array", "m: Math", "tape", "sync"}, nil},
+		{"plain", plain, func(c *compiler.Compiler) {}, []string{"new Worker(", "Float32Array(m.buffer", "runway = 2, margin = 0.8", "time: () => (top = Math.max(top, Math.min(context.currentTime - t0, song.rendered)) || 0),"}, []string{"MessageChannel", "decodeAudioData", "sampleFiles", "Int16Array", "m: Math", "tape", "sync", "getOutputTimestamp", "performanceTime", "outputclock"}, nil},
+		{"output clock", plain, func(c *compiler.Compiler) { c.OutputClock = true }, []string{"context.getOutputTimestamp?.()", "performance.now() - performanceTime", "sointu-compile -js -outputclock;"}, []string{"time: () =>", "sync"}, nil},
+		{"output clock with sync units in stages", synced, func(c *compiler.Compiler) { c.OutputClock, c.Stages = true, 2 }, []string{"context.getOutputTimestamp?.()", "sync: (channel, time = song.time())", "-stages 2 -outputclock;"}, []string{"time: () =>"}, nil},
 		{"sync units", synced, func(c *compiler.Compiler) {}, []string{"sync: (channel, time = song.time())", "syncChannels = 2;", "post([audio, sync]"}, []string{"MessageChannel"}, nil},
 		{"sync units and the row", synced, func(c *compiler.Compiler) { c.RowSync = true }, []string{"syncChannels = 3;"}, nil, nil},
 		{"the row", plain, func(c *compiler.Compiler) { c.RowSync = true }, []string{"syncChannels = 1;", "sync: (channel"}, nil, nil},
@@ -73,6 +75,9 @@ func TestRuntimeModule(t *testing.T) {
 				if strings.Contains(js, s) {
 					t.Errorf("the module has %q", s)
 				}
+			}
+			if strings.Contains(js, "getOutputTimestamp") != strings.Contains(types, "getOutputTimestamp") || strings.Contains(js, "getOutputTimestamp") != strings.Contains(types, "-outputclock") {
+				t.Errorf("the types and the module differ in the clock")
 			}
 			if strings.Contains(js, "sampleFiles") != strings.Contains(types, "sampleFiles") {
 				t.Errorf("the types and the module differ in the sample files")
@@ -109,6 +114,13 @@ func TestRuntimeModule(t *testing.T) {
 			t.Errorf("a song with the speed unit got a module: %v", err)
 		}
 	})
+	t.Run("output clock without the module", func(t *testing.T) {
+		com, _ := compiler.New("", "wasm", false, false)
+		com.OutputClock = true
+		if _, _, err := com.Song(&plain); err == nil || !strings.Contains(err.Error(), "-js") {
+			t.Errorf("a player without a module got the clock of the output: %v", err)
+		}
+	})
 	t.Run("x86", func(t *testing.T) {
 		com, _ := compiler.New("windows", "amd64", false, false)
 		com.JS = true
@@ -123,7 +135,11 @@ func TestRuntimeModule(t *testing.T) {
 // AudioWorklet, with the player that renders at instantiation: it must be
 // the same samples, without a gap, on a clock that never goes back; in
 // workers, in a pipeline of workers, on the main thread, and with audio that
-// arrives late, where the song has to wait. The songs play in real time, and
+// arrives late, where the song has to wait. The clock is the time of the
+// context, exactly; compiled with OutputClock, it is behind that by the
+// output latency the browser reports, never ahead of it, and the time of the
+// context again where the browser has no output timestamp or one of zeros.
+// sync(channel) is the value at the time of the clock. The songs play in real time, and
 // launching a browser may trigger OS permission prompts, so the test only
 // runs with SOINTU_TEST_BROWSER=1, or with SOINTU_TEST_BROWSER=firefox in
 // headless Firefox.
@@ -198,6 +214,12 @@ func TestRuntimeInBrowser(t *testing.T) {
 		{"sync values in stages", synced, "play", func(c *compiler.Compiler) { c.RowSync, c.Stages = true, 3 }},
 		{"sync values on the main thread", synced, "noworker", func(c *compiler.Compiler) { c.RowSync, c.Stages = true, 3 }},
 		{"sync values with late audio", synced, "stall", func(c *compiler.Compiler) { c.RowSync, c.Stages = true, 2 }},
+		{"output clock", loop, "play --clock output", func(c *compiler.Compiler) { c.OutputClock = true }},
+		{"output clock with sync values in stages", synced, "play --clock output", func(c *compiler.Compiler) { c.OutputClock, c.RowSync, c.Stages = true, true, 3 }},
+		{"output clock on the main thread", synced, "noworker --clock output", func(c *compiler.Compiler) { c.OutputClock = true }},
+		{"output clock with late audio", synced, "stall --clock output", func(c *compiler.Compiler) { c.OutputClock, c.Stages = true, 2 }},
+		{"output clock, a timestamp of zeros", synced, "play --clock zeros", func(c *compiler.Compiler) { c.OutputClock = true }},
+		{"output clock, no timestamp", loop, "play --clock missing", func(c *compiler.Compiler) { c.OutputClock = true }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var buffers map[int]compiler.EncodedBuffer
@@ -217,7 +239,7 @@ func TestRuntimeInBrowser(t *testing.T) {
 				tc.configure(com)
 				com.JS = js
 				if !js {
-					com.Stages = 0
+					com.Stages, com.OutputClock = 0, false
 				}
 				files, _, err := com.Song(&tc.song)
 				if err != nil {
