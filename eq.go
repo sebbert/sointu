@@ -728,14 +728,17 @@ func (u *Unit) NumEQUnits() int {
 	return len(c.Units)
 }
 
-// expandEQs returns the song with every eq unit of its instruments and its
-// modules replaced by the units that it stands for. The instruments and
-// modules without eq units share their units with s.
-func (s *Song) expandEQs() Song {
-	replace := func(units []Unit) []Unit {
+// expandEQs returns the song with every eq unit of its instruments replaced
+// by the units that it stands for, and notes in exp where they are. The
+// instruments without eq units share their units with s; a song without any
+// is returned as it is.
+func (s *Song) expandEQs(exp *Expansion) Song {
+	ret := *s
+	copied := false
+	for i, instr := range s.Patch {
 		var out []Unit
-		for i := range units {
-			u := &units[i]
+		for j := range instr.Units {
+			u := &instr.Units[j]
 			if u.Type != "eq" {
 				if out != nil {
 					out = append(out, *u)
@@ -743,38 +746,37 @@ func (s *Song) expandEQs() Song {
 				continue
 			}
 			if out == nil {
-				out = append(make([]Unit, 0, len(units)+8), units[:i]...)
+				out = append(make([]Unit, 0, len(instr.Units)+8), instr.Units[:j]...)
 			}
-			if !u.Disabled {
-				out = append(out, u.CompileEQ().Units...)
+			if u.Disabled {
+				continue
 			}
+			units := u.CompileEQ().Units
+			if u.ID != 0 {
+				if exp.EQs == nil {
+					exp.EQs = map[int]ExpandedEQ{}
+				}
+				exp.EQs[u.ID] = ExpandedEQ{Instrument: i, First: len(out), Count: len(units)}
+			}
+			out = append(out, units...)
 		}
 		if out == nil {
-			return units
+			continue
 		}
-		return out
-	}
-	ret := *s
-	ret.Patch = make(Patch, len(s.Patch))
-	for i, instr := range s.Patch {
-		ret.Patch[i] = instr
-		ret.Patch[i].Units = replace(instr.Units)
-	}
-	if s.Modules != nil {
-		ret.Modules = make(Modules, len(s.Modules))
-		for i, m := range s.Modules {
-			ret.Modules[i] = m
-			ret.Modules[i].Units = replace(m.Units)
+		if !copied {
+			ret.Patch = append(Patch{}, s.Patch...)
+			copied = true
 		}
+		ret.Patch[i].Units = out
 	}
 	return ret
 }
 
-// HasEQs reports whether the song has eq units to expand, in its instruments
-// or its modules.
+// HasEQs reports whether the instruments of the song have eq units to
+// expand. Those of its modules are expanded with the module units.
 func (s *Song) HasEQs() bool {
-	for units := range s.UnitLists() {
-		for _, u := range units {
+	for _, instr := range s.Patch {
+		for _, u := range instr.Units {
 			if u.Type == "eq" {
 				return true
 			}

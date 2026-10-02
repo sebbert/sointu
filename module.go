@@ -75,9 +75,21 @@ type (
 		// Buffers maps the ID of each buffer cloned for a module unit to the
 		// ID of the buffer it is a clone of.
 		Buffers map[int]int
+		// EQs maps the ID of each eq unit to where the units that it stands
+		// for are among the units of the expanded song: for an eq unit of a
+		// module, the ID of its copy (see Units). Eq units without an ID,
+		// and disabled ones, are not in it.
+		EQs map[int]ExpandedEQ
 		// Problems are the things that could not be expanded as meant, e.g.
 		// modules using themselves. The expanded song leaves them out.
 		Problems []error
+	}
+
+	// ExpandedEQ is where the units of an eq unit are in the expanded
+	// song: Count units of the instrument, from the unit First on. With
+	// Count 0, First is where they would be.
+	ExpandedEQ struct {
+		Instrument, First, Count int
 	}
 
 	// ExpandedUnit is where a unit copied from a module came from: the ID
@@ -601,14 +613,8 @@ func (s *Song) HasModules() bool {
 // outside a module to one of its units, as they are ambiguous.
 func (s *Song) Expand() (Song, *Expansion) {
 	exp := &Expansion{}
-	if s.HasEQs() {
-		// first the eq units, also those of the modules: the units they
-		// stand for are then units of the modules like any other
-		expanded := s.expandEQs()
-		s = &expanded
-	}
 	if !s.HasModules() {
-		return *s, exp
+		return s.expandEQs(exp), exp
 	}
 	e := expander{song: s, exp: exp, ports: map[int]*ModulePorts{}, bodyIDs: map[int]int{}}
 	exp.Units, exp.Buffers = map[int]ExpandedUnit{}, map[int]int{}
@@ -678,7 +684,9 @@ func (s *Song) Expand() (Song, *Expansion) {
 			ret.Patch[i].Units = out
 		}
 	}
-	return ret, exp
+	// last the eq units, also those that were units of modules: each copy
+	// has its own place among the units that are played
+	return ret.expandEQs(exp), exp
 }
 
 // SendToPorts returns the units that a send to a module unit becomes once
