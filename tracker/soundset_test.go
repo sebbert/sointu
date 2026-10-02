@@ -13,14 +13,14 @@ import (
 
 // soundsetPresets returns the presets of the sound set that the tracker
 // comes with, by name: the Club presets and the Global presets with the
-// drum bus, Global mastering 2 buses among them.
+// drum bus, Global mastering 2 buses and its ducking variant among them.
 func soundsetPresets(t *testing.T) map[string]*preset {
 	t.Helper()
 	m, _ := newModuleTestModel(t)
 	ret := map[string]*preset{}
 	for i := range m.presetData.presets {
 		p := &m.presetData.presets[i]
-		if !p.user && (strings.HasPrefix(p.instr.Name, "Club ") || strings.HasPrefix(p.instr.Name, "Global mastering 2 drumbus") || p.instr.Name == "Global mastering 2 buses") {
+		if !p.user && (strings.HasPrefix(p.instr.Name, "Club ") || strings.HasPrefix(p.instr.Name, "Global mastering 2 drumbus") || strings.HasPrefix(p.instr.Name, "Global mastering 2 buses")) {
 			ret[p.instr.Name] = p
 		}
 	}
@@ -41,6 +41,7 @@ func TestSoundsetPresets(t *testing.T) {
 		"Club supersaw lead": "LEAD", "Club hoover": "LEAD", "Club supersaw pad": "PAD", "Club supersaw pluck": "PL",
 		"Club riser": "FX", "Club noise sweep up": "FX", "Club downlifter": "FX", "Club impact": "FX",
 		"Global mastering 2 drumbus": "UTIL", "Global mastering 2 drumbus reverb": "UTIL", "Global mastering 2 buses": "UTIL",
+		"Global mastering 2 buses ducking": "UTIL",
 	}
 	for name := range presets {
 		if _, ok := want[name]; !ok {

@@ -40,8 +40,9 @@ func soundsetPreset(t *testing.T, file string) (sointu.Instrument, sointu.Module
 // soundsetPresetSong is a song that plays a preset: two notes of an
 // instrument, slowly for the sounds that rise slowly, or for a Global
 // preset, bursts of noise sent to the main output, the reverb send and the
-// drum bus on channels 8 and 9, and for Global mastering 2 buses to the
-// delay send too, with the preset as the last instrument.
+// drum bus on channels 8 and 9, and for Global mastering 2 buses and its
+// ducking variant to the delay send too, with the preset as the last
+// instrument.
 func soundsetPresetSong(instr sointu.Instrument, modules sointu.Modules) sointu.Song {
 	song := sointu.Song{BPM: 140, RowsPerBeat: 4, Modules: modules,
 		Score: sointu.Score{RowsPerPattern: 16, Length: 1, Tracks: []sointu.Track{
@@ -59,7 +60,7 @@ func soundsetPresetSong(instr sointu.Instrument, modules sointu.Modules) sointu.
 			{Type: "aux", Parameters: sointu.ParamMap{"stereo": 1, "gain": 32, "channel": 2}},
 			{Type: "aux", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128, "channel": 8}},
 		}}, instr}
-		if strings.HasSuffix(instr.Name, "buses") {
+		if strings.Contains(instr.Name, "buses") {
 			// a copy more of the burst, to the delay send
 			units := &song.Patch[0].Units
 			*units = slices.Insert(*units, 3, sointu.Unit{Type: "push", Parameters: sointu.ParamMap{"stereo": 1}})
@@ -78,7 +79,8 @@ func soundsetPresetSong(instr sointu.Instrument, modules sointu.Modules) sointu.
 }
 
 // TestSoundsetPresets checks every preset of the sound set (Club ...) and the
-// Global presets with the drum bus, Global mastering 2 buses among them: the
+// Global presets with the drum bus, Global mastering 2 buses and Global
+// mastering 2 buses ducking among them: the
 // preset loads, stays within the 63
 // units of an instrument, compiles for wasm, and the Go synth renders sound
 // from it without NaN; with node and wat2wasm, the wasm player renders
@@ -93,7 +95,7 @@ func TestSoundsetPresets(t *testing.T) {
 		t.Errorf("%d Club presets, want 21", len(files))
 	}
 	files = append(files, "../../tracker/presets/UTIL/Global_mastering_2_drumbus.yml", "../../tracker/presets/UTIL/Global_mastering_2_drumbus_reverb.yml",
-		"../../tracker/presets/UTIL/Global_mastering_2_buses.yml")
+		"../../tracker/presets/UTIL/Global_mastering_2_buses.yml", "../../tracker/presets/UTIL/Global_mastering_2_buses_ducking.yml")
 	node, nodeErr := exec.LookPath("node")
 	wat2wasm, watErr := exec.LookPath("wat2wasm")
 	for _, file := range files {
@@ -209,7 +211,7 @@ func mapChannel(song sointu.Song, from, to int) sointu.Song {
 // say.
 func TestDrumBusChannel(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"Global mastering 2 drumbus", "Global mastering 2 drumbus reverb", "Global mastering 2 buses"} {
+	for _, name := range []string{"Global mastering 2 drumbus", "Global mastering 2 drumbus reverb", "Global mastering 2 buses", "Global mastering 2 buses ducking"} {
 		instr, modules := soundsetPreset(t, "../../tracker/presets/UTIL/"+strings.ReplaceAll(name, " ", "_")+".yml")
 		if !strings.Contains(instr.Units[0].Comment, "channels above 7: Go synth and wasm player only") {
 			t.Errorf("%s: the comment does not say that the channels above 7 are for the Go synth and the wasm player only", name)
@@ -222,7 +224,7 @@ func TestDrumBusChannel(t *testing.T) {
 		delay := mapChannel(song, 6, 10) // the delay send, out of the way
 		old := mapChannel(delay, 8, 6)
 		expanded, _ = old.Expand()
-		if got := expanded.Patch.MaxChannel(); name != "Global mastering 2 buses" && got != 7 {
+		if got := expanded.Patch.MaxChannel(); !strings.Contains(name, "buses") && got != 7 {
 			t.Errorf("%s with the bus on 6: the highest channel is %d, want 7", name, got)
 		}
 		want, got := playGo(t, old), playGo(t, delay)
@@ -234,6 +236,51 @@ func TestDrumBusChannel(t *testing.T) {
 		elsewhere.Patch = append(mapChannel(sointu.Song{Patch: song.Patch[:1]}, 8, 12).Patch, elsewhere.Patch[1:]...)
 		if slices.Equal(playGo(t, elsewhere), playGo(t, song)) {
 			t.Errorf("%s: the drum bus is not heard", name)
+		}
+	}
+}
+
+// TestBusesDuckingPreset checks, in the Go synth, that Global mastering 2
+// buses ducking is Global mastering 2 ducking with the drum bus of Global
+// mastering 2 buses: with nothing sent to the drum bus it renders what the
+// first renders, and with only the drum bus sent to, what the second does.
+// TestSoundsetPresets renders it in the wasm player.
+func TestBusesDuckingPreset(t *testing.T) {
+	t.Parallel()
+	preset := func(name string) sointu.Song {
+		instr, modules := soundsetPreset(t, "../../tracker/presets/UTIL/"+strings.ReplaceAll(name, " ", "_")+".yml")
+		instr.Name = "Global mastering 2 buses" // the song for the presets with every bus
+		return soundsetPresetSong(instr, modules)
+	}
+	// the units of the burst that send to a bus, with their gain 0, unless
+	// keep says otherwise
+	mute := func(song sointu.Song, keep func(channel int) bool) sointu.Song {
+		song = song.Copy()
+		for _, u := range song.Patch[0].Units {
+			if (u.Type == "aux" || u.Type == "out") && !keep(u.Parameters["channel"]) {
+				u.Parameters["gain"] = 0
+			}
+		}
+		return song
+	}
+	both := preset("Global mastering 2 buses ducking")
+	if units := both.Patch[1].Units; !strings.Contains(units[0].Comment, "channels above 7: Go synth and wasm player only") {
+		t.Errorf("the comment does not say that the channels above 7 are for the Go synth and the wasm player only")
+	}
+	all := playGo(t, both)
+	for _, tc := range []struct {
+		like string
+		keep func(channel int) bool
+	}{
+		{"Global mastering 2 ducking", func(c int) bool { return c != 8 }},
+		{"Global mastering 2 buses", func(c int) bool { return c == 8 }},
+	} {
+		want, got := playGo(t, mute(preset(tc.like), tc.keep)), playGo(t, mute(both, tc.keep))
+		if level(want) < 1e-3 || slices.Equal(got, all) {
+			t.Errorf("like %s: level %v, and the sends that are muted change nothing: %v", tc.like, level(want), slices.Equal(got, all))
+		}
+		if !slices.Equal(want, got) {
+			t.Errorf("the preset does not render like %s", tc.like)
 		}
 	}
 }

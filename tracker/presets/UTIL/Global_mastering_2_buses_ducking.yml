@@ -1,0 +1,195 @@
+name: Global mastering 2 buses ducking
+numvoices: 1
+units:
+    - id: 1
+      parameters: {}
+      comment: 'Global mastering 2 with every bus, the delay and the reverb ducked - set this preset as last instrument. Aux 6/7 (aux, channel 6) goes through the Ducking delay module, aux 2/3 (outaux or aux) through the Ducking reverb module, aux 8/9 (aux, channel 8: aux4 left) is the drum bus of Global mastering 2 drumbus, a compressor and a soft clipper, then Global mastering 2. Aux 4/5 is left to the bus that Kick ducker ducks. reverb, limiter and softclip units, and the channels above 7: Go synth and wasm player only.'
+    - type: in
+      id: 2
+      parameters: {channel: 6, stereo: 1}
+      comment: The signal the instruments send to aux 6/7
+    - type: module
+      id: 3
+      parameters: {module: 2}
+      comment: 'The Ducking delay module: its parameters are time, feedback, tone, lowcut and pan of the delay, then duck, release and threshold of the ducking'
+    - type: outaux
+      id: 4
+      parameters: {auxgain: 32, outgain: 128, stereo: 1}
+      comment: 'outgain is the level of the repeats, auxgain how much of them goes to the reverb'
+    - type: in
+      id: 5
+      parameters: {channel: 2, stereo: 1}
+      comment: The aux signal the instruments send, with outaux or aux
+    - type: module
+      id: 6
+      parameters: {module: 3}
+      comment: 'The Ducking reverb module: its parameters are size, decay, highs, lows and lowcut of the reverb, then duck, release and threshold of the ducking'
+    - type: out
+      id: 7
+      parameters: {gain: 128, stereo: 1}
+      comment: The level of the reverb, into the mix that is mastered below
+    - type: in
+      id: 20
+      parameters: {channel: 8, stereo: 1}
+      comment: 'The drum bus: what the drums send to channel 8 with an aux unit in place of their out unit'
+    - type: compressor
+      id: 21
+      parameters: {attack: 52, invgain: 102, ratio: 64, release: 64, stereo: 1, threshold: 36}
+      comment: 'Glue: about 2:1 above -11 dB, with 20 ms attack, which lets the hits through, 93 ms release and +2 dB makeup (invgain)'
+    - type: mulp
+      id: 22
+      parameters: {stereo: 1}
+    - type: softclip
+      id: 23
+      parameters: {drive: 8, knee: 64, oversample: 0, stereo: 1}
+      comment: 'Saturation: drive, +3.2 dB, pushes the hits into the knee at -6 dB, which rounds them off. More drive is denser and louder'
+    - type: out
+      id: 24
+      parameters: {gain: 108, stereo: 1}
+      comment: 'The level of the drums in the mix that is mastered below: the clipper stops at full scale, so at 108 they peak at -1.5 dB at most'
+    - type: in
+      id: 10
+      parameters: {channel: 0, stereo: 1}
+    - type: filter
+      id: 11
+      parameters: {bandpass: 0, frequency: 8, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+      comment: Low cut, 12 dB per octave below 27 Hz
+    - type: compressor
+      id: 12
+      parameters: {attack: 47, invgain: 54, ratio: 100, release: 68, stereo: 1, threshold: 64}
+      comment: 'About 4.6:1 above -6 dB, 10 ms attack and 150 ms release, +7.5 dB makeup (invgain). A shorter release distorts the bass more'
+    - type: mulp
+      id: 13
+      parameters: {stereo: 1}
+    - type: limiter
+      id: 16
+      parameters: {drive: 12, lookahead: 32, release: 64, stereo: 1, threshold: 124}
+      comment: 'Turns the gain down ahead of the peaks that the attack lets through, 2.9 ms ahead, to -0.3 dB. drive, +4.4 dB, is the loudness: more of it is louder and flatter'
+    - type: clip
+      id: 14
+      parameters: {stereo: 1}
+      comment: What little the limiter lets through is clipped at full scale
+    - type: out
+      id: 15
+      parameters: {gain: 128, stereo: 1}
+      comment: Master gain
+modules:
+    - id: 1
+      name: Ping pong delay
+      comment: 'Tempo-synced ping-pong delay, wet only: the sum of the stereo input goes into one side, and each repeat goes through a low-pass and a low cut into the other side.'
+      inputs: 2
+      params:
+        - {name: time, default: 36}
+        - {name: feedback, default: 80}
+        - {name: tone, default: 80}
+        - {name: lowcut, default: 32}
+        - {name: pan, default: 0}
+      units:
+        - type: addp
+          id: 1
+          parameters: {stereo: 0}
+          comment: Left plus right
+        - type: pan
+          id: 2
+          parameters: {panning: 0, stereo: 0}
+          bind: {panning: 5}
+          comment: 'The side of the first repeat: 0 left, 128 right, 64 both, which is a mono delay'
+        - type: receive
+          id: 3
+          parameters: {stereo: 1}
+          comment: The repeats coming back, a sample late
+        - type: addp
+          id: 4
+          parameters: {stereo: 1}
+        - type: delay
+          id: 5
+          parameters: {damp: 0, dry: 0, feedback: 0, notetracking: 2, pregain: 128, stereo: 1}
+          varargs: [36, 36]
+          bind: {delaytime1: 1, delaytime2: 1}
+          comment: 'One line per side, of the same time: 36 is a dotted eighth, 24 an eighth, 48 a quarter'
+        - type: push
+          id: 6
+          parameters: {stereo: 1}
+        - type: filter
+          id: 7
+          parameters: {bandpass: 0, frequency: 89, highpass: 0, lowpass: 1, resonance: 128, stereo: 1}
+          bind: {frequency: {p: 3, min: 24, max: 128}}
+          comment: 'tone: each repeat darker'
+        - type: filter
+          id: 8
+          parameters: {bandpass: 0, frequency: 16, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          bind: {frequency: {p: 4, min: 0, max: 64}}
+          comment: 'lowcut: each repeat thinner; 0 is off'
+        - type: xch
+          id: 9
+          parameters: {stereo: 0}
+          comment: Left to right and right to left
+        - type: send
+          id: 10
+          parameters: {amount: 92, port: 0, sendpop: 1, stereo: 1, target: 3}
+          bind: {amount: {p: 2, min: 64, max: 109}}
+          comment: 'feedback: the level of a repeat relative to the one before, up to 70 %. More would ring: where the two filters meet they raise the level by up to 2.7 dB'
+    - id: 2
+      name: Ducking delay
+      comment: 'The Ping pong delay module with its repeats ducked by the dry input: the repeats stay out of the way while notes play and come up in the gaps. Stereo in, wet only.'
+      inputs: 2
+      params:
+        - {name: time, default: 36}
+        - {name: feedback, default: 80}
+        - {name: tone, default: 80}
+        - {name: lowcut, default: 32}
+        - {name: pan, default: 0}
+        - {name: duck, default: 96}
+        - {name: release, default: 62}
+        - {name: threshold, default: 8}
+      units:
+        - type: compressor
+          id: 1
+          parameters: {attack: 40, invgain: 128, ratio: 96, release: 62, stereo: 1, threshold: 8}
+          bind: {ratio: 6, release: 7, threshold: 8}
+          comment: 'The gain from the level of the input: duck is how far the repeats are turned down while the input is above threshold, release how soon they come back'
+        - type: xch
+          id: 2
+          parameters: {stereo: 1}
+          comment: The gain below the input
+        - type: module
+          id: 3
+          parameters: {module: 1, p1: 36, p2: 80, p3: 80, p4: 32, p5: 0}
+          bind: {p1: 1, p2: 2, p3: 3, p4: 4, p5: 5}
+          comment: The Ping pong delay module
+        - type: mulp
+          id: 4
+          parameters: {stereo: 1}
+          comment: The repeats times the gain
+    - id: 3
+      name: Ducking reverb
+      comment: 'The reverb unit with its wet signal ducked by the dry input: the reverb stays out of the way while notes play and blooms after them. Stereo in, wet only. Uses the reverb unit: Go synth and wasm player only.'
+      inputs: 2
+      params:
+        - {name: size, default: 64}
+        - {name: decay, default: 90}
+        - {name: highs, default: 48}
+        - {name: lows, default: 72}
+        - {name: lowcut, default: 56}
+        - {name: duck, default: 96}
+        - {name: release, default: 62}
+        - {name: threshold, default: 8}
+      units:
+        - type: compressor
+          id: 1
+          parameters: {attack: 40, invgain: 128, ratio: 96, release: 62, stereo: 1, threshold: 8}
+          bind: {ratio: 6, release: 7, threshold: 8}
+          comment: 'The gain from the level of the input: duck is how far the reverb is turned down while the input is above threshold, release how soon it comes back'
+        - type: xch
+          id: 2
+          parameters: {stereo: 1}
+          comment: The gain below the input
+        - type: reverb
+          id: 3
+          parameters: {allpass: 0, bypass: 0, decay: 90, diffuser: 0, early: 52, earlywidth: 80, gain: 76, highcut: 98, highs: 48, loopgain: 0, loopmod: 0, looprate: 64, loopsize: 0, lowcut: 56, lows: 72, mod: 24, modrate: 56, network: 0, predelay: 13, pretime: 0, size: 64, spread: 77, steps: 4, tailwidth: 96}
+          bind: {decay: 2, highs: 3, lowcut: 5, lows: 4, size: 1}
+          comment: 'The reverb unit, as the Reverb module; predelay, mod and highcut stay at its defaults'
+        - type: mulp
+          id: 4
+          parameters: {stereo: 1}
+          comment: The reverb times the gain
