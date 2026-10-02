@@ -274,9 +274,9 @@ func TestPingPongDelay(t *testing.T) {
 }
 
 // TestDuckingReverbAndDelay checks the modules Ducking reverb and Ducking
-// delay against the modules they are made of, for a held saw note: the wet
-// signal is lower by more than 6 dB while the note plays, and exactly the
-// same once the gain is back.
+// delay against what they are made of, the reverb unit and the Ping pong
+// delay module, for a held saw note: the wet signal is lower by more than
+// 6 dB while the note plays, and exactly the same once the gain is back.
 func TestDuckingReverbAndDelay(t *testing.T) {
 	saw := []sointu.Unit{
 		{Type: "envelope", Parameters: sointu.ParamMap{"stereo": 0, "attack": 32, "decay": 64, "sustain": 96, "release": 56, "gain": 128}},
@@ -286,11 +286,28 @@ func TestDuckingReverbAndDelay(t *testing.T) {
 	held := sointu.Pattern{60, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0} // a second
 	for _, name := range []string{"Ducking_reverb", "Ducking_delay"} {
 		mods := modulePreset(t, name)
-		if len(mods) != 2 {
-			t.Fatalf("%s: %d modules, want the module it uses and the module", name, len(mods))
+		// without ducking: the module that it uses, or the reverb unit in
+		// it, with its parameters as the defaults of the module give them
+		var dry sointu.Unit
+		switch {
+		case name == "Ducking_delay" && len(mods) == 2:
+			dry = moduleCall(mods[0].ID, nil)
+		case name == "Ducking_reverb" && len(mods) == 1:
+			for _, u := range mods[0].Units {
+				if u.Type == "reverb" {
+					dry = u.Copy()
+					dry.Bind = nil
+				}
+			}
+			if dry.Type == "" {
+				t.Fatalf("%s has no reverb unit", name)
+			}
+		default:
+			t.Fatalf("%s: %d modules", name, len(mods))
 		}
-		plain := playGo(t, fxSong(2, held, saw, mods, moduleCall(mods[0].ID, nil)))
-		ducked := playGo(t, fxSong(2, held, saw, mods, moduleCall(mods[1].ID, nil)))
+		ducking := mods[len(mods)-1]
+		plain := playGo(t, fxSong(2, held, saw, mods, dry))
+		ducked := playGo(t, fxSong(2, held, saw, mods, moduleCall(ducking.ID, nil)))
 		// from 0.5 s: the first repeat of the delay comes after 0.375 s
 		if a, b := level(plain[22050:44100]), level(ducked[22050:44100]); a == 0 || b == 0 || b > a/2 {
 			t.Errorf("%s: level %.4f while the note plays, %.4f without ducking", name, b, a)
@@ -305,7 +322,7 @@ func TestDuckingReverbAndDelay(t *testing.T) {
 			}
 		}
 		// duck 0 is no ducking at all
-		off := playGo(t, fxSong(2, held, saw, mods, moduleCall(mods[1].ID, sointu.ParamMap{"p6": 0})))
+		off := playGo(t, fxSong(2, held, saw, mods, moduleCall(ducking.ID, sointu.ParamMap{"p6": 0})))
 		for i := range plain {
 			if plain[i] != off[i] {
 				t.Fatalf("%s with duck 0: frame %d is %v, %v without ducking", name, i, off[i], plain[i])
@@ -425,7 +442,7 @@ func TestDuckingGlobalPresetWasmMatchesGoSynth(t *testing.T) {
 		sointu.Instrument `yaml:",inline"`
 		Modules           sointu.Modules
 	}
-	if err := yaml.Unmarshal(data, &preset); err != nil || len(preset.Modules) != 4 {
+	if err := yaml.Unmarshal(data, &preset); err != nil || len(preset.Modules) != 3 {
 		t.Fatalf("reading the preset: %v, %d modules", err, len(preset.Modules))
 	}
 	song := duckingSong(2, []sointu.Pattern{{60, 1, 1, 1, 0, 1, 1, 1, 64, 1, 0, 1, 1, 1, 1, 1}, nil}, sointu.Patch{

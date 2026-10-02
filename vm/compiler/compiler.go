@@ -3,6 +3,7 @@ package compiler
 import (
 	"bytes"
 	"embed"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -241,7 +242,7 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 	for _, unit := range features.Instructions() {
 		wasmOnly := len(sointu.SpectrumBufferParams(unit)) > 0 || len(sointu.BusParams(unit)) > 0
 		switch unit {
-		case "bufread", "bufwrite", "spawn", "arg", "window", "ott", "limiter", "softclip", "width", "ladder":
+		case "bufread", "bufwrite", "spawn", "arg", "window", "ott", "limiter", "softclip", "width", "ladder", "reverb":
 			wasmOnly = true
 		}
 		if wasmOnly && com.Arch != "wasm" {
@@ -312,8 +313,9 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 				wasmBufferData
 				wasmSpectralData
 				wasmMCData
+				wasmReverbData
 				wasmUnitFeatures
-			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers, wasmSpectral(encodedPatch, units), wasmMC(encodedPatch, units, featureSetMacros.MCDelayMod()), units}
+			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers, wasmSpectral(encodedPatch, units), wasmMC(encodedPatch, units, featureSetMacros.MCDelayMod()), wasmReverb(encodedPatch, &featureSetMacros, units), units}
 			populatedTemplate, extension, err = com.compile(templateName, &data)
 		}
 		if err != nil {
@@ -431,6 +433,71 @@ type wasmMCData struct {
 	MCConsts         []uint32
 	MCBytes          int
 	MCChannelOffsets int
+}
+
+// wasmReverbData is the constant data of the reverb units in the wasm
+// player, su_reverb_consts, ReverbRecord bytes for each unit (vm.Reverb):
+// the coefficients A, B and C of the decay of the 8 lines and their lengths
+// (floats), and the 32 taps of the diffuser (16 bits each), 192 bytes. Then
+// what only some songs have, at the offsets given: the 5 levels (floats) in
+// songs with a unit that sets one; the coefficient of the allpasses of the
+// diffuser (a float, 0 for plain delays) and the predelay in bytes of the
+// stereo ring (32 bits) in songs with a unit with allpasses; the second set
+// of lines (A, B, C, the lengths, the allpass coefficient, the rate and the
+// depth of the modulation: 35 floats) in songs with a unit that has one;
+// the end of the taps of the diffuser (a byte) in songs with a unit of fewer
+// steps, and the bypass bits (a byte) in songs whose units differ in them.
+//
+// ReverbState is the size of the state of a unit in su_reverb: 160 bytes,
+// the stereo ring, in songs with allpasses the ring of 8 channels of the
+// first step, the three other rings of the diffuser, the frame of the
+// diffused input and the ring of the network; in songs with a second set of
+// lines their ring, and their state at ReverbLoopState.
+type wasmReverbData struct {
+	ReverbData                                                []byte
+	ReverbRecord, ReverbLevelsAt, ReverbEndAt, ReverbBypassAt int
+	ReverbAllpassAt, ReverbLoopAt                             int
+	ReverbState, ReverbLoopState                              int
+}
+
+func wasmReverb(b *vm.Bytecode, macros *FeatureSetMacros, features wasmUnitFeatures) (ret wasmReverbData) {
+	part := func(used bool, bytes int) (at int) {
+		if used {
+			at = ret.ReverbRecord
+			ret.ReverbRecord += bytes
+		}
+		return at
+	}
+	ret.ReverbRecord = 192
+	ret.ReverbLevelsAt = part(macros.ReverbLevels(), 20)
+	ret.ReverbAllpassAt = part(features.ReverbAllpass, 8)
+	ret.ReverbLoopAt = part(features.ReverbLoop, 140)
+	ret.ReverbEndAt = part(macros.ReverbSteps(), 1)
+	ret.ReverbBypassAt = part(features.ReverbLowcutSwitch || features.ReverbHighcutSwitch, 1)
+	ret.ReverbState = 160 + 0x3e000 + 0x80000
+	if features.ReverbAllpass {
+		ret.ReverbState += 0x20000
+	}
+	if features.ReverbLoop {
+		ret.ReverbLoopState = ret.ReverbState + 0x80000
+		ret.ReverbState = ret.ReverbLoopState + 96
+	}
+	for _, r := range b.Reverbs {
+		add := func(at int, v ...any) {
+			if at > 0 {
+				for _, x := range v {
+					ret.ReverbData, _ = binary.Append(ret.ReverbData, binary.LittleEndian, x)
+				}
+			}
+		}
+		add(192, r.A, r.B, r.C, r.Lengths, r.Taps)
+		add(ret.ReverbLevelsAt, r.Levels)
+		add(ret.ReverbAllpassAt, r.APGain, r.Predelay)
+		add(ret.ReverbLoopAt, r.Loop)
+		add(ret.ReverbEndAt, r.End)
+		add(ret.ReverbBypassAt, r.Bypass)
+	}
+	return ret
 }
 
 // wasmMCStateBytes is the size of the state of an mcdelay in the wasm player
