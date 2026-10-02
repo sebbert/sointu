@@ -1,0 +1,89 @@
+bpm: 140
+rowsperbeat: 4
+score:
+    tracks:
+        - numvoices: 1
+          order: [0, 0, 1, 1]
+          patterns: [[45, 1, 0, 45, 1, 0, 57, 1, 45, 1, 0, 45, 1, 1, 48, 0], [41, 1, 0, 41, 1, 0, 53, 1, 41, 1, 0, 41, 1, 1, 43, 0]]
+        - numvoices: 3
+          order: [0, 0, 1, 1]
+          patterns: [[69, 1, 1, 1, 72, 1, 1, 1, 76, 1, 1, 1, 1, 1, 1, 1], [65, 1, 1, 1, 69, 1, 1, 1, 72, 1, 1, 1, 1, 1, 1, 1]]
+    rowsperpattern: 16
+    length: 4
+patch:
+    - name: bass
+      numvoices: 1
+      units:
+        - type: envelope
+          id: 1
+          parameters: {attack: 24, decay: 68, gain: 128, release: 60, sustain: 96}
+        - type: oscillator
+          id: 2
+          parameters: {color: 0, detune: 64, gain: 128, shape: 64, transpose: 52, type: 1}
+          comment: A saw
+        - type: mulp
+          id: 3
+          parameters: {stereo: 0}
+        - type: filter
+          id: 4
+          parameters: {frequency: 48, lowpass: 1, resonance: 80}
+        - type: eq
+          id: 5
+          parameters: {gain: 0, stereo: 0}
+          comment: 'Mono: no rumble, less mud, more of the growl'
+          bands:
+            - {type: lowcut, frequency: 35, q: 1}
+            - {type: bell, frequency: 250, gain: -4, q: 1.4}
+            - {type: bell, frequency: 900, gain: 3, q: 2}
+        - type: pan
+          id: 6
+          parameters: {panning: 64}
+        - type: out
+          id: 7
+          parameters: {gain: 80, stereo: 1}
+    - name: pad
+      numvoices: 3
+      units:
+        - type: envelope
+          id: 8
+          parameters: {attack: 70, decay: 70, gain: 128, release: 76, stereo: 1, sustain: 100}
+        - type: oscillator
+          id: 9
+          parameters: {color: 0, detune: 70, gain: 96, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 3}
+          comment: Detuned saws
+        - type: mulp
+          id: 10
+          parameters: {stereo: 1}
+        - type: eq
+          id: 11
+          parameters: {gain: 0, stereo: 1}
+          comment: 'Stereo: out of the way of the bass, with air. A band that is off costs nothing'
+          bands:
+            - {type: lowcut24, frequency: 180, q: 0.707}
+            - {type: highshelf, frequency: 3000, gain: 4, q: 1}
+            - {type: notch, frequency: 1000, q: 4, disabled: true}
+        - type: out
+          id: 12
+          parameters: {gain: 40, stereo: 1}
+    - name: master
+      numvoices: 1
+      units:
+        - type: in
+          id: 13
+          parameters: {channel: 0, stereo: 1}
+          comment: The mix
+        - type: eq
+          id: 14
+          parameters: {gain: -25, stereo: 1}
+          comment: 'On the mix: its gain and the shelf that lowers are one gain unit'
+          bands:
+            - {type: lowcut, frequency: 27, q: 1}
+            - {type: lowshelf, frequency: 90, gain: 2, q: 1}
+            - {type: bell, frequency: 2500, gain: -2, q: 0.7}
+            - {type: highshelf, frequency: 5000, gain: -3, q: 1}
+        - type: clip
+          id: 15
+          parameters: {stereo: 1}
+        - type: out
+          id: 16
+          parameters: {gain: 128, stereo: 1}

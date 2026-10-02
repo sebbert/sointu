@@ -433,6 +433,9 @@ const (
 	eqShelfLow  = 10
 	eqShelfHigh = 16000
 	eqShelfGrid = 24 // frequencies at which a shelf is compared to what it should be
+	// the lowest and the highest frequency of a shelf
+	eqShelfMinHz = 20
+	eqShelfMaxHz = 8000
 )
 
 // compileEQShelf returns the units of a shelf: the signal plus k times a
@@ -467,6 +470,8 @@ func compileEQShelf(b EQBand, stereo int) (ret EQCompiledBand) {
 	if want < 1.001 {
 		return ret
 	}
+	// the ends of the shelf have to be within its ends
+	b.Frequency = min(max(b.Frequency, eqShelfMinHz), eqShelfMaxHz)
 	// the shelf to come near to, as levels in dB at the frequencies of grid
 	var grid, target [eqShelfGrid]float64
 	{

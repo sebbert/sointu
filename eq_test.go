@@ -344,6 +344,25 @@ func TestEQShapes(t *testing.T) {
 	}
 }
 
+// TestEQShelfRange checks that a shelf beyond what the filter unit reaches
+// is the nearest shelf that it can do, with the gain asked for.
+func TestEQShelfRange(t *testing.T) {
+	for _, b := range []sointu.EQBand{
+		band(sointu.EQHighShelf, 22000, 12, 1), band(sointu.EQHighShelf, 22000, -6, 1),
+		band(sointu.EQLowShelf, 22000, 6, 1), band(sointu.EQLowShelf, 10, 6, 1), band(sointu.EQHighShelf, 10, -6, 1),
+	} {
+		u := eqUnit(0, 0, b)
+		a := u.CompileEQ().Bands[0].Actual
+		lo, hi := 12.0, 25.0
+		if b.Frequency > 1000 {
+			lo, hi = 6000, 9000
+		}
+		if a.Frequency < lo || a.Frequency > hi || math.Abs(a.Gain-b.Gain) > 0.3 {
+			t.Errorf("%+v is the shelf %+v", b, a)
+		}
+	}
+}
+
 // TestEQExpand checks that Song.Expand replaces the eq units of instruments
 // and modules with their units, and leaves songs without them alone.
 func TestEQExpand(t *testing.T) {
