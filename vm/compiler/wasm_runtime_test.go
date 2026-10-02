@@ -110,11 +110,17 @@ func TestRuntimeModule(t *testing.T) {
 // the same samples, without a gap, on a clock that never goes back; in
 // workers, in a pipeline of workers, on the main thread, and with audio that
 // arrives late, where the song has to wait. The songs play in real time, and
-// launching Chrome may trigger OS permission prompts, so the test only runs
-// with SOINTU_TEST_BROWSER=1.
+// launching a browser may trigger OS permission prompts, so the test only
+// runs with SOINTU_TEST_BROWSER=1, or with SOINTU_TEST_BROWSER=firefox in
+// headless Firefox.
 func TestRuntimeInBrowser(t *testing.T) {
-	if os.Getenv("SOINTU_TEST_BROWSER") != "1" {
-		t.Skip("set SOINTU_TEST_BROWSER=1 to run the JavaScript module in headless Chrome")
+	var browser []string
+	switch os.Getenv("SOINTU_TEST_BROWSER") {
+	case "1":
+	case "firefox":
+		browser = []string{"--firefox"}
+	default:
+		t.Skip("set SOINTU_TEST_BROWSER=1 to run the JavaScript module in headless Chrome, or =firefox in Firefox")
 	}
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -193,11 +199,11 @@ func TestRuntimeInBrowser(t *testing.T) {
 					t.Fatalf("wat2wasm failed: %v\n%s", err, out)
 				}
 			}
-			out, err := exec.Command(node, harness, dir, "--scenario", tc.scenario).CombinedOutput()
+			out, err := exec.Command(node, append([]string{harness, dir, "--scenario", tc.scenario}, browser...)...).CombinedOutput()
 			t.Logf("%s", out)
 			if err != nil && strings.Contains(string(out), `"playing caught up with rendering"`) && !strings.Contains(string(out), "differs") {
 				// a busy machine: once more, rendering everything first
-				out, err = exec.Command(node, harness, dir, "--scenario", tc.scenario, "--runway", "100").CombinedOutput()
+				out, err = exec.Command(node, append([]string{harness, dir, "--scenario", tc.scenario, "--runway", "100"}, browser...)...).CombinedOutput()
 				t.Logf("again, with all rendered before the start:\n%s", out)
 			}
 			if err != nil {

@@ -4,7 +4,7 @@
 // (the same song compiled without -js), sample by sample.
 //
 // Usage:
-//   node tests/wasm_runtime_browser.mjs dir [--scenario play] [--runway 0.5] [--out result.json]
+//   node tests/wasm_runtime_browser.mjs dir [--scenario play] [--runway 0.5] [--out result.json] [--firefox]
 //
 // dir has song.js and song.wasm (compiled with -js), oneshot.wasm (compiled
 // without) and, for songs compiled with -samples, the sample files song.0.*,
@@ -17,7 +17,8 @@
 //             of rendering
 // Prints a JSON summary and exits with 1 if the played audio differs. The
 // song plays in real time. Chrome is found from $CHROME or the usual install
-// locations; it runs muted, with a temporary profile.
+// locations; it runs muted, with a temporary profile. With --firefox, Firefox
+// runs instead, from $FIREFOX or its usual install locations.
 
 import { createServer } from "node:http";
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync, readdirSync } from "node:fs";
@@ -37,6 +38,8 @@ const scenario = opt("--scenario", "play");
 const runway = opt("--runway", "0.5");
 const outFile = opt("--out");
 const timeout = +opt("--timeout", "120") * 1000;
+const firefox = args.includes("--firefox");
+if (firefox) args.splice(args.indexOf("--firefox"), 1);
 const [dir] = args;
 if (!dir) {
   console.error("usage: wasm_runtime_browser.mjs dir [--scenario play|noworker|stall|measure] [--runway seconds] [--out result.json]");
@@ -52,8 +55,14 @@ const chrome = [
   "/usr/bin/chromium-browser",
   "C:/Program Files/Google/Chrome/Application/chrome.exe",
 ].find((p) => p && existsSync(p));
-if (!chrome) {
-  console.error("Chrome not found; set CHROME to its path");
+const firefoxPath = [
+  process.env.FIREFOX,
+  "/Applications/Firefox.app/Contents/MacOS/firefox",
+  "/usr/bin/firefox",
+  "C:/Program Files/Mozilla Firefox/firefox.exe",
+].find((p) => p && existsSync(p));
+if (firefox ? !firefoxPath : !chrome) {
+  console.error(firefox ? "Firefox not found; set FIREFOX to its path" : "Chrome not found; set CHROME to its path");
   process.exit(2);
 }
 
@@ -262,6 +271,11 @@ const server = createServer((req, res) => {
 
 server.listen(0, "127.0.0.1", () => {
   const url = `http://127.0.0.1:${server.address().port}/`;
-  browser = spawn(chrome, ["--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--mute-audio", "--autoplay-policy=no-user-gesture-required", `--user-data-dir=${profile}`, url], { stdio: "ignore" });
+  if (firefox) {
+    // audio may start without a user gesture, and nothing reaches the speakers
+    writeFileSync(join(profile, "user.js"), ["media.autoplay.default", "media.autoplay.blocking_policy"].map((p) => `user_pref("${p}", 0);`).join("\n") +
+      `\nuser_pref("media.volume_scale", "0.0");\nuser_pref("browser.shell.checkDefaultBrowser", false);\nuser_pref("datareporting.policy.dataSubmissionEnabled", false);\n`);
+    browser = spawn(firefoxPath, ["--headless", "--no-remote", "--profile", profile, url], { stdio: "ignore" });
+  } else browser = spawn(chrome, ["--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--mute-audio", "--autoplay-policy=no-user-gesture-required", `--user-data-dir=${profile}`, url], { stdio: "ignore" });
   setTimeout(() => finish(1, { ok: false, scenario, error: "timed out" }), timeout).unref();
 });

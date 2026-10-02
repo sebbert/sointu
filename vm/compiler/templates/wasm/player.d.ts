@@ -11,7 +11,8 @@ export interface Song {
   /**
    * Starts playing what is rendered, and the rest as it is rendered. Call it
    * in a user gesture, as it resumes the audio context. The song plays into
-   * `destination`, a node of `context`; by default its output.
+   * `destination`, a node of `context`; by default its output. Later calls
+   * do nothing.
    */
   start(destination?: AudioNode): void;
   /**

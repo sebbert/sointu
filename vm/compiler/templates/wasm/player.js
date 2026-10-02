@@ -106,11 +106,13 @@ export const load = (wasm{{if .SeparateSamples}}, sampleFiles{{end}}, runway = 2
     rendered: 0,
     ready: new Promise((resolve) => (ready = resolve)),
     start(destination = context.destination) {
-      context.resume();
-      output = destination;
-      // on the next quarter of a second that is 50 ms away or more
-      t0 = Math.ceil(context.currentTime * 4 + 0.2) / 4;
-      waiting.map((piece) => schedule(...piece));
+      if (!output) {
+        context.resume();
+        output = destination;
+        // on the next quarter of a second that is 50 ms away or more
+        t0 = Math.ceil(context.currentTime * 4 + 0.2) / 4;
+        waiting.map((piece) => schedule(...piece));
+      }
     },
     time: () => (top = Math.max(top, Math.min(context.currentTime - t0, song.rendered)) || 0),
   };
