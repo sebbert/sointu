@@ -96,6 +96,7 @@ func mcTestSong() sointu.Song {
 }
 
 func TestMCWasmMatchesGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")
@@ -115,6 +116,7 @@ func TestMCWasmMatchesGoSynth(t *testing.T) {
 // TestMCWasmSubsets compiles and compares songs that each use only some of
 // the code of the mc units, whose other parts the player leaves out.
 func TestMCWasmSubsets(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")
@@ -171,6 +173,7 @@ func TestMCWasmSubsets(t *testing.T) {
 }
 
 func TestMCX86Refused(t *testing.T) {
+	t.Parallel()
 	for _, typ := range []string{"mcspread", "mcsum", "mcdelay", "mcmix", "mcloop", "mcloopend", "mcfilter"} {
 		units := []sointu.Unit{mcTestUnit(typ, 1, nil)}
 		switch sointu.UnitTypes[typ].StackUse(&units[0]).NumOutputs - len(sointu.UnitTypes[typ].StackUse(&units[0]).Inputs) {
@@ -198,6 +201,7 @@ func TestMCX86Refused(t *testing.T) {
 // TestMCPresetsWasmMatchGoSynth renders the reverb presets made of mc units,
 // fed by a burst of noise, in both synths.
 func TestMCPresetsWasmMatchGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")

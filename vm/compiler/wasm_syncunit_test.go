@@ -40,6 +40,7 @@ func floats(raw []byte) []float32 {
 // the sync buffer of the x86 player in tests/expected_output, which rounds
 // differently. A player of a song without sync units has none of it.
 func TestSyncWasmMatchesGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")

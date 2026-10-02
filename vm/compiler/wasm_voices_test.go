@@ -59,6 +59,7 @@ func manyVoicesSong() sointu.Song {
 }
 
 func TestManyVoicesWasmMatchesGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")
@@ -76,6 +77,7 @@ func TestManyVoicesWasmMatchesGoSynth(t *testing.T) {
 }
 
 func TestManyVoicesX86Refused(t *testing.T) {
+	t.Parallel()
 	song := manyVoicesSong()
 	for _, arch := range []string{"386", "amd64"} {
 		com, err := compiler.New("windows", arch, false, false)

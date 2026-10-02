@@ -74,6 +74,7 @@ func soundsetPresetSong(instr sointu.Instrument, modules sointu.Modules) sointu.
 // from it without NaN; with node and wat2wasm, the wasm player renders
 // exactly the same.
 func TestSoundsetPresets(t *testing.T) {
+	t.Parallel()
 	files, err := filepath.Glob("../../tracker/presets/*/Club_*.yml")
 	if err != nil {
 		t.Fatal(err)
@@ -133,9 +134,11 @@ func TestSoundsetPresets(t *testing.T) {
 // TestSoundsetExamplesWasmMatchGoSynth renders the example songs of the
 // sound set in both synths: examples/soundset.yml plays every sound in
 // turn, examples/soundset_loop.yml a loop of kit, bass and lead through the
-// drum bus and the master chain. The first takes most of a minute, and is
-// left out with -short.
+// drum bus and the master chain. The first takes more than a minute, and
+// only runs with SOINTU_TEST_LONG=1; of the loop, without it, the first two
+// patterns.
 func TestSoundsetExamplesWasmMatchGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")
@@ -146,8 +149,8 @@ func TestSoundsetExamplesWasmMatchGoSynth(t *testing.T) {
 	}
 	for _, name := range []string{"soundset_loop", "soundset"} {
 		t.Run(name, func(t *testing.T) {
-			if name == "soundset" && testing.Short() {
-				t.Skip("long")
+			if name == "soundset" && !longTests() {
+				t.Skip("long: set SOINTU_TEST_LONG=1 to render it")
 			}
 			data, err := os.ReadFile("../../examples/" + name + ".yml")
 			if err != nil {
@@ -156,6 +159,9 @@ func TestSoundsetExamplesWasmMatchGoSynth(t *testing.T) {
 			var song sointu.Song
 			if err := yaml.Unmarshal(data, &song); err != nil {
 				t.Fatal(err)
+			}
+			if !longTests() {
+				song.Score.Length = min(song.Score.Length, 2)
 			}
 			want, err := sointu.Play(vm.GoSynther{}, song, nil)
 			if err != nil {

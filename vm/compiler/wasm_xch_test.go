@@ -53,6 +53,7 @@ func xchSong(mono, stereo, delay bool) sointu.Song {
 // song has: a player with both a mono and a stereo xch did not assemble, and
 // a stereo xch next to a stereo delay exchanged wrongly.
 func TestXchWasmMatchesGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")

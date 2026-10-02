@@ -13,8 +13,9 @@ export default defineConfig({
     rollupOptions: {
       output: {
         inlineDynamicImports: true,
-        // The plugin reads the packed files from `wsqz.files`; the packer
-        // from GitHub names it `rsqz`, the released 0.4 `wsqz`.
+        // The plugin (1.1.3) reads the packed files from `wsqz.files`; the
+        // packer from GitHub names it `rsqz`, the released 0.4 `wsqz`. This
+        // can go once a release of the plugin knows `rsqz`.
         banner: "wsqz=self.wsqz||rsqz;",
       },
     },

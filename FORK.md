@@ -1164,8 +1164,8 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   (4.2 and 4.1 KB).
   Tests: `tracker/soundset_test.go`, and `vm/compiler/wasm_soundset_test.go`
   (every preset and both songs render in the wasm player exactly as in the
-  Go synth; the long song takes most of two minutes and is skipped with
-  `-short`).
+  Go synth; the long song takes most of two minutes and runs only with
+  `SOINTU_TEST_LONG=1`, see [Tests](#tests)).
 
 ## Wasm player
 
@@ -1524,6 +1524,37 @@ song can render until then.
   headless), x86 processors (denormals may slow the wasm player there, which
   has no flush-to-zero), mobile browsers, and how the clock steps on audio
   hardware with large buffers.
+
+## Tests
+
+`go test ./...` covers every feature with short songs; `vm/compiler` takes
+about 15 s, with its wasm tests running in parallel (`t.Parallel`). The long
+renders are opt-in:
+
+```
+SOINTU_TEST_LONG=1 go test ./...               # about 2 minutes in vm/compiler
+SOINTU_TEST_BROWSER=1 go test ./vm/compiler    # headless Chrome, 2 minutes more; =firefox for Firefox
+```
+
+What the default run leaves out, and `SOINTU_TEST_LONG=1` adds (`-short`
+leaves it out in any case):
+
+- `examples/soundset.yml` (68 s, every sound of the sound set in turn): in
+  the Go synth against the wasm player, in parts in the progressive player,
+  and in stages. Every preset of the sound set is still rendered alone, in
+  both synths (`TestSoundsetPresets`), and `examples/soundset_loop.yml`
+  plays the kit, bass and lead through the drum bus and the master chain.
+- Of `examples/soundset_loop.yml`, all but the first two patterns in the Go
+  synth against the wasm player (3.4 of 13.7 s by default).
+- In the progressive player, more than the first 2 s of the songs longer
+  than that (10 s with the variable).
+- In stages, every possible cut of the songs with more than 6: by default 4
+  cuts spread over the voices, and the pipelines of 2 to 4 stages. Every
+  kind of dependency between voices has a short song where all cuts are
+  rendered (`TestStageCuts`).
+
+The browser tests need neither variable for anything else: they are only
+opt-in because they launch a browser and play in real time.
 
 ## Updating the x86 backend
 

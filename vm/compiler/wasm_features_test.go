@@ -226,6 +226,7 @@ func mcFeatureCases() []featureCase {
 // TestMCFeaturesWasmMatchGoSynth checks the parts of the mc units that the
 // wasm player only has when the song uses them.
 func TestMCFeaturesWasmMatchGoSynth(t *testing.T) {
+	t.Parallel()
 	runFeatureCases(t, mcFeatureCases())
 }
 
@@ -351,6 +352,7 @@ func spawnFeatureCases() []featureCase {
 // TestSpawnFeaturesWasmMatchGoSynth checks the parts of spawn and window
 // that the wasm player only has when the song uses them.
 func TestSpawnFeaturesWasmMatchGoSynth(t *testing.T) {
+	t.Parallel()
 	runFeatureCases(t, spawnFeatureCases())
 }
 
@@ -464,6 +466,7 @@ func spectralFeatureCases() []featureCase {
 // TestSpectralFeaturesWasmMatchGoSynth checks the parts of the spectral
 // units that the wasm player only has when the song uses them.
 func TestSpectralFeaturesWasmMatchGoSynth(t *testing.T) {
+	t.Parallel()
 	runFeatureCases(t, spectralFeatureCases())
 }
 
@@ -532,6 +535,7 @@ func effectFeatureCases() []featureCase {
 // the bandlimited oscillators that the wasm player only has when the song
 // uses them.
 func TestEffectFeaturesWasmMatchGoSynth(t *testing.T) {
+	t.Parallel()
 	runFeatureCases(t, effectFeatureCases())
 }
 
@@ -596,5 +600,6 @@ func sharedFeatureCases() []featureCase {
 // that it only has when a unit of the song calls them, and the LFO code of
 // the oscillator.
 func TestSharedFeaturesWasmMatchGoSynth(t *testing.T) {
+	t.Parallel()
 	runFeatureCases(t, sharedFeatureCases())
 }

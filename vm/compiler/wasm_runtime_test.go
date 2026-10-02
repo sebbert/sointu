@@ -18,6 +18,7 @@ import (
 // with JS, for each way the song changes it: it is a module that parses, with
 // only the parts the song needs.
 func TestRuntimeModule(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")

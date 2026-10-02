@@ -24,8 +24,12 @@ The packed page reads itself with `fetch`, so it needs http: it does not
 start from `file://` in Chrome. The plugin (1.1.3) makes the imports read
 `wsqz.files`, and the packer from GitHub names that `rsqz`: `vite.config.js`
 adds `wsqz=self.wsqz||rsqz;` in front of the bundle, without which the packed
-page stops with an error. The plugin has no option for the packer's
-`--size-profile 64k`.
+page stops with an error. A fix of the plugin exists (it asks the packer
+for its version and uses `rsqz` from 0.4.1; the option `runtimeGlobal`
+overrides) but is not released: once a release of the plugin has it, the
+`banner` in `vite.config.js` can go. The same fix adds the option
+`websqzArgs`, e.g. `websqz({ websqzArgs: ["--size-profile", "64k"] })` for
+the 64k profile of the packer, which the released plugin cannot pass.
 
 `node song.mjs path/to/song.yml -stages 8` compiles another song, or the same
 with other flags. It runs:

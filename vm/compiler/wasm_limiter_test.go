@@ -71,6 +71,7 @@ func limiterTestSong(drive bool) sointu.Song {
 }
 
 func TestLimiterWasmMatchesGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")
@@ -92,6 +93,7 @@ func TestLimiterWasmMatchesGoSynth(t *testing.T) {
 // TestLimiterDriveOnlyWhenUsed checks that the gain before the limiter is in
 // the bytecode and the player only for songs that use it.
 func TestLimiterDriveOnlyWhenUsed(t *testing.T) {
+	t.Parallel()
 	for _, drive := range []bool{false, true} {
 		song := limiterTestSong(drive)
 		features := vm.NecessaryFeaturesFor(song.Patch)
@@ -143,6 +145,7 @@ func TestLimiterDriveOnlyWhenUsed(t *testing.T) {
 }
 
 func TestLimiterX86Refused(t *testing.T) {
+	t.Parallel()
 	song := limiterTestSong(false)
 	for _, arch := range []string{"386", "amd64"} {
 		com, err := compiler.New("linux", arch, false, false)

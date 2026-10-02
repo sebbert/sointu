@@ -114,11 +114,13 @@ func runProgressive(t *testing.T, node, wat2wasm string, song sointu.Song, encod
 }
 
 // TestProgressiveWasmMatchesOneShot renders the regression test songs and the
-// example songs (of the long ones, the first 10 seconds) with the progressive
+// example songs (of the long ones, the first 2 seconds, or the first 10 with
+// SOINTU_TEST_LONG=1) with the progressive
 // wasm player, in parts of different sizes: each must give exactly the bytes
 // of the player that renders at instantiation, which other tests compare
 // with the Go synth.
 func TestProgressiveWasmMatchesOneShot(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")
@@ -150,8 +152,16 @@ func TestProgressiveWasmMatchesOneShot(t *testing.T) {
 			if ffmpeg.NeedsFFmpeg(&song) {
 				t.Skip("the song has samples; TestProgressiveWasmWithSamples covers them")
 			}
-			// of the long songs, the patterns of the first 10 seconds
-			if patterns := 10 * 44100 / (song.SamplesPerRow() * song.Score.RowsPerPattern); song.Score.Length > max(patterns, 1) {
+			if name == "soundset" && !longTests() {
+				t.Skip("long: set SOINTU_TEST_LONG=1 to render it")
+			}
+			// of the long songs, the patterns of the first 2 seconds, or
+			// of the first 10 with SOINTU_TEST_LONG=1
+			seconds := 2
+			if longTests() {
+				seconds = 10
+			}
+			if patterns := seconds * 44100 / (song.SamplesPerRow() * song.Score.RowsPerPattern); song.Score.Length > max(patterns, 1) {
 				song.Score.Length = max(patterns, 1)
 			}
 			runProgressive(t, node, wat2wasm, song, nil, nil, nil, nil)
@@ -166,6 +176,7 @@ func TestProgressiveWasmMatchesOneShot(t *testing.T) {
 // TestProgressiveWasmWithSamples renders a song with samples in parts: the
 // first call fills the buffers from the host.
 func TestProgressiveWasmWithSamples(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")

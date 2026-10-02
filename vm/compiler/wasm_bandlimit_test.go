@@ -121,6 +121,7 @@ func bandlimitSong() sointu.Song {
 }
 
 func TestBandlimitWasmMatchesGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")
@@ -138,6 +139,7 @@ func TestBandlimitWasmMatchesGoSynth(t *testing.T) {
 }
 
 func TestBandlimitX86Refused(t *testing.T) {
+	t.Parallel()
 	song := bandlimitSong()
 	for _, arch := range []string{"386", "amd64"} {
 		com, err := compiler.New("windows", arch, false, false)

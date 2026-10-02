@@ -119,13 +119,26 @@ func renderStages(t *testing.T, node, wat2wasm, oneshot string, song sointu.Song
 
 // testStages renders the song cut before every voice where it can be cut,
 // and in pipelines of 2 to 4 balanced stages. It returns the cuts.
+//
+// Without SOINTU_TEST_LONG=1, of a song with more than 6 possible cuts only
+// 4 are rendered, spread over the voices, and the pipelines.
 func testStages(t *testing.T, node, wat2wasm string, song sointu.Song) (cuts []int) {
 	t.Helper()
 	oneshot, _ := compileWasm(t, wat2wasm, song, nil, nil)
 	for b := 1; b < song.Patch.NumVoices(); b++ {
-		if _, err := renderStages(t, node, wat2wasm, oneshot, song, func(c *compiler.Compiler) { c.StageCuts = []int{b} }); err == nil {
+		com, _ := compiler.New("", "wasm", false, false)
+		com.Progressive, com.StageCuts = true, []int{b}
+		if _, _, err := com.Song(&song); err == nil {
 			cuts = append(cuts, b)
 		} else if !strings.Contains(err.Error(), "cannot cut") {
+			t.Fatalf("cut before voice %d: %v", b, err)
+		}
+	}
+	for i, b := range cuts {
+		if !longTests() && len(cuts) > 6 && i%((len(cuts)+3)/4) != 0 {
+			continue
+		}
+		if _, err := renderStages(t, node, wat2wasm, oneshot, song, func(c *compiler.Compiler) { c.StageCuts = []int{b} }); err != nil {
 			t.Fatalf("cut before voice %d: %v", b, err)
 		}
 	}
@@ -145,11 +158,18 @@ func testStages(t *testing.T, node, wat2wasm string, song sointu.Song) (cuts []i
 	return
 }
 
+// longTests reports whether the tests render the long songs, and every cut
+// of the songs with many voices: with SOINTU_TEST_LONG=1, and without
+// -short. The default run covers every feature with short songs.
+func longTests() bool { return os.Getenv("SOINTU_TEST_LONG") == "1" && !testing.Short() }
+
 // TestStagedWasmMatchesOneShot renders the regression test songs and the
-// example songs in stages, with every cut the compiler allows: the pipeline
+// example songs in stages, with every cut the compiler allows (of the songs
+// with many voices, four of them unless SOINTU_TEST_LONG=1): the pipeline
 // must give exactly the bytes of the player that renders at instantiation.
 // The long songs are cut to their first second.
 func TestStagedWasmMatchesOneShot(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")
@@ -182,6 +202,9 @@ func TestStagedWasmMatchesOneShot(t *testing.T) {
 				}
 				if ffmpeg.NeedsFFmpeg(&song) {
 					t.Skip("the song has samples")
+				}
+				if name == "soundset" && !longTests() {
+					t.Skip("long: set SOINTU_TEST_LONG=1 to render it")
 				}
 				// at most a second, from the start of the song
 				if rows := 44100 / song.SamplesPerRow(); song.Score.LengthInRows() > rows {
@@ -217,6 +240,7 @@ func stageTestSong(instruments ...[]sointu.Unit) sointu.Song {
 // TestStageCuts checks where songs can be cut, for the ways voices depend
 // on each other, and that the cuts allowed render exactly.
 func TestStageCuts(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")

@@ -66,6 +66,7 @@ func testWav(channels, frames int, f func(frame, channel int) float64) []byte {
 }
 
 func TestBufreadWasmMatchesGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")

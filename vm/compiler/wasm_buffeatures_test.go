@@ -143,6 +143,7 @@ var bufFeatureCases = []bufFeatureCase{
 // songs like the Go synth whichever parts of bufread and bufwrite they use,
 // and that the player has the parts the song uses and no others.
 func TestBufferFeaturesWasmMatchGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")

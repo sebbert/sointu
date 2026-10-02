@@ -101,6 +101,7 @@ var heldFromRow2 = sointu.Pattern{0, 0, 60, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
 // its instrument, then down to 1 - depth within the attack of 1 ms, without
 // a step, and back to 1 in the release time, sooner with a curve.
 func TestDuckerGain(t *testing.T) {
+	t.Parallel()
 	mods := modulePreset(t, "Ducker")
 	render := func(params sointu.ParamMap) []float32 {
 		buffer := playGo(t, gainSong(heldFromRow2, mods, moduleCall(mods[0].ID, params)))
@@ -157,6 +158,7 @@ func TestDuckerGain(t *testing.T) {
 // the bus has to come after the instruments that send to it. Before them, it
 // reads what they sent in the sample before.
 func TestDuckerOrder(t *testing.T) {
+	t.Parallel()
 	mods := modulePreset(t, "Ducker")
 	song := func(kickFirst bool) sointu.Song {
 		bus := sointu.Instrument{Name: "bus", NumVoices: 1, Units: []sointu.Unit{
@@ -189,6 +191,7 @@ func TestDuckerOrder(t *testing.T) {
 // the gain is 1 until the key, a decaying sine, plays, goes down by more than
 // 12 dB while it is loud and comes back as it fades.
 func TestSidechainGain(t *testing.T) {
+	t.Parallel()
 	mods := modulePreset(t, "Sidechain")
 	buffer := playGo(t, gainSong(sointu.Pattern{0, 0, 43, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, mods,
 		sointu.Unit{Type: "envelope", Parameters: sointu.ParamMap{"stereo": 0, "attack": 0, "decay": 70, "sustain": 0, "release": 70, "gain": 128}},
@@ -237,6 +240,7 @@ func fxSong(length int, pattern sointu.Pattern, source []sointu.Unit, modules so
 // right in turn, nothing on the other side, each lower than the one before
 // and with less of its level in the highs.
 func TestPingPongDelay(t *testing.T) {
+	t.Parallel()
 	mods := modulePreset(t, "Ping_pong_delay")
 	click := []sointu.Unit{{Type: "envelope", Parameters: sointu.ParamMap{"stereo": 0, "attack": 0, "decay": 16, "sustain": 0, "release": 16, "gain": 128}}}
 	for _, right := range []bool{false, true} {
@@ -278,6 +282,7 @@ func TestPingPongDelay(t *testing.T) {
 // delay module, for a held saw note: the wet signal is lower by more than
 // 6 dB while the note plays, and exactly the same once the gain is back.
 func TestDuckingReverbAndDelay(t *testing.T) {
+	t.Parallel()
 	saw := []sointu.Unit{
 		{Type: "envelope", Parameters: sointu.ParamMap{"stereo": 0, "attack": 32, "decay": 64, "sustain": 96, "release": 56, "gain": 128}},
 		{Type: "oscillator", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "phase": 0, "color": 0, "shape": 64, "gain": 64, "type": sointu.Trisaw}},
@@ -336,6 +341,7 @@ func TestDuckingReverbAndDelay(t *testing.T) {
 // plays notes itself: with the defaults of its parameters, and with all of
 // them set.
 func TestDuckingModulePresetsWasmMatchesGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")
@@ -390,6 +396,7 @@ func TestDuckingModulePresetsWasmMatchesGoSynth(t *testing.T) {
 // and a pad on a bus that the preset Kick ducker ducks, in both synths, and
 // checks on the way that the bus is ducked: the first pattern has no kick.
 func TestDuckingExampleWasmMatchesGoSynth(t *testing.T) {
+	t.Parallel()
 	data, err := os.ReadFile("../../examples/ducking.yml")
 	if err != nil {
 		t.Fatal(err)
@@ -434,6 +441,7 @@ func TestDuckingExampleWasmMatchesGoSynth(t *testing.T) {
 // mastering 2 ducking, the Ducking delay and the Ducking reverb before Global
 // mastering 2, in both synths: bursts of noise sent to aux 2/3 and aux 6/7.
 func TestDuckingGlobalPresetWasmMatchesGoSynth(t *testing.T) {
+	t.Parallel()
 	data, err := os.ReadFile("../../tracker/presets/UTIL/Global_mastering_2_ducking.yml")
 	if err != nil {
 		t.Fatal(err)
