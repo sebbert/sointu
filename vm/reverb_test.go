@@ -1,6 +1,7 @@
 package vm_test
 
 import (
+	"maps"
 	"math"
 	"os"
 	"testing"
@@ -29,8 +30,8 @@ func reverbSong(t testing.TB, unit bool, p [8]int, lfo bool) sointu.Song {
 		"p1": p[0], "p2": p[1], "p3": p[2], "p4": p[3], "p5": p[4], "p6": p[5], "p7": p[6], "p8": p[7]}}
 	port := 5 // of the module parameter mod
 	if unit {
-		reverb = sointu.Unit{Type: "reverb", ID: 1000, Parameters: sointu.ParamMap{
-			"size": p[0], "decay": p[1], "highs": p[2], "lows": p[3], "predelay": p[4], "mod": p[5], "highcut": p[6], "lowcut": p[7]}}
+		reverb = reverbUnit(sointu.ParamMap{
+			"size": p[0], "decay": p[1], "highs": p[2], "lows": p[3], "predelay": p[4], "mod": p[5], "highcut": p[6], "lowcut": p[7]})
 		port = 0
 	}
 	units := []sointu.Unit{
@@ -67,6 +68,81 @@ func reverbSong(t testing.TB, unit bool, p [8]int, lfo bool) sointu.Song {
 		song.Modules = file.Modules
 	}
 	return song
+}
+
+// reverbUnit returns a reverb unit with the given parameters, and the others
+// as in the Reverb module.
+func reverbUnit(params sointu.ParamMap) sointu.Unit {
+	p := sointu.ParamMap{}
+	maps.Copy(p, sointu.AddedParameters("reverb"))
+	maps.Copy(p, params)
+	return sointu.Unit{Type: "reverb", ID: 1000, Parameters: p}
+}
+
+// presetSong is the song of reverbSong with the units of an instrument
+// preset in place of its reverb instrument.
+func presetSong(t testing.TB, file string) sointu.Song {
+	t.Helper()
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var instr sointu.Instrument
+	if err := yaml.Unmarshal(data, &instr); err != nil {
+		t.Fatal(err)
+	}
+	song := reverbSong(t, true, reverbSettings["defaults"], false)
+	song.Patch[2] = instr
+	return song
+}
+
+// TestReverbUnitRendersLikeThePresets checks that the presets Reverb unit
+// Room, Hall and Ambient, a reverb unit each, render exactly what the
+// presets Reverb FDN Room, Hall and Ambient render, chains of mc units; and
+// that the unit renders the chain of examples/reverb.yml.
+func TestReverbUnitRendersLikeThePresets(t *testing.T) {
+	compare := func(name string, unit, mc sointu.Song) {
+		t.Helper()
+		want, err := sointu.Play(vm.GoSynther{}, mc, nil)
+		if err != nil {
+			t.Fatalf("%s: the mc units: %v", name, err)
+		}
+		got, err := sointu.Play(vm.GoSynther{}, unit, nil)
+		if err != nil {
+			t.Fatalf("%s: the unit: %v", name, err)
+		}
+		peak, differing := 0.0, 0
+		for i := range want {
+			for c := range 2 {
+				peak = max(peak, math.Abs(float64(want[i][c])))
+				if got[i][c] != want[i][c] {
+					differing++
+				}
+			}
+		}
+		if peak < 0.01 || len(got) != len(want) || differing > 0 {
+			t.Errorf("%s: %d samples of the unit differ from the mc units' (peak %v, %d and %d frames)", name, differing, peak, len(got), len(want))
+		}
+	}
+	for _, name := range []string{"Room", "Hall", "Ambient"} {
+		compare(name, presetSong(t, "../tracker/presets/UTIL/Reverb_unit_"+name+".yml"), presetSong(t, "../tracker/presets/UTIL/Reverb_FDN_"+name+".yml"))
+	}
+	// examples/reverb.yml: the chain of the Reverb module without the high
+	// cut, with a predelay of 20 ms and a network of 150 ms
+	data, err := os.ReadFile("../examples/reverb.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var example sointu.Song
+	if err := yaml.Unmarshal(data, &example); err != nil {
+		t.Fatal(err)
+	}
+	mc := reverbSong(t, true, reverbSettings["defaults"], false)
+	mc.Patch[2] = example.Patch[len(example.Patch)-1]
+	unit := reverbSong(t, true, reverbSettings["defaults"], false)
+	unit.Patch[2].Units[1] = reverbUnit(sointu.ParamMap{"size": 64, "decay": 90, "highs": 48, "lows": 72, "mod": 24, "lowcut": 56,
+		"network": 1500, "pretime": 200, "bypass": sointu.ReverbBypassHighcut})
+	compare("examples/reverb.yml", unit, mc)
 }
 
 // reverbSettings are values for the 8 parameters of the reverb: the defaults,

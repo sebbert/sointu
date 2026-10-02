@@ -315,7 +315,7 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 				wasmMCData
 				wasmReverbData
 				wasmUnitFeatures
-			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers, wasmSpectral(encodedPatch, units), wasmMC(encodedPatch, units, featureSetMacros.MCDelayMod()), wasmReverb(encodedPatch), units}
+			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers, wasmSpectral(encodedPatch, units), wasmMC(encodedPatch, units, featureSetMacros.MCDelayMod()), wasmReverb(encodedPatch, &featureSetMacros, units), units}
 			populatedTemplate, extension, err = com.compile(templateName, &data)
 		}
 		if err != nil {
@@ -436,16 +436,44 @@ type wasmMCData struct {
 }
 
 // wasmReverbData is the constant data of the reverb units in the wasm
-// player, su_reverb_consts, 192 bytes for each unit (vm.Reverb): the
-// coefficients A, B and C of the decay of the 8 lines and their lengths
-// (floats), and the 32 taps of the diffuser (16 bits each).
+// player, su_reverb_consts, ReverbRecord bytes for each unit (vm.Reverb):
+// the coefficients A, B and C of the decay of the 8 lines and their lengths
+// (floats), and the 32 taps of the diffuser (16 bits each), 192 bytes. Then
+// what only some songs have, at the offsets given: the 5 levels (floats) in
+// songs with a unit that sets one, the end of the taps of the diffuser (a
+// byte) in songs with a unit of fewer steps, and the bypass bits (a byte) in
+// songs whose units differ in them.
 type wasmReverbData struct {
-	ReverbData []byte
+	ReverbData                                                []byte
+	ReverbRecord, ReverbLevelsAt, ReverbEndAt, ReverbBypassAt int
 }
 
-func wasmReverb(b *vm.Bytecode) (ret wasmReverbData) {
+func wasmReverb(b *vm.Bytecode, macros *FeatureSetMacros, features wasmUnitFeatures) (ret wasmReverbData) {
+	ret.ReverbRecord = 192
+	if macros.ReverbLevels() {
+		ret.ReverbLevelsAt = ret.ReverbRecord
+		ret.ReverbRecord += 4 * len(vm.Reverb{}.Levels)
+	}
+	if macros.ReverbSteps() {
+		ret.ReverbEndAt = ret.ReverbRecord
+		ret.ReverbRecord++
+	}
+	if features.ReverbLowcutSwitch || features.ReverbHighcutSwitch {
+		ret.ReverbBypassAt = ret.ReverbRecord
+		ret.ReverbRecord++
+	}
 	for _, r := range b.Reverbs {
-		ret.ReverbData, _ = binary.Append(ret.ReverbData, binary.LittleEndian, r)
+		record, _ := binary.Append(nil, binary.LittleEndian, r) // the fields in their order
+		ret.ReverbData = append(ret.ReverbData, record[:192]...)
+		if ret.ReverbLevelsAt > 0 {
+			ret.ReverbData = append(ret.ReverbData, record[192:len(record)-2]...)
+		}
+		if ret.ReverbEndAt > 0 {
+			ret.ReverbData = append(ret.ReverbData, r.End)
+		}
+		if ret.ReverbBypassAt > 0 {
+			ret.ReverbData = append(ret.ReverbData, r.Bypass)
+		}
 	}
 	return ret
 }

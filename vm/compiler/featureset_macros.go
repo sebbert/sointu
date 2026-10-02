@@ -1,6 +1,9 @@
 package compiler
 
-import "github.com/vsariola/sointu/vm"
+import (
+	"github.com/vsariola/sointu"
+	"github.com/vsariola/sointu/vm"
+)
 
 type FeatureSetMacros struct {
 	vm.FeatureSet
@@ -57,6 +60,23 @@ func (p *FeatureSetMacros) LadderDrive() bool {
 // not 0, or something modulates it. Otherwise the wasm player leaves the
 // modulation out.
 func (p *FeatureSetMacros) ReverbMod() bool { return p.set("reverb", "mod", 0) }
+
+// ReverbLevels is true when a reverb unit has another gain, level or width
+// of the early reflections, width of the tail or rate of the modulation
+// than the Reverb module; otherwise they are constants in the wasm player.
+// ReverbSteps is true when the diffuser of a reverb unit has fewer steps.
+func (p *FeatureSetMacros) ReverbLevels() bool {
+	for name, value := range sointu.AddedParameters("reverb") {
+		if name != "steps" && name != "spread" && p.SupportsParamValueOtherThan("reverb", name, value) {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *FeatureSetMacros) ReverbSteps() bool {
+	return p.SupportsParamValueOtherThan("reverb", "steps", sointu.ReverbSteps)
+}
 
 // EnvelopeCurve is true when the envelopes of the song have the curve
 // parameter; otherwise the players leave the curved envelope out.

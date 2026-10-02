@@ -33,6 +33,11 @@ type wasmUnitFeatures struct {
 	SpawnNoSteal    bool // a spawn unit does not
 	SpawnArgs       int  // the most arguments a spawn unit passes
 	SpawnNoTarget   bool // a spawn unit has no instrument to spawn
+
+	ReverbLowcut        bool // a reverb unit has the low cut
+	ReverbHighcut       bool // a reverb unit has the high cut
+	ReverbLowcutSwitch  bool // and another leaves it out: a bit of the unit tells
+	ReverbHighcutSwitch bool
 }
 
 // unitFeatures finds the parts that the units of the song use. The song has
@@ -41,6 +46,13 @@ func unitFeatures(song *sointu.Song, b *vm.Bytecode) (f wasmUnitFeatures) {
 	for _, sp := range b.Spectra {
 		f.SpectralStereo = f.SpectralStereo || sp.Channels > 1
 	}
+	var lowcut, highcut [2]bool // a reverb unit has the filter, leaves it out
+	for _, r := range b.Reverbs {
+		lowcut[r.Bypass&sointu.ReverbBypassLowcut] = true
+		highcut[r.Bypass&sointu.ReverbBypassHighcut/sointu.ReverbBypassHighcut] = true
+	}
+	f.ReverbLowcut, f.ReverbLowcutSwitch = lowcut[0], lowcut[0] && lowcut[1]
+	f.ReverbHighcut, f.ReverbHighcutSwitch = highcut[0], highcut[0] && highcut[1]
 	for _, instr := range song.Patch {
 		for _, u := range instr.Units {
 			if u.Type == "" || u.Disabled {

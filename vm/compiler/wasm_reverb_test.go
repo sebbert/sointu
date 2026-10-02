@@ -1,6 +1,8 @@
 package compiler_test
 
 import (
+	"fmt"
+	"maps"
 	"os/exec"
 	"strings"
 	"testing"
@@ -39,7 +41,7 @@ func reverbTestSong(mod bool) sointu.Song {
 				{Type: "oscillator", Parameters: sointu.ParamMap{"stereo": 1, "transpose": 64, "detune": 70, "phase": 0, "color": 64, "shape": 64, "gain": 128, "type": sointu.Trisaw}},
 				{Type: "mulp", Parameters: sointu.ParamMap{"stereo": 1}},
 				{Type: "push", Parameters: sointu.ParamMap{"stereo": 1}},
-				{Type: "reverb", Parameters: sointu.ParamMap{"size": 20, "decay": 70, "highs": 100, "lows": 40, "predelay": 60, "mod": m(80), "highcut": 60, "lowcut": 20}},
+				{Type: "reverb", Parameters: reverbParams(sointu.ParamMap{"size": 20, "decay": 70, "highs": 100, "lows": 40, "predelay": 60, "mod": m(80), "highcut": 60, "lowcut": 20})},
 				{Type: "outaux", Parameters: sointu.ParamMap{"stereo": 1, "outgain": 64, "auxgain": 40}},
 				{Type: "outaux", Parameters: sointu.ParamMap{"stereo": 1, "outgain": 64, "auxgain": 40}},
 			}},
@@ -48,7 +50,7 @@ func reverbTestSong(mod bool) sointu.Song {
 				{Type: "noise", Parameters: sointu.ParamMap{"stereo": 0, "shape": 64, "gain": 128}},
 				{Type: "mulp", Parameters: sointu.ParamMap{"stereo": 0}},
 				{Type: "pan", Parameters: sointu.ParamMap{"stereo": 0, "panning": 64}},
-				{ID: 10, Type: "reverb", Parameters: sointu.ParamMap{"size": 128, "decay": 0, "highs": 128, "lows": 128, "predelay": 128, "mod": 0, "highcut": 128, "lowcut": 0}},
+				{ID: 10, Type: "reverb", Parameters: reverbParams(sointu.ParamMap{"size": 128, "decay": 0, "highs": 128, "lows": 128, "predelay": 128, "mod": 0, "highcut": 128, "lowcut": 0})},
 				{Type: "outaux", Parameters: sointu.ParamMap{"stereo": 1, "outgain": 64, "auxgain": 64}},
 				// a slow oscillator moves the high cut and the low cut
 				{Type: "oscillator", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 70, "detune": 64, "phase": 0, "color": 128, "shape": 64, "gain": 128, "type": sointu.Sine, "lfo": 1}},
@@ -58,8 +60,8 @@ func reverbTestSong(mod bool) sointu.Song {
 			{Name: "global", NumVoices: 1, Units: []sointu.Unit{
 				{Type: "in", Parameters: sointu.ParamMap{"stereo": 1, "channel": 2}},
 				{Type: "limiter", Parameters: sointu.ParamMap{"stereo": 1, "threshold": 100, "release": 64, "lookahead": 32, "drive": 0}},
-				{ID: 20, Type: "reverb", Parameters: sointu.ParamMap{"size": 64, "decay": 90, "highs": 48, "lows": 72, "predelay": 13, "mod": m(24), "highcut": 98, "lowcut": 56}},
-				{Type: "reverb", Parameters: sointu.ParamMap{"size": 0, "decay": 30, "highs": 0, "lows": 0, "predelay": 0, "mod": 0, "highcut": 0, "lowcut": 128}},
+				{ID: 20, Type: "reverb", Parameters: reverbParams(sointu.ParamMap{"size": 64, "decay": 90, "highs": 48, "lows": 72, "predelay": 13, "mod": m(24), "highcut": 98, "lowcut": 56})},
+				{Type: "reverb", Parameters: reverbParams(sointu.ParamMap{"size": 0, "decay": 30, "highs": 0, "lows": 0, "predelay": 0, "mod": 0, "highcut": 0, "lowcut": 128})},
 				{Type: "out", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128}},
 			}},
 		},
@@ -78,6 +80,15 @@ func reverbTestSong(mod bool) sointu.Song {
 			sointu.Unit{Type: "send", Parameters: sointu.ParamMap{"stereo": 0, "amount": 128, "target": 20, "port": 0, "sendpop": 1}})
 	}
 	return song
+}
+
+// reverbParams returns the parameters of a reverb unit: those given, and the
+// others as in the Reverb module.
+func reverbParams(params sointu.ParamMap) sointu.ParamMap {
+	p := sointu.ParamMap{}
+	maps.Copy(p, sointu.AddedParameters("reverb"))
+	maps.Copy(p, params)
+	return p
 }
 
 func TestReverbWasmMatchesGoSynth(t *testing.T) {
@@ -156,5 +167,112 @@ func TestReverbX86Refused(t *testing.T) {
 		if _, _, err := com.Song(&song); err == nil {
 			t.Errorf("compiling the reverb unit for %v succeeded, want an error", arch)
 		}
+	}
+}
+
+// TestReverbPartsOnlyWhenUsed checks, for songs whose reverb units set the
+// parameters that the Reverb module fixes, that the player has the code and
+// the data of what they use and nothing else, and renders them like the Go
+// synth. The first song has the defaults, and so the plain player.
+func TestReverbPartsOnlyWhenUsed(t *testing.T) {
+	node, _ := exec.LookPath("node")
+	wat2wasm, _ := exec.LookPath("wat2wasm")
+	const (
+		levels   = "(f32.load offset=192 (local.get $k))"
+		lowcut   = "(f32.load offset=8 (local.get $q))"
+		highcut  = "(f32.load offset=16 (local.get $q))"
+		coef     = "(func $reverbCoef"
+		switches = "(if (i32.eqz (i32.and (i32.load8_u offset="
+	)
+	ringAfter := "fewer steps, the ring starts where the one after the last step would.\n    (local.set $r (i32.add (i32.add"
+	room := sointu.ParamMap{"gain": 74, "early": 58, "earlywidth": 64, "tailwidth": 64, "modrate": 64, "steps": 3, "spread": 64, "diffuser": 200, "network": 400, "bypass": 7, "decay": 58, "highs": 48, "lows": 64, "mod": 8}
+	for _, c := range []struct {
+		name    string
+		units   []sointu.ParamMap // set on top of the defaults of the Reverb module
+		record  int               // bytes of constants for each unit
+		has     []string
+		hasNot  []string
+		reverbs int // sets of constants
+	}{
+		{"defaults", []sointu.ParamMap{{}}, 192, []string{lowcut, highcut, coef, "(f32.const 2.3713737)", "(f32.const 1.25) (f32.const 0.4216965)", "(f32.const 1.5)", "(i32.const 128)"}, []string{levels, ringAfter, switches}, 1},
+		{"gain", []sointu.ParamMap{{"gain": 60}}, 212, []string{levels, "offset=196", "offset=200", "offset=204", "offset=208", lowcut, highcut}, []string{ringAfter, switches, "(f32.const 2.3713737)"}, 1},
+		{"widths", []sointu.ParamMap{{}, {"earlywidth": 64, "tailwidth": 64, "size": 30}}, 212, []string{levels}, []string{ringAfter, switches}, 2},
+		{"modrate", []sointu.ParamMap{{"modrate": 90, "mod": 60}}, 212, []string{levels}, []string{"(f32.const 1.603417e-05)"}, 1},
+		{"steps", []sointu.ParamMap{{"steps": 2}, {"steps": 1, "size": 100}, {}}, 193, []string{ringAfter, "(i32.load8_u offset=192 (local.get $k))"}, []string{levels, "(i32.const 0x2000)"}, 3},
+		{"sizes", []sointu.ParamMap{{"network": 900, "diffuser": 333, "pretime": 777, "spread": 20}}, 192, []string{lowcut, highcut}, []string{levels, ringAfter, switches}, 1},
+		{"no predelay", []sointu.ParamMap{{"bypass": sointu.ReverbBypassPredelay}}, 192, []string{lowcut, highcut}, []string{levels, ringAfter, switches}, 1},
+		{"no low cut", []sointu.ParamMap{{"bypass": sointu.ReverbBypassLowcut}}, 192, []string{highcut, coef}, []string{lowcut, switches}, 1},
+		{"no high cut", []sointu.ParamMap{{"bypass": sointu.ReverbBypassHighcut}, {"bypass": sointu.ReverbBypassHighcut, "size": 10}}, 192, []string{lowcut, coef}, []string{highcut, switches}, 2},
+		{"no filters", []sointu.ParamMap{{"bypass": 3}}, 192, nil, []string{lowcut, highcut, coef, switches}, 1},
+		{"filters in some", []sointu.ParamMap{{"bypass": 3}, {}, {"bypass": 1, "size": 90}, {"bypass": 2, "size": 20}}, 193, []string{lowcut, highcut, coef, "(i32.load8_u offset=192 (local.get $k)) (i32.const 1)", "(i32.load8_u offset=192 (local.get $k)) (i32.const 2)"}, []string{levels}, 4},
+		{"low cut in some", []sointu.ParamMap{{"bypass": 2}, {"bypass": 3}}, 193, []string{lowcut, "(i32.const 1)))"}, []string{highcut}, 2},
+		{"room", []sointu.ParamMap{room}, 213, []string{levels, ringAfter, "(i32.load8_u offset=212 (local.get $k))"}, []string{lowcut, highcut, coef}, 1},
+		{"everything", []sointu.ParamMap{room, {}, {"bypass": 1, "steps": 2, "gain": 128, "early": 0, "mod": 0}}, 214, []string{levels, ringAfter, lowcut, highcut, "(i32.load8_u offset=212 (local.get $k))", "(i32.load8_u offset=213 (local.get $k))"}, nil, 3},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			units := []sointu.Unit{
+				{Type: "envelope", Parameters: sointu.ParamMap{"stereo": 1, "attack": 0, "decay": 50, "sustain": 20, "release": 50, "gain": 128}},
+				{Type: "noise", Parameters: sointu.ParamMap{"stereo": 1, "shape": 64, "gain": 128}},
+				{Type: "mulp", Parameters: sointu.ParamMap{"stereo": 1}},
+			}
+			for i, set := range c.units {
+				p := reverbParams(sointu.ParamMap{"size": 64, "decay": 90, "highs": 48, "lows": 72, "predelay": 13, "mod": 24, "highcut": 98, "lowcut": 56})
+				maps.Copy(p, set)
+				if i > 0 { // each in parallel, on a copy of the signal
+					units = append(units, sointu.Unit{Type: "xch", Parameters: sointu.ParamMap{"stereo": 1}})
+				}
+				if i+1 < len(c.units) {
+					units = append(units, sointu.Unit{Type: "push", Parameters: sointu.ParamMap{"stereo": 1}})
+				}
+				units = append(units, sointu.Unit{Type: "reverb", Parameters: p})
+				if i > 0 {
+					units = append(units, sointu.Unit{Type: "addp", Parameters: sointu.ParamMap{"stereo": 1}})
+				}
+			}
+			units = append(units, sointu.Unit{Type: "out", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128}})
+			song := sointu.Song{BPM: 120, RowsPerBeat: 4,
+				Score: sointu.Score{RowsPerPattern: 16, Length: 1, Tracks: []sointu.Track{
+					{NumVoices: 1, Order: sointu.Order{0}, Patterns: []sointu.Pattern{{60, 1, 0, 1, 1, 1, 64, 0, 1, 1, 1, 1, 1, 1, 1, 1}}},
+				}},
+				Patch: sointu.Patch{{Name: "reverbs", NumVoices: 1, Units: units}},
+			}
+			b, err := vm.NewBytecode(song.Patch, vm.NecessaryFeaturesFor(song.Patch), song.BPM)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(b.Reverbs) != c.reverbs {
+				t.Fatalf("the song has %d sets of constants, want %d", len(b.Reverbs), c.reverbs)
+			}
+			com, err := compiler.New("linux", "wasm", false, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			files, _, err := com.Song(&song)
+			if err != nil {
+				t.Fatalf("compiling failed: %v", err)
+			}
+			wat := files[".wat"]
+			if record := fmt.Sprintf("(i32.mul (call $scanOperand) (i32.const %d))", c.record); !strings.Contains(wat, record) {
+				t.Errorf("the player does not have %q", record)
+			}
+			for _, s := range c.has {
+				if !strings.Contains(wat, s) {
+					t.Errorf("the player does not have %q", s)
+				}
+			}
+			for _, s := range c.hasNot {
+				if strings.Contains(wat, s) {
+					t.Errorf("the player has %q", s)
+				}
+			}
+			if node == "" || wat2wasm == "" {
+				t.Skip("node or wat2wasm not found: not rendered")
+			}
+			want, err := sointu.Play(vm.GoSynther{}, song, nil)
+			if err != nil {
+				t.Fatalf("Go synth failed: %v", err)
+			}
+			compareWasmToGo(t, want, renderWasm(t, node, wat2wasm, song, nil, nil, nil))
+		})
 	}
 }

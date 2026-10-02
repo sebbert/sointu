@@ -8,9 +8,13 @@ import (
 // as one opcode: what the 23 units of the module compute, in the same
 // operations and the same order, so that it renders what the module renders,
 // without what the mc units need to be flexible: no bus, no table of units,
-// one function. What the module leaves to its units is fixed here: 8
-// channels, the seeds of the lengths and of the shuffles, the mixes, the
-// gains and widths of the two sums, the rate of the modulation.
+// one function. Of what the module leaves to its units, this is fixed here:
+// 8 channels, the seeds of the lengths and of the shuffles, the mixes. The
+// gains and widths of the two sums, the rate of the modulation, the number
+// of steps of the diffuser, the lengths and the filters of the input are
+// parameters of the unit, with the values of the module as defaults; the
+// wasm player has the code and the data for them only in songs that set
+// them.
 //
 // Three things are computed differently, with the same result for finite
 // signals (a zero can come out with the other sign):
@@ -41,20 +45,19 @@ const (
 	// reverbLog2Frames is the base 2 logarithm of the frames of the ring
 	// of the network, for 280 ms and 32 ms of modulation.
 	reverbLog2Frames = 14
-	// reverbSteps is the number of steps of the diffuser.
-	reverbSteps = 4
+)
+
+// The levels of a reverb unit, in Reverb.Levels.
+const (
+	reverbGain       = iota // the gain of the input, as that of mcspread
+	reverbEarlyGain         // the gain of the early reflections, as that of mcsum
+	reverbEarlyWidth        // twice the width of the early reflections
+	reverbTailWidth         // twice the width of the tail
+	reverbRate              // the rate of the modulation, in turns per sample
+	reverbLevels
 )
 
 var (
-	// reverbGain is the gain of the input (gain 76 of mcspread, +7.5 dB),
-	// reverbEarlyGain the gain of the early reflections (gain 52 of mcsum,
-	// -7.5 dB), reverbRate the rate of the modulation in turns per sample
-	// (modrate 56 of mcdelay, 0.71 Hz). The wasm player has them as
-	// constants.
-	reverbGain      = mcGain(76.0 / 128)
-	reverbEarlyGain = mcGain(52.0 / 128)
-	reverbRate      = float32(exp2f(float32(float32(56.0/128)*8)-4) * 2.2675737e-05)
-
 	// reverbTaps are the taps of the steps of the diffuser: for channel c
 	// of step k, the channel of the mcdelay of the step that it reads, which
 	// the shuffle of the step (mcmix of type shuffle with seed k+1) moves
@@ -62,7 +65,7 @@ var (
 	// step, and whether its sign is flipped: by the shuffle, and in the
 	// first step, which reads the stereo ring, also by the polarities of
 	// mcspread.
-	reverbTaps [reverbSteps][sointu.MCChannels]struct {
+	reverbTaps [sointu.ReverbSteps][sointu.MCChannels]struct {
 		source, offset int
 		negate         bool
 	}
@@ -100,9 +103,17 @@ func reverbFrameBytes(k int) int {
 // being written it reads its ring, in floats, twice, with bit 0 set if it
 // flips the sign: the delay of its channel, in the first step plus the
 // predelay, in frames, minus the offset of the channel in a frame.
+//
+// Levels are the gains, widths and the rate of the modulation, End is 32
+// times the number of steps of the diffuser, and Bypass tells which filters
+// of the input the unit leaves out. With the defaults of the parameters
+// that set them, they are what the Reverb module has, and the wasm player
+// has them as constants.
 type Reverb struct {
 	A, B, C, Lengths [sointu.MCChannels]float32
-	Taps             [reverbSteps][sointu.MCChannels]uint16
+	Taps             [sointu.ReverbSteps][sointu.MCChannels]uint16
+	Levels           [reverbLevels]float32
+	End, Bypass      uint8
 }
 
 // newReverb computes the constant data of a reverb unit from its
@@ -113,9 +124,31 @@ func newReverb(p sointu.ParamMap) Reverb {
 	delay := func(seed, size, spread int) *MCDelay {
 		return newMCDelay(sointu.ParamMap{"size": size, "spread": spread, "seed": seed, "hfdecay": 64, "lfdecay": 64})
 	}
-	predelay := delay(0, sointu.ReverbScale(p["predelay"], 1, 2000), 0).Lengths[0]
-	for k, s := range [reverbSteps][2]int{{100, 700}, {50, 350}, {25, 175}, {12, 88}} {
-		d := delay(k+1, sointu.ReverbScale(size, s[0], s[1]), 128)
+	level := func(name string) float32 { return float32(min(max(p[name], 0), 128)) / 128 }
+	r.Levels = [reverbLevels]float32{
+		reverbGain:       mcGain(level("gain")),
+		reverbEarlyGain:  mcGain(level("early")),
+		reverbEarlyWidth: float32(level("earlywidth") * 2),
+		reverbTailWidth:  float32(level("tailwidth") * 2),
+		reverbRate:       float32(exp2f(float32(level("modrate")*8)-4) * 2.2675737e-05),
+	}
+	steps := min(max(p["steps"], 1), sointu.ReverbSteps)
+	r.End = uint8(4 * sointu.MCChannels * steps)
+	r.Bypass = uint8(p["bypass"] & (sointu.ReverbBypassLowcut | sointu.ReverbBypassHighcut))
+	var predelay float32
+	if p["bypass"]&sointu.ReverbBypassPredelay == 0 {
+		size := sointu.ReverbScale(p["predelay"], 1, 2000)
+		if p["pretime"] > 0 {
+			size = min(p["pretime"], 2000)
+		}
+		predelay = delay(0, size, 0).Lengths[0]
+	}
+	for k, s := range [][2]int{{100, 700}, {50, 350}, {25, 175}, {12, 88}}[:steps] {
+		stepSize := sointu.ReverbScale(size, s[0], s[1])
+		if p["diffuser"] > 0 {
+			stepSize = max(min(p["diffuser"], 700)>>k, 1) // each step half the one before
+		}
+		d := delay(k+1, stepSize, 128)
 		for c, tap := range reverbTaps[k] {
 			l := d.Lengths[tap.source]
 			if k == 0 {
@@ -127,7 +160,11 @@ func newReverb(p sointu.ParamMap) Reverb {
 			}
 		}
 	}
-	d := newMCDelay(sointu.ParamMap{"size": sointu.ReverbScale(size, 400, 2800), "spread": 77, "seed": 7,
+	network := sointu.ReverbScale(size, 400, 2800)
+	if p["network"] > 0 {
+		network = min(p["network"], 2800)
+	}
+	d := newMCDelay(sointu.ParamMap{"size": network, "spread": p["spread"], "seed": 7,
 		"decay": p["decay"], "hfdecay": p["highs"], "lfdecay": p["lows"]})
 	r.A, r.B, r.C, r.Lengths = d.A, d.B, d.C, d.Lengths
 	return r
@@ -138,19 +175,19 @@ func newReverb(p sointu.ParamMap) Reverb {
 // own, one after the other in the order the units run (voice by voice), like
 // those of ott. They are not cleared when a note is triggered.
 type reverbState struct {
-	t               uint32                     // the sample
-	sum             float32                    // Σx/4 of the outputs of the lines
-	lowcut, highcut [2]float32                 // the states of the filters of the input
-	out             [sointu.MCChannels]float32 // the outputs of the lines
-	phase, lo, hi   [sointu.MCChannels]float32 // of the lines: the phase of the modulation, the decay filters
-	bus             [sointu.MCChannels]float32 // the diffused input
-	rings           [reverbSteps][]float32     // of the steps of the diffuser: the stereo ring, then frames of 8 channels
-	network         []float32                  // the ring of the network, frames of 8 channels
+	t               uint32                        // the sample
+	sum             float32                       // Σx/4 of the outputs of the lines
+	lowcut, highcut [2]float32                    // the states of the filters of the input
+	out             [sointu.MCChannels]float32    // the outputs of the lines
+	phase, lo, hi   [sointu.MCChannels]float32    // of the lines: the phase of the modulation, the decay filters
+	bus             [sointu.MCChannels]float32    // the diffused input
+	rings           [sointu.ReverbSteps][]float32 // of the steps of the diffuser: the stereo ring, then frames of 8 channels
+	network         []float32                     // the ring of the network, frames of 8 channels
 }
 
 func (st *reverbState) alloc() {
 	st.rings[0] = make([]float32, 2<<reverbStereoLog2)
-	for k := 1; k < reverbSteps; k++ {
+	for k := 1; k < sointu.ReverbSteps; k++ {
 		st.rings[k] = make([]float32, sointu.MCChannels<<(reverbStereoLog2-2-k))
 	}
 	st.network = make([]float32, sointu.MCChannels<<reverbLog2Frames)
@@ -192,22 +229,27 @@ func reverb(r *Reverb, st *reverbState, p *[8]float32, stack []float32) {
 	// the stereo ring
 	a, b := reverbCoef(p[2]), reverbCoef(p[1])
 	for j := range 2 {
-		x := float32(stack[n-1-j] * reverbGain)
-		lo := st.lowcut[j] + float32(a*(x-st.lowcut[j]))
-		st.lowcut[j] = lo
-		x -= lo
-		lo = st.highcut[j] + float32(b*(x-st.highcut[j]))
-		st.highcut[j] = lo
-		st.rings[0][(t&(1<<reverbStereoLog2-1))*2+uint32(j)] = lo
+		x := float32(stack[n-1-j] * r.Levels[reverbGain])
+		if r.Bypass&sointu.ReverbBypassLowcut == 0 {
+			lo := st.lowcut[j] + float32(a*(x-st.lowcut[j]))
+			st.lowcut[j] = lo
+			x -= lo
+		}
+		if r.Bypass&sointu.ReverbBypassHighcut == 0 {
+			x = st.highcut[j] + float32(b*(x-st.highcut[j]))
+			st.highcut[j] = x
+		}
+		st.rings[0][(t&(1<<reverbStereoLog2-1))*2+uint32(j)] = x
 		stack[n-1-j] = 0
 	}
 	// the diffuser: each step reads the 8 channels from its ring, delayed
 	// and shuffled, mixes them and writes them to the ring of the next
 	// step; the last one to the bus
-	for k := range reverbSteps {
+	steps := int(r.End) / (4 * sointu.MCChannels)
+	for k := range steps {
 		ring := st.rings[k]
 		x := &st.bus
-		if k+1 < reverbSteps {
+		if k+1 < steps {
 			x = (*[sointu.MCChannels]float32)(st.rings[k+1][(t&(1<<(reverbStereoLog2-3-k)-1))*sointu.MCChannels:])
 		}
 		at := t * uint32(reverbFrameBytes(k)/4) // frame t, in floats
@@ -228,7 +270,7 @@ func reverb(r *Reverb, st *reverbState, p *[8]float32, stack []float32) {
 	for c := range st.out {
 		st.network[(t&mask)*sointu.MCChannels+uint32(c)] = st.bus[c] + (st.out[c] - st.sum)
 		rate := float32(float32(c)*0.125) + 1
-		phase := st.phase[c] + float32(reverbRate*rate)
+		phase := st.phase[c] + float32(r.Levels[reverbRate]*rate)
 		phase -= floor32(phase)
 		st.phase[c] = phase
 		tri := phase + float32(float32(c)*0.125)
@@ -251,7 +293,7 @@ func reverb(r *Reverb, st *reverbState, p *[8]float32, stack []float32) {
 	st.sum = float32(float32(float32(reverbHalf(&st.out, 0)+reverbHalf(&st.out, 2))+float32(reverbHalf(&st.out, 1)+reverbHalf(&st.out, 3))) * 0.25)
 	// the early reflections, the diffused input, and the tail, the outputs
 	// of the lines
-	reverbSum(&st.bus, 1.25, reverbEarlyGain, stack)
-	reverbSum(&st.out, 1.5, 1, stack)
+	reverbSum(&st.bus, r.Levels[reverbEarlyWidth], r.Levels[reverbEarlyGain], stack)
+	reverbSum(&st.out, r.Levels[reverbTailWidth], 1, stack)
 	st.t = t + 1
 }

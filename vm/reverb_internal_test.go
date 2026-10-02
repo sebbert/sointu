@@ -11,7 +11,8 @@ import (
 // parameters, and that the others get their own.
 func TestReverbUnitsShareConstants(t *testing.T) {
 	reverb := func(size, mod int) sointu.Unit {
-		return sointu.Unit{Type: "reverb", Parameters: sointu.ParamMap{"size": size, "decay": 90, "highs": 48, "lows": 72, "predelay": 13, "mod": mod, "highcut": 98, "lowcut": 56}}
+		return sointu.Unit{Type: "reverb", Parameters: sointu.ParamMap{"size": size, "decay": 90, "highs": 48, "lows": 72, "predelay": 13, "mod": mod, "highcut": 98, "lowcut": 56,
+			"gain": 76, "early": 52, "earlywidth": 80, "tailwidth": 96, "modrate": 56, "steps": 4, "spread": 77}}
 	}
 	patch := sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{
 		{Type: "loadval", Parameters: sointu.ParamMap{"stereo": 1, "value": 64}},
@@ -43,7 +44,7 @@ func TestReverbUnitsShareConstants(t *testing.T) {
 func TestReverbTapsFit(t *testing.T) {
 	for _, size := range []int{0, 64, 128} {
 		for _, predelay := range []int{0, 128} {
-			r := newReverb(sointu.ParamMap{"size": size, "predelay": predelay, "decay": 90, "highs": 48, "lows": 72})
+			r := newReverb(sointu.ParamMap{"size": size, "predelay": predelay, "decay": 90, "highs": 48, "lows": 72, "steps": 4, "spread": 77})
 			var st reverbState
 			st.alloc()
 			for k, taps := range r.Taps {

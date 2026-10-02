@@ -402,6 +402,20 @@ var UnitTypes = map[string]UnitType{
 		// of the network. Each voice of the instrument has a reverb of its
 		// own. Songs that leave mod at 0 and do not modulate it compile
 		// without the modulation.
+		//
+		// The parameters after lowcut are what the module fixes in its
+		// units, with the values of the module as defaults: gain is the
+		// level of the input, early the level of the early reflections,
+		// earlywidth and tailwidth the stereo widths, modrate the rate of
+		// the modulation, steps the number of steps of the diffuser, spread
+		// how far the lines of the network differ in length. network and
+		// diffuser set the longest line of the network and of the first step
+		// of the diffuser (each further step half of it) instead of size,
+		// and pretime the predelay instead of predelay; bypass leaves the
+		// low cut, the high cut or the predelay out. With these the unit
+		// renders the presets Reverb FDN Room, Hall and Ambient. They are
+		// all read when the patch is encoded; a song whose units leave them
+		// at their defaults compiles to the same player as without them.
 		Params: []UnitParameter{
 			{Name: "size", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
 				return strconv.FormatFloat(float64(ReverbScale(v, 400, 2800))/10, 'f', 0, 64), "ms"
@@ -430,6 +444,19 @@ var UnitTypes = map[string]UnitType{
 			{Name: "lowcut", MinValue: 0, Default: 56, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
 				return reverbHzDispFunc(ReverbScale(v, 0, 85))
 			}},
+			{Name: "gain", MinValue: 0, Neutral: 64, Default: 76, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: mcGainDisplay},
+			{Name: "early", MinValue: 0, Neutral: 64, Default: 52, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: mcGainDisplay},
+			{Name: "earlywidth", MinValue: 0, Neutral: 64, Default: 80, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v * 100 / 64), "%" }},
+			{Name: "tailwidth", MinValue: 0, Neutral: 64, Default: 96, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v * 100 / 64), "%" }},
+			{Name: "modrate", MinValue: 0, Default: 56, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(MCModRateHz(float64(v)/128), 'g', 3, 64), "Hz"
+			}},
+			{Name: "steps", MinValue: 1, Default: ReverbSteps, MaxValue: ReverbSteps, CanSet: true, CanModulate: false},
+			{Name: "spread", MinValue: 0, Default: 77, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v * 100 / 128), "%" }},
+			{Name: "network", MinValue: 0, MaxValue: 2800, CanSet: true, CanModulate: false, DisplayFunc: reverbTimeDispFunc("by size")},
+			{Name: "diffuser", MinValue: 0, MaxValue: 700, CanSet: true, CanModulate: false, DisplayFunc: reverbTimeDispFunc("by size")},
+			{Name: "pretime", MinValue: 0, MaxValue: 2000, CanSet: true, CanModulate: false, DisplayFunc: reverbTimeDispFunc("by predelay")},
+			{Name: "bypass", MinValue: 0, MaxValue: 7, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"none", "lowcut", "highcut", "low+highcut", "predelay", "lowcut+pre", "highcut+pre", "all"})},
 		},
 		StackUse: func(u *Unit) StackUse {
 			return StackUse{Inputs: [][]int{{0, 1}, {0, 1}}, Modifies: []bool{true, true}, NumOutputs: 2}
@@ -1234,7 +1261,13 @@ var addedParameters = map[string]map[string]int{
 	"oscillator": {"bandlimit": 0},            // naive waveforms
 	"spcompress": {"attack": 0, "release": 0}, // no smoothing
 	"envelope":   {"curve": 0},                // linear
+	// as the Reverb module preset
+	"reverb": {"gain": 76, "early": 52, "earlywidth": 80, "tailwidth": 96, "modrate": 56, "steps": ReverbSteps, "spread": 77},
 }
+
+// AddedParameters returns the parameters added to a unit type after songs
+// were saved without them, with the values filled in for such songs.
+func AddedParameters(unitType string) map[string]int { return addedParameters[unitType] }
 
 // compile errors if interface is not implemented.
 var _ yaml.Unmarshaler = &Unit{}
@@ -1619,6 +1652,28 @@ func (p Patch) NumLimiters() int {
 // binding of the Reverb module does.
 func ReverbScale(v, lo, hi int) int {
 	return lo + int(math.Round(float64((hi-lo)*min(max(v, 0), 128))/128))
+}
+
+// ReverbSteps is the largest number of steps of the diffuser of a reverb
+// unit, and that of the Reverb module.
+const ReverbSteps = 4
+
+// The bits of the parameter bypass of a reverb unit: what it leaves out.
+const (
+	ReverbBypassLowcut = 1 << iota
+	ReverbBypassHighcut
+	ReverbBypassPredelay
+)
+
+// reverbTimeDispFunc displays a time in tenths of a millisecond, or what
+// sets the time when the value is 0.
+func reverbTimeDispFunc(zero string) func(int) (string, string) {
+	return func(v int) (string, string) {
+		if v <= 0 {
+			return zero, ""
+		}
+		return strconv.FormatFloat(float64(v)/10, 'f', 1, 64), "ms"
+	}
 }
 
 func reverbHzDispFunc(v int) (string, string) {

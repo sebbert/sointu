@@ -12,27 +12,58 @@
 ;;   channels, and one for the frame of the diffused input; then the ring of
 ;;   the network, 2^14 frames of 8 channels. The constants of the unit are at
 ;;   k: the coefficients A, B and C of the decay of the lines, their lengths
-;;   (96) and the taps of the diffuser (128).
+;;   (96) and the taps of the diffuser (128); and in songs with units that
+;;   differ in them, the gain of the input, the gain and twice the width of
+;;   the early reflections, twice the width of the tail and the rate of the
+;;   modulation, the end of the taps, and the bits of the filters that the
+;;   unit leaves out.
 ;;-------------------------------------------------------------------------------
 (func $su_op_reverb (param $stereo i32) (local $s i32) (local $k i32) (local $t i32) (local $c i32) (local $n i32) (local $r i32) (local $m i32) (local $i i32) (local $d i32) (local $q i32) (local $z i32) (local $e i32) (local $w i32)
     (local $a f32) (local $b f32) (local $x f32) (local $y f32) (local $f f32) (local $depth f32)
     (local.set $s (global.get $reverbWRK))
-    (local.set $k (i32.add (i32.mul (call $scanOperand) (i32.const 192)) (i32.const {{index .Labels "su_reverb_consts"}})))
+    (local.set $k (i32.add (i32.mul (call $scanOperand) (i32.const {{.ReverbRecord}})) (i32.const {{index .Labels "su_reverb_consts"}})))
     (local.set $t (i32.load (local.get $s)))
     ;; the input, times the gain, through the low cut and the high cut into
     ;; the stereo ring
+{{- /* $q is the state of the channel: set where it is first used */}}
+{{- $q := "(local.tee $q (i32.add (local.get $s) (local.get $c)))"}}
+{{- /* $out is where the filtered input is: a high cut that a unit can leave out filters it in place */}}
+{{- $out := "$x"}}
+{{- if and .ReverbHighcut (not .ReverbHighcutSwitch)}}{{$out = "$y"}}{{end}}
+{{- if .ReverbLowcut}}
     (local.set $a (call $reverbCoef (i32.const {{.InputNumber "reverb" "lowcut"}})))
+{{- end}}
+{{- if .ReverbHighcut}}
     (local.set $b (call $reverbCoef (i32.const {{.InputNumber "reverb" "highcut"}})))
+{{- end}}
     loop $input
-        (local.set $x (f32.mul (f32.load (local.tee $d (i32.add (global.get $sp) (local.get $c)))) (f32.const 2.3713737)))
-        (f32.store offset=8 (local.tee $q (i32.add (local.get $s) (local.get $c))) (local.tee $y (f32.add
+        (local.set $x (f32.mul (f32.load (local.tee $d (i32.add (global.get $sp) (local.get $c)))) {{if .ReverbLevelsAt}}(f32.load offset={{.ReverbLevelsAt}} (local.get $k)){{else}}(f32.const 2.3713737){{end}}))
+{{- if .ReverbLowcut}}
+{{- if .ReverbLowcutSwitch}}
+        (if (i32.eqz (i32.and (i32.load8_u offset={{.ReverbBypassAt}} (local.get $k)) (i32.const 1))) (then
+{{- end}}
+        (f32.store offset=8 {{$q}} (local.tee $y (f32.add
             (local.tee $y (f32.load offset=8 (local.get $q)))
             (f32.mul (local.get $a) (f32.sub (local.get $x) (local.get $y))))))
         (local.set $x (f32.sub (local.get $x) (local.get $y)))
-        (f32.store offset=16 (local.get $q) (local.tee $y (f32.add
+{{- if .ReverbLowcutSwitch}}
+        ))
+{{- end}}
+{{- if not .ReverbLowcutSwitch}}{{$q = "(local.get $q)"}}{{end}}
+{{- end}}
+{{- if .ReverbHighcut}}
+{{- if .ReverbHighcutSwitch}}
+        (if (i32.eqz (i32.and (i32.load8_u offset={{.ReverbBypassAt}} (local.get $k)) (i32.const 2))) (then
+{{- end}}
+        (f32.store offset=16 {{$q}} (local.tee {{$out}} (f32.add
             (local.tee $y (f32.load offset=16 (local.get $q)))
             (f32.mul (local.get $b) (f32.sub (local.get $x) (local.get $y))))))
-        (f32.store offset=160 (i32.add (local.get $q) (i32.and (local.tee $i (i32.shl (local.get $t) (i32.const 3))) (i32.const 0x1ffff))) (local.get $y))
+{{- if .ReverbHighcutSwitch}}
+        ))
+{{- end}}
+{{- if not .ReverbHighcutSwitch}}{{$q = "(local.get $q)"}}{{end}}
+{{- end}}
+        (f32.store offset=160 (i32.add {{$q}} (i32.and (local.tee $i (i32.shl (local.get $t) (i32.const 3))) (i32.const 0x1ffff))) (local.get {{$out}}))
         (f32.store (local.get $d) (f32.const 0))
         (br_if $input (local.tee $c (i32.xor (local.get $c) (i32.const 4))))
     end
@@ -83,13 +114,18 @@
         (local.set $r (local.get $q))
         (local.set $m (local.get $e))
         (local.set $i (local.get $z))
-        (br_if $steps (i32.lt_u (local.get $n) (i32.const 128)))
+        (br_if $steps (i32.lt_u (local.get $n) {{if .ReverbEndAt}}(i32.load8_u offset={{.ReverbEndAt}} (local.get $k)){{else}}(i32.const 128){{end}}))
     end
     ;; the network: each line is fed the diffused input plus the Householder
     ;; mix of the outputs of the lines in the last sample, and read at its
     ;; length plus the modulation, through its decay filter. r is channel c
-    ;; of the first frame of its ring, z the byte offset of frame t.
+    ;; of the first frame of its ring, z the byte offset of frame t. With
+    ;; fewer steps, the ring starts where the one after the last step would.
+{{- if .ReverbEndAt}}
+    (local.set $r (i32.add (i32.add (local.get $r) (local.get $m)) (i32.const 1)))
+{{- else}}
     (local.set $r (i32.add (local.get $r) (i32.const 0x2000)))
+{{- end}}
 {{- if .ReverbMod}}
     (local.set $depth (f32.mul (f32.mul (local.tee $x (call $input (i32.const {{.InputNumber "reverb" "mod"}}))) (local.get $x)) (f32.const 352.8)))
 {{- end}}
@@ -104,7 +140,7 @@
         (f32.store offset=64 (local.get $q) (local.tee $f (f32.sub
             (local.tee $f (f32.add
                 (f32.load offset=64 (local.get $q))
-                (f32.mul (f32.const 1.603417e-05) (f32.add (local.tee $y (f32.mul (f32.convert_i32_u (local.get $c)) (f32.const 0.03125))) (f32.const 1)))))
+                (f32.mul {{if .ReverbLevelsAt}}(f32.load offset={{add .ReverbLevelsAt 16}} (local.get $k)){{else}}(f32.const 1.603417e-05){{end}} (f32.add (local.tee $y (f32.mul (f32.convert_i32_u (local.get $c)) (f32.const 0.03125))) (f32.const 1)))))
             (f32.floor (local.get $f)))))
         (local.set $x (f32.min (f32.max (f32.add (local.get $x) (f32.mul (local.get $depth) (f32.abs (f32.sub
             (f32.mul (f32.sub (local.tee $f (f32.add (local.get $f) (local.get $y))) (f32.floor (local.get $f))) (f32.const 2))
@@ -138,12 +174,13 @@
         (f32.const 0.25)))
     ;; the early reflections, the diffused input, and the tail, the outputs
     ;; of the lines
-    (call $reverbSum (local.get $d) (f32.const 1.25) (f32.const 0.4216965))
-    (call $reverbSum (local.get $q) (f32.const 1.5) (f32.const 1))
+    (call $reverbSum (local.get $d) {{if .ReverbLevelsAt}}(f32.load offset={{add .ReverbLevelsAt 8}} (local.get $k)) (f32.load offset={{add .ReverbLevelsAt 4}} (local.get $k)){{else}}(f32.const 1.25) (f32.const 0.4216965){{end}})
+    (call $reverbSum (local.get $q) {{if .ReverbLevelsAt}}(f32.load offset={{add .ReverbLevelsAt 12}} (local.get $k)){{else}}(f32.const 1.5){{end}} (f32.const 1))
     (i32.store (local.get $s) (i32.add (local.get $t) (i32.const 1)))
     (global.set $reverbWRK (i32.add (local.get $s) (i32.const 778400)))
 )
 
+{{- if or .ReverbLowcut .ReverbHighcut}}
 ;; $reverbCoef returns the coefficient of the one-pole filters of the input,
 ;; as that of mcfilter: 1 - 2^(-2π·20·2^(10f)/44100·log2(e))
 (func $reverbCoef (param $input i32) (result f32)
@@ -151,6 +188,7 @@
         (call $exp2f (f32.mul (call $input (local.get $input)) (f32.const 10)))
         (f32.const -0.004110984))))
 )
+{{- end}}
 
 ;; $reverbHalf returns x[c] + x[c+4], for channel c at p
 (func $reverbHalf (param $p i32) (result f32)
