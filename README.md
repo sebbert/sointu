@@ -422,6 +422,16 @@ count towards the units of its instrument. In the tracker, the Modules tab
 edits them, and so do the units shown under an unfolded module unit; see
 [FORK.md](FORK.md#modules).
 
+An `eq` unit is a parametric equalizer: a list of bands (bell, low and high
+cut of 12 or 24 dB per octave, low and high shelf, notch, band-pass), each
+with a frequency, a gain and a Q, and a gain for the whole. Like the `module`
+unit it is expanded before the song is played or compiled: into `filter`,
+`belleq`, `ladder` and gain units, one to five for a band, none for a band
+that is off, so the players have nothing new. In the tracker it is edited on
+a plot of what those units do to each frequency, with a handle for every
+band; see [FORK.md](FORK.md#eq) for what each band costs and how near it
+comes, and `examples/eq.yml`.
+
 `bufread`, `bufwrite`, `spawn`, `arg`, `window`, `ott`, `limiter`, `softclip`,
 `width`, `ladder`, the spectral units,
 the mc units, bandlimited oscillators and curved envelopes are WebAssembly only

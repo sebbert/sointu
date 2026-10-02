@@ -1,8 +1,8 @@
 # Changes in the sebbert-custom branch
 
 This branch of Sointu adds macOS and CLAP plugins, audio samples and buffers,
-granular synthesis, spectral processing, modules (reusable blocks of units)
-and up to 255 voices. Most of the new
+granular synthesis, spectral processing, modules (reusable blocks of units),
+a graphical parametric equalizer and up to 255 voices. Most of the new
 synthesis features exist only in the Go synth and the WebAssembly player; the
 x86 players (`vm/compiler/templates/amd64-386`) and the native bridge were left
 behind on purpose. The [x86 backend](#updating-the-x86-backend) section lists
@@ -49,6 +49,7 @@ sounding the same (`addedParameters` in `patch.go`).
 - `Song.EncodingPresets`: named ffmpeg encodings that samples share.
 - `Song.Modules`: reusable blocks of units, and `Unit.Bind` in their units.
   See [Modules](#modules).
+- `Unit.Bands`: the bands of an `eq` unit. See [eq](#eq).
 
 ## New units
 
@@ -191,6 +192,147 @@ tracker shows the first problem and plays the rest.
 (a song with modules expands to, renders and compiles like the same song
 written without them, for wasm, 386 and amd64, and the wasm player renders
 it like the Go synth) and `tracker/module_test.go`.
+
+## eq
+
+A unit of the type `eq` is a parametric equalizer, edited on a plot in the
+tracker (see [Tracker](#tracker), EQ editor). It is not a unit of the
+synths: like the `module` unit it is virtual, and `Song.Expand` replaces
+it with a chain of `filter`, `belleq`, `ladder` and gain units before the
+song is played or compiled (`Unit.CompileEQ` in `eq.go`). Nothing in the VM
+or the players changed, a song with an eq compiles to exactly the player of
+the same song with those units written by hand, and songs without one
+compile as before. An eq whose bands are all off or do nothing expands to no
+units at all. Its units count towards the 63 of the instrument.
+
+```yaml
+- type: eq
+  parameters: {gain: -15, stereo: 1}
+  bands:
+    - {type: lowcut, frequency: 27, q: 1}
+    - {type: bell, frequency: 250, gain: -4, q: 1.4}
+    - {type: highshelf, frequency: 5000, gain: -3, q: 1, disabled: true}
+```
+
+**Data.** `Unit.Bands` is a list of `EQBand`: `type`, `frequency` in Hz,
+`gain` in dB (bells and shelves), `q` (0 or missing is the default of the
+type) and `disabled`. The unit has two parameters: `stereo`, and `gain`, the
+gain of the whole eq in tenths of a decibel (±24 dB). Any number of bands;
+the tracker adds up to 16. The eq takes and leaves one signal, or two in
+stereo. In a module it is expanded first, so its units are units of the
+module like any other; its parameters cannot be bound, and it has no ports
+for sends.
+
+**Bands.** What each compiles to, with the fewest units that do it:
+
+| Type | Units | Compiles to |
+|---|---|---|
+| `bell` | 1 (0 at 0 dB) | `belleq` |
+| `lowcut`, `highcut` (12 dB per octave) | 1 from Q 1, else 2 | `filter` (high-pass or low-pass); below Q 1 a `belleq` after it |
+| `lowcut24`, `highcut24` (24 dB per octave) | 3 for Q 0.54 to 1.31, 2 above, 4 below | two such stages with Q·0.765 and Q·1.848: Butterworth at Q 0.71 |
+| `ladder` (high cut, 24 dB per octave) | 1 | `ladder`; Go synth and wasm player only |
+| `lowshelf`, `highshelf` | 4, or 5 below Q 1 | `push`, `filter`, `gain`, `addp` (and `belleq`): the signal plus k times a filtered copy of it |
+| `notch` | 1 from Q 1 | `filter`, low-pass plus high-pass |
+| `bandpass` | 1 from Q 1 | `filter`, band-pass |
+
+and at the end of the eq one gain unit, if needed: for the `gain` of the eq,
+for every shelf that lowers, for the band-passes (the band-pass of the
+`filter` unit raises its center by Q) and for the ladders (whose resonance
+lowers the level). All of these are one factor, so one unit: `gain` (up to
+0 dB, in steps of 1/128) or `invgain` (from 0 dB), or `dbgain` (steps of
+0.625 dB) where it comes nearer by more than 0.1 dB. Below 0.1 dB the unit is
+left out.
+
+- **Q below 1.** The damping of the `filter` unit is its `resonance`, 1/Q,
+  which is at most 1: one unit cannot do a Q below 1, so not the 0.71 of a
+  cut that is flat up to its corner. With Q 1 the level is 1.25 dB up next
+  to the corner. A `belleq` after it makes up for it: the filter with Q 1
+  has the poles of s² + s + 1, and a bell that lowers by Q (as a factor,
+  -3 dB for 0.71) with the Q √Q is (s² + s + 1)/(s² + s/Q + 1), which
+  replaces them. That is why new cuts and shelves start with Q 1: one unit
+  less. A Butterworth cut of 24 dB per octave has the Qs 0.54 and 1.31,
+  one stage of each kind: 3 units.
+- **Shelves.** The `filter` unit has no shelf, and its outputs can only be
+  added with the factors 1, 0 and -1. So a shelf is the signal plus k times
+  its low-pass and band-pass (or high-pass and band-pass):
+  (s² + (d + k)s + 1 + k)/(s² + ds + 1) with d = 1/Q, which raises that end
+  by 1 + k. A shelf that lowers is the other shelf raising, with the whole
+  signal lowered by the gain unit at the end. While it runs, a shelf needs
+  one more signal on the stack (two in stereo).
+- **ladder.** The resonance of the `ladder` unit is set from Q: its poles
+  have Q 0.5 without feedback (4 one-pole low-passes in a row, -3 dB at the
+  frequency of the band and soft), 0.71 with the feedback 0.25, more above.
+  Its `frequency` is the one that puts the level 3 dB below that of the
+  bass at the frequency of the band. Its saturator bends loud signals (a
+  sine of level 0.5 gets about 1 % of third harmonic); the plot shows what
+  it does to quiet ones.
+
+**What the units can do, and what they cannot.** The parameters of the
+units are whole numbers from 0 to 128, so the bands are not exactly where
+they were put; `EQCompiledBand.Actual` has the values that the units have,
+and the editor shows them.
+
+- *Frequency.* `filter` has 2·asin(v²/32768)·44100/2π Hz: 27, 35, 43, 52,
+  62, 72, 84, 96, 110, 124 Hz from the value 8 on, steps of 14 % at 100 Hz
+  and 3 % at 2 kHz, up to 7350 Hz. `belleq` has 44100·v²/(16384π) Hz: 42,
+  55, 69, 86, 104, 123, 145, 168 Hz from 7 on, steps of 19 % at 100 Hz and
+  6 % at 1 kHz, up to 10.9 kHz (above the value 113 the unit comes back
+  down, as it computes the cosine of its frequency as a square root). So in
+  the bass a bell or a cut can be a few semitones from where it was put.
+- *Gain and Q.* A bell has steps of 0.625 dB up to ±24 dB (the unit: ±40),
+  and Q 32/n for n from 1 to 128: 0.25 to 32. A `filter` has Q 128/n: from
+  1 up.
+- *Bell, notch, band-pass, cuts with Q from 1:* one unit that is that
+  filter. A low cut with Q 1 is within 0.1 dB of the filter it is modelled
+  on up to 16 kHz; a notch within 0.5 dB.
+- *Cuts with Q below 1:* at 100 Hz within 0.3 dB of a Butterworth filter
+  (0.6 dB for 24 dB per octave), 0.7 dB at 1 kHz, 1.5 dB at 2 kHz and 4 dB
+  at 4 kHz, as the bell and the filter are warped differently.
+- *High cuts with `filter`:* its low-pass stops falling towards half the
+  sample rate. A high cut of 12 dB per octave at 2 kHz is -31 dB at 16 kHz
+  (-36 dB for the filter it is modelled on), at 4 kHz -16 dB (-24), at
+  5 kHz -11 dB, and at the highest frequency, 7350 Hz, it is back at 0 dB.
+  Above about 3 kHz the `ladder` type is the high cut: its -3 dB point goes
+  from 13 Hz to 21.7 kHz.
+- *Shelves:* k is what gives the two ends, at 10 Hz and 16 kHz, the gain
+  asked for between them (within 0.25 dB), and the frequency of the filter
+  the one with which the units come nearest to the shelf, with the middle
+  of the shelf, in dB, at the frequency. With Q 1 the level goes beyond the
+  shelf next to it: by 1.5 dB for a low shelf of ±6 dB, 2.4 dB for +12 dB,
+  0.6 to 1.4 dB for high shelves. With Q 0.71 (5 units) it does not. The
+  corner is from 20 Hz to 8 kHz. The high-pass of the `filter` unit rises
+  above 1 towards half the sample rate, and its band-pass does not fall to
+  0 there, which k and the gain unit make up for; a high shelf that lowers,
+  above 3 kHz, is the least like a shelf (up to 1.7 dB up below its corner).
+- *Not there:* cuts of 6 dB per octave, tilt, all-pass, and a high cut of
+  12 dB per octave above 3 kHz: the units have no one-pole filter. The
+  bands cannot be modulated. A fraction of a step of the frequency would
+  take a `loadval` and a `send` more for every band.
+
+**The response.** `EQResponse(units, frequency)` returns what a chain of
+units does to a sine: the product of the transfer functions of the units,
+from their difference equations at 44100 Hz, with their parameters as they
+are (and `push` and `addp` around a parallel path). For `filter`:
+low = f²z/D, band = f(z² - z)/D, high = (z - 1)²/D with
+D = z² + (rf + f² - 2)z + 1 - rf, f the frequency parameter squared and r
+the resonance. For `belleq` the peaking filter of the Audio EQ Cookbook
+with the cosine as the unit computes it; for `ladder`
+(1 + k/2)·L⁴/(1 + k·L⁴) with L = g(1 + z⁻¹)/(1 - (1 - 2g)z⁻¹). The plot of
+the editor draws this: of each band, and of all the units. Measured against
+it (`TestEQResponseMatchesSynth`): 40 sines from 20 Hz to 20 kHz through
+the units in the Go synth, for 27 bands of every type and for 8 bands in a
+row; the level of each is within 0.03 dB of the computed one.
+
+**Tests.** `eq_test.go` (the units of each band, the response against the
+Go synth and against the filters the bands are modelled on, shelves, YAML,
+expansion, also in modules), `vm/compiler/wasm_eq_test.go` (a song with an
+eq expands to, renders and compiles like the same song with the units
+written by hand, for wasm, 386 and amd64, and without a `ladder` band only
+for wasm; an eq that does nothing compiles like no eq; the wasm player
+renders it and `examples/eq.yml` exactly like the Go synth),
+`tracker/eq_test.go` (undo, a gesture as one step, numbers, saving, files,
+clipboard, modules) and `tracker/gioui/eq_editor_test.go` (the plot, the
+mouse and the keys, without a window).
 
 ## limiter
 
@@ -786,6 +928,45 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   wasm player renders them, the example and Global mastering 2 ducking like
   the Go synth) and `TestBuiltinModulePresetsCanonical` and
   `TestDuckingPresets` in `tracker/module_test.go`.
+- **EQ editor:** while the selected unit is an `eq` unit (see [eq](#eq)),
+  its editor is under the rack: a plot from 20 Hz to 20 kHz and ±24 dB with
+  the curve of every band, the curve of all the units (what is heard: see
+  the response there) and a numbered handle for every band, at the
+  frequency and the gain that its units have, or at 0 dB for a band without
+  gain. Under it the selected band: its type (a menu), on or off, its
+  frequency, gain and Q as numbers to type (`1.2k`, `-4,5 dB`), then what
+  it was compiled to (`→ 990 Hz · 3.12 dB · Q 1.23 · 1 unit`, with
+  `Go synth and wasm only` for a ladder), the number of units of the eq and
+  the gain of its gain unit. `examples/eq.yml` has three.
+  - *Mouse.* Dragging a handle changes the frequency and the gain, or for a
+    band without gain the frequency and the Q; with Shift a fifth as far;
+    with Alt the Q only (60 dp up doubles it). Scrolling over the plot
+    changes the Q of the band under the pointer, or of the selected one. A
+    double click on empty space adds a band there and drags it: a bell, a
+    low cut below 40 Hz, a `ladder` high cut above 12 kHz. A double click
+    on a handle removes its band; the right button switches it on or off.
+  - *Keys*, with the focus on the plot (Tab, or a click): Left and Right
+    select a band, Shift+Left and Shift+Right change its frequency by a
+    semitone, Up and Down its gain by 0.5 dB, Alt+Up and Alt+Down its Q by
+    a sixth of an octave, Alt+Left and Alt+Right its type; with Ctrl/Cmd the
+    steps are a quarter as large. Enter adds a band in the widest gap,
+    Ctrl/Cmd+Enter switches the band on or off, Delete removes it. The keys
+    of the notes still play.
+  - *Undo.* Every change goes through `Model.change`. A drag is one step of
+    the undo history, and so is what is scrolled within half a second
+    (`EQModel.BeginGesture`).
+  - *While playing*, the player gets the new units with every change. When
+    the units themselves change, not only their parameters (a band on or
+    off, a bell through 0 dB, a Q through 1, the gain unit coming or going),
+    the Go synth starts the units of every voice anew, as it does when a
+    unit is added: a click.
+  - *Spectrum.* Behind the curves is the spectrum of the master, from the
+    spectrum analyzer of the song panel (the louder channel, 0 to -90 dB
+    over the height of the plot), not of the signal at the eq: the synth
+    reports no signal of a unit. The button next to the unit count hides it.
+  - `tracker/eq.go` (`Model.EQ`), `tracker/gioui/eq_editor.go`
+    (`eqGeometry`, `eqHit`, `eqDragged`: where things are and what a drag
+    does, without a window).
 - **Global mastering presets** (UTIL), next to upstream's Global mastering,
   which is unchanged:
   - Global mastering reverb: the aux signal through the Reverb module, then
