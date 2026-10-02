@@ -98,6 +98,10 @@ type (
 		// e.g. to tell a plugin host that its project has unsaved changes
 		onChange func()
 
+		// remoteEdits counts the changes made through Remote, so that each
+		// is a step of its own in the undo history
+		remoteEdits int
+
 		prevUndoKind    string
 		undoSkipCounter int
 		undoStack       []modelData
