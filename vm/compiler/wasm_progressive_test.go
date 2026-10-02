@@ -56,6 +56,11 @@ const [oneshotFile, progressiveFile, ...bufferFiles] = process.argv.slice(2);
       console.error('split ' + JSON.stringify(split) + ': the song differs');
       failed = true;
     }
+    // the sync values, in songs that have them
+    if (one.y && !Buffer.from(exports.m.buffer, exports.y.value, exports.z.value).equals(Buffer.from(one.m.buffer, one.y.value, one.z.value))) {
+      console.error('split ' + JSON.stringify(split) + ': the sync values differ');
+      failed = true;
+    }
   }
   if (!want.some(v => v)) throw new Error('the song is silent');
   process.exit(failed ? 1 : 0);
@@ -133,9 +138,6 @@ func TestProgressiveWasmMatchesOneShot(t *testing.T) {
 			t.Parallel()
 			if strings.Contains(name, "sample") {
 				t.Skip("samples (gm.dls) are not supported by the wasm player")
-			}
-			if name == "test_sync" {
-				t.Skip("the sync unit is not supported by the wasm player")
 			}
 			data, err := os.ReadFile(f)
 			if err != nil {

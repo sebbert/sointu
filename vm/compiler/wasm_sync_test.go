@@ -33,9 +33,6 @@ func TestWasmMatchesGoSynth(t *testing.T) {
 			if strings.Contains(name, "sample") {
 				t.Skip("samples (gm.dls) are not supported by the wasm player")
 			}
-			if name == "test_sync" {
-				t.Skip("the sync unit is not supported by the wasm player")
-			}
 			data, err := os.ReadFile(f)
 			if err != nil {
 				t.Fatal(err)

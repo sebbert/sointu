@@ -37,6 +37,7 @@ type wasmStage struct {
 	SeedStep        uint32 // 16007 to the number of noise samples of the voices of the other stages
 	InCells         []uint32
 	OutCells        []uint32
+	Syncs           int     // sync values of the voices before it
 	Cost            float64 // estimated share of the rendering time
 	InstrumentNames string
 }
@@ -64,9 +65,11 @@ type wasmStageData struct {
 	StageRows      int
 	// NumStages is the number of stages of the pipeline, 0 without stages.
 	NumStages int
+	// StageRecordSize is the size of a stage in StageTable in bytes: in
+	// songs with sync values, a stage has a 14th i32, the offset of its
+	// first sync value among the values of a sample.
+	StageRecordSize int
 }
-
-const wasmStageRecordSize = 13 * 4
 
 // StageTapeBytes is the size of a tape: StageRows rows of StageTapeCells
 // cells for each sample.
@@ -167,7 +170,7 @@ func stageUnits(patch sointu.Patch) (units []stageUnit, byID map[int]stageUnit) 
 // with the given cuts (numbers of the first voices of the stages after the
 // first) if there are any. It returns the data for the player and a
 // description of the plan. The patch is expanded: it has no module units.
-func wasmStages(song *sointu.Song, features vm.FeatureSet, numStages int, cuts []int, rows int) (ret wasmStageData, report []string, err error) {
+func wasmStages(song *sointu.Song, features vm.FeatureSet, numStages int, cuts []int, rows int, rowSync bool) (ret wasmStageData, report []string, err error) {
 	if numStages < 2 && len(cuts) == 0 {
 		return ret, nil, nil
 	}
@@ -204,6 +207,7 @@ func wasmStages(song *sointu.Song, features vm.FeatureSet, numStages int, cuts [
 	noise := make([]int, len(patch))      // noise samples of a voice of the instrument
 	delayLines := make([]int, len(patch)) // delay lines of a voice
 	otts := make([]int, len(patch))
+	syncs := make([]int, len(patch)) // sync values of a voice
 	limiters := make([]int, len(patch))
 	cost := make([]float64, len(patch))
 	stack := make([]int, len(patch))
@@ -232,6 +236,8 @@ func wasmStages(song *sointu.Song, features vm.FeatureSet, numStages int, cuts [
 			delayLines[su.instr] += n
 		case "ott":
 			otts[su.instr]++
+		case "sync":
+			syncs[su.instr]++
 		case "limiter":
 			limiters[su.instr]++
 		case "spawn", "spcomb":
@@ -406,7 +412,10 @@ func wasmStages(song *sointu.Song, features vm.FeatureSet, numStages int, cuts [
 			Opcodes: starts[voiceInstr[first]][0], Operands: starts[voiceInstr[first]][1],
 			DelayLines: sum(delayLines, first), Otts: sum(otts, first), Limiters: sum(limiters, first),
 			SeedInit: pow(sum(noise, first)), SeedStep: pow(sum(noise, numVoices) - sum(noise, end) + sum(noise, first)),
-			Cost: (voiceCost[end] - voiceCost[first]) / total,
+			Cost: (voiceCost[end] - voiceCost[first]) / total, Syncs: sum(syncs, first),
+		}
+		if rowSync {
+			s.Syncs++ // the row comes first
 		}
 		var names []string
 		for i := voiceInstr[first]; i <= voiceInstr[end-1]; i++ {
@@ -435,11 +444,19 @@ func wasmStages(song *sointu.Song, features vm.FeatureSet, numStages int, cuts [
 	end := uint32(4 * len(ret.StageCells))
 	offsets = append(offsets, end, end, end) // the last stage writes no cells; the stage of all voices reads and writes none
 	ret.Stages = append(ret.Stages, stage(0, numVoices))
+	ret.StageRecordSize = 13 * 4
+	hasSyncs := rowSync || sum(syncs, numVoices) > 0
+	if hasSyncs {
+		ret.StageRecordSize += 4
+	}
 	for i, s := range ret.Stages {
 		ret.StageTable = append(ret.StageTable,
 			uint32(s.Opcodes), uint32(s.Operands), uint32(s.First*4096), uint32(numVoices-s.First), uint32(numVoices-s.End),
 			uint32(s.DelayLines*262156), uint32(s.Otts*44), uint32(s.Limiters*4112), s.SeedInit, s.SeedStep,
 			offsets[i], offsets[i+1], offsets[i+2])
+		if hasSyncs {
+			ret.StageTable = append(ret.StageTable, uint32(4*s.Syncs))
+		}
 	}
 	ret.StageRows = rows
 	return ret, report, nil

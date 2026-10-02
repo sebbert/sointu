@@ -36,7 +36,14 @@ const [oneshotFile, stagedFile] = process.argv.slice(2);
     const one = (await WebAssembly.instantiate(await WebAssembly.compile(fs.readFileSync(oneshotFile)), imports)).exports;
     want = Buffer.from(one.m.buffer, one.s.value, one.l.value);
     fs.writeFileSync(oneshotFile + '.raw', want);
+    if (one.y) fs.writeFileSync(oneshotFile + '.sync', Buffer.from(one.m.buffer, one.y.value, one.z.value));
   }
+  // the sync values, in songs that have them: a stage gets those of the
+  // stages before it for the chunk, and adds its own
+  const syncBytes = L.SyncValues * L.SyncTicks * 4;
+  const wantSync = syncBytes ? fs.readFileSync(oneshotFile + '.sync') : null;
+  const syncs = e => Buffer.from(e.m.buffer, L.Sync, syncBytes);
+  const syncRange = (row, n) => [Math.ceil(row * L.RowSamples / 256) * L.SyncValues * 4, Math.ceil((row + n) * L.RowSamples / 256) * L.SyncValues * 4];
   if (!want.some(v => v)) throw new Error('the song is silent');
   const module = await WebAssembly.compile(fs.readFileSync(stagedFile));
   const audio = e => Buffer.from(e.m.buffer, L.Output, L.OutputBytes);
@@ -45,6 +52,7 @@ const [oneshotFile, stagedFile] = process.argv.slice(2);
     ({ exports } = await WebAssembly.instantiate(module, imports));
     for (let row = 0; row < L.Rows; row += L.ChunkRows) exports.r(Math.min(L.ChunkRows, L.Rows - row));
     if (!audio(exports).equals(want)) throw new Error('the staged player differs without a stage selected');
+    if (syncBytes && !syncs(exports).equals(wantSync)) throw new Error('the sync values of the staged player differ without a stage selected');
   }
   // the pipeline
   let tapes = [];
@@ -54,9 +62,11 @@ const [oneshotFile, stagedFile] = process.argv.slice(2);
     const next = [];
     for (let row = 0, c = 0; row < L.Rows; row += L.ChunkRows, c++) {
       const n = Math.min(L.ChunkRows, L.Rows - row);
-      if (s > 0) new Uint8Array(exports.m.buffer, L.TapeIn).set(tapes[c]);
+      const [from, to] = syncRange(row, n);
+      if (s > 0) new Uint8Array(exports.m.buffer, L.TapeIn).set(tapes[c][0]);
+      if (s > 0) new Uint8Array(exports.m.buffer, L.Sync + from).set(tapes[c][1]);
       exports.r(n);
-      if (s < L.Stages - 1) next.push(new Uint8Array(exports.m.buffer, L.TapeOut, n * L.RowSamples * L.StageCells[s + 1] * 4).slice());
+      if (s < L.Stages - 1) next.push([new Uint8Array(exports.m.buffer, L.TapeOut, n * L.RowSamples * L.StageCells[s + 1] * 4).slice(), new Uint8Array(exports.m.buffer, L.Sync + from, to - from).slice()]);
     }
     if (s < L.Stages - 1 && audio(exports).some(v => v)) throw new Error('stage ' + s + ' wrote audio');
     tapes = next;
@@ -67,6 +77,8 @@ const [oneshotFile, stagedFile] = process.argv.slice(2);
     while (got[i] === want[i]) i++;
     throw new Error('the pipeline differs from byte ' + i + ' (frame ' + (i >> 3) + ')');
   }
+  if (syncBytes && !syncs(exports).equals(wantSync)) throw new Error('the sync values of the pipeline differ');
+  if (syncBytes && !wantSync.some(v => v)) throw new Error('the sync values are all zero');
 })().catch(e => { console.error(e.message); process.exit(1); });
 `
 
@@ -223,6 +235,7 @@ func TestStageCuts(t *testing.T) {
 	noise := sointu.Unit{Type: "noise", Parameters: p("stereo", 0, "shape", 64, "gain", 60)}
 	stereoNoise := sointu.Unit{Type: "noise", Parameters: p("stereo", 1, "shape", 64, "gain", 60)}
 	mulp := sointu.Unit{Type: "mulp", Parameters: p("stereo", 0)}
+	sync := sointu.Unit{Type: "sync", Parameters: p()}
 	addp := sointu.Unit{Type: "addp", Parameters: p("stereo", 0)}
 	out := sointu.Unit{Type: "out", Parameters: p("stereo", 0, "gain", 64)}
 	stereoOut := sointu.Unit{Type: "out", Parameters: p("stereo", 1, "gain", 64)}
@@ -261,6 +274,8 @@ func TestStageCuts(t *testing.T) {
 			[]sointu.Unit{env, send(7, 1, 0), osc(0), mulp, out}, []sointu.Unit{env, osc(7), mulp, out}, voice, []sointu.Unit{env, send(7, 1, 0), osc(0), mulp, out}), []int{}},
 		{"send to a port that is not cleared", stageTestSong(
 			[]sointu.Unit{env, send(7, 7, 0), osc(0), mulp, out}, voice, []sointu.Unit{env, osc(7), mulp, out}, voice), []int{3}},
+		{"sync units on both sides", stageTestSong(
+			[]sointu.Unit{env, sync, osc(0), mulp, out}, []sointu.Unit{env, noise, mulp, sync, out}, voice, []sointu.Unit{env, sync, osc(0), sync, mulp, out}), []int{1, 2, 3}},
 		{"signal passed on the stack", stageTestSong(
 			[]sointu.Unit{env, osc(0), mulp}, voice, []sointu.Unit{env, osc(0), mulp, addp, out}, voice), []int{3}},
 	} {
@@ -274,7 +289,7 @@ func TestStageCuts(t *testing.T) {
 	t.Run("polyphony", func(t *testing.T) {
 		// two instruments of three voices, the first sending to one voice of
 		// the second: cuts inside the instruments too
-		song := stageTestSong([]sointu.Unit{env, send(7, 1, 2), noise, mulp, delay, out}, []sointu.Unit{env, osc(7), mulp, delay, out})
+		song := stageTestSong([]sointu.Unit{env, send(7, 1, 2), noise, mulp, sync, delay, out}, []sointu.Unit{env, sync, osc(7), mulp, delay, out})
 		for i := range song.Patch {
 			song.Patch[i].NumVoices = 3
 			song.Score.Tracks[i].NumVoices = 3

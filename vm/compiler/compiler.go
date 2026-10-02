@@ -74,6 +74,33 @@ type WasmLayout struct {
 	TapeIn, TapeOut int
 	StageCells      []int
 	StageVoices     [][2]int // first voice and the voice after the last of each stage
+	// Sync is the address of the sync values, float32s: SyncValues for
+	// every 256th sample of the song, SyncTicks times. The values are the
+	// row with RowSync, then the signals at the sync units in the order
+	// they run. SyncValues is 0 in songs without.
+	Sync, SyncValues, SyncTicks int
+}
+
+// wasmSyncData is the layout of the sync values in the wasm player.
+type wasmSyncData struct {
+	NumSyncs  int // sync values of a sample: the sync units of all voices, and the row with RowSync
+	SyncBytes int // size of su_syncbuffer
+}
+
+// wasmSync counts the sync values of the song. The patch is expanded.
+func wasmSync(song *sointu.Song, rowSync bool) (ret wasmSyncData) {
+	for _, instr := range song.Patch {
+		for _, u := range instr.Units {
+			if u.Type == "sync" && !u.Disabled {
+				ret.NumSyncs += instr.NumVoices
+			}
+		}
+	}
+	if rowSync {
+		ret.NumSyncs++
+	}
+	ret.SyncBytes = (song.Score.LengthInRows()*song.SamplesPerRow() + 255) >> 8 * ret.NumSyncs * 4
+	return
 }
 
 // chunkRows returns the rows the players render at a time: ChunkRows, or
@@ -370,7 +397,7 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 			if (com.Stages > 1 || len(com.StageCuts) > 0) && !com.Progressive {
 				return nil, nil, errors.New("only the progressive player renders in stages")
 			}
-			stages, report, stageErr := wasmStages(song, features, com.Stages, com.StageCuts, com.chunkRows(song))
+			stages, report, stageErr := wasmStages(song, features, com.Stages, com.StageCuts, com.chunkRows(song), com.RowSync)
 			if stageErr != nil {
 				return nil, nil, stageErr
 			}
@@ -395,12 +422,17 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 				wasmMCData
 				wasmUnitFeatures
 				wasmStageData
-			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers, wasmSpectral(encodedPatch, units), wasmMC(encodedPatch, units, featureSetMacros.MCDelayMod()), units, stages}
+				wasmSyncData
+			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers, wasmSpectral(encodedPatch, units), wasmMC(encodedPatch, units, featureSetMacros.MCDelayMod()), units, stages, wasmSync(song, com.RowSync)}
 			populatedTemplate, extension, err = com.compile(templateName, &data)
 			com.Layout = &WasmLayout{
 				Output: wasmMacros.Labels["su_outputbuffer"], OutputBytes: wasmMacros.Labels["su_outputend"] - wasmMacros.Labels["su_outputbuffer"],
 				Rows: song.Score.LengthInRows(), RowSamples: song.SamplesPerRow(), ChunkRows: com.chunkRows(song),
 				Stages: stages.NumStages, TapeIn: wasmMacros.Labels["su_tape_in"], TapeOut: wasmMacros.Labels["su_tape_out"],
+				Sync: wasmMacros.Labels["su_syncbuffer"], SyncValues: data.NumSyncs,
+			}
+			if data.NumSyncs > 0 {
+				com.Layout.SyncTicks = data.SyncBytes / (4 * data.NumSyncs)
 			}
 			for _, s := range stages.Stages[:stages.NumStages] {
 				com.Layout.StageCells = append(com.Layout.StageCells, len(s.InCells))

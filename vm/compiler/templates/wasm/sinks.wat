@@ -171,6 +171,18 @@
 )
 {{end}}
 
+{{- if .HasOp "sync"}}
+;;-------------------------------------------------------------------------------
+;;   SYNC opcode: save the stack top to the sync buffer, every 256th sample
+;;-------------------------------------------------------------------------------
+(func $su_op_sync (param $stereo i32)
+    (if (i32.eqz (i32.and (global.get $globaltick) (i32.const 255))) (then
+        (f32.store (global.get $syncBufPtr) (call $peek))
+        (global.set $syncBufPtr (i32.add (global.get $syncBufPtr) (i32.const 4)))
+    ))
+)
+{{end}}
+
 {{- if .HasOp "speed"}}
 ;;-------------------------------------------------------------------------------
 ;;   SPEED opcode: modulate the speed (bpm) of the song based on ST0

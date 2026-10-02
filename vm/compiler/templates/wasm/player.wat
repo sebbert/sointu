@@ -274,6 +274,15 @@
 {{- .Block (int (mul .PatternLength .SequenceLength .Song.SamplesPerRow 8))}}
 {{- end}}
 {{- .SetBlockLabel "su_outputend"}}
+{{- if .NumSyncs}}
+{{- /*
+;-------------------------------------------------------------------------------
+;    The sync values: for every 256th sample, {{.NumSyncs}} floats
+;-------------------------------------------------------------------------------
+*/}}
+{{- .SetBlockLabel "su_syncbuffer"}}
+{{- .Block .SyncBytes}}
+{{- end}}
 {{- if .NumStages}}
 {{- .SetBlockLabel "su_tape_in"}}
 {{- .Block (.StageTapeBytes .Song.SamplesPerRow)}}
@@ -344,10 +353,18 @@
 (global $outputLength (export "l") i32 (i32.const {{if .Output16Bit}}{{mul .PatternLength .SequenceLength .Song.SamplesPerRow 4}}{{else}}{{mul .PatternLength .SequenceLength .Song.SamplesPerRow 8}}{{end}}))
 (global $output16bit (export "t") i32 (i32.const {{if .Output16Bit}}1{{else}}0{{end}}))
 {{- end}}
+{{- if .NumSyncs}}
+(global $syncBufPtr (mut i32) (i32.const 0))
+{{- if not .JS}}
+;; the sync values: {{.NumSyncs}} floats for every 256th sample
+(global $syncStart (export "y") i32 (i32.const {{index .Labels "su_syncbuffer"}}))
+(global $syncLength (export "z") i32 (i32.const {{.SyncBytes}}))
+{{- end}}
+{{- end}}
 {{- if .NumStages}}
-;; the stage this instance runs, as the address of its 13 i32s in su_stages:
+;; the stage this instance runs, as the address of its i32s in su_stages:
 ;; at first the stage after those of the pipeline, which runs all voices
-(global $stage (mut i32) (i32.const {{add (index .Labels "su_stages") (mul .NumStages 52)}}))
+(global $stage (mut i32) (i32.const {{add (index .Labels "su_stages") (mul .NumStages .StageRecordSize)}}))
 (global $tapeIn (mut i32) (i32.const 0))
 (global $tapeOut (mut i32) (i32.const 0))
 {{- end}}
@@ -447,6 +464,28 @@
             (call $su_update_voices)
             (global.set $sample (i32.const 0))
             loop $sample_loop
+{{- if .NumSyncs}}
+                (if (i32.eqz (i32.and (global.get $globaltick) (i32.const 255))) (then
+                    ;; the sync values of this sample: its {{.NumSyncs}} floats
+                    (global.set $syncBufPtr (i32.add
+                        (i32.const {{index .Labels "su_syncbuffer"}})
+                        (i32.mul (i32.shr_u (global.get $globaltick) (i32.const 8)) (i32.const {{mul .NumSyncs 4}}))
+                    ))
+{{- if .RowSync}}
+                    ;; the row, with the fraction of the samples
+                    (f32.store (global.get $syncBufPtr) (f32.add
+                        (f32.div (f32.convert_i32_s (global.get $sample)) (f32.const {{.Song.SamplesPerRow}}))
+                        (f32.convert_i32_s (i32.add (i32.mul (global.get $pattern) (i32.const {{.PatternLength}})) (global.get $row)))
+                    ))
+{{- end}}
+{{- if .NumStages}}
+                    ;; the values of the voices of this stage follow those of the stages before it
+                    (global.set $syncBufPtr (i32.add (global.get $syncBufPtr) (i32.load offset=52 (global.get $stage))))
+{{- else if .RowSync}}
+                    (global.set $syncBufPtr (i32.add (global.get $syncBufPtr) (i32.const 4)))
+{{- end}}
+                ))
+{{- end}}
 {{- if .NumStages}}
                 (global.set $COM (i32.add (i32.const {{index .Labels "su_patch_opcodes"}}) (i32.load (global.get $stage))))
                 (global.set $VAL (i32.add (i32.const {{index .Labels "su_patch_operands"}}) (i32.load offset=4 (global.get $stage))))
@@ -521,7 +560,7 @@
 ;; one of the {{.NumStages}} stages of the pipeline. Without the call, the instance
 ;; runs all voices.
 (func (export "g") (param $s i32)
-    (global.set $stage (i32.add (i32.const {{index .Labels "su_stages"}}) (i32.mul (local.get $s) (i32.const 52))))
+    (global.set $stage (i32.add (i32.const {{index .Labels "su_stages"}}) (i32.mul (local.get $s) (i32.const {{.StageRecordSize}}))))
 {{- if .HasOp "noise"}}
     (global.set $randseed (i32.load offset=32 (global.get $stage)))
 {{- end}}
