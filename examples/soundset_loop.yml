@@ -1,0 +1,551 @@
+bpm: 140
+rowsperbeat: 4
+score:
+    tracks:
+        - numvoices: 1
+          order: [0, 0, 0, 0, 0, 0, 0, 0]
+          patterns: [[45, 1, 0, 0, 45, 1, 0, 0, 45, 1, 0, 0, 45, 1, 0, 0]]
+        - numvoices: 1
+          order: [0, 0, 0, 0, 0, 0, 0, 0]
+          patterns: [[0, 0, 0, 0, 60, 1, 0, 0, 0, 0, 0, 0, 60, 1, 0, 0]]
+        - numvoices: 1
+          order: [0, 0, 0, 0, 0, 0, 0, 0]
+          patterns: [[84, 84, 0, 84, 84, 84, 0, 84, 84, 84, 0, 84, 84, 84, 0, 84]]
+        - numvoices: 1
+          order: [0, 0, 0, 0, 0, 0, 0, 0]
+          patterns: [[0, 0, 84, 0, 0, 0, 84, 0, 0, 0, 84, 0, 0, 0, 84, 0]]
+        - numvoices: 1
+          order: [0, 0, 0, 1, 0, 0, 0, 2]
+          patterns: [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 66, 0, 66, 66], [0, 0, 0, 0, 0, 0, 0, 0, 66, 0, 66, 0, 66, 66, 66, 66]]
+        - numvoices: 1
+          order: [0, 0, 0, 0, 0, 0, 0, 1]
+          patterns: [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 64, 0, 0, 57, 0, 0, 52, 0, 0, 0]]
+        - numvoices: 1
+          order: [0, 1, 2, 2, 0, 1, 2, 2]
+          patterns: [[84, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]
+        - numvoices: 1
+          order: [0, 1, 2, 3, 0, 1, 2, 3]
+          patterns: [[45, 0, 45, 57, 0, 45, 48, 0, 45, 0, 57, 45, 0, 52, 48, 0], [41, 0, 41, 53, 0, 41, 44, 0, 41, 0, 53, 41, 0, 48, 44, 0], [48, 0, 48, 60, 0, 48, 51, 0, 48, 0, 60, 48, 0, 55, 51, 0], [43, 0, 43, 55, 0, 43, 46, 0, 43, 0, 55, 43, 0, 50, 46, 0]]
+        - numvoices: 1
+          order: [0, 1, 2, 2, 0, 1, 2, 2]
+          patterns: [[69, 1, 1, 0, 69, 1, 1, 1, 1, 1, 0, 69, 1, 1, 0, 0], [65, 1, 1, 0, 65, 1, 1, 1, 1, 1, 0, 65, 1, 1, 0, 0], [67, 1, 1, 0, 67, 1, 1, 1, 1, 1, 0, 67, 1, 1, 0, 0]]
+        - numvoices: 1
+          order: [0, 1, 0, 2, 0, 1, 0, 2]
+          patterns: [[72, 1, 1, 0, 72, 1, 1, 1, 1, 1, 0, 72, 1, 1, 0, 0], [69, 1, 1, 0, 69, 1, 1, 1, 1, 1, 0, 69, 1, 1, 0, 0], [71, 1, 1, 0, 71, 1, 1, 1, 1, 1, 0, 71, 1, 1, 0, 0]]
+        - numvoices: 1
+          order: [0, 1, 0, 2, 0, 1, 0, 2]
+          patterns: [[76, 1, 1, 0, 76, 1, 1, 1, 1, 1, 0, 76, 1, 1, 0, 0], [72, 1, 1, 0, 72, 1, 1, 1, 1, 1, 0, 72, 1, 1, 0, 0], [74, 1, 1, 0, 74, 1, 1, 1, 1, 1, 0, 74, 1, 1, 0, 0]]
+        - numvoices: 1
+          order: [0, 0, 0, 0, 0, 0, 0, 0]
+          patterns: [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]
+    rowsperpattern: 16
+    length: 8
+patch:
+    - name: Club 909 kick
+      comment: 'A 909-style kick: a sine that sweeps down to the note. Suggested notes: G-1 to A-1. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes and softclip: Go synth and wasm player only.'
+      numvoices: 1
+      units:
+        - type: envelope
+          id: 1
+          parameters: {attack: 0, curve: 104, decay: 60, gain: 128, release: 60, stereo: 0, sustain: 0}
+          comment: 'Pitch sweep: decay is how long it takes'
+        - type: send
+          id: 2
+          parameters: {amount: 80, port: 0, sendpop: 1, stereo: 0, target: 4, voice: 0}
+          comment: 'How far above the note the sweep starts: 16 steps are 32 semitones'
+        - type: envelope
+          id: 3
+          parameters: {attack: 0, curve: 80, decay: 74, gain: 128, release: 74, stereo: 0, sustain: 0}
+          comment: 'The length of the body: decay, and release for notes released before it ends'
+        - type: oscillator
+          id: 4
+          parameters: {bandlimit: 0, color: 128, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+        - type: mulp
+          id: 5
+          parameters: {stereo: 0}
+        - type: softclip
+          id: 6
+          parameters: {drive: 12, knee: 64, oversample: 0, stereo: 0}
+          comment: 'Saturation: drive flattens the top of the body, which makes it louder at the same peak, and sharpens the click'
+        - type: pan
+          id: 7
+          parameters: {panning: 64, stereo: 0}
+        - type: aux
+          id: 8
+          parameters: {channel: 6, gain: 128, stereo: 1}
+          comment: To the drum bus of the Global instrument; in the preset this is an out unit
+    - name: Club 909 clap
+      comment: 'A 909-style clap: band-passed noise in four bursts, then a tail. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes: Go synth and wasm player only.'
+      numvoices: 1
+      units:
+        - type: envelope
+          id: 9
+          parameters: {attack: 0, curve: 64, decay: 46, gain: 128, release: 46, stereo: 0, sustain: 0}
+          comment: One burst
+        - type: delay
+          id: 10
+          parameters: {damp: 0, dry: 128, feedback: 0, notetracking: 0, pregain: 128, stereo: 0}
+          varargs: [485, 970, 1455]
+          comment: Repeats the burst three times; the delay times are the gaps, in samples
+        - type: envelope
+          id: 11
+          parameters: {attack: 0, curve: 64, decay: 72, gain: 96, release: 72, stereo: 0, sustain: 0}
+          comment: 'The tail: decay is its length, gain its level'
+        - type: addp
+          id: 12
+          parameters: {stereo: 0}
+        - type: noise
+          id: 13
+          parameters: {gain: 128, shape: 64, stereo: 0}
+        - type: mulp
+          id: 14
+          parameters: {stereo: 0}
+        - type: filter
+          id: 15
+          parameters: {bandpass: 1, frequency: 52, highpass: 0, lowpass: 0, resonance: 48, stereo: 0}
+          comment: 'The colour of the clap: frequency, and resonance for how narrow'
+        - type: pan
+          id: 16
+          parameters: {panning: 64, stereo: 0}
+        - type: aux
+          id: 17
+          parameters: {channel: 6, gain: 118, stereo: 1}
+          comment: To the drum bus of the Global instrument; in the preset this is an out unit
+    - name: Club 909 hat closed
+      comment: 'A closed hi-hat: frequency modulated square waves and noise, through a low cut and a band-pass. Suggested note: C-5; the note tunes the metal. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes: Go synth and wasm player only.'
+      numvoices: 1
+      units:
+        - type: oscillator
+          id: 18
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 107, type: 2, unison: 0}
+          comment: Modulator
+        - type: send
+          id: 19
+          parameters: {amount: 70, port: 6, sendpop: 1, stereo: 0, target: 20, voice: 0}
+          comment: 'How metallic: the amount of frequency modulation'
+        - type: oscillator
+          id: 20
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 64, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 95, type: 2, unison: 0}
+          comment: 'The metal: a square wave, frequency modulated into a dense, inharmonic spectrum'
+        - type: noise
+          id: 21
+          parameters: {gain: 40, shape: 64, stereo: 0}
+          comment: The level of the noise against the metal
+        - type: addp
+          id: 22
+          parameters: {stereo: 0}
+        - type: envelope
+          id: 23
+          parameters: {attack: 0, curve: 96, decay: 60, gain: 128, release: 60, stereo: 0, sustain: 0}
+          comment: decay is the length
+        - type: mulp
+          id: 24
+          parameters: {stereo: 0}
+        - type: filter
+          id: 25
+          parameters: {bandpass: 0, frequency: 100, highpass: 1, lowpass: 0, resonance: 128, stereo: 0}
+          comment: Low cut
+        - type: filter
+          id: 26
+          parameters: {bandpass: 1, frequency: 120, highpass: 0, lowpass: 0, resonance: 64, stereo: 0}
+          comment: 'The band that is left: frequency is its centre'
+        - type: pan
+          id: 27
+          parameters: {panning: 64, stereo: 0}
+        - type: aux
+          id: 28
+          parameters: {channel: 6, gain: 23, stereo: 1}
+          comment: To the drum bus of the Global instrument; in the preset this is an out unit
+    - name: Club 909 hat open
+      comment: 'An open hi-hat: like Club 909 hat closed with a long decay. Releasing the note chokes it. Suggested note: C-5; the note tunes the metal. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes: Go synth and wasm player only.'
+      numvoices: 1
+      units:
+        - type: oscillator
+          id: 29
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 107, type: 2, unison: 0}
+          comment: Modulator
+        - type: send
+          id: 30
+          parameters: {amount: 70, port: 6, sendpop: 1, stereo: 0, target: 31, voice: 0}
+          comment: 'How metallic: the amount of frequency modulation'
+        - type: oscillator
+          id: 31
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 64, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 95, type: 2, unison: 0}
+          comment: 'The metal: a square wave, frequency modulated into a dense, inharmonic spectrum'
+        - type: noise
+          id: 32
+          parameters: {gain: 40, shape: 64, stereo: 0}
+          comment: The level of the noise against the metal
+        - type: addp
+          id: 33
+          parameters: {stereo: 0}
+        - type: envelope
+          id: 34
+          parameters: {attack: 0, curve: 80, decay: 78, gain: 128, release: 54, stereo: 0, sustain: 0}
+          comment: decay is the length; release is how fast it is choked when the note is released
+        - type: mulp
+          id: 35
+          parameters: {stereo: 0}
+        - type: filter
+          id: 36
+          parameters: {bandpass: 0, frequency: 100, highpass: 1, lowpass: 0, resonance: 128, stereo: 0}
+          comment: Low cut
+        - type: filter
+          id: 37
+          parameters: {bandpass: 1, frequency: 120, highpass: 0, lowpass: 0, resonance: 64, stereo: 0}
+          comment: 'The band that is left: frequency is its centre'
+        - type: pan
+          id: 38
+          parameters: {panning: 64, stereo: 0}
+        - type: aux
+          id: 39
+          parameters: {channel: 6, gain: 15, stereo: 1}
+          comment: To the drum bus of the Global instrument; in the preset this is an out unit
+    - name: Club 909 snare
+      comment: 'A 909-style snare: a sine body with a short pitch drop and band-passed noise. Suggested notes: around F#3; the note tunes the body. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes and softclip: Go synth and wasm player only.'
+      numvoices: 1
+      units:
+        - type: envelope
+          id: 40
+          parameters: {attack: 0, curve: 96, decay: 50, gain: 128, release: 50, stereo: 0, sustain: 0}
+          comment: Pitch drop of the body
+        - type: send
+          id: 41
+          parameters: {amount: 72, port: 0, sendpop: 1, stereo: 0, target: 43, voice: 0}
+          comment: How far above the note the body starts
+        - type: envelope
+          id: 42
+          parameters: {attack: 0, curve: 96, decay: 64, gain: 128, release: 64, stereo: 0, sustain: 0}
+          comment: The length of the body
+        - type: oscillator
+          id: 43
+          parameters: {bandlimit: 0, color: 128, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+          comment: The body; gain is its level against the noise
+        - type: mulp
+          id: 44
+          parameters: {stereo: 0}
+        - type: envelope
+          id: 45
+          parameters: {attack: 0, curve: 80, decay: 68, gain: 128, release: 68, stereo: 0, sustain: 0}
+          comment: The length of the noise (snappy)
+        - type: noise
+          id: 46
+          parameters: {gain: 72, shape: 64, stereo: 0}
+        - type: mulp
+          id: 47
+          parameters: {stereo: 0}
+        - type: filter
+          id: 48
+          parameters: {bandpass: 1, frequency: 100, highpass: 0, lowpass: 0, resonance: 128, stereo: 0}
+          comment: 'The band of the noise: frequency is its centre'
+        - type: addp
+          id: 49
+          parameters: {stereo: 0}
+        - type: softclip
+          id: 50
+          parameters: {drive: 8, knee: 64, oversample: 0, stereo: 0}
+        - type: pan
+          id: 51
+          parameters: {panning: 64, stereo: 0}
+        - type: aux
+          id: 52
+          parameters: {channel: 6, gain: 100, stereo: 1}
+          comment: To the drum bus of the Global instrument; in the preset this is an out unit
+    - name: Club 909 tom
+      comment: 'A 909-style tom: a sine with a pitch drop. Suggested notes: E-2 (low) to A-3 (high). To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes and softclip: Go synth and wasm player only.'
+      numvoices: 1
+      units:
+        - type: envelope
+          id: 53
+          parameters: {attack: 0, curve: 96, decay: 58, gain: 128, release: 58, stereo: 0, sustain: 0}
+          comment: Pitch drop
+        - type: send
+          id: 54
+          parameters: {amount: 70, port: 0, sendpop: 1, stereo: 0, target: 56, voice: 0}
+          comment: How far above the note it starts
+        - type: envelope
+          id: 55
+          parameters: {attack: 0, curve: 88, decay: 74, gain: 128, release: 74, stereo: 0, sustain: 0}
+          comment: The length
+        - type: oscillator
+          id: 56
+          parameters: {bandlimit: 0, color: 128, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+        - type: mulp
+          id: 57
+          parameters: {stereo: 0}
+        - type: softclip
+          id: 58
+          parameters: {drive: 8, knee: 64, oversample: 0, stereo: 0}
+        - type: pan
+          id: 59
+          parameters: {panning: 64, stereo: 0}
+        - type: aux
+          id: 60
+          parameters: {channel: 6, gain: 90, stereo: 1}
+          comment: To the drum bus of the Global instrument; in the preset this is an out unit
+    - name: Club 909 crash
+      comment: 'A crash cymbal: more noise than metal, long. Suggested note: C-5; the note tunes the metal. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes: Go synth and wasm player only.'
+      numvoices: 1
+      units:
+        - type: oscillator
+          id: 61
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 107, type: 2, unison: 0}
+          comment: Modulator
+        - type: send
+          id: 62
+          parameters: {amount: 74, port: 6, sendpop: 1, stereo: 0, target: 63, voice: 0}
+          comment: 'How metallic: the amount of frequency modulation'
+        - type: oscillator
+          id: 63
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 64, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 95, type: 2, unison: 0}
+          comment: 'The metal: a square wave, frequency modulated into a dense, inharmonic spectrum'
+        - type: noise
+          id: 64
+          parameters: {gain: 64, shape: 64, stereo: 0}
+          comment: The level of the noise against the metal
+        - type: addp
+          id: 65
+          parameters: {stereo: 0}
+        - type: envelope
+          id: 66
+          parameters: {attack: 30, curve: 96, decay: 88, gain: 128, release: 80, stereo: 0, sustain: 0}
+          comment: decay is the length
+        - type: mulp
+          id: 67
+          parameters: {stereo: 0}
+        - type: filter
+          id: 68
+          parameters: {bandpass: 0, frequency: 88, highpass: 1, lowpass: 0, resonance: 128, stereo: 0}
+          comment: Low cut
+        - type: filter
+          id: 69
+          parameters: {bandpass: 1, frequency: 128, highpass: 0, lowpass: 0, resonance: 100, stereo: 0}
+          comment: 'The band that is left: frequency is its centre'
+        - type: pan
+          id: 70
+          parameters: {panning: 64, stereo: 0}
+        - type: aux
+          id: 71
+          parameters: {channel: 6, gain: 22, stereo: 1}
+          comment: To the drum bus of the Global instrument; in the preset this is an out unit
+    - name: Club acid bass
+      comment: 'An acid bass line sound: a saw through a resonant ladder filter, with an envelope on the cutoff. Suggested notes: C-1 to C-3. Bandlimited oscillator, curved envelopes and ladder: Go synth and wasm player only.'
+      numvoices: 1
+      units:
+        - type: envelope
+          id: 72
+          parameters: {attack: 0, curve: 64, decay: 74, gain: 128, release: 74, stereo: 0, sustain: 0}
+          comment: 'Cutoff envelope: decay is how long the filter takes to close'
+        - type: send
+          id: 73
+          parameters: {amount: 96, port: 0, sendpop: 1, stereo: 0, target: 77, voice: 0}
+          comment: How far the envelope opens the filter
+        - type: envelope
+          id: 74
+          parameters: {attack: 24, curve: 48, decay: 76, gain: 128, release: 48, stereo: 0, sustain: 64}
+          comment: Level
+        - type: oscillator
+          id: 75
+          parameters: {bandlimit: 1, color: 128, detune: 64, gain: 80, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 1, unison: 0}
+          comment: A saw; type 2 with color 64 is the square wave of a 303
+        - type: mulp
+          id: 76
+          parameters: {stereo: 0}
+        - type: ladder
+          id: 77
+          parameters: {drive: 40, frequency: 24, resonance: 100, stereo: 0}
+          comment: frequency is the cutoff with the envelope closed, resonance the squelch, drive the growl
+        - type: pan
+          id: 78
+          parameters: {panning: 64, stereo: 0}
+        - type: out
+          id: 79
+          parameters: {gain: 96, stereo: 1}
+    - name: Club supersaw lead
+      comment: 'A supersaw lead: 16 detuned saws, 8 on each side, wide but mono below about 150 Hz. auxgain sends it to the reverb. Bandlimited oscillators, curved envelope, ladder and width: Go synth and wasm player only.'
+      numvoices: 3
+      units:
+        - type: envelope
+          id: 80
+          parameters: {attack: 36, curve: 64, decay: 72, gain: 128, release: 62, stereo: 1, sustain: 96}
+        - type: oscillator
+          id: 81
+          parameters: {bandlimit: 1, color: 128, detune: 80, gain: 24, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 3}
+          comment: Four saws on each side; detune is the spread
+        - type: oscillator
+          id: 82
+          parameters: {bandlimit: 1, color: 128, detune: 46, gain: 24, lfo: 0, phase: 76, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 3}
+          comment: 'Four more, detuned the other way and a little further, a good half cycle later: with phase 76 the two sides are about equally loud from the start of a note, which one detuned oscillator alone is not'
+        - type: addp
+          id: 83
+          parameters: {stereo: 1}
+        - type: mulp
+          id: 84
+          parameters: {stereo: 1}
+        - type: ladder
+          id: 85
+          parameters: {drive: 0, frequency: 112, resonance: 16, stereo: 1}
+          comment: 'Cutoff: automate frequency for the classic trance sweep'
+        - type: width
+          id: 86
+          parameters: {lowcut: 19, width: 48}
+          comment: Width, and mono below lowcut
+        - type: outaux
+          id: 87
+          parameters: {auxgain: 24, outgain: 64, stereo: 1}
+    - name: Global mastering 2 drumbus reverb
+      numvoices: 1
+      units:
+        - id: 88
+          parameters: {}
+          comment: 'Global mastering 2 with a drum bus and reverb - Global mastering 2, and before it the aux signal (channels 2 and 3) through the Reverb module, and a group bus for the drums: aux channels 6 and 7 through a compressor and a soft clipper into the mix. Send the drums to it by making their last unit, out, an aux unit with channel 6. Set this preset as last instrument. mc units, limiter and softclip: Go synth and wasm player only.'
+        - type: in
+          id: 89
+          parameters: {channel: 2, stereo: 1}
+          comment: The aux signal the instruments send, with outaux or aux
+        - type: module
+          id: 90
+          parameters: {module: 1}
+          comment: 'The Reverb module: its parameters are size, decay, highs, lows, predelay, mod, highcut and lowcut'
+        - type: out
+          id: 91
+          parameters: {gain: 128, stereo: 1}
+          comment: The level of the reverb, into the mix that is mastered below
+        - type: in
+          id: 92
+          parameters: {channel: 6, stereo: 1}
+          comment: 'The drum bus: what the drums send to channel 6 with an aux unit in place of their out unit'
+        - type: compressor
+          id: 93
+          parameters: {attack: 52, invgain: 102, ratio: 64, release: 64, stereo: 1, threshold: 36}
+          comment: 'Glue: about 2:1 above -11 dB, with 20 ms attack, which lets the hits through, 93 ms release and +2 dB makeup (invgain)'
+        - type: mulp
+          id: 94
+          parameters: {stereo: 1}
+        - type: softclip
+          id: 95
+          parameters: {drive: 8, knee: 64, oversample: 0, stereo: 1}
+          comment: 'Saturation: drive, +3.2 dB, pushes the hits into the knee at -6 dB, which rounds them off. More drive is denser and louder'
+        - type: out
+          id: 96
+          parameters: {gain: 108, stereo: 1}
+          comment: 'The level of the drums in the mix that is mastered below: the clipper stops at full scale, so at 108 they peak at -1.5 dB at most'
+        - type: in
+          id: 97
+          parameters: {channel: 0, stereo: 1}
+        - type: filter
+          id: 98
+          parameters: {bandpass: 0, frequency: 8, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: Low cut, 12 dB per octave below 27 Hz
+        - type: compressor
+          id: 99
+          parameters: {attack: 47, invgain: 54, ratio: 100, release: 68, stereo: 1, threshold: 64}
+          comment: About 4.6:1 above -6 dB, 10 ms attack and 150 ms release, +7.5 dB makeup (invgain). A shorter release distorts the bass more
+        - type: mulp
+          id: 100
+          parameters: {stereo: 1}
+        - type: limiter
+          id: 101
+          parameters: {drive: 12, lookahead: 32, release: 64, stereo: 1, threshold: 124}
+          comment: 'Turns the gain down ahead of the peaks that the attack lets through, 2.9 ms ahead, to -0.3 dB. drive, +4.4 dB, is the loudness: more of it is louder and flatter'
+        - type: clip
+          id: 102
+          parameters: {stereo: 1}
+          comment: What little the limiter lets through is clipped at full scale
+        - type: out
+          id: 103
+          parameters: {gain: 128, stereo: 1}
+          comment: Master gain
+buffers:
+    - id: 1
+      name: reverb bus
+      channels: 0
+      bus: true
+      auto: true
+modules:
+    - id: 1
+      name: Reverb
+      comment: 'Stereo reverb, wet only: low and high cut, predelay, a diffuser of four steps for the early reflections, and a feedback delay network of 8 lines for the tail. Uses mc units: Go synth and wasm player only.'
+      inputs: 2
+      params:
+        - name: size
+          default: 64
+        - name: decay
+          default: 90
+        - name: highs
+          default: 48
+        - name: lows
+          default: 72
+        - name: predelay
+          default: 13
+        - name: mod
+          default: 24
+        - name: highcut
+          default: 98
+        - name: lowcut
+          default: 56
+      units:
+        - type: mcspread
+          parameters: {add: 0, bus: 1, gain: 76, stereo: 1}
+          comment: The stereo input on the 8 channels of the bus; gain is the level of the reverb
+        - type: mcfilter
+          parameters: {bus: 1, frequency: 37, type: 1}
+          comment: Low cut
+          bind: {frequency: {p: 8, min: 0, max: 85}}
+        - type: mcfilter
+          parameters: {bus: 1, frequency: 115, type: 0}
+          comment: High cut
+          bind: {frequency: {p: 7, min: 72, max: 128}}
+        - type: mcdelay
+          parameters: {allpass: 0, apgain: 80, bus: 1, decay: 0, hfdecay: 64, lfdecay: 64, moddepth: 0, modrate: 64, notetracking: 0, seed: 0, size: 204, spread: 0}
+          comment: 'Predelay: all 8 lines of the same length'
+          bind: {size: {p: 5, min: 1, max: 2000}}
+        - type: mcdelay
+          parameters: {allpass: 0, apgain: 80, bus: 1, decay: 0, hfdecay: 64, lfdecay: 64, moddepth: 0, modrate: 64, notetracking: 0, seed: 1, size: 400, spread: 128}
+          comment: 'Diffuser: each step delays the channels by random amounts up to its size, shuffles and mixes them'
+          bind: {size: {p: 1, min: 100, max: 700}}
+        - type: mcmix
+          parameters: {bus: 1, seed: 1, type: 2}
+        - type: mcmix
+          parameters: {bus: 1, seed: 0, type: 0}
+        - type: mcdelay
+          parameters: {allpass: 0, apgain: 80, bus: 1, decay: 0, hfdecay: 64, lfdecay: 64, moddepth: 0, modrate: 64, notetracking: 0, seed: 2, size: 200, spread: 128}
+          bind: {size: {p: 1, min: 50, max: 350}}
+        - type: mcmix
+          parameters: {bus: 1, seed: 2, type: 2}
+        - type: mcmix
+          parameters: {bus: 1, seed: 0, type: 0}
+        - type: mcdelay
+          parameters: {allpass: 0, apgain: 80, bus: 1, decay: 0, hfdecay: 64, lfdecay: 64, moddepth: 0, modrate: 64, notetracking: 0, seed: 3, size: 100, spread: 128}
+          bind: {size: {p: 1, min: 25, max: 175}}
+        - type: mcmix
+          parameters: {bus: 1, seed: 3, type: 2}
+        - type: mcmix
+          parameters: {bus: 1, seed: 0, type: 0}
+        - type: mcdelay
+          parameters: {allpass: 0, apgain: 80, bus: 1, decay: 0, hfdecay: 64, lfdecay: 64, moddepth: 0, modrate: 64, notetracking: 0, seed: 4, size: 50, spread: 128}
+          bind: {size: {p: 1, min: 12, max: 88}}
+        - type: mcmix
+          parameters: {bus: 1, seed: 4, type: 2}
+        - type: mcmix
+          parameters: {bus: 1, seed: 0, type: 0}
+        - type: mcsum
+          parameters: {bus: 1, gain: 52, stereo: 1, width: 80}
+          comment: 'Early reflections: the diffused input'
+        - type: mcloop
+          parameters: {bus: 1, feedback: 128}
+          comment: 'Feedback delay network: 8 delay lines mixed back into each other'
+        - type: mcdelay
+          parameters: {allpass: 0, apgain: 80, bus: 1, decay: 90, hfdecay: 48, lfdecay: 72, moddepth: 24, modrate: 56, notetracking: 0, seed: 7, size: 1600, spread: 77}
+          comment: decay is the reverb time (0 holds the sound); highs and lows are the times of the highs and lows relative to it; mod moves the lines against ringing
+          bind: {decay: 2, hfdecay: 3, lfdecay: 4, moddepth: 6, size: {p: 1, min: 400, max: 2800}}
+        - type: mcsum
+          parameters: {bus: 1, gain: 64, stereo: 1, width: 96}
+          comment: The tail
+        - type: mcmix
+          parameters: {bus: 1, seed: 0, type: 1}
+        - type: mcloopend
+          parameters: {bus: 1}
+        - type: addp
+          parameters: {stereo: 1}
+          comment: Early reflections plus the tail
