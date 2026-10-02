@@ -1229,9 +1229,11 @@ func clip(value float32) float32 {
 	return value
 }
 
+// crush rounds halves to even, like f32.nearest of the wasm player and the
+// x87 of the x86 players.
 func crush(value, amount float32) float32 {
 	n := nonLinearMap(amount)
-	return float32(math.Round(float64(value/n)) * float64(n))
+	return float32(math.RoundToEven(float64(value/n)) * float64(n))
 }
 
 // waveshape is the waveshaper of the wasm and x86 players, operation by
