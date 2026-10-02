@@ -243,6 +243,12 @@ func TestEQUnits(t *testing.T) {
 	if n := len(c.Bands[0].Units) + len(c.Bands[1].Units) + len(c.Bands[2].Units) + len(c.GainUnits); n != len(c.Units) {
 		t.Errorf("the bands and the gain have %d units of %d", n, len(c.Units))
 	}
+	// the units are the caller's to change: compiled bands are kept, and
+	// must not change with them
+	c.Units[0].Parameters["frequency"] = 1
+	if again := u.CompileEQ(); again.Units[0].Parameters["frequency"] == 1 {
+		t.Error("changing the units of a compiled eq changed what it compiles to")
+	}
 	// a gain of the eq alone
 	u = eqUnit(0, 60)
 	if got := unitTypes(u.CompileEQ().Units); got != "invgain" {
@@ -359,6 +365,29 @@ func TestEQShelfRange(t *testing.T) {
 		}
 		if a.Frequency < lo || a.Frequency > hi || math.Abs(a.Gain-b.Gain) > 0.3 {
 			t.Errorf("%+v is the shelf %+v", b, a)
+		}
+	}
+}
+
+// TestEQShelfQ checks that shelves are where they were put, with the gain
+// asked for, whatever their Q: unless they are high up and so damped that
+// they have not ended at 16 kHz.
+func TestEQShelfQ(t *testing.T) {
+	for _, typ := range []string{sointu.EQLowShelf, sointu.EQHighShelf} {
+		for _, f := range []float64{60, 180, 600, 2000} {
+			for _, g := range []float64{-12, -3, 3, 9} {
+				for _, q := range []float64{0.4, 0.5, 0.71, 1, 2, 4} {
+					if f >= 2000 && q < 0.7 {
+						continue // so damped that it has not ended at 16 kHz
+					}
+					b := band(typ, f, g, q)
+					u := eqUnit(0, 0, b)
+					a := u.CompileEQ().Bands[0].Actual
+					if r := a.Frequency / f; r < 0.8 || r > 1.25 || math.Abs(a.Gain-g) > 0.3 {
+						t.Errorf("%+v is the shelf %+v", b, a)
+					}
+				}
+			}
 		}
 	}
 }

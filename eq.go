@@ -1,8 +1,10 @@
 package sointu
 
 import (
+	"maps"
 	"math"
 	"math/cmplx"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 )
@@ -359,8 +361,50 @@ func eqLadderQ(k float64) float64 {
 	return math.Sqrt((1-a)*(1-a)+a*a) / (2 * (1 - a))
 }
 
-func compileEQBand(b EQBand, stereo int) (ret EQCompiledBand) {
-	b = b.Normalized()
+// eqCache keeps the bands that were compiled: compiling a shelf or a ladder
+// tries many values, and the eq units of a song are compiled whenever the
+// song is expanded.
+var eqCache struct {
+	sync.Mutex
+	bands map[eqCacheKey]EQCompiledBand
+}
+
+type eqCacheKey struct {
+	band   EQBand
+	stereo int
+}
+
+// eqCacheSize is the number of bands after which the cache starts anew.
+const eqCacheSize = 4096
+
+// compileEQBand returns what a band stands for. The units are the caller's
+// to change.
+func compileEQBand(b EQBand, stereo int) EQCompiledBand {
+	key := eqCacheKey{b.Normalized(), stereo}
+	eqCache.Lock()
+	ret, ok := eqCache.bands[key]
+	eqCache.Unlock()
+	if !ok {
+		ret = compileEQBandUncached(key.band, stereo)
+		eqCache.Lock()
+		if eqCache.bands == nil || len(eqCache.bands) >= eqCacheSize {
+			eqCache.bands = map[eqCacheKey]EQCompiledBand{}
+		}
+		eqCache.bands[key] = ret
+		eqCache.Unlock()
+	}
+	if ret.Units != nil {
+		units := make([]Unit, len(ret.Units))
+		for i, u := range ret.Units {
+			u.Parameters = maps.Clone(u.Parameters) // all they have
+			units[i] = u
+		}
+		ret.Units = units
+	}
+	return ret
+}
+
+func compileEQBandUncached(b EQBand, stereo int) (ret EQCompiledBand) {
 	ret.Makeup = 1
 	ret.Actual = b
 	if b.Disabled {
@@ -477,7 +521,7 @@ func compileEQShelf(b EQBand, stereo int) (ret EQCompiledBand) {
 	{
 		k := want - 1
 		dp := 1 / b.Q        // the damping of the poles
-		dz := max(dp, 1) + k // and of the zeros: the filter unit has at least Q 1
+		dz := min(dp, 1) + k // and of the zeros: those of the filter unit, which has at least Q 1
 		t := (dz*dz - want*dp*dp) / k
 		mid := math.Sqrt((t + math.Sqrt(t*t+4*want)) / 2)
 		f0 := b.Frequency / mid
@@ -500,7 +544,9 @@ func compileEQShelf(b EQBand, stereo int) (ret EQCompiledBand) {
 	zr, zo := eqZ(raised), eqZ(other)
 	bestErr := math.Inf(1)
 	var best EQCompiledBand
-	for v := 1; v <= 128; v++ {
+	// every value of the frequency parameter of the filter: how near the
+	// units come does not change evenly with it, as k has steps too
+	try := func(v int) {
 		stage, q := eqStage(v, b.Q, lp, 1, hp, stereo)
 		fr, fo := eqUnitResponse(&stage[0], zr), eqUnitResponse(&stage[0], zo)
 		ends := func(k float64) (float64, float64) {
@@ -518,7 +564,7 @@ func compileEQShelf(b EQBand, stereo int) (ret EQCompiledBand) {
 		}
 		g, k, ok := eqGainUnit((lo+hi)/2, stereo)
 		if !ok || k <= 0 {
-			continue
+			return
 		}
 		c := EQCompiledBand{Makeup: 1, Actual: b}
 		c.Units = []Unit{eqUnit("push", stereo, ParamMap{}), stage[0], g, eqUnit("addp", stereo, ParamMap{})}
@@ -538,6 +584,9 @@ func compileEQShelf(b EQBand, stereo int) (ret EQCompiledBand) {
 		if e < bestErr {
 			bestErr, best = e, c
 		}
+	}
+	for v := 1; v <= 128; v++ {
+		try(v)
 	}
 	if best.Units == nil {
 		return ret

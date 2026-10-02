@@ -300,7 +300,9 @@ and the editor shows them.
   of the shelf, in dB, at the frequency. With Q 1 the level goes beyond the
   shelf next to it: by 1.5 dB for a low shelf of ±6 dB, 2.4 dB for +12 dB,
   0.6 to 1.4 dB for high shelves. With Q 0.71 (5 units) it does not. The
-  corner is from 20 Hz to 8 kHz. The high-pass of the `filter` unit rises
+  corner is from 20 Hz to 8 kHz. A shelf beyond what the filter reaches, or
+  from 2 kHz up with a Q below 0.71, which has not ended at 16 kHz, is the
+  nearest that the units can do, with less than its gain. The high-pass of the `filter` unit rises
   above 1 towards half the sample rate, and its band-pass does not fall to
   0 there, which k and the gain unit make up for; a high shelf that lowers,
   above 3 kHz, is the least like a shelf (up to 1.7 dB up below its corner).
@@ -321,7 +323,16 @@ with the cosine as the unit computes it; for `ladder`
 the editor draws this: of each band, and of all the units. Measured against
 it (`TestEQResponseMatchesSynth`): 40 sines from 20 Hz to 20 kHz through
 the units in the Go synth, for 27 bands of every type and for 8 bands in a
-row; the level of each is within 0.03 dB of the computed one.
+row; the level of each is within 0.03 dB of the computed one. Checked
+another way, with noise instead of sines (32 s of the `noise` unit through
+three eqs of 3 to 5 bands, the transfer function estimated with numpy over
+172 windows of 16384 samples): 0.004 to 0.02 dB RMS apart over the 7423
+bins from 20 Hz to 20 kHz, the most where a window is too coarse: 0.2 dB
+on the slope of a low cut below 25 Hz, 1.5 dB at the bottom of a notch.
+
+Compiling a shelf tries every frequency value of its filter, about 1 ms;
+`compileEQBand` keeps the bands it has compiled, as the eq units of a song
+are compiled every time the song is expanded.
 
 **Tests.** `eq_test.go` (the units of each band, the response against the
 Go synth and against the filters the bands are modelled on, shelves, YAML,
