@@ -40,6 +40,10 @@ type ScrollTableStyle struct {
 	// RowOverlay, if set, draws over each row as wide as the table, scrolling
 	// with it vertically but not horizontally.
 	RowOverlay func(gtx C, y int)
+	// RowHeight, if set, returns the height of row y in pixels, for a table
+	// with rows higher than CellHeight. The cells are in the top CellHeight
+	// of a row; the row title must be as high as the row.
+	RowHeight func(y int) int
 }
 
 func NewScrollTable(table tracker.Table, vertList, horizList tracker.List) *ScrollTable {
@@ -162,10 +166,12 @@ func (s *ScrollTableStyle) handleEvents(gtx layout.Context, p image.Point) {
 					gtx.Execute(key.FocusCmd{Tag: s.ScrollTable})
 				}
 				dx := (e.Position.X + float32(s.ScrollTable.ColTitleList.List.Position.Offset)) / float32(gtx.Dp(s.CellWidth))
-				dy := (e.Position.Y + float32(s.ScrollTable.RowTitleList.List.Position.Offset)) / float32(gtx.Dp(s.CellHeight))
 				x := dx + float32(s.ScrollTable.ColTitleList.List.Position.First)
-				y := dy + float32(s.ScrollTable.RowTitleList.List.Position.First)
-				cursorPoint := tracker.Point{X: int(x), Y: int(y)}
+				y, below := s.rowAt(gtx, e.Position.Y+float32(s.ScrollTable.RowTitleList.List.Position.Offset))
+				cursorPoint := tracker.Point{X: int(x), Y: y}
+				if below { // under the cells of a high row: the row, and the column of the cursor
+					cursorPoint.X = s.ScrollTable.Table.Cursor().X
+				}
 				s.ScrollTable.Table.SetCursor2(cursorPoint)
 				if e.Kind == pointer.Press && !e.Modifiers.Contain(key.ModShift) {
 					s.ScrollTable.Table.SetCursor(cursorPoint)
@@ -217,6 +223,32 @@ func (s *ScrollTableStyle) handleEvents(gtx layout.Context, p image.Point) {
 	}
 }
 
+// rowHeight returns the height of row y in pixels.
+func (s ScrollTableStyle) rowHeight(gtx C, y int) int {
+	if s.RowHeight != nil {
+		return s.RowHeight(y)
+	}
+	return gtx.Dp(s.CellHeight)
+}
+
+// rowAt returns the row at py pixels from the top of the first row in view,
+// and whether py is below its cells, in a row higher than CellHeight.
+func (s ScrollTableStyle) rowAt(gtx C, py float32) (row int, below bool) {
+	row = s.ScrollTable.RowTitleList.List.Position.First
+	cellHeight := gtx.Dp(s.CellHeight)
+	if s.RowHeight == nil {
+		return row + int(py/float32(cellHeight)), false
+	}
+	for n := s.ScrollTable.Table.Height(); row < n; row++ {
+		h := s.rowHeight(gtx, row)
+		if py < float32(h) {
+			return row, py >= float32(cellHeight)
+		}
+		py -= float32(h)
+	}
+	return row + int(py/float32(cellHeight)), false
+}
+
 func (s ScrollTableStyle) layoutTable(gtx C, element func(gtx C, x, y int) D) {
 	size := gtx.Constraints.Min
 	defer clip.Rect(image.Rectangle{Max: size}).Push(gtx.Ops).Pop()
@@ -232,10 +264,14 @@ func (s ScrollTableStyle) layoutTable(gtx C, element func(gtx C, x, y int) D) {
 
 	colP := s.ColTitleStyle.dragList.List.Position
 	rowP := s.RowTitleStyle.dragList.List.Position
+	tops := make([]int, rowP.Count)
+	for y := 1; y < rowP.Count; y++ {
+		tops[y] = tops[y-1] + s.rowHeight(gtx, y-1+rowP.First)
+	}
 	scroll := op.Offset(image.Pt(-colP.Offset, -rowP.Offset)).Push(gtx.Ops)
 	for x := 0; x < colP.Count; x++ {
 		for y := 0; y < rowP.Count; y++ {
-			o := op.Offset(image.Pt(cellWidth*x, cellHeight*y)).Push(gtx.Ops)
+			o := op.Offset(image.Pt(cellWidth*x, tops[y])).Push(gtx.Ops)
 			element(gtx, x+colP.First, y+rowP.First)
 			o.Pop()
 		}
@@ -244,7 +280,7 @@ func (s ScrollTableStyle) layoutTable(gtx C, element func(gtx C, x, y int) D) {
 	if s.RowOverlay != nil {
 		gtx.Constraints = layout.Exact(image.Pt(size.X, cellHeight))
 		for y := 0; y < rowP.Count; y++ {
-			o := op.Offset(image.Pt(0, cellHeight*y-rowP.Offset)).Push(gtx.Ops)
+			o := op.Offset(image.Pt(0, tops[y]-rowP.Offset)).Push(gtx.Ops)
 			s.RowOverlay(gtx, y+rowP.First)
 			o.Pop()
 		}

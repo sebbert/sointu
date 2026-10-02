@@ -467,7 +467,8 @@ unit it is expanded before the song is played or compiled: into `filter`,
 `belleq`, `ladder` and gain units, one to five for a band, none for a band
 that is off, so the players have nothing new. In the tracker it is edited on
 a plot of what those units do to each frequency, with a handle for every
-band; see [FORK.md](FORK.md#eq) for what each band costs and how near it
+band: small in its row of the rack, or unfolded like a module unit, the
+whole editor under the row; see [FORK.md](FORK.md#eq) for what each band costs and how near it
 comes, and `examples/eq.yml`.
 
 There are 16 output channels: left and right, and seven aux pairs, which

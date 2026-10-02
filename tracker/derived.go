@@ -140,6 +140,9 @@ func (m *Model) updateParamsOf(d *derivedInstrument, units []sointu.Unit) {
 		p := m.deriveParams(&units[u], d.params[u])
 		d.params[u] = p
 		paramsWidth = max(paramsWidth, len(p))
+		if units[u].Type == "eq" { // room for its small plot
+			paramsWidth = max(paramsWidth, len(p)+EQInlineCells)
+		}
 		_, _, ok := unitBuffer(&units[u])
 		previews = previews || ok
 	}

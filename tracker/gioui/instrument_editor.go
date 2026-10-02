@@ -66,10 +66,11 @@ type (
 		previews  []Clickable // of the units' buffers, by unit
 		railLane  RailLane
 
-		eqEditor *EQEditor // shown under the rack while the selected unit is an eq unit
-		eqShown  bool
-		eqRow    int // the row of that unit, or -1
-		eqScroll int // frames left in which the rack scrolls to that row
+		eqEditors      []*EQEditor // of the eq units, by row
+		eqShown        []int       // the rows whose eq editors were laid out
+		rackHeight     int         // in pixels, as last laid out
+		expandEQHint   string
+		collapseEQHint string
 	}
 )
 
@@ -95,14 +96,14 @@ func NewInstrumentEditor(m *tracker.Model) *InstrumentEditor {
 		unfoldBtn:       new(Clickable),
 		bindBtn:         new(Clickable),
 		bindMenu:        new(MenuState),
-		eqEditor:        NewEQEditor(),
-		eqRow:           -1,
 	}
 	ret.caser = cases.Title(language.English)
 	ret.copyHint = makeHint("Copy unit", " (%s)", "Copy")
 	ret.makeModuleHint = makeHint("Make a module of\nthe selected units", "\n(%s)", "MakeModule")
 	ret.unfoldHint = makeHint("Unfold the module unit: show the\nunits inside it, to change them there", "\n(%s)", "UnfoldModuleToggle")
 	ret.foldHint = makeHint("Fold the module unit:\nhide the units inside it", "\n(%s)", "UnfoldModuleToggle")
+	ret.expandEQHint = makeHint("Unfold the eq unit: show\nits whole editor under it", "\n(%s)", "UnfoldModuleToggle")
+	ret.collapseEQHint = makeHint("Fold the eq unit: show\nits plot in its row", "\n(%s)", "UnfoldModuleToggle")
 	ret.openModuleHint = makeHint("Show the module\non the Modules tab", "\n(%s)", "OpenModule")
 	ret.disableUnitHint = makeHint("Disable unit", " (%s)", "UnitDisabledToggle")
 	ret.enableUnitHint = makeHint("Enable unit", " (%s)", "UnitDisabledToggle")
@@ -125,15 +126,17 @@ func (ie *InstrumentEditor) Tags(level int, yield TagYieldFunc) bool {
 	}
 	ret = ret && yield(level+1, ie.paramTable.RowTitleList) && yield(level, ie.paramTable) && yield(level+1, &ie.commentEditor.widgetEditor) &&
 		ie.bindMenu.Tags(level+1, yield)
-	if ie.eqShown {
-		ret = ret && ie.eqEditor.Tags(level, yield)
+	for _, row := range ie.eqShown {
+		if row < len(ie.eqEditors) {
+			ret = ret && ie.eqEditors[row].Tags(level, yield)
+		}
 	}
 	return ret
 }
 
 func (ul *InstrumentEditor) layoutList(gtx C) D {
 	t := TrackerFromContext(gtx)
-	hasModules := t.Unit().HasModuleUnits()
+	hasModules := t.Unit().HasFoldableUnits()
 	element := func(gtx C, i int) D {
 		gtx.Constraints.Max.Y = gtx.Dp(20)
 		gtx.Constraints.Min.Y = gtx.Constraints.Max.Y
@@ -152,7 +155,7 @@ func (ul *InstrumentEditor) layoutList(gtx C) D {
 		indent := unit.Dp(12 * u.Depth)
 		lead := layout.Spacer{Width: indent}.Layout
 		switch {
-		case u.Module:
+		case u.Module || u.EQ:
 			lead = func(gtx C) D {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(layout.Spacer{Width: indent}.Layout),
@@ -342,35 +345,11 @@ func (pe *InstrumentEditor) layoutTable(gtx C) D {
 	editorFunc := pe.layoutRack
 	if pe.searching.Value() {
 		editorFunc = pe.layoutUnitTypeChooser
-	}
-	// the editor of the selected eq unit, under the rack
-	pe.eqShown = t.EQ().Active() && !pe.searching.Value()
-	// the rack is lower with the editor under it: the row of the eq unit,
-	// with its stereo switch and its gain, stays in view
-	row := -1
-	if pe.eqShown {
-		row = t.Params().Cursor().Y
-	}
-	if row != pe.eqRow {
-		pe.eqRow, pe.eqScroll = row, 2 // the rack knows its new height only once it is laid out
-	}
-	if pe.eqScroll > 0 && row >= 0 {
-		pe.eqScroll--
-		pe.paramTable.EnsureCursorVisible()
-		gtx.Execute(op.InvalidateCmd{})
-	}
-	eqEditor := func(gtx C) D {
-		if !pe.eqShown {
-			return D{}
-		}
-		gtx.Constraints.Max.Y = min(gtx.Dp(eqEditorHeight), gtx.Constraints.Max.Y*3/5)
-		gtx.Constraints.Min = gtx.Constraints.Max
-		return pe.eqEditor.Layout(gtx)
+		pe.eqShown = pe.eqShown[:0]
 	}
 	return Surface{Height: 3, Focus: t.PatchPanel.TreeFocused(gtx)}.Layout(gtx, func(gtx C) D {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Flexed(1, editorFunc),
-			layout.Rigid(eqEditor),
 			layout.Rigid(pe.layoutFooter),
 		)
 	})
@@ -386,6 +365,8 @@ func (pe *InstrumentEditor) ChooseUnitType(t *Tracker) {
 func (pe *InstrumentEditor) layoutRack(gtx C) D {
 	defer clip.Rect(image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Constraints.Max.Y)).Push(gtx.Ops).Pop()
 	t := TrackerFromContext(gtx)
+	pe.eqShown = pe.eqShown[:0] // the rows lay them out: see layoutEQ
+	pe.rackHeight = gtx.Constraints.Max.Y
 	// create enough parameter widget to match the number of parameters
 	width := pe.paramTable.Table.Width()
 	for len(pe.Parameters) < pe.paramTable.Table.Height() {
@@ -426,7 +407,15 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 		}
 		gtx.Constraints = layout.Exact(image.Pt(rowTitleWidth, cellHeight))
 		sr.Layout(gtx)
-		if item.Module { // the chevron that folds and unfolds it, above its name
+		height := pe.rowHeight(gtx, y)
+		if height > cellHeight { // past the editor under an unfolded eq unit, its signals
+			o := op.Offset(image.Pt(0, cellHeight)).Push(gtx.Ops)
+			ext := Rail(t.Theme, tracker.Rail{PassThrough: item.Stack})
+			ext.FaintFrom, ext.Height = sr.FaintFrom, gtx.Metric.PxToDp(height-cellHeight)
+			ext.Layout(gtx)
+			o.Pop()
+		}
+		if item.Module || item.EQ { // the chevron that folds and unfolds it, above its name
 			o := op.Offset(image.Pt(rowTitleSignalWidth, 0)).Push(gtx.Ops)
 			pe.layoutFold(gtx, &pe.rackFolds, y, item.Unfolded, t.Theme.UnitEditor.UnitList.LabelWidth)
 			o.Pop()
@@ -434,7 +423,7 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 		defer op.Affine(f32.Affine2D{}.Rotate(f32.Pt(0, 0), -90*math.Pi/180).Offset(f32.Point{X: float32(rowTitleSignalWidth), Y: float32(cellHeight)})).Push(gtx.Ops).Pop()
 		gtx.Constraints = layout.Exact(image.Pt(cellHeight, rowTitleLabelWidth))
 		label.Layout(gtx)
-		return D{Size: image.Pt(rowTitleWidth, cellHeight)}
+		return D{Size: image.Pt(rowTitleWidth, height)}
 	}
 	cell := func(gtx C, x, y int) D {
 		cursor := t.Model.Params().Cursor()
@@ -463,9 +452,13 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 		// where the cell is in the rack: the row titles may get wider or
 		// narrower as the parameter changes
 		colP, rowP := pe.paramTable.ColTitleList.List.Position, pe.paramTable.RowTitleList.List.Position
-		paramStyle.Origin = image.Pt(rowTitleWidth+(x-colP.First)*cellWidth-colP.Offset, (y-rowP.First)*cellHeight-rowP.Offset)
+		paramStyle.Origin = image.Pt(rowTitleWidth+(x-colP.First)*cellWidth-colP.Offset, pe.rowTop(gtx, y)-rowP.Offset)
 		paramStyle.Layout(gtx)
-		if x == t.Model.Params().RowWidth(y) {
+		commentX := t.Model.Params().RowWidth(y)
+		if t.EQAt(y).Active() && !t.Unit().EQExpanded(y) { // after the small plot
+			commentX += tracker.EQInlineCells
+		}
+		if x == commentX {
 			if y == cursor.Y {
 				return layout.W.Layout(gtx, func(gtx C) D {
 					for pe.commentEditor.Update(gtx, t.Unit().Comment()) != EditorEventNone {
@@ -496,7 +489,12 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 	table.ColumnTitleHeight = 0
 	table.CellWidth = t.Theme.UnitEditor.Width
 	table.CellHeight = t.Theme.UnitEditor.Height
+	table.RowHeight = func(y int) int { return pe.rowHeight(gtx, y) }
 	table.RowOverlay = func(gtx C, y int) {
+		if t.EQAt(y).Active() {
+			pe.layoutEQ(gtx, y)
+			return
+		}
 		if !t.preferences.Rack.BufferPreviews {
 			return
 		}
@@ -510,6 +508,78 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 	pe.drawSignals(gtx, rowTitleWidth)
 	dims := table.Layout(gtx, cell, coltitle, rowtitle, nil, nil)
 	return dims
+}
+
+// rowHeight returns the height of a row of the rack in pixels: of an unfolded
+// eq unit, with its editor under it.
+func (pe *InstrumentEditor) rowHeight(gtx C, y int) int {
+	t := TrackerFromContext(gtx)
+	h := gtx.Dp(t.Theme.UnitEditor.Height)
+	if t.Unit().EQExpanded(y) {
+		h += gtx.Dp(eqEditorHeight)
+	}
+	return h
+}
+
+// rowTop returns the top of a row of the rack in pixels, from the top of the
+// first row in view.
+func (pe *InstrumentEditor) rowTop(gtx C, y int) int {
+	first := pe.paramTable.RowTitleList.List.Position.First
+	top := 0
+	for r := first; r < y; r++ {
+		top += pe.rowHeight(gtx, r)
+	}
+	for r := y; r < first; r++ {
+		top -= pe.rowHeight(gtx, r)
+	}
+	return top
+}
+
+// layoutEQ lays out the editor of the eq unit on row y, over the row: folded,
+// the small plot after its parameters; unfolded, the whole editor under the
+// row, as wide as the rack.
+func (pe *InstrumentEditor) layoutEQ(gtx C, y int) {
+	t := TrackerFromContext(gtx)
+	for len(pe.eqEditors) <= y {
+		pe.eqEditors = append(pe.eqEditors, NewEQEditor())
+	}
+	ed := pe.eqEditors[y]
+	ed.row = y
+	pe.eqShown = append(pe.eqShown, y)
+	cellWidth, cellHeight := gtx.Dp(t.Theme.UnitEditor.Width), gtx.Constraints.Max.Y
+	if t.Unit().EQExpanded(y) {
+		// just unfolded, and not all of it in view: the rack scrolls the
+		// row to the top
+		rowP := pe.paramTable.RowTitleList.List.Position
+		if ed.small && pe.rowTop(gtx, y)-rowP.Offset+pe.rowHeight(gtx, y) > pe.rackHeight {
+			pe.paramTable.RowTitleList.List.ScrollTo(y)
+			gtx.Execute(op.InvalidateCmd{})
+		}
+		defer op.Offset(image.Pt(0, cellHeight)).Push(gtx.Ops).Pop()
+		gtx.Constraints = layout.Exact(image.Pt(gtx.Constraints.Max.X, gtx.Dp(eqEditorHeight)))
+		ed.Layout(gtx)
+		return
+	}
+	// the cursor stays on the parameters: a click on the small plot puts it
+	// in a cell under it
+	w := t.Params().RowWidth(y)
+	if c, c2 := t.Params().Cursor(), t.Params().Cursor2(); c.Y == y && c.X >= w && w > 0 {
+		c.X = w - 1
+		t.Params().SetCursor(c)
+		if c2.Y == y {
+			t.Params().SetCursor2(c)
+		}
+	}
+	colP := pe.paramTable.ColTitleList.List.Position
+	inset := gtx.Dp(4)
+	x := (w-colP.First)*cellWidth - colP.Offset
+	size := image.Pt(tracker.EQInlineCells*cellWidth-2*inset, cellHeight-2*inset)
+	if size.X <= 8 || size.Y <= 8 {
+		return
+	}
+	defer op.Offset(image.Pt(x+inset, inset)).Push(gtx.Ops).Pop()
+	gtx.Constraints = layout.Exact(size)
+	ed.LayoutSmall(gtx)
 }
 
 // railWidth returns the width of the signal rails of the rack, in pixels: see
@@ -564,9 +634,9 @@ func (pe *InstrumentEditor) drawSignals(gtx C, rowTitleWidth int) {
 func (pe *InstrumentEditor) drawBackGround(gtx C) {
 	t := TrackerFromContext(gtx)
 	rowP := pe.paramTable.RowTitleList.List.Position
-	height := gtx.Dp(t.Theme.UnitEditor.Height)
 	defer op.Offset(image.Pt(0, -rowP.Offset)).Push(gtx.Ops).Pop()
 	for i := range rowP.Count + 1 {
+		height := pe.rowHeight(gtx, rowP.First+i)
 		if u := t.Unit().Item(rowP.First + i); u.Inner {
 			drawInnerBackground(gtx, image.Pt(gtx.Constraints.Max.X, height), u)
 		}
@@ -632,19 +702,18 @@ func (pe *InstrumentEditor) layoutFold(gtx C, clicks *[]Clickable, row int, unfo
 }
 
 func (pe *InstrumentEditor) drawRemoteSendSignal(gtx C, wire tracker.Wire, row int) {
-	sy := wire.From - row
 	t := TrackerFromContext(gtx)
-	defer op.Offset(image.Pt(gtx.Dp(5), (sy+1)*gtx.Dp(t.Theme.UnitEditor.Height)-gtx.Dp(16))).Push(gtx.Ops).Pop()
+	defer op.Offset(image.Pt(gtx.Dp(5), pe.rowTop(gtx, wire.From)+gtx.Dp(t.Theme.UnitEditor.Height)-gtx.Dp(16))).Push(gtx.Ops).Pop()
 	Label(t.Theme, &t.Theme.UnitEditor.WireHint, wire.Hint).Layout(gtx)
 }
 
 func (pe *InstrumentEditor) drawRemoteReceiveSignal(gtx C, wire tracker.Wire, col, row int, clr color.NRGBA) {
 	ex := wire.To.X - col
-	ey := wire.To.Y - row
 	t := TrackerFromContext(gtx)
 	width := float32(gtx.Dp(t.Theme.UnitEditor.Width))
 	height := float32(gtx.Dp(t.Theme.UnitEditor.Height))
-	topLeft := f32.Pt(float32(ex)*width, float32(ey)*height)
+	top := pe.rowTop(gtx, wire.To.Y)
+	topLeft := f32.Pt(float32(ex)*width, float32(top))
 	center := topLeft.Add(f32.Pt(width/2, height/2))
 	c := float32(gtx.Dp(t.Theme.Knob.Diameter)) / 2 / float32(math.Sqrt2)
 	from := f32.Pt(c, c).Add(center)
@@ -662,34 +731,34 @@ func (pe *InstrumentEditor) drawRemoteReceiveSignal(gtx C, wire tracker.Wire, co
 			Path:  path.End(),
 			Width: float32(gtx.Dp(t.Theme.SignalRail.LineWidth)),
 		}.Op())
-	defer op.Offset(image.Pt((ex+1)*gtx.Dp(t.Theme.UnitEditor.Width)+gtx.Dp(5), (ey+1)*gtx.Dp(t.Theme.UnitEditor.Height)-gtx.Dp(16))).Push(gtx.Ops).Pop()
+	defer op.Offset(image.Pt((ex+1)*gtx.Dp(t.Theme.UnitEditor.Width)+gtx.Dp(5), top+gtx.Dp(t.Theme.UnitEditor.Height)-gtx.Dp(16))).Push(gtx.Ops).Pop()
 	Label(t.Theme, &t.Theme.UnitEditor.WireHint, wire.Hint).Layout(gtx)
 }
 
 func (pe *InstrumentEditor) drawSignal(gtx C, wire tracker.Wire, col, row int, clr color.NRGBA) {
-	sy := wire.From - row
 	ex := wire.To.X - col
-	ey := wire.To.Y - row
 	t := TrackerFromContext(gtx)
 	diam := gtx.Dp(t.Theme.Knob.Diameter)
 	c := float32(diam) / 2 / float32(math.Sqrt2)
 	width := float32(gtx.Dp(t.Theme.UnitEditor.Width))
 	height := float32(gtx.Dp(t.Theme.UnitEditor.Height))
-	from := f32.Pt(0, float32((sy+1)*gtx.Dp(t.Theme.UnitEditor.Height))-float32(gtx.Dp(8)))
+	// the tops of the rows, which are not all as high: see rowHeight
+	fromTop, toTop := float32(pe.rowTop(gtx, wire.From)), float32(pe.rowTop(gtx, wire.To.Y))
+	from := f32.Pt(0, fromTop+height-float32(gtx.Dp(8)))
 	corner := f32.Pt(1, 1)
 	if ex > 0 {
 		corner.X = -corner.X
 	}
-	if sy < ey {
+	if wire.From < wire.To.Y {
 		corner.Y = -corner.Y
 	}
-	topLeft := f32.Pt(float32(ex)*width, float32(ey)*height)
+	topLeft := f32.Pt(float32(ex)*width, toTop)
 	center := topLeft.Add(f32.Pt(width/2, height/2))
 	to := mulVec(corner, f32.Pt(c, c)).Add(center)
 	p2 := mulVec(corner, f32.Pt(width/2, height/2)).Add(center)
-	p1 := f32.Pt(p2.X, float32((sy+1)*gtx.Dp(t.Theme.UnitEditor.Height)))
-	if sy > ey {
-		p1 = f32.Pt(p2.X, (float32(sy)+0.5)*float32(gtx.Dp(t.Theme.UnitEditor.Height))+float32(diam)/2)
+	p1 := f32.Pt(p2.X, fromTop+height)
+	if wire.From > wire.To.Y {
+		p1 = f32.Pt(p2.X, fromTop+height/2+float32(diam)/2)
 	}
 	k := float32(width) / 4
 	p2Tan := mulVec(corner, f32.Pt(-k, -k))
@@ -762,6 +831,10 @@ func (pe *InstrumentEditor) layoutFooter(gtx C) D {
 		return layout.Inset{Right: unit.Dp(16)}.Layout(gtx, Label(t.Theme, &style, text).Layout)
 	}
 	moduleBtns := func(gtx C) D {
+		if t.EQ().Active() { // an eq unit folds and unfolds like a module unit
+			btn := ToggleIconBtn(t.Unit().Unfold(), t.Theme, pe.unfoldBtn, icons.NavigationChevronRight, icons.NavigationExpandMore, pe.expandEQHint, pe.collapseEQHint)
+			return btn.Layout(gtx)
+		}
 		if !t.Unit().OpenModule().Enabled() { // not a module unit, nor inside one
 			return D{}
 		}

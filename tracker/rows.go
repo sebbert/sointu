@@ -353,17 +353,30 @@ func (m *Model) unitRange() Range {
 
 // Unfold returns a Bool telling whether the selected module unit is
 // unfolded, like a section that can be collapsed: the unit editor then shows
-// the units of its module under it. Setting it folds or unfolds all the
-// selected module units. With the cursor on an inner unit that is no module
-// unit, it folds the module unit that the cursor is inside.
+// the units of its module under it. An eq unit unfolds in the same way: the
+// unit editor then shows its whole editor under it. Setting it folds or
+// unfolds all the selected module and eq units. With the cursor on an inner
+// unit that is neither, it folds the module unit that the cursor is inside.
 func (m *UnitModel) Unfold() Bool { return MakeBool((*unitUnfold)(m)) }
 
 type unitUnfold UnitModel
 
+// foldable reports whether a unit can be folded and unfolded itself.
+func foldable(u *sointu.Unit, m *Model) bool {
+	if u == nil {
+		return false
+	}
+	if u.Type == "eq" {
+		return true
+	}
+	_, ok := m.d.Song.Modules.Find(u.Parameters["module"])
+	return ok && u.Type == "module"
+}
+
 // enclosing returns the module unit that the cursor is inside, if the
-// selected unit is no module unit to fold or unfold itself.
+// selected unit is no module unit or eq unit to fold or unfold itself.
 func (m *unitUnfold) enclosing() *sointu.Unit {
-	if _, _, ok := (*Model)(m).selectedModuleUnit(); ok {
+	if foldable((*Model)(m).selectedUnit(), (*Model)(m)) {
 		return nil
 	}
 	c := (*Model)(m).rows()
@@ -374,12 +387,11 @@ func (m *unitUnfold) enclosing() *sointu.Unit {
 	return u
 }
 func (m *unitUnfold) Enabled() bool {
-	_, _, ok := (*Model)(m).selectedModuleUnit()
-	return ok || m.enclosing() != nil
+	return foldable((*Model)(m).selectedUnit(), (*Model)(m)) || m.enclosing() != nil
 }
 func (m *unitUnfold) Value() bool {
-	u, _, ok := (*Model)(m).selectedModuleUnit()
-	return ok && u.Unfolded || m.enclosing() != nil
+	u := (*Model)(m).selectedUnit()
+	return foldable(u, (*Model)(m)) && u.Unfolded || m.enclosing() != nil
 }
 func (m *unitUnfold) SetValue(val bool) {
 	if u := m.enclosing(); u != nil {
@@ -393,8 +405,8 @@ func (m *unitUnfold) SetValue(val bool) {
 	}
 }
 
-// ToggleUnfold returns an Action to fold or unfold the module unit on the
-// given row of the unit editor.
+// ToggleUnfold returns an Action to fold or unfold the module or eq unit on
+// the given row of the unit editor.
 func (m *UnitModel) ToggleUnfold(row int) Action {
 	return MakeAction(toggleUnfold{row: row, UnitModel: m})
 }
@@ -410,11 +422,11 @@ func (m toggleUnfold) Do() {
 	}
 }
 
-// setUnfolded folds or unfolds a module unit. It is kept in the unit
+// setUnfolded folds or unfolds a module or eq unit. It is kept in the unit
 // (sointu.Unit.Unfolded), so it is saved with the song and undone, but the
 // player is not told: nothing it plays changes.
 func (m *Model) setUnfolded(u *sointu.Unit, val bool) {
-	if u.Type != "module" || u.Unfolded == val {
+	if u.Type != "module" && u.Type != "eq" || u.Unfolded == val {
 		return
 	}
 	defer m.change("Unfold", NoChange, MinorChange)()
@@ -422,15 +434,16 @@ func (m *Model) setUnfolded(u *sointu.Unit, val bool) {
 	m.d.UnitSearching = false
 }
 
-// HasModuleUnits reports whether there are module units among the root
-// units of the unit editor.
-func (m *UnitModel) HasModuleUnits() bool {
+// HasFoldableUnits reports whether there are module units or eq units among
+// the root units of the unit editor: units with a chevron that folds and
+// unfolds them.
+func (m *UnitModel) HasFoldableUnits() bool {
 	root, ok := (*Model)(m).root()
 	if !ok {
 		return false
 	}
 	for _, u := range *(*Model)(m).unitsPtrOf(root) {
-		if u.Type == "module" {
+		if u.Type == "module" || u.Type == "eq" {
 			return true
 		}
 	}

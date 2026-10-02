@@ -25,8 +25,9 @@ import (
 )
 
 // TestEQEditorInTracker lays out the tracker with an eq unit selected,
-// without a window. With SOINTU_TEST_SCREENSHOTS set to a directory, it also
-// draws each step into a PNG there.
+// without a window: folded, with its small plot in its row, and unfolded,
+// with its editor under it. With SOINTU_TEST_SCREENSHOTS set to a
+// directory, it also draws each step into a PNG there.
 func TestEQEditorInTracker(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -40,7 +41,8 @@ func TestEQEditorInTracker(t *testing.T) {
 	var ops op.Ops
 	var router input.Router
 	dir := os.Getenv("SOINTU_TEST_SCREENSHOTS")
-	var focused bool // the plot of the editor has the focus
+	ie := &tr.PatchPanel.instrEditor
+	var focused bool // the plot of the eq unit has the focus
 	frame := func(name string, before ...func(gtx C)) {
 		t.Helper()
 		for i := range 2 { // the second frame sees what the first one changed
@@ -53,7 +55,8 @@ func TestEQEditorInTracker(t *testing.T) {
 				}
 			}
 			tr.Layout(gtx)
-			focused = gtx.Focused(tr.PatchPanel.instrEditor.eqEditor)
+			row := model.EQ().Row()
+			focused = row < len(ie.eqEditors) && gtx.Focused(ie.eqEditors[row])
 			router.Frame(gtx.Ops)
 		}
 		if dir == "" || name == "" {
@@ -93,22 +96,35 @@ func TestEQEditorInTracker(t *testing.T) {
 	eq.Add(sointu.EQBand{Type: sointu.EQLadder, Frequency: 14000})
 	eq.Add(sointu.EQBand{Type: sointu.EQBell, Frequency: 800, Gain: 3, Disabled: true})
 	eq.SetSelected(1)
-	frame("eq-2-bands")
+	frame("eq-2-folded")
 	if n := eq.NumBands(); n != 6 {
 		t.Fatalf("%d bands", n)
 	}
-	// the row of the eq unit is in view above the editor
-	ie := &tr.PatchPanel.instrEditor
-	if !ie.eqShown {
-		t.Fatal("the editor is not shown")
+	row := eq.Row()
+	if row >= len(ie.eqEditors) || !ie.eqEditors[row].small {
+		t.Fatal("the folded eq unit has no small plot in its row")
 	}
-	pos := ie.paramTable.RowTitleList.List.Position
-	if row := model.Params().Cursor().Y; row < pos.First || row >= pos.First+pos.Count {
-		t.Errorf("the rack shows rows %d to %d, the eq unit is on row %d", pos.First, pos.First+pos.Count-1, row)
+	// Tab reaches the small plot, and the keys then change the selected band
+	gain := func() float64 { b, _ := eq.Band(eq.Selected()); return b.Gain }
+	for range 60 {
+		if frame("", func(gtx C) { tr.FocusNext(gtx, true) }); focused {
+			break
+		}
 	}
-	// with the pointer over the plot, and the spectra of the signal before
-	// and after the eq behind the curves: the editor has asked the player
-	// to tap the signal there, and gets what the synth recorded
+	if !focused {
+		t.Fatal("Tab does not reach the small plot")
+	}
+	was := gain()
+	router.Queue(key.Event{Name: key.NameUpArrow, State: key.Press})
+	frame("")
+	if got := gain(); got != was+tracker.EQGainStep {
+		t.Errorf("Up with the focus on the small plot: the gain is %v, was %v", got, was)
+	}
+	// unfolded, the editor is under the row, with the spectra of the signal
+	// before and after the eq behind the curves: the editor has asked the
+	// player to tap the signal there, and gets what the synth recorded
+	model.Unit().Unfold().SetValue(true)
+	frame("")
 	var taps tracker.TapsMsg
 	for more := true; more; {
 		select {
@@ -141,18 +157,10 @@ func TestEQEditorInTracker(t *testing.T) {
 	if before, after := eq.Spectra(); len(before) != 2048 || len(after) != 2048 {
 		t.Fatalf("the spectra have %d and %d bins", len(before), len(after))
 	}
-	g := ie.eqEditor.geometry
-	if g.w < 600 || g.h < 150 {
-		t.Fatalf("the plot is %v by %v pixels", g.w, g.h)
-	}
-	router.Queue(pointer.Event{Kind: pointer.Move, Source: pointer.Mouse, Position: f32.Pt(900, 300)})
-	frame("eq-3-hover-spectra")
-	if !ie.eqEditor.hovered {
-		t.Error("the pointer is not over the plot at 900, 300")
-	}
-	// Tab reaches the plot, and the keys then change the selected band
-	if focused {
-		t.Error("the plot has the focus before anything was pressed")
+	frame("eq-3-unfolded-spectra")
+	ed := ie.eqEditors[row]
+	if g := ed.geometry; ed.small || g.w < 600 || g.h < 150 {
+		t.Fatalf("unfolded, the plot is %v by %v pixels, small: %v", g.w, g.h, ed.small)
 	}
 	for range 60 {
 		if frame("", func(gtx C) { tr.FocusNext(gtx, true) }); focused {
@@ -160,21 +168,160 @@ func TestEQEditorInTracker(t *testing.T) {
 		}
 	}
 	if !focused {
-		t.Fatal("Tab does not reach the plot")
+		t.Fatal("Tab does not reach the plot of the unfolded eq unit")
 	}
-	gain := func() float64 { b, _ := eq.Band(eq.Selected()); return b.Gain }
-	was := gain()
-	router.Queue(key.Event{Name: key.NameUpArrow, State: key.Press})
-	frame("eq-3b-focused")
-	if got := gain(); got != was+tracker.EQGainStep {
-		t.Errorf("Up with the focus on the plot: the gain is %v, was %v", got, was)
+	was = gain()
+	router.Queue(key.Event{Name: key.NameDownArrow, State: key.Press})
+	frame("eq-4-unfolded-focused")
+	if got := gain(); got != was-tracker.EQGainStep {
+		t.Errorf("Down with the focus on the plot: the gain is %v, was %v", got, was)
 	}
-	// another unit selected: the editor goes
-	model.Unit().List().SetSelected(0)
-	frame("eq-4-other-unit")
-	if ie.eqShown {
-		t.Error("the editor is shown for an envelope")
+}
+
+// newEQRack returns a rackTest of an instrument with an oscillator, an eq
+// unit folded, an eq unit unfolded, an unfolded module unit of a module of
+// two oscillators, an addp and an out: on rows 0, 1, 2, 3 (its inner units
+// on 4 to 6), 7 and 8.
+func newEQRack(t *testing.T) *rackTest {
+	t.Helper()
+	model := tracker.NewModel(tracker.NewBroker(), []sointu.Synther{vm.GoSynther{}}, tracker.NullMIDIContext{}, "")
+	t.Cleanup(model.Close)
+	osc := sointu.MakeUnit("oscillator")
+	osc.Parameters["stereo"] = 0
+	folded, unfolded := sointu.MakeUnit("eq"), sointu.MakeUnit("eq")
+	folded.Bands = []sointu.EQBand{{Type: sointu.EQLowCut, Frequency: 60}, {Type: sointu.EQBell, Frequency: 400, Gain: -4, Q: 1.5}, {Type: sointu.EQHighShelf, Frequency: 5000, Gain: 5}}
+	unfolded.Bands = []sointu.EQBand{{Type: sointu.EQBell, Frequency: 150, Gain: 6}, {Type: sointu.EQNotch, Frequency: 2000, Q: 4}, {Type: sointu.EQHighCut24, Frequency: 3000}}
+	unfolded.Unfolded = true
+	mod := sointu.MakeUnit("module")
+	mod.Parameters["module"] = 1
+	mod.Unfolded = true
+	out := sointu.MakeUnit("out")
+	out.Parameters["stereo"] = 0
+	units := []sointu.Unit{osc, folded, unfolded, mod, sointu.MakeUnit("addp"), out}
+	for i := range units {
+		units[i].ID = i + 1
 	}
+	inner := []sointu.Unit{osc.Copy(), osc.Copy(), sointu.MakeUnit("addp")}
+	for i := range inner {
+		inner[i].ID = 100 + i
+	}
+	song := sointu.Song{BPM: 100, RowsPerBeat: 4,
+		Score:   sointu.Score{RowsPerPattern: 16, Length: 1, Tracks: []sointu.Track{{NumVoices: 1}}},
+		Patch:   sointu.Patch{{Name: "test", NumVoices: 1, Units: units}},
+		Modules: sointu.Modules{{ID: 1, Name: "saws", Units: inner}}}
+	b, err := yaml.Marshal(song)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model.Song().Read(io.NopCloser(bytes.NewReader(b)))
+	if got := model.Unit().List().Count(); got != 9 {
+		t.Fatalf("the rack has %v rows, not 9", got)
+	}
+	r := &rackTest{t: t, model: model, tr: NewTracker(model), size: image.Pt(1200, 900), now: time.Now()}
+	r.settle()
+	return r
+}
+
+// TestEQInRack checks the eq units in the rack: folded, the small plot in
+// the row, which can be dragged; unfolded, the editor under the row, which
+// moves the rows after it down; the chevron folding it.
+func TestEQInRack(t *testing.T) {
+	r := newEQRack(t)
+	// pointer events of the mouse, 50 ms apart, from a second on: a press
+	// at 0 would be a double click with the time of no press
+	clock := time.Second
+	ptr := func(kind pointer.Kind, buttons pointer.Buttons, pos f32.Point) {
+		clock += 50 * time.Millisecond
+		r.router.Queue(pointer.Event{Kind: kind, Source: pointer.Mouse, Buttons: buttons, Position: pos, Time: clock})
+		r.frame()
+	}
+	r.screenshot("eq-rack-1")
+	ie := &r.tr.PatchPanel.instrEditor
+	gtx := r.gtx()
+	th := r.tr.Theme
+	cellW, cellH := gtx.Dp(th.UnitEditor.Width), gtx.Dp(th.UnitEditor.Height)
+	left := gtx.Dp(th.UnitEditor.UnitList.LabelWidth) + r.railWidth()
+	if len(ie.eqEditors) < 3 || !ie.eqEditors[1].small || ie.eqEditors[2].small || len(ie.eqShown) != 2 {
+		t.Fatalf("%d eq editors, shown on rows %v", len(ie.eqEditors), ie.eqShown)
+	}
+	small, big := ie.eqEditors[1], ie.eqEditors[2]
+	if g := small.geometry; g.w != float32(tracker.EQInlineCells*cellW-8) || g.h != float32(cellH-8) {
+		t.Errorf("the small plot is %v by %v pixels", g.w, g.h)
+	}
+	if g := big.geometry; g.w < 900 || g.h < 200 {
+		t.Errorf("the plot of the unfolded eq unit is %v by %v pixels", g.w, g.h)
+	}
+	// the rows after the unfolded eq unit are lower by its editor
+	for row, top := range []int{0, cellH, 2 * cellH, 3*cellH + gtx.Dp(eqEditorHeight)} {
+		if got := ie.rowTop(gtx, row); got != top {
+			t.Errorf("row %d is at %d, not %d", row, got, top)
+		}
+	}
+	if p, ok := r.model.Params().Item(tracker.Point{X: 0, Y: 3}), r.model.Unit().Item(3).Module; p.Name() != "p1" && !ok {
+		t.Errorf("row 3 is not the module unit: %+v", r.model.Unit().Item(3))
+	}
+	// the small plot: dragging a handle selects the row and moves the band,
+	// in one step of the undo history; going down past the row selects no
+	// other rows
+	r.model.Unit().List().SetSelected(0)
+	r.frame()
+	origin := f32.Pt(float32(left+r.model.Params().RowWidth(1)*cellW+4), float32(cellH+4))
+	c, _, _ := r.model.EQAt(1).Compiled()
+	start := small.geometry.Handle(c.Bands[1].Actual).Add(origin)
+	before, _ := r.model.EQAt(1).Band(1)
+	ptr(pointer.Move, 0, start)
+	ptr(pointer.Press, pointer.ButtonPrimary, start)
+	if row := r.model.Params().Cursor().Y; row != 1 || r.model.EQAt(1).Selected() != 1 {
+		t.Errorf("pressing the handle of band 2 of the small plot: the cursor is on row %d, band %d selected", row, r.model.EQAt(1).Selected()+1)
+	}
+	ptr(pointer.Move, pointer.ButtonPrimary, start.Add(f32.Pt(20, 0)))
+	ptr(pointer.Move, pointer.ButtonPrimary, start.Add(f32.Pt(40, 3*float32(cellH))))
+	r.screenshot("eq-rack-2-dragged")
+	ptr(pointer.Release, 0, start.Add(f32.Pt(40, 3*float32(cellH))))
+	after, _ := r.model.EQAt(1).Band(1)
+	if after.Frequency <= before.Frequency*1.5 || after.Gain >= before.Gain {
+		t.Errorf("dragged right and down: %+v from %+v", after, before)
+	}
+	if c1, c2 := r.model.Params().Cursor(), r.model.Params().Cursor2(); c1.Y != 1 || c2.Y != 1 {
+		t.Errorf("the drag selected rows %d to %d", c1.Y, c2.Y)
+	}
+	r.model.History().Undo().Do()
+	if b, _ := r.model.EQAt(1).Band(1); b != before {
+		t.Errorf("undoing the drag left %+v, not %+v", b, before)
+	}
+	// the unfolded editor: a double click on empty space adds a band, and
+	// selects the row
+	plot := f32.Pt(float32(left+6), float32(3*cellH+1+4))
+	n := r.model.EQAt(2).NumBands()
+	at := f32.Pt(big.geometry.X(600), big.geometry.Y(-12)).Add(plot)
+	ptr(pointer.Move, 0, at)
+	ptr(pointer.Press, pointer.ButtonPrimary, at)
+	ptr(pointer.Release, 0, at)
+	ptr(pointer.Press, pointer.ButtonPrimary, at)
+	ptr(pointer.Release, 0, at)
+	if b, ok := r.model.EQAt(2).Band(n); !ok || !near(b.Frequency, 600, 10) || !near(b.Gain, -12, 0.3) || r.model.Params().Cursor().Y != 2 {
+		t.Errorf("a double click on the unfolded plot: %d bands, the new one %+v, the cursor on row %d", r.model.EQAt(2).NumBands(), b, r.model.Params().Cursor().Y)
+	}
+	// scrolling over empty space leaves the Q alone
+	q := func() float64 { b, _ := r.model.EQAt(2).Band(1); return b.Q }
+	was := q()
+	empty := f32.Pt(big.geometry.X(40), big.geometry.Y(20)).Add(plot)
+	ptr(pointer.Move, 0, empty)
+	r.router.Queue(pointer.Event{Kind: pointer.Scroll, Source: pointer.Mouse, Position: empty, Scroll: f32.Pt(0, -40), Time: clock})
+	r.frame()
+	if q() != was {
+		t.Errorf("scrolling over empty space changed the Q from %v to %v", was, q())
+	}
+	r.screenshot("eq-rack-3-added")
+	// the chevron above the name folds the unfolded eq unit
+	chevron := f32.Pt(float32(r.railWidth()+gtx.Dp(th.UnitEditor.UnitList.LabelWidth)/2), float32(2*cellH+gtx.Dp(th.UnitEditor.UnitList.LabelWidth)/2))
+	ptr(pointer.Press, pointer.ButtonPrimary, chevron)
+	ptr(pointer.Release, 0, chevron)
+	r.frame()
+	if r.model.Unit().EQExpanded(2) || !big.small || ie.rowTop(gtx, 3) != 3*cellH {
+		t.Errorf("the chevron did not fold the eq unit: unfolded %v, small %v", r.model.Unit().EQExpanded(2), big.small)
+	}
+	r.screenshot("eq-rack-4-folded")
 }
 
 // eqTest lays out the editor of an eq unit alone, at the origin of a window
@@ -220,7 +367,9 @@ func newEQTest(t *testing.T, bands ...sointu.EQBand) *eqTest {
 		t.Fatalf("the eq unit is not selected, or has %d bands", model.EQ().NumBands())
 	}
 	tr := NewTracker(model)
-	r := &eqTest{t: t, model: model, tr: tr, ed: tr.PatchPanel.instrEditor.eqEditor, size: image.Pt(912, 341), now: time.Now()}
+	ed := NewEQEditor()
+	ed.row = 1
+	r := &eqTest{t: t, model: model, tr: tr, ed: ed, size: image.Pt(912, 341), now: time.Now()}
 	r.frame()
 	if g := r.ed.geometry; g.w != 900 || g.h != 300 {
 		t.Fatalf("the plot is %v by %v pixels", g.w, g.h)
@@ -431,6 +580,7 @@ func TestEQEditorPointer(t *testing.T) {
 	// is scrolled within half a second is one step of the undo history
 	r.wait()
 	cut = r.band(1)
+	r.pointer(pointer.Move, 0, r.handle(1), 0) // the plot takes the scrolling over a handle
 	for range 3 {
 		r.pointer(pointer.Scroll, 0, r.handle(1), 0)
 	}

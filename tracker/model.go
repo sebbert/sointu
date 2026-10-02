@@ -77,8 +77,8 @@ type (
 		// rowCache holds the rows of the unit editor
 		rowCache rowCache
 
-		// eq is what the editor of the eq unit keeps: see EQModel
-		eq eqState
+		// eqs is what the editors of the eq units keep: see EQModel
+		eqs map[eqKey]*eqState
 
 		// taps are the watches of the signal at units: see taps.go
 		taps map[tapKey]*tapWatch

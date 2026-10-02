@@ -9,14 +9,24 @@ import (
 	"github.com/vsariola/sointu"
 )
 
-// EQ returns the EQ view of the model, with which the editor of the eq unit
-// shows and changes the bands of the selected unit, if it is an eq unit.
-// Every change goes through Model.change, so it can be undone, and the
-// player gets the units that the eq unit then stands for.
-func (m *Model) EQ() *EQModel { return (*EQModel)(m) }
+// EQ returns the EQ view of the model for the selected unit, and EQAt the one
+// for the unit on a row of the unit editor: with them, the editors of the eq
+// units show and change their bands. Every change goes through Model.change,
+// so it can be undone, and the player gets the units that the eq unit then
+// stands for.
+func (m *Model) EQ() *EQModel { return &EQModel{m: m, row: -1} }
 
-type EQModel Model
+func (m *Model) EQAt(row int) *EQModel { return &EQModel{m: m, row: row} }
 
+// EQModel is the eq unit on a row of the unit editor, or with row -1, the
+// selected unit; Active tells if it is an eq unit.
+type EQModel struct {
+	m   *Model
+	row int
+}
+
+// eqState is what the editor of an eq unit keeps: by eqKey, as the rows of
+// the unit editor change.
 type eqState struct {
 	// band is the selected band
 	band int
@@ -30,6 +40,13 @@ type eqState struct {
 	compiled     sointu.EQCompiled
 	version      int
 }
+
+// eqKey tells whose eqState it is: of the unit with the ID among the units
+// of an instrument, or of a module (module is its index, or -1).
+type eqKey struct{ instr, module, id int }
+
+// eqStates is the most eqStates kept; past it, they start anew.
+const eqStates = 64
 
 type eqGesture int
 
@@ -49,15 +66,65 @@ const (
 	EQFineStep      = 0.25
 )
 
-func (m *EQModel) unit() *sointu.Unit {
-	if u := (*Model)(m).selectedUnit(); u != nil && u.Type == "eq" {
-		return u
+// at returns the eq unit, its row and the key of its eqState, or nil if the
+// unit is no eq unit.
+func (m *EQModel) at() (u *sointu.Unit, row int, key eqKey) {
+	row = m.row
+	if row < 0 {
+		if m.m.selectedUnit() == nil {
+			return nil, 0, eqKey{}
+		}
+		row = m.m.rowOfUnit(m.m.d.UnitIndex)
 	}
-	return nil
+	u, r, ok := m.m.rowUnit(row)
+	if !ok || u.Type != "eq" {
+		return nil, 0, eqKey{}
+	}
+	key = eqKey{instr: -1, module: r.module, id: u.ID}
+	if r.module < 0 {
+		key.instr = m.m.d.InstrIndex
+	}
+	return u, row, key
 }
 
-// Active reports whether the selected unit is an eq unit.
+func (m *EQModel) unit() *sointu.Unit {
+	u, _, _ := m.at()
+	return u
+}
+
+// state returns the eqState of the eq unit, or of nothing.
+func (m *EQModel) state() *eqState {
+	_, _, key := m.at()
+	s, ok := m.m.eqs[key]
+	if !ok {
+		if m.m.eqs == nil || len(m.m.eqs) >= eqStates {
+			m.m.eqs = map[eqKey]*eqState{}
+		}
+		s = &eqState{}
+		m.m.eqs[key] = s
+	}
+	return s
+}
+
+// EQInlineCells is how many parameter cells wide the small plot of an eq unit
+// is, in its row of the rack, after its parameters.
+const EQInlineCells = 5
+
+// EQExpanded reports whether the unit on a row of the unit editor is an eq
+// unit that is unfolded: its whole editor is then shown under its row.
+func (m *UnitModel) EQExpanded(row int) bool {
+	u, _, ok := (*Model)(m).rowUnit(row)
+	return ok && u.Type == "eq" && u.Unfolded
+}
+
+// Active reports whether the unit is an eq unit.
 func (m *EQModel) Active() bool { return m.unit() != nil }
+
+// Row returns the row of the unit in the unit editor.
+func (m *EQModel) Row() int {
+	_, row, _ := m.at()
+	return row
+}
 
 // NumBands returns the number of bands of the eq unit.
 func (m *EQModel) NumBands() int {
@@ -76,13 +143,13 @@ func (m *EQModel) Band(i int) (sointu.EQBand, bool) {
 }
 
 // Compiled returns what the eq unit stands for, and a number that changes
-// whenever that does. ok is false if the selected unit is not an eq unit.
+// whenever that does. ok is false if the unit is not an eq unit.
 func (m *EQModel) Compiled() (c *sointu.EQCompiled, version int, ok bool) {
 	u := m.unit()
 	if u == nil {
 		return nil, 0, false
 	}
-	e := &m.eq
+	e := m.state()
 	if stereo, gain := u.Parameters["stereo"], u.Parameters["gain"]; e.version == 0 || stereo != e.stereo || gain != e.gain || !slices.Equal(u.Bands, e.bands) {
 		e.stereo, e.gain = stereo, gain
 		e.bands = append(e.bands[:0], u.Bands...)
@@ -94,18 +161,18 @@ func (m *EQModel) Compiled() (c *sointu.EQCompiled, version int, ok bool) {
 
 // Selected returns the selected band, or -1 if there are no bands.
 func (m *EQModel) Selected() int {
-	return min(max(m.eq.band, 0), m.NumBands()-1)
+	return min(max(m.state().band, 0), m.NumBands()-1)
 }
 
 // SetSelected selects a band.
-func (m *EQModel) SetSelected(i int) { m.eq.band = min(max(i, 0), max(m.NumBands()-1, 0)) }
+func (m *EQModel) SetSelected(i int) { m.state().band = min(max(i, 0), max(m.NumBands()-1, 0)) }
 
 // BeginGesture tells that the changes that follow, until EndGesture, are
 // one gesture, e.g. the drag of a handle: they are undone as one.
-func (m *EQModel) BeginGesture() { m.eq.gesture = eqGestureStarted }
+func (m *EQModel) BeginGesture() { m.state().gesture = eqGestureStarted }
 
 // EndGesture ends what BeginGesture started.
-func (m *EQModel) EndGesture() { m.eq.gesture = eqNoGesture }
+func (m *EQModel) EndGesture() { m.state().gesture = eqNoGesture }
 
 // change changes the eq unit. The changes of a gesture are one step of the
 // undo history.
@@ -113,16 +180,17 @@ func (m *EQModel) change(f func(u *sointu.Unit)) bool {
 	if m.unit() == nil {
 		return false
 	}
-	n := len(m.undoStack)
-	merge := m.eq.gesture == eqGestureMerging
-	done := (*Model)(m).change("EQ", PatchChange, MajorChange)
+	st := m.state()
+	n := len(m.m.undoStack)
+	merge := st.gesture == eqGestureMerging
+	done := m.m.change("EQ", PatchChange, MajorChange)
 	f(m.unit())
 	done()
-	if merge && len(m.undoStack) == n+1 {
-		m.undoStack = m.undoStack[:n] // the step of the gesture is there already
+	if merge && len(m.m.undoStack) == n+1 {
+		m.m.undoStack = m.m.undoStack[:n] // the step of the gesture is there already
 	}
-	if m.eq.gesture == eqGestureStarted {
-		m.eq.gesture = eqGestureMerging
+	if st.gesture == eqGestureStarted {
+		st.gesture = eqGestureMerging
 	}
 	return true
 }
@@ -167,7 +235,7 @@ func (m *EQModel) Add(b sointu.EQBand) int {
 	if n >= EQMaxBands || !m.change(func(u *sointu.Unit) { u.Bands = append(slices.Clone(u.Bands), roundEQ(b)) }) {
 		return -1
 	}
-	m.eq.band = n
+	m.state().band = n
 	return n
 }
 
@@ -180,8 +248,8 @@ func (m *EQModel) Delete(i int) bool {
 		return false
 	}
 	ok := m.change(func(u *sointu.Unit) { u.Bands = slices.Delete(slices.Clone(u.Bands), i, i+1) })
-	if m.eq.band > i || m.eq.band >= m.NumBands() {
-		m.eq.band = max(m.eq.band-1, 0)
+	if st := m.state(); st.band > i || st.band >= m.NumBands() {
+		st.band = max(st.band-1, 0)
 	}
 	return ok
 }
@@ -465,17 +533,17 @@ func (m *EQModel) Units() (units int, gain float64, hasGain bool) {
 // disabled. Asking for them keeps the synth recording the signal there, for
 // a second (see taps.go).
 func (m *EQModel) Spectra() (before, after []float32) {
-	u := m.unit()
-	if u == nil || m.expansion == nil {
+	u, row, _ := m.at()
+	if u == nil || m.m.expansion == nil {
 		return nil, nil
 	}
-	id := (*Model)(m).playedID((*Model)(m).rowOfUnit(m.d.UnitIndex))
-	at, ok := m.expansion.EQs[id]
+	id := m.m.playedID(row)
+	at, ok := m.m.expansion.EQs[id]
 	if !ok {
 		return nil, nil
 	}
 	stereo := u.Parameters["stereo"] == 1
-	before = (*Model)(m).spectrumOfTap(tapKey{Unit: id}, sointu.TapPoint{Instrument: at.Instrument, Unit: at.First}, stereo)
-	after = (*Model)(m).spectrumOfTap(tapKey{Unit: id, After: true}, sointu.TapPoint{Instrument: at.Instrument, Unit: at.First + at.Count}, stereo)
+	before = m.m.spectrumOfTap(tapKey{Unit: id}, sointu.TapPoint{Instrument: at.Instrument, Unit: at.First}, stereo)
+	after = m.m.spectrumOfTap(tapKey{Unit: id, After: true}, sointu.TapPoint{Instrument: at.Instrument, Unit: at.First + at.Count}, stereo)
 	return before, after
 }
