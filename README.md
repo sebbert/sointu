@@ -411,6 +411,21 @@ their instrument; in the tracker, `mcspread` creates a bus, which new mc units
 below it use, and the rack shows the level of each channel of the bus after
 each mc unit.
 
+`reverb` is such a reverb as one unit, the standard one: a stereo signal in,
+its reverb out. `size` sets the lengths of its lines, `decay` the reverb time
+(0 holds the sound), `highs` and `lows` the times above 3 kHz and below
+250 Hz relative to it, `predelay` the time before it starts, `mod` how far
+the lines move against ringing, `highcut` and `lowcut` filter its input. It
+takes a third of the bytes of the same chain of mc units in a compiled song,
+and renders the same. The parameters after those set what a chain would: the
+levels and widths of the early reflections and the tail, the rate of the
+modulation, the number of steps of the diffuser, the lengths directly,
+filters and predelay left out, allpasses in the diffuser and a second set of
+lines in the network; each costs bytes only in songs that use it. The presets
+with a reverb use this unit; the module preset Reverb and the Reverb FDN
+presets are the chains, for changing the network itself. See
+[FORK.md](FORK.md#reverb-unit).
+
 For patterns of units used again and again, e.g. a supersaw or a reverb, a
 song can have modules: named blocks of units with inputs, outputs and up to 8
 parameters. A `module` unit in an instrument, or in another module, stands for
@@ -423,7 +438,7 @@ edits them, and so do the units shown under an unfolded module unit; see
 [FORK.md](FORK.md#modules).
 
 `bufread`, `bufwrite`, `spawn`, `arg`, `window`, `ott`, `limiter`, `softclip`,
-`width`, `ladder`, the spectral units,
+`width`, `ladder`, `reverb`, the spectral units,
 the mc units, bandlimited oscillators and curved envelopes are WebAssembly only
 for now; envelopes with `curve` 0 compile for x86 as before.
 

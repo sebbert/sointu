@@ -69,6 +69,7 @@ All of these are Go and wasm only.
 | `softclip` | A clipper with a soft knee, a saturator that leaves the signal as it is below `knee`: `drive` (up to 18 dB), `knee`, and `oversample`, which clips at twice the sample rate against aliasing and costs nothing in songs that do not use it. See [softclip, width and ladder](#softclip-width-and-ladder) |
 | `width` | Stereo width: scales the side signal (0 mono, 64 as it is, 128 double), with `lowcut`, a high-pass on the side signal that makes the bass mono and costs nothing in songs that do not use it |
 | `ladder` | A low-pass of 24 dB per octave with resonance up to self-oscillation, like a Moog ladder: `frequency`, `resonance`, and `drive` into its saturator, up to 18 dB, that costs nothing in songs that do not use it |
+| `reverb` | The standard reverb as one unit: low cut, high cut, predelay, a diffuser and a feedback delay network of 8 lines, stereo in, wet out. Renders what the Reverb module preset renders, in a third of its bytes; more parameters set what the module fixes. See [reverb unit](#reverb-unit) |
 | `mcspread`, `mcsum` | Spread a mono or stereo signal over a bus of 8 channels (replacing or adding), and sum it back (with `width`) |
 | `mcdelay`, `mcmix`, `mcfilter`, `mcloop`, `mcloopend` | Change a bus in place every sample: a delay line per channel (seeded lengths, modulation, note tracking, allpass, per-band decay), orthogonal mixes (Hadamard, Householder, seeded shuffle), one-pole filters, and a feedback loop. See [mc units](#mc-units) |
 
@@ -402,17 +403,23 @@ the old Reverb Hall preset of 32 delay lines (2.1 s). Its player is 4 KB
 larger than without the reverb, 1.4 KB gzipped, 0.9 KB more than with the
 old preset.
 
-## reverb unit (experiment)
+## reverb unit
 
-An experiment: the Reverb module preset (`tracker/modules/Reverb.yml`, 22
-[mc units](#mc-units) and an `addp`) as one unit, `reverb`, to see what
-the flexibility of the mc units costs in the player; then extended so that
-it also renders the presets Reverb FDN Room, Hall, Ambient and Plate and
-the chain of `examples/reverb.yml`. This section, `vm/reverb.go`,
-`templates/wasm/reverb.wat`, `examples/reverb_unit.yml` and the presets
-Reverb unit Room, Hall, Ambient and Plate (UTIL, the FDN presets as one unit
-each, for comparing) are all of it besides the usual places of a unit;
-nothing else in this file refers to it, and no other preset uses it.
+`reverb` is the standard reverb: the network of the Reverb module preset
+(`tracker/modules/Reverb.yml`, 22 [mc units](#mc-units) and an `addp`) as
+one unit, which costs a third of the bytes in the player, and extended so
+that it also renders the presets Reverb FDN Room, Hall, Ambient and Plate
+and the chain of `examples/reverb.yml`. The presets with a reverb (Global
+reverb, Global mastering reverb, Global mastering 2 reverb, Global
+mastering 2 drumbus reverb) and the module preset Ducking reverb, with the
+presets that carry it, have this unit; before, they had the Reverb module,
+and each renders exactly what it rendered with it
+(`TestSwitchedPresetsRenderAsBefore`). The module preset Reverb, the four
+FDN presets, `examples/reverb.yml` and `examples/reverb_module.yml` are
+still chains of mc units, for changing the network itself; the presets
+Reverb unit Room, Hall, Ambient and Plate (UTIL) are the FDN presets as one
+unit each, and `examples/reverb_unit.yml` is `examples/reverb_module.yml`
+with the unit. The code is `vm/reverb.go` and `templates/wasm/reverb.wat`.
 
 **The unit.** Stereo in, the wet signal out, with the parameters of the
 module and their ranges: `size`, `decay`, `highs`, `lows`, `predelay`,
@@ -522,7 +529,8 @@ bus as well; song 3 a second reverb with other settings.
 | 1: one reverb | 5874 → 3686 | 4098 → 3276 | 1746 → 380 | 2799 → 2239 | 2714 → 2211 |
 | 2: one reverb, mc units anyway | 6447 → 5872 | 4236 → 4931 | 2181 → 911 | 3031 → 3235 | 2935 → 3148 |
 | 3: two reverbs | 7439 → 3988 | 4186 → 3364 | 3223 → 594 | 3162 → 2448 | 3066 → 2387 |
-| `examples/soundset_loop.yml` | 8300 → 6151 | | | 4068 → 3524 | 3917 → 3443 |
+| `examples/soundset_loop.yml`, as it was with the module → as it is | 8300 → 6151 | 5833 → 5049 | 2437 → 1072 | 4068 → 3524 | 3917 → 3443 |
+| `examples/soundset.yml`, the same | 9602 → 7451 | 5545 → 4759 | 4027 → 2662 | 4206 → 3669 | 4021 → 3561 |
 
 So the reverb costs 3.4 KB (1.39 KB gzipped) as a module and 1.2 KB
 (0.83 KB) as the unit: 2.2 KB less, 0.56 KB gzipped, 0.50 KB with brotli.
@@ -557,9 +565,9 @@ note tracking, other mixes, less feedback, another level of the tail, a
 mono input or output, modulated levels, filters in the loop, more than two
 sets of lines or steps that differ in kind, several inputs on one bus, any
 other order, and the meters of the tracker after each unit. No preset
-needs those: everything that uses the Reverb module (Global reverb, the
-mastering presets with a reverb, the Ducking reverb module) and the four
-FDN presets could use the unit.
+needs those: what had the Reverb module (Global reverb, the mastering
+presets with a reverb, the Ducking reverb module) has the unit now, and
+the four FDN presets have unit versions next to them.
 
 **Left out,** as nothing uses them and each would be code that only such
 a song has: note tracking of the lines (about 40 bytes), the other mixes
@@ -811,15 +819,18 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   with module presets of its own (`tracker/modules/*.yml`, embedded), listed
   after those of the user; they cannot be deleted, and a preset of the user
   with the same name is used instead.
-- **Reverb module:** the module preset `Reverb` is the standard reverb, made
-  of [mc units](#mc-units) (Go synth and wasm player only): stereo in, the
-  wet signal out. Its chain is low cut, high cut, predelay, a diffuser of
-  four steps (the early reflections) and a feedback delay network of 8 lines
-  (the tail). Each module unit using it gets a bus of its own.
-  `examples/reverb_module.yml` uses it. The instrument preset Global reverb
-  (UTIL) is the aux signal through it: `in` from aux, the module unit, `out`.
-  The preset carries the module, the same as the module preset, so a song
-  gets it once.
+- **Reverb:** the standard reverb is the [reverb unit](#reverb-unit) (Go
+  synth and wasm player only): stereo in, the wet signal out. Its chain is
+  low cut, high cut, predelay, a diffuser of four steps (the early
+  reflections) and a feedback delay network of 8 lines (the tail). The
+  instrument preset Global reverb (UTIL) is the aux signal through it: `in`
+  from aux, the reverb unit, `out`, 3 units (25 when it was the module).
+  The module preset `Reverb` is the same reverb made of
+  [mc units](#mc-units), 23 units, for changing the network itself; it
+  renders what the unit renders with the same values, and takes three times
+  the bytes in the player. Each module unit using it gets a bus of its own.
+  `examples/reverb_module.yml` uses it, `examples/reverb_unit.yml` the
+  unit.
 - **Sidechain ducking:** the kick instrument itself turns down a bus. What
   should pump is sent to aux 4/5 instead of the main output (`aux`, channel
   4). The kick instrument, after its own `out`, reads that bus with `in`,
@@ -924,15 +935,17 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   the loop has to lose more than that. The worst setting still decays, by
   5 dB per second at 174 beats per minute with a time of 12.
 - **Ducking reverb and Ducking delay modules:** the module presets
-  `Ducking reverb` (26 units) and `Ducking delay` (13 units) are the Reverb
+  `Ducking reverb` (4 units; 26 when it had the Reverb module) and `Ducking
+  delay` (13 units) are the reverb unit
   and the Ping pong delay module with the wet signal turned down while the
   dry input plays: the space stays out of the way of the notes and blooms
   after them. A stereo `compressor` computes a gain from the input, a
-  stereo `xch` puts it below the input, and after the module unit a stereo
-  `mulp` multiplies the wet signal by it. They use the
-  modules instead of copying their units, so their files carry `Reverb` or
-  `Ping pong delay` too, the same as the module presets, and a song gets
-  each once. Parameters: `size`, `decay`, `highs`, `lows` and `lowcut` of
+  stereo `xch` puts it below the input, and after the reverb unit or the
+  module unit a stereo `mulp` multiplies the wet signal by it. The Ducking
+  delay uses the Ping pong delay module instead of copying its units, so its
+  file carries that too, the same as the module preset, and a song gets it
+  once. The parameters of the reverb are bound to those of the reverb unit
+  of the same names. Parameters: `size`, `decay`, `highs`, `lows` and `lowcut` of
   the reverb (`predelay`, `mod` and `highcut` stay at their defaults), or
   `time`, `feedback`, `tone`, `lowcut` and `pan` of the delay; then `duck`
   (96; the ratio of the compressor: 0 is no ducking), `release` (62) and
@@ -949,12 +962,12 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   [Wasm player](#wasm-player)). Before that fix the modules had a `send`,
   a `pop` and a `gain` instead, a unit more, and rendered exactly the same.
 - **Global presets with them** (UTIL), which leave the existing ones as
-  they are: Global ducking reverb (aux 2/3 through `Ducking reverb`, 28
-  units), Global ping pong delay (aux 6/7 through `Ping pong delay`, 12
+  they are: Global ducking reverb (aux 2/3 through `Ducking reverb`, 6
+  units; 28 with the Reverb module), Global ping pong delay (aux 6/7 through `Ping pong delay`, 12
   units; its `outaux` can send the repeats on to the reverb) and Global
   mastering 2 ducking (aux 6/7 through `Ducking delay`, a quarter of it on
   to the reverb, aux 2/3 through `Ducking reverb`, then Global mastering 2;
-  50 units).
+  28 units, 50 with the Reverb module).
 
   All of this is measured on rendered audio, not judged by ear. Tests:
   `vm/compiler/wasm_ducking_test.go` (what the modules do, and that the
@@ -963,15 +976,16 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   `TestDuckingPresets` in `tracker/module_test.go`.
 - **Global mastering presets** (UTIL), next to upstream's Global mastering,
   which is unchanged:
-  - Global mastering reverb: the aux signal through the Reverb module, then
-    Global mastering as it is.
+  - Global mastering reverb: the aux signal through the reverb unit, then
+    Global mastering as it is (9 units; 31 with the Reverb module).
   - Global mastering 2, for loud music with a clean bass: a low cut of
     12 dB per octave at 27 Hz, a compressor (about 4.6:1 above -6 dB, 10 ms
     attack, 150 ms release, +7.5 dB makeup), a `limiter` (-0.3 dB, 2.9 ms
     lookahead, +4.4 dB drive) and a `clip` at full scale for what little
     the limiter lets through. With the limiter it is Go synth and wasm
     player only.
-  - Global mastering 2 reverb: the reverb, then Global mastering 2.
+  - Global mastering 2 reverb: the reverb unit, then Global mastering 2
+    (10 units; 32 with the Reverb module).
 
   Why a second version: measured with sines and a test mix (bass, saw
   chords, noise snare), Global mastering does this:
@@ -1009,9 +1023,11 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   | `highcut` | 98 (10 kHz) | a low-pass on the input, 1 to 20 kHz; can be modulated |
   | `lowcut` | 56 (150 Hz) | a high-pass on the input, 20 Hz to 2 kHz; can be modulated |
 
-  The level of the reverb (`gain` of `mcspread`), the level and width of the
-  early reflections and of the tail (`mcsum`) and the rate of the modulation
-  are not parameters: change them in the module. Small sizes with long
+  These are the parameters of the Reverb module and the first eight of the
+  reverb unit. The level of the reverb, the level and width of the early
+  reflections, the width of the tail and the rate of the modulation are
+  further parameters of the unit (see [reverb unit](#reverb-unit)); in the
+  module they are values of its units (`gain` of `mcspread`, `mcsum`). Small sizes with long
   decays ring, as small rooms do: the tail is dense from about `size` 32
   with the default decay.
 - **Files:** instrument files, presets and the units and instruments on the
@@ -1116,7 +1132,8 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   is the side signal cut at 12 dB per octave from there: a note between
   100 and 150 Hz keeps some width.
 - **Drum bus** (UTIL): Global mastering 2 drumbus, and Global mastering 2
-  drumbus reverb with the Reverb module, are Global mastering 2 with a
+  drumbus reverb with the reverb unit (15 units; 37 with the Reverb
+  module), are Global mastering 2 with a
   group bus for the drums in front. The channels: 0/1 the mix, 2/3 the
   reverb send, 4/5 left free for a sidechain bus, 6/7 the drum bus.
   - The drums send to the bus with an `aux` unit, channel 6, in place of
@@ -1142,7 +1159,9 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   `examples/soundset_loop.yml` is a loop of kit, acid bass and lead chords
   with the drums on the bus, through Global mastering 2 drumbus reverb.
   Their instruments are the presets (`TestSoundsetExamplesUseThePresets`).
-  Compiled for wasm they are 9.9 and 8.7 KB (4.3 and 4.2 KB gzipped).
+  Compiled for wasm they are 7.5 and 6.2 KB (3.7 and 3.5 KB gzipped); with
+  the Reverb module in place of the reverb unit they were 9.6 and 8.3 KB
+  (4.2 and 4.1 KB).
   Tests: `tracker/soundset_test.go`, and `vm/compiler/wasm_soundset_test.go`
   (every preset and both songs render in the wasm player exactly as in the
   Go synth; the long song takes most of two minutes and is skipped with
@@ -1193,6 +1212,7 @@ ways, and the templates test them:
 | `spawn`, `window` | each mode, arguments, stealing, note tracking, transpose, note length and the release loop, the test for a missing target; own length, note length and the clamp of a modulated shape of `window`. Operand: the flags of `spawn` |
 | spectral units | the first-voice check and the voice in the table; the loops over channels, the rings of `spifft` and the channels in the spectrum table (only with a stereo spectrum); low, high and tilt of `spfilter` (`$log2f`, `$powf`); freeze of `spblur`; each mode of `spphase` (`$rotate`, `$tablePhase`, `$randomPhase`); scale and shift of `spscale`; voices and intervals of `spcomb`. Operands: invert of `spgate`, mode of `spphase`, voices and intervals of `spcomb` |
 | `ott` | time, upward, downward, the right channel's powers |
+| `reverb` | the modulation of its lines; each filter of its input, and the test for it when only some units have it; the levels, widths and rate as constants of the unit instead of the code; the number of steps; allpasses in the diffuser, and plain delays; the second set of lines. See [reverb unit](#reverb-unit) |
 | `softclip`, `limiter`, `width`, `ladder`, `envelope` | drive and oversampling of `softclip`; drive of `limiter` and `ladder`, lowcut of `width`, curve of `envelope` (optional last parameters, `optionalParams`) |
 | `oscillator` | the corrections of each bandlimited waveform; the LFO code |
 | shared | `$swap`, `$peek2`, `$stereoHelper`, each only when a unit calls it; stereo and mono `xch` |
@@ -1318,6 +1338,12 @@ songs that need any of it for x86.
    the transformed parameters in songs with an oversampled softclip; the
    lowcut of width and the drive of ladder are only there in songs that use
    them. The x86 template has stubs; the compiler refuses the units for x86.
+
+   `reverb` keeps its states in `su_reverb`, walked with `$reverbWRK`, and
+   its constants in `su_reverb_consts`, with the index of the unit's as an
+   operand byte after the transformed parameters; see
+   [reverb unit](#reverb-unit) and `vm/reverb.go`. The x86 template has a
+   stub; the compiler refuses the unit for x86.
 
 9. **Bandlimited oscillators.** Flags 0x04 with 0x40, 0x20 or 0x10 mean
    bandlimited, so the gate test becomes flags & 0x74 == 0x04. Keep the
