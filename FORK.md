@@ -1682,17 +1682,46 @@ resolved; the instructions say so.
 | `guide` | how sointu patches work, for a model that has not seen the repository |
 | `unit_types` | every unit type in a line (stack effect, go/wasm only, parameters), or one with ranges, defaults and the displayed values at every 8th value |
 | `get_selection` | what the user has open and selected: the tab, the instrument, the module (Modules tab), the buffer (Buffers tab), the units and the parameter under the cursor, whether the song plays and where, the cursor in the score |
-| `get_song` | tempo, score in summary, instruments, modules and buffers in a line each, problems |
+| `get_song` | tempo, score in summary, instruments in the order they run (MIDI channel, the channels a bus reads, outputs), modules and buffers in a line each, problems, routing warnings |
+| `get_changes` | what changed since the previous call, made by the user (below) |
 | `get_instrument`, `get_module` | the units in order: `#id type [stack before>after] name=value(displayed)`, sends with what they modulate, eq bands, bindings, comments, the go/wasm only units; with `verbose`, ranges |
 | `list_presets` | instrument presets by directory, and module presets with their parameters |
 | `edit_units` | parameters, disabled, comment, eq bands and bindings of any number of units, as one step |
 | `add_units` | units in a row after or before a unit, or at the end of an instrument or a module; a send can target `new:N`, a unit of the same call |
 | `delete_units`, `move_units` | moved units keep their IDs, also into another instrument or module |
-| `add_instrument`, `edit_instrument`, `delete_instrument` | a preset or the default instrument; name, comment, voices, mute, solo, loading a preset |
+| `add_instrument`, `edit_instrument`, `delete_instrument` | a preset or the default instrument, before or after an instrument, by default before the first bus; name, comment, voices, mute, solo, loading a preset |
+| `move_instrument` | before or after another instrument |
 | `add_module`, `edit_module`, `delete_module` | a module preset or an empty module; name, comment, inputs, parameters (added, named, defaults, deleted) |
 | `set_bpm`, `undo`, `redo` | undo and redo go through the same history as the user's |
 | `render_note` | renders notes of an instrument offline and measures them (below) |
 | `play_note` | plays a note in the running tracker, for the user to hear |
+
+**Order and routing.** Instruments run in order, and in clears the channel
+it reads, so a bus hears only the instruments before it. A model appending a
+new instrument after the master chain bypassed it, so `add_instrument`
+puts it before the first instrument with an in unit (`Remote.firstBus`,
+looking into modules) unless told otherwise. `get_song` marks buses ("bus:
+reads aux1") and warns of an instrument that writes a channel only after the
+last instrument reading it (`routingWarnings`). With MIDI channel auto the
+instruments take channels in order, buses included, so adding or moving one
+can shift the channels of those after it; the result lists such shifts, for
+the model to tell the user. When the tracks of the score do not reach the
+voices involved (the buses usually have none), the instrument is added or
+moved without its tracks, where the tracker's own move would be refused.
+
+**The user's changes.** The user edits the patch in the tracker far more
+than through the model, also between its calls. Each call
+(`Remote.Call`) keeps a copy of the song as it leaves it; the next one
+compares the song with it and, when the user changed it, starts its answer
+with "NOTE: the song changed ..." and the changes (`Remote.Changes`, at most
+60 lines): instruments matched by the IDs of their units (added, deleted,
+renamed, reordered, voices, mute, MIDI, comment), units by ID (added,
+deleted, reordered, type, disabled, parameters with old and new values as
+displayed, varargs, bindings, comment), modules by ID (also their inputs and
+parameters), buffers by ID, the tempo, the score per track, the encoding
+presets. `get_changes` asks for them alone. The guide tells the model not to
+trust what it read earlier and to read an instrument right before changing
+it.
 
 **Measuring.** A model cannot hear; until now the sounds of this fork were
 tuned by rendering and measuring, by hand. `render_note` takes a copy of the

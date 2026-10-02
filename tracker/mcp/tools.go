@@ -64,7 +64,14 @@ type (
 	addInstrumentArgs struct {
 		Name   string `json:"name,omitempty"`
 		Preset string `json:"preset,omitempty" jsonschema:"an instrument preset, as name or directory/name (see list_presets); left out, the default instrument of the tracker"`
-		Voices int    `json:"voices,omitempty" jsonschema:"the number of voices, 1 if left out"`
+		Voices int    `json:"voices,omitempty" jsonschema:"the number of voices, 1 if left out: the most notes it plays at once"`
+		Before string `json:"before,omitempty" jsonschema:"the index or name of the instrument to put it before"`
+		After  string `json:"after,omitempty" jsonschema:"the index or name of the instrument to put it after"`
+	}
+	moveInstrumentArgs struct {
+		Instrument string `json:"instrument" jsonschema:"the index of the instrument, from 0, or its name"`
+		Before     string `json:"before,omitempty" jsonschema:"the index or name of the instrument to put it before"`
+		After      string `json:"after,omitempty" jsonschema:"the index or name of the instrument to put it after"`
 	}
 	editInstrumentArgs struct {
 		Instrument string  `json:"instrument" jsonschema:"the index of the instrument, from 0, or its name"`
@@ -138,7 +145,9 @@ func modelTool[A any](name, description string, readOnly bool, run func(r *track
 			if err != nil {
 				return "", err
 			}
-			return onModel(h, func(r *tracker.Remote) (string, error) { return run(r, a) })
+			return onModel(h, func(r *tracker.Remote) (string, error) {
+				return r.Call(func() (string, error) { return run(r, a) })
+			})
 		}}
 }
 
@@ -200,9 +209,15 @@ func Tools() []Tool {
 			func(r *tracker.Remote, a moveUnitsArgs) (string, error) {
 				return r.MoveUnits(a.Units, a.Instrument, a.Module, a.After, a.Before)
 			}),
-		modelTool("add_instrument", "Adds an instrument after the last one: an instrument preset, or the default instrument."+changeNote, false,
+		modelTool("get_changes", "What the user changed in the song since your previous call: instruments, units and parameters (by unit ID, with old and new values), modules, buffers, the score, the tempo. Every other tool also starts its answer with these changes when there are any.", true,
+			func(r *tracker.Remote, _ noArgs) (string, error) { return "", nil }),
+		modelTool("add_instrument", "Adds an instrument: an instrument preset, or the default instrument. Instruments run in order and buses process only the instruments before them, so without before or after it goes before the first bus (an instrument that reads a channel with in, e.g. the master chain)."+changeNote, false,
 			func(r *tracker.Remote, a addInstrumentArgs) (string, error) {
-				return r.AddInstrument(a.Name, a.Preset, a.Voices)
+				return r.AddInstrument(a.Name, a.Preset, a.Voices, a.Before, a.After)
+			}),
+		modelTool("move_instrument", "Moves an instrument before or after another one: changes which buses process it, and its MIDI channel if that is auto."+changeNote, false,
+			func(r *tracker.Remote, a moveInstrumentArgs) (string, error) {
+				return r.MoveInstrument(a.Instrument, a.Before, a.After)
 			}),
 		modelTool("edit_instrument", "Changes an instrument: name, comment, voices, mute, solo, or loads an instrument preset into it."+changeNote, false,
 			func(r *tracker.Remote, a editInstrumentArgs) (string, error) {
@@ -251,6 +266,8 @@ sointu is a modular software synthesizer and tracker for 4k/64k intros. These to
 - Start with list_instances (if several run, pass instance to every tool), then get_song and get_instrument. Call guide once before changing a patch.
 - Units are named by their ID (#12), instruments by index from 0 or by name, parameters by name. Parameter values are whole numbers, mostly 0 to 128; listings show what the tracker displays for them, e.g. frequency=40(686 Hz).
 - The selection: line of get_song and get_instrument (and get_selection) tells what the user has open and selected in the tracker: "this unit", "here", "the selected instrument" mean that. It changes as the user clicks, so read it again when they refer to it.
-- Each change tool is one undo step and returns the units after it. Watch the stack numbers and any PROBLEM line in what comes back.
+- The user edits the patch in the tracker far more than through you, also between your calls: never rely on what you read earlier. Read an instrument right before changing it. An answer that starts with NOTE: the song changed, lists what the user changed; get_changes asks for that alone.
+- Instruments run in order and a bus (an instrument that reads a channel with in, e.g. the master chain) hears only the instruments before it. add_instrument puts new ones before the first bus; mind the order when moving instruments, and the WARNING lines of get_song.
+- Each change tool is one undo step and returns the units after it. Watch the stack numbers and any PROBLEM or WARNING line in what comes back.
 - You cannot hear: use render_note before and after a change to check what it did (level, pitch, spectrum, envelope). The user judges the sound; play_note lets them hear a note.
 `)

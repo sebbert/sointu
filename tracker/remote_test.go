@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
@@ -79,7 +80,7 @@ func findType(t *testing.T, units []sointu.Unit, unitType string) *sointu.Unit {
 func TestRemoteDescribe(t *testing.T) {
 	_, r := newRemoteTestModel(t)
 	song := r.Song()
-	for _, want := range []string{"100 BPM", `0 "Instr": 1 voices, 6 units of 63, to outaux`, `1 "Global"`} {
+	for _, want := range []string{"100 BPM", `0 "Instr": 1 voices, 6 units of 63, MIDI channel 1 (auto), to outaux`, `1 "Global"`, "bus: reads aux1"} {
 		if !strings.Contains(song, want) {
 			t.Errorf("the song does not tell %q:\n%s", want, song)
 		}
@@ -222,7 +223,7 @@ func TestRemoteAddDeleteMoveUnits(t *testing.T) {
 
 func TestRemoteInstruments(t *testing.T) {
 	m, r := newRemoteTestModel(t)
-	remoteStep(t, m, func() (string, error) { return r.AddInstrument("Bus", "Global mastering 2 buses", 1) })
+	remoteStep(t, m, func() (string, error) { return r.AddInstrument("Bus", "Global mastering 2 buses", 1, "", "Global") })
 	if len(m.d.Song.Patch) != 3 || m.d.Song.Patch[2].Name != "Bus" || len(m.d.Song.Patch[2].Units) < 10 {
 		t.Fatalf("the preset was not added as instrument 2 Bus: %v", m.d.Song.Patch[2].Name)
 	}
@@ -245,7 +246,7 @@ func TestRemoteInstruments(t *testing.T) {
 	if findType(t, m.d.Song.Patch[0].Units, "reverb") == nil || m.d.Song.Patch[0].NumVoices != 3 {
 		t.Error("the preset was not loaded into the instrument, keeping its voices")
 	}
-	remoteRefused(t, m, "no instrument preset", func() (string, error) { return r.AddInstrument("", "Nope", 1) })
+	remoteRefused(t, m, "no instrument preset", func() (string, error) { return r.AddInstrument("", "Nope", 1, "", "") })
 	remoteRefused(t, m, "voices", func() (string, error) { return r.EditInstrument("0", nil, nil, ptr(1000), nil, nil, "") })
 	remoteRefused(t, m, "no instrument", func() (string, error) { return r.DeleteInstrument("9") })
 	remoteStep(t, m, func() (string, error) { return r.DeleteInstrument("Bus") })
@@ -438,3 +439,57 @@ func TestRemoteSelection(t *testing.T) {
 }
 
 func itoa(i int) string { return strconv.Itoa(i) }
+
+func TestRemoteInstrumentOrder(t *testing.T) {
+	m, r := newRemoteTestModel(t)
+	text := remoteStep(t, m, func() (string, error) { return r.AddInstrument("Saw", "", 1, "", "") })
+	if m.d.Song.Patch[1].Name != "Saw" || m.d.Song.Patch[2].Name != "Global" {
+		t.Fatalf("the instrument was not added before the bus:\n%s", text)
+	}
+	if !strings.Contains(text, "MIDI channels changed") {
+		t.Errorf("the result does not tell that the bus moved to another MIDI channel:\n%s", text)
+	}
+	text = remoteStep(t, m, func() (string, error) { return r.MoveInstrument("Instr", "", "Global") })
+	if m.d.Song.Patch[2].Name != "Instr" || m.d.Song.Patch[1].Name != "Global" {
+		t.Fatalf("the instrument was not moved after the bus:\n%s", text)
+	}
+	if song := r.Song(); !strings.Contains(song, `WARNING: instrument 2 "Instr" writes aux1 after instrument 1 "Global" reads it`) {
+		t.Errorf("the song does not warn of the instrument after its bus:\n%s", song)
+	}
+	remoteStep(t, m, func() (string, error) { return r.MoveInstrument("Instr", "0", "") })
+	if m.d.Song.Patch[0].Name != "Instr" || strings.Contains(r.Song(), "WARNING") {
+		t.Errorf("the instrument was not moved back first:\n%s", r.Song())
+	}
+	remoteRefused(t, m, "before or after", func() (string, error) { return r.MoveInstrument("Instr", "", "") })
+}
+
+func TestRemoteChanges(t *testing.T) {
+	m, r := newRemoteTestModel(t)
+	text, _ := r.Call(func() (string, error) { return "", nil })
+	if !strings.Contains(text, "first call") {
+		t.Errorf("the first call does not say so: %q", text)
+	}
+	text, _ = r.Call(func() (string, error) { return "", nil })
+	if text != "nothing changed since your previous call" {
+		t.Errorf("an unchanged song: %q", text)
+	}
+	// the user changes the song in the tracker
+	instr := &m.d.Song.Patch[0]
+	osc := findType(t, instr.Units, "oscillator")
+	osc.Parameters["transpose"] = 76
+	instr.Units = append(instr.Units, sointu.Unit{Type: "distort", ID: 999, Parameters: map[string]int{"drive": 80}})
+	m.d.Song.BPM = 140
+	m.d.Song.Patch[1].Name = "Master"
+	text, _ = r.Call(func() (string, error) { return "the answer", nil })
+	for _, want := range []string{"NOTE: the song changed",
+		fmt.Sprintf(`instrument 0 "Instr": unit #%d oscillator: transpose=76(1 oct) (was 64(0 oct))`, osc.ID),
+		`instrument 0 "Instr": added unit #999 distort`, "tempo: 140 BPM", `instrument 1 "Master": renamed from "Global"`, "the answer"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the changes do not tell %q:\n%s", want, text)
+		}
+	}
+	text, _ = r.Call(func() (string, error) { return "the answer", nil })
+	if text != "the answer" {
+		t.Errorf("the changes are told again: %q", text)
+	}
+}

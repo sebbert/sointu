@@ -209,11 +209,23 @@ func (r *Remote) Song() string {
 	}
 	fmt.Fprintf(&b, "%d BPM, %d rows per beat | score: %d tracks, %d patterns of %d rows, %.1f s\n",
 		song.BPM, song.RowsPerBeat, len(song.Score.Tracks), song.Score.Length, song.Score.RowsPerPattern, seconds)
-	fmt.Fprintf(&b, "instruments (%d voices of %d):\n", song.Patch.NumVoices(), 255)
+	fmt.Fprintf(&b, "instruments, in the order they run (%d voices of %d):\n", song.Patch.NumVoices(), 255)
+	channels := r.midiChannels()
 	for i, instr := range song.Patch {
 		fmt.Fprintf(&b, "  %d %q: %d voices, %s", i, instr.Name, max(instr.NumVoices, 1), r.unitCount(instr.Units))
+		switch {
+		case channels[i] == 0:
+			b.WriteString(", no MIDI channel")
+		case instr.MIDI.Channel == 0:
+			fmt.Fprintf(&b, ", MIDI channel %d (auto)", channels[i])
+		default:
+			fmt.Fprintf(&b, ", MIDI channel %d", channels[i])
+		}
 		if instr.Mute {
 			b.WriteString(", muted")
+		}
+		if reads := pairNames(r.channelUse(instr.Units).reads); reads != "" {
+			fmt.Fprintf(&b, ", bus: reads %s", reads)
 		}
 		if outs := outputsOf(instr.Units); outs != "" {
 			fmt.Fprintf(&b, ", to %s", outs)
@@ -327,6 +339,7 @@ func (r *Remote) problems() string {
 			fmt.Fprintf(&b, "PROBLEM: instrument %d %q has %d units once expanded; an instrument can have %d\n", i, instr.Name, n, maxUnits)
 		}
 	}
+	b.WriteString(r.routingWarnings())
 	return b.String()
 }
 

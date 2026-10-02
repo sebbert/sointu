@@ -101,6 +101,9 @@ type (
 		// remoteEdits counts the changes made through Remote, so that each
 		// is a step of its own in the undo history
 		remoteEdits int
+		// remoteSeen is a copy of the song as the last Remote call left it,
+		// to tell the next one whether the user changed it in between
+		remoteSeen *sointu.Song
 
 		prevUndoKind    string
 		undoSkipCounter int

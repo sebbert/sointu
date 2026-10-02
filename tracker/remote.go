@@ -861,12 +861,47 @@ func (r *Remote) loadPreset(instr *sointu.Instrument, name string) error {
 	return nil
 }
 
-// AddInstrument adds an instrument after the last one: the default
-// instrument of the tracker, or a preset.
-func (r *Remote) AddInstrument(name, presetName string, voices int) (string, error) {
+// Call runs a tool call f on the model. When the song changed since the
+// previous call, by the user or by loading another, the answer starts by
+// saying so, with the changes: the caller's idea of the song is out of date.
+func (r *Remote) Call(f func() (string, error)) (string, error) {
+	m := (*Model)(r)
+	first, changes := m.remoteSeen == nil, r.Changes()
+	text, err := f()
+	seen := m.d.Song.Copy()
+	m.remoteSeen = &seen
+	if text == "" && err == nil && changes == "" { // get_changes
+		if first {
+			return "this is your first call since the tracker started: read the song (get_song)", nil
+		}
+		return "nothing changed since your previous call", nil
+	}
+	if changes == "" {
+		return text, err
+	}
+	notice := "NOTE: the song changed in the tracker since your previous call (the user edits it too); what you read before is out of date:\n" + changes
+	if err != nil {
+		return "", fmt.Errorf("%s\n\n%w", notice, err)
+	}
+	if text == "" {
+		return notice, nil
+	}
+	return notice + "\n\n" + text, nil
+}
+
+// AddInstrument adds an instrument: a preset, or the default instrument.
+// It goes before the instrument before names, after the one after names, or
+// with neither, before the first bus (an instrument reading a channel with
+// in), so that the buses and the master chain process it.
+func (r *Remote) AddInstrument(name, presetName string, voices int, before, after string) (string, error) {
 	m := (*Model)(r)
 	return r.edit(SongChange, func() (remoteFocus, string, error) {
 		focus := remoteFocus{instr: -1, module: -1}
+		pos, err := r.instrumentPosition(before, after, -1)
+		if err != nil {
+			return focus, "", err
+		}
+		channels := r.midiChannels()
 		instr := defaultInstrument.Copy()
 		for i := range instr.Units {
 			instr.Units[i].ID = 0 // new IDs, also for a second one
@@ -883,13 +918,135 @@ func (r *Remote) AddInstrument(name, presetName string, voices int) (string, err
 		if instr.NumVoices > m.remainingVoices(true, m.linkInstrTrack) {
 			return focus, "", fmt.Errorf("the song has room for %d more voices", m.remainingVoices(true, m.linkInstrTrack))
 		}
-		instrRange, _, ok := m.addVoices(m.d.Song.Patch.NumVoices(), sointu.Patch{instr}, []sointu.Track{{NumVoices: instr.NumVoices}}, true, m.linkInstrTrack)
+		voice := m.d.Song.Patch[:pos].NumVoices()
+		// a track is added with it only where the tracks reach: often the
+		// buses at the end have none
+		tracks := m.linkInstrTrack && voice <= sointu.TotalVoices(m.d.Song.Score.Tracks)
+		instrRange, _, ok := m.addVoices(voice, sointu.Patch{instr}, []sointu.Track{{NumVoices: instr.NumVoices}}, true, tracks)
 		if !ok {
 			return focus, "", errors.New("the tracker could not add the instrument")
 		}
 		focus.instr = instrRange.Start
-		return focus, fmt.Sprintf("added instrument %d %q", focus.instr, instr.Name), nil
+		ins := make([]int, len(channels))
+		for i := range ins {
+			ins[i] = i
+			if i >= focus.instr {
+				ins[i]++
+			}
+		}
+		return focus, fmt.Sprintf("added instrument %d %q%s%s", focus.instr, instr.Name, r.routingNote(focus.instr), r.midiChanges(channels, ins)), nil
 	})
+}
+
+// MoveInstrument moves an instrument before or after another.
+func (r *Remote) MoveInstrument(ref, before, after string) (string, error) {
+	m := (*Model)(r)
+	return r.edit(SongChange, func() (remoteFocus, string, error) {
+		focus := remoteFocus{instr: -1, module: -1}
+		i, err := r.instrument(ref)
+		if err != nil {
+			return focus, "", err
+		}
+		if before == "" && after == "" {
+			return focus, "", errors.New("give before or after: the instrument to move it next to")
+		}
+		pos, err := r.instrumentPosition(before, after, i)
+		if err != nil {
+			return focus, "", err
+		}
+		if pos > i {
+			pos-- // the index once the instrument is taken out
+		}
+		focus.instr = i
+		if pos == i {
+			return focus, fmt.Sprintf("instrument %d %q is already there", i, m.d.Song.Patch[i].Name), nil
+		}
+		channels := r.midiChannels()
+		patch := m.d.Song.Patch
+		var voiceDelta int
+		if pos < i {
+			voiceDelta = -patch[pos:i].NumVoices()
+		} else {
+			voiceDelta = patch[i+1 : pos+1].NumVoices()
+		}
+		// the tracks move with it only when they reach all the voices
+		// involved; else the instrument moves alone, and the tracks play
+		// what is at their voices now
+		tracks := m.linkInstrTrack && sointu.TotalVoices(m.d.Song.Score.Tracks) >= patch[:max(i, pos)+1].NumVoices()
+		ranges := MakeMoveRanges(VoiceRange(patch, Range{i, i + 1}), voiceDelta)
+		if !m.sliceInstrumentsTracks(true, tracks, ranges[:]...) {
+			return focus, "", errors.New("the tracker could not move the instrument")
+		}
+		trackNote := ""
+		if m.linkInstrTrack && !tracks {
+			trackNote = "\nThe tracks of the score did not move with it, as they do not reach these voices: in the tracker, a track now plays the instrument at its voices."
+		}
+		focus.instr = pos
+		// where each instrument was before the move: ins[old] = new
+		ins := make([]int, len(channels))
+		for k := range ins {
+			switch {
+			case k == i:
+				ins[k] = pos
+			case i < k && k <= pos:
+				ins[k] = k - 1
+			case pos <= k && k < i:
+				ins[k] = k + 1
+			default:
+				ins[k] = k
+			}
+		}
+		return focus, fmt.Sprintf("moved instrument %d %q to %d%s%s%s", i, m.d.Song.Patch[pos].Name, pos, r.routingNote(pos), r.midiChanges(channels, ins), trackNote), nil
+	})
+}
+
+// instrumentPosition is the index to put an instrument at: before the
+// instrument before names, after the one after names, or with neither, before
+// the first bus other than the instrument self (-1 for a new one).
+func (r *Remote) instrumentPosition(before, after string, self int) (int, error) {
+	switch {
+	case before != "" && after != "":
+		return 0, errors.New("give before or after, not both")
+	case before != "":
+		return r.instrument(before)
+	case after != "":
+		i, err := r.instrument(after)
+		return i + 1, err
+	}
+	for i := range r.d.Song.Patch {
+		if i != self && r.isBus(i) {
+			return i, nil
+		}
+	}
+	return len(r.d.Song.Patch), nil
+}
+
+// midiChannels is the MIDI channel of each instrument, as the plugin assigns
+// them: an instrument with channel auto gets the lowest free one, in order.
+// 0 is none.
+func (r *Remote) midiChannels() []int {
+	a := midiAssigns{ctoi: map[midiAssignKey][]midiAssignRange{}}
+	a.update(r.d.Song.Patch)
+	ret := make([]int, len(r.d.Song.Patch))
+	copy(ret, a.itoc)
+	return ret
+}
+
+// midiChanges tells the instruments whose MIDI channel changed, given their
+// channels before and where each instrument went (ins[old] = new).
+func (r *Remote) midiChanges(before []int, ins []int) string {
+	after := r.midiChannels()
+	var changes []string
+	for old, ch := range before {
+		k := ins[old]
+		if k < len(after) && after[k] != ch {
+			changes = append(changes, fmt.Sprintf("%d %q from %d to %d", k, r.d.Song.Patch[k].Name, ch, after[k]))
+		}
+	}
+	if len(changes) == 0 {
+		return ""
+	}
+	return "\nMIDI channels changed (channel auto; tell the user, the DAW sends to the channels): " + strings.Join(changes, ", ")
 }
 
 // DeleteInstrument deletes an instrument.
