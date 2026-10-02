@@ -92,6 +92,7 @@ func reverbParams(params sointu.ParamMap) sointu.ParamMap {
 }
 
 func TestReverbWasmMatchesGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")
@@ -114,6 +115,7 @@ func TestReverbWasmMatchesGoSynth(t *testing.T) {
 // player only for songs that use it, and that a song without the unit has
 // nothing of it.
 func TestReverbModOnlyWhenUsed(t *testing.T) {
+	t.Parallel()
 	compile := func(song sointu.Song) string {
 		com, err := compiler.New("linux", "wasm", false, false)
 		if err != nil {
@@ -158,6 +160,7 @@ func TestReverbModOnlyWhenUsed(t *testing.T) {
 }
 
 func TestReverbX86Refused(t *testing.T) {
+	t.Parallel()
 	song := reverbTestSong(false)
 	for _, arch := range []string{"386", "amd64"} {
 		com, err := compiler.New("linux", arch, false, false)
@@ -175,6 +178,7 @@ func TestReverbX86Refused(t *testing.T) {
 // the data of what they use and nothing else, and renders them like the Go
 // synth. The first song has the defaults, and so the plain player.
 func TestReverbPartsOnlyWhenUsed(t *testing.T) {
+	t.Parallel()
 	node, _ := exec.LookPath("node")
 	wat2wasm, _ := exec.LookPath("wat2wasm")
 	const (

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -47,6 +48,10 @@ func main() {
 	targetOs := flag.String("os", runtime.GOOS, "Target OS. Defaults to current OS. Possible values: windows, darwin, linux. Anything else exits with error code. Ignored when targeting wasm.")
 	versionFlag := flag.Bool("v", false, "Print version.")
 	mathImports := flag.Bool("imports", false, "Make the wasm player call Math.pow and Math.sin of JavaScript instead of computing them itself: a smaller player, whose output differs slightly from the Go synth, as used by the tracker, and between browsers.")
+	js := flag.Bool("js", false, "For wasm: also write a JavaScript module (.js and .d.ts) that renders the song in the background and plays it while it renders. The player then renders in parts when asked, instead of the whole song when instantiated.")
+	stages := flag.Int("stages", 0, "With -js: render in a pipeline of up to this many workers, each running a part of the voices. The output is the same.")
+	stageCuts := flag.String("cuts", "", "With -js: the first voices of the stages after the first, comma separated, instead of the balanced stages of -stages.")
+	separateSamples := flag.Bool("samples", false, "For wasm: write the encoded samples of the buffers as separate files (.0.<format>, .1.<format>, ...) instead of custom sections of the wasm, e.g. to pack them as already compressed files.")
 	ffmpegPath := flag.String("ffmpeg", "", "Path of ffmpeg, for encoding the samples of songs that play buffers. By default, $"+ffmpeg.EnvVar+", PATH and common installation directories are searched.")
 	flag.Usage = printUsage
 	flag.Parse()
@@ -81,6 +86,20 @@ func main() {
 			os.Exit(1)
 		}
 		comp.MathImports = *mathImports
+		comp.JS = *js
+		comp.Stages = *stages
+		comp.SeparateSamples = *separateSamples
+		if *stageCuts != "" {
+			for _, c := range strings.Split(*stageCuts, ",") {
+				v, err := strconv.Atoi(strings.TrimSpace(c))
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "error: invalid -cuts: %v\n", err)
+					os.Exit(1)
+				}
+				comp.StageCuts = append(comp.StageCuts, v)
+			}
+		}
+		comp.Log = func(s string) { fmt.Fprintln(os.Stderr, s) }
 	}
 	output := func(filename string, extension string, contents []byte) error {
 		if *stdout {
@@ -275,7 +294,13 @@ func encodeBuffers(song *sointu.Song, ffmpegPath string) (map[int]compiler.Encod
 	}
 	ret := map[int]compiler.EncodedBuffer{}
 	for id, r := range results {
-		ret[id] = compiler.EncodedBuffer{Encoded: r.Encoded, Frames: r.Audio.Frames(), Channels: r.Audio.Channels}
+		format := ""
+		if buf, ok := song.Buffers.Find(id); ok {
+			if enc, err := song.SampleEncoding(buf.Sample); err == nil {
+				format = enc.Format
+			}
+		}
+		ret[id] = compiler.EncodedBuffer{Encoded: r.Encoded, Frames: r.Audio.Frames(), Channels: r.Audio.Channels, Format: format}
 	}
 	return ret, nil
 }

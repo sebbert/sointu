@@ -132,6 +132,7 @@ func withoutIDs(patch sointu.Patch) sointu.Patch {
 // TestModulesExpandToHandWrittenSong checks that a song with modules expands
 // to the same song written without them, and renders and compiles the same.
 func TestModulesExpandToHandWrittenSong(t *testing.T) {
+	t.Parallel()
 	for _, reverb := range []bool{false, true} {
 		modular, plain := moduleTestSongs(reverb)
 		expanded, expansion := modular.Expand()
@@ -180,6 +181,7 @@ func TestModulesExpandToHandWrittenSong(t *testing.T) {
 }
 
 func TestModulesWasmMatchesGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")
@@ -201,6 +203,7 @@ func TestModulesWasmMatchesGoSynth(t *testing.T) {
 // TestModuleProblemsRefused checks that songs whose modules cannot be
 // expanded as meant do not compile or play.
 func TestModuleProblemsRefused(t *testing.T) {
+	t.Parallel()
 	song, _ := moduleTestSongs(false)
 	song.Modules[0].Units = append(song.Modules[0].Units, moduleTestUnit("module", 0, sointu.ParamMap{"module": 2}, nil)) // uses itself
 	com, err := compiler.New("linux", "wasm", false, false)
@@ -223,6 +226,7 @@ func TestModuleProblemsRefused(t *testing.T) {
 // that the tracker comes with, fed by bursts of noise, in both synths: with
 // the defaults of its parameters, and with all of them set.
 func TestReverbModulePresetWasmMatchesGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")

@@ -15,6 +15,7 @@ import (
 // TestWasmMatchesGoSynth renders the regression test songs with the Go synth
 // and the wasm player, which should give exactly the same audio.
 func TestWasmMatchesGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")
@@ -32,9 +33,6 @@ func TestWasmMatchesGoSynth(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			if strings.Contains(name, "sample") {
 				t.Skip("samples (gm.dls) are not supported by the wasm player")
-			}
-			if name == "test_sync" {
-				t.Skip("the sync unit is not supported by the wasm player")
 			}
 			data, err := os.ReadFile(f)
 			if err != nil {

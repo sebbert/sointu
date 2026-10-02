@@ -12,6 +12,7 @@ import (
 // left and right signals differ, so copying the top twice instead of the pair
 // would change the output.
 func TestStereoPushWasmMatchesGoSynth(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found")
