@@ -242,6 +242,9 @@ func (v *UnitModel) Item(row int) UnitListItem {
 	if scope := c.lists[c.scope]; scope.parent >= 0 && r.depth > 0 {
 		ret.Edited = r.module == scope.module // also under other module units using the module
 	}
+	if u.Type == "eq" {
+		ret.EQ, ret.Unfolded = true, u.Unfolded
+	}
 	if mod, ok := v.d.Song.Modules.Find(u.Parameters["module"]); ok && u.Type == "module" {
 		ret.Module, ret.Unfolded = true, u.Unfolded
 		if row+1 < len(c.rows) && c.rows[row+1].parent == row {
@@ -260,7 +263,9 @@ func (v *UnitModel) Item(row int) UnitListItem {
 //
 // Module is true for a module unit with a module, which can be unfolded, and
 // Unfolded if it is: its signals then pass on to its inner units, which
-// show what it does with them. First and Last are true for the first inner
+// show what it does with them. EQ is true for an eq unit, which unfolds in
+// the same way, and Unfolded if it is: its whole editor is then shown under
+// its row (see EQModel). First and Last are true for the first inner
 // unit of a module unit and for the last row under one.
 //
 // Selectable is true for the units being edited, the ones in the list of
@@ -272,7 +277,7 @@ type UnitListItem struct {
 	Disabled             bool
 	Inner, First, Last   bool
 	Depth                int
-	Module, Unfolded     bool
+	Module, EQ, Unfolded bool
 	Selectable, Edited   bool
 	Signals              Rail
 	Stack                int // the number of signals on the stack after the unit

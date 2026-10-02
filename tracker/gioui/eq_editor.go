@@ -30,9 +30,12 @@ const (
 	eqPlotMaxHz = 20000
 	eqPlotDb    = 24
 	// eqHandleDp is the radius of the handle of a band, and eqHitDp how far
-	// from its center the pointer still takes it
-	eqHandleDp = 8
-	eqHitDp    = 12
+	// from its center the pointer still takes it; in the small plot, in the
+	// row of the unit, eqSmallHandleDp and eqSmallHitDp
+	eqHandleDp      = 8
+	eqHitDp         = 12
+	eqSmallHandleDp = 4
+	eqSmallHitDp    = 8
 	// eqQDragDp is how far to drag for the Q to double
 	eqQDragDp = 60
 	// eqFineDrag is how much less a drag moves with Shift held
@@ -41,15 +44,21 @@ const (
 	eqScrollDp = 20
 	// eqCurveStep is the distance of the points of the curves, in pixels
 	eqCurveStep = 2
-	// eqEditorHeight is the height of the editor, plot and values, at most
-	eqEditorHeight unit.Dp = 300
+	// eqEditorHeight is the height of the editor, plot and values, under
+	// the row of an unfolded eq unit
+	eqEditorHeight unit.Dp = 280
 )
 
 type (
-	// EQEditor is the editor of an eq unit: the plot of what the unit does
-	// to each frequency, with a handle for every band, and under it the
-	// values of the selected band.
+	// EQEditor is the editor of the eq unit on a row of the rack: the plot
+	// of what the unit does to each frequency, with a handle for every band,
+	// and under it the values of the selected band. Small, in the row of a
+	// folded eq unit, it is the plot alone, without the grid, the spectra
+	// and the numbers of the bands.
 	EQEditor struct {
+		row   int  // of the unit in the unit editor
+		small bool // laid out in the row of the unit
+
 		typeBtn      *Clickable
 		typeMenu     *MenuState
 		onBtn        *Clickable
@@ -123,8 +132,30 @@ func NewEQEditor() *EQEditor {
 }
 
 func (e *EQEditor) Tags(level int, yield TagYieldFunc) bool {
+	if e.small {
+		return yield(level, e)
+	}
 	return yield(level, e) && yield(level+1, &e.freqEditor.widgetEditor) && yield(level+1, &e.gainEditor.widgetEditor) &&
 		yield(level+1, &e.qEditor.widgetEditor) && e.typeMenu.Tags(level+1, yield)
+}
+
+// eq returns the eq unit of the editor.
+func (e *EQEditor) eq(t *Tracker) *tracker.EQModel { return t.EQAt(e.row) }
+
+// handleRadius and hitRadius return eqHandleDp and eqHitDp, or for the small
+// plot, eqSmallHandleDp and eqSmallHitDp.
+func (e *EQEditor) handleRadius(gtx C) int {
+	if e.small {
+		return gtx.Dp(eqSmallHandleDp)
+	}
+	return gtx.Dp(eqHandleDp)
+}
+
+func (e *EQEditor) hitRadius(gtx C) float32 {
+	if e.small {
+		return float32(gtx.Dp(eqSmallHitDp))
+	}
+	return float32(gtx.Dp(eqHitDp))
 }
 
 // X returns the pixel column of a frequency, and Freq the frequency of one.
@@ -219,8 +250,15 @@ func (c *eqCurves) update(compiled *sointu.EQCompiled, version, width int) {
 	}
 }
 
+// LayoutSmall lays out the small plot alone.
+func (e *EQEditor) LayoutSmall(gtx C) D {
+	e.small = true
+	return e.layoutPlot(gtx)
+}
+
 // Layout lays out the plot and, under it, the values of the selected band.
 func (e *EQEditor) Layout(gtx C) D {
+	e.small = false
 	t := TrackerFromContext(gtx)
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx C) D {
@@ -246,21 +284,27 @@ func (e *EQEditor) handles(t *Tracker, g eqGeometry, compiled *sointu.EQCompiled
 func (e *EQEditor) endScroll(t *Tracker) {
 	if e.scrolling {
 		e.scrolling = false
-		t.EQ().EndGesture()
+		e.eq(t).EndGesture()
 	}
 }
 
 func (e *EQEditor) update(gtx C, t *Tracker, g eqGeometry, compiled *sointu.EQCompiled) {
-	eq := t.EQ()
+	eq := e.eq(t)
 	if e.scrolling && gtx.Now.After(e.scrollUntil) {
 		e.endScroll(t)
 	}
-	hit := float32(gtx.Dp(eqHitDp))
+	hit := e.hitRadius(gtx)
+	// the plot takes the scrolling over a handle, and while it changes a Q;
+	// elsewhere, the rack under it scrolls
+	var scroll pointer.ScrollRange
+	if e.hover >= 0 || e.scrolling {
+		scroll = pointer.ScrollRange{Min: -1e6, Max: 1e6}
+	}
 	for {
 		ev, ok := gtx.Event(pointer.Filter{
 			Target:  e,
 			Kinds:   pointer.Press | pointer.Drag | pointer.Release | pointer.Cancel | pointer.Move | pointer.Enter | pointer.Leave | pointer.Scroll,
-			ScrollY: pointer.ScrollRange{Min: -1e6, Max: 1e6},
+			ScrollY: scroll,
 		})
 		if !ok {
 			break
@@ -334,6 +378,9 @@ func (e *EQEditor) update(gtx C, t *Tracker, g eqGeometry, compiled *sointu.EQCo
 			start, _ := eq.Band(band)
 			e.drag = eqDrag{active: true, id: pe.PointerID, band: band, start: start, last: pe.Position}
 			eq.BeginGesture()
+			// the drag is the plot's alone: the rack does not select the
+			// rows that the pointer passes
+			gtx.Execute(pointer.GrabCmd{Tag: e, ID: pe.PointerID})
 		case pointer.Drag:
 			if !e.drag.active || pe.PointerID != e.drag.id {
 				break
@@ -390,7 +437,7 @@ func (e *EQEditor) update(gtx C, t *Tracker, g eqGeometry, compiled *sointu.EQCo
 //   - Enter adds a band, Ctrl/Cmd+Enter switches the selected band on or
 //     off, Delete and Backspace delete it
 func (e *EQEditor) keyPressed(t *Tracker, ke key.Event) {
-	eq := t.EQ()
+	eq := e.eq(t)
 	sel := eq.Selected()
 	shift, alt, fine := ke.Modifiers.Contain(key.ModShift), ke.Modifiers.Contain(key.ModAlt), ke.Modifiers.Contain(key.ModShortcut)
 	dir := 1.0
@@ -441,7 +488,7 @@ func withAlpha(c color.NRGBA, a uint8) color.NRGBA {
 
 func (e *EQEditor) layoutPlot(gtx C) D {
 	t := TrackerFromContext(gtx)
-	eq := t.EQ()
+	eq := e.eq(t)
 	s := gtx.Constraints.Max
 	compiled, version, ok := eq.Compiled()
 	if !ok || s.X < 8 || s.Y < 8 {
@@ -462,23 +509,32 @@ func (e *EQEditor) layoutPlot(gtx C) D {
 	style := &t.Theme.Plot
 	sumColor, bandColor, offColor := style.CurveColors[0], style.CurveColors[1], style.CurveColors[2]
 
-	// the grid
+	// the grid; in the small plot, only 100 Hz, 1 kHz, 10 kHz and 0 dB
 	for _, tick := range eqFreqTicks {
+		if e.small && tick.freq != 100 && tick.freq != 1000 && tick.freq != 10000 {
+			continue
+		}
 		x := int(g.X(tick.freq) + 0.5)
 		paint.FillShape(gtx.Ops, style.LimitColor, clip.Rect{Min: image.Pt(x, 0), Max: image.Pt(x+1, s.Y)}.Op())
-		if tick.label != "" && x+gtx.Dp(24) < s.X {
+		if tick.label != "" && x+gtx.Dp(24) < s.X && !e.small {
 			o := op.Offset(image.Pt(x+gtx.Dp(3), s.Y-gtx.Dp(16))).Push(gtx.Ops)
 			Label(t.Theme, &style.Ticks, tick.label).Layout(gtx)
 			o.Pop()
 		}
 	}
 	for db := -eqPlotDb + 6; db < eqPlotDb; db += 6 {
+		if e.small && db != 0 {
+			continue
+		}
 		y := int(g.Y(float64(db)) + 0.5)
 		c := style.LimitColor
 		if db == 0 {
 			c = withAlpha(style.Ticks.Color, 90)
 		}
 		paint.FillShape(gtx.Ops, c, clip.Rect{Min: image.Pt(0, y), Max: image.Pt(s.X, y+1)}.Op())
+		if e.small {
+			continue
+		}
 		label := strconv.Itoa(db)
 		if db > 0 {
 			label = "+" + label
@@ -490,7 +546,7 @@ func (e *EQEditor) layoutPlot(gtx C) D {
 
 	// behind the curves, the spectrum of the signal as the synth plays it:
 	// before the eq as an area, after it as a line
-	if e.spectrumOn {
+	if e.spectrumOn && !e.small {
 		before, after := eq.Spectra()
 		drawEQSpectrum(gtx, g, before, 0, withAlpha(offColor, 70))
 		drawEQSpectrum(gtx, g, after, float32(gtx.Dp(1)), withAlpha(offColor, 230))
@@ -501,7 +557,7 @@ func (e *EQEditor) layoutPlot(gtx C) D {
 	sel := eq.Selected()
 	zero := g.Y(0)
 	for i, levels := range e.curves.bands {
-		if len(levels) == 0 {
+		if len(levels) == 0 || e.small { // the small plot: the sum alone
 			continue
 		}
 		if i == sel {
@@ -515,7 +571,7 @@ func (e *EQEditor) layoutPlot(gtx C) D {
 
 	// the handles
 	handles := e.handles(t, g, compiled)
-	r := gtx.Dp(eqHandleDp)
+	r := e.handleRadius(gtx)
 	numbers := style.Ticks
 	numbers.Alignment = text.Middle
 	for i, h := range handles {
@@ -541,6 +597,9 @@ func (e *EQEditor) layoutPlot(gtx C) D {
 		}
 		circle(r, t.Theme.Material.Bg)
 		circle(r, c)
+		if e.small {
+			continue
+		}
 		numbers.Color = t.Theme.Material.ContrastFg
 		o := op.Offset(p.Sub(image.Pt(r, gtx.Dp(8)))).Push(gtx.Ops)
 		ngtx := gtx
@@ -550,8 +609,8 @@ func (e *EQEditor) layoutPlot(gtx C) D {
 	}
 
 	// how to use it
-	if e.hovered || gtx.Focused(e) {
-		hint := "double-click: add, remove · drag: frequency, gain · alt+drag, scroll: Q · shift: fine · right-click: on/off"
+	if (e.hovered || gtx.Focused(e)) && !e.small {
+		hint := "double-click: add, remove · drag: frequency, gain · alt+drag, scroll on a handle: Q · shift: fine · right-click: on/off"
 		if len(handles) == 0 {
 			hint = "double-click to add a band"
 		}
@@ -673,7 +732,7 @@ func drawEQSpectrum(gtx C, g eqGeometry, levels []float32, width float32, c colo
 // number of units of the eq.
 func (e *EQEditor) layoutBand(gtx C) D {
 	t := TrackerFromContext(gtx)
-	eq := t.EQ()
+	eq := e.eq(t)
 	sel := eq.Selected()
 	band, has := eq.Band(sel)
 	header := &t.Theme.SongPanel.RowHeader

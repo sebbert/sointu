@@ -1073,7 +1073,8 @@ the last time they were asked for, the synth records nothing).
   with scaled amounts, stereo where it can be (`sointu.SendToPorts`, which
   `Song.Expand` uses too, and `Module.Ports`). A send to a port that nothing
   is bound to stays, without a target.
-- **Unfolding:** a module unit is like a section that can be collapsed: the
+- **Unfolding:** a module unit is like a section that can be collapsed (an
+  `eq` unit too: see EQ editor): the
   chevron on its row in the unit list and the rack, or in the footer
   (Ctrl+Alt+G), unfolds it. Its inner units then follow it, set into the
   rack, darker and indented: the units of its module, as they are in the
@@ -1281,24 +1282,43 @@ the last time they were asked for, the synth records nothing).
   wasm player renders them, the example and Global mastering 2 ducking like
   the Go synth) and `TestBuiltinModulePresetsCanonical` and
   `TestDuckingPresets` in `tracker/module_test.go`.
-- **EQ editor:** while the selected unit is an `eq` unit (see [eq](#eq)),
-  its editor is under the rack: a plot from 20 Hz to 20 kHz and ±24 dB with
-  the curve of every band, the curve of all the units (what is heard: see
+- **EQ editor:** an `eq` unit (see [eq](#eq)) is edited in its row of the
+  rack, and folds and unfolds like a module unit (see Unfolding under
+  Modules): the same chevron in the unit list and above its name in the
+  rack, the same button in the footer and key (Ctrl+Alt+G), saved with the
+  song in the same `unfolded` of the unit, undone in the same way. Each eq
+  unit has its own editor and its own selected band; several can be
+  unfolded at once.
+  - *Folded*, the row shows its `stereo` switch and `gain` knob, then a
+    small plot 5 cells wide (`tracker.EQInlineCells`): the curve of all the
+    units, a 0 dB line, lines at 100 Hz, 1 kHz and 10 kHz, and small handles
+    without numbers; no curves of the bands, no spectra, no labels. The
+    mouse and the keys work there as in the large plot; a click on it puts
+    the cursor of the rack on the row, on its parameters. The comment
+    follows the plot.
+  - *Unfolded*, the row shows its parameters, and under it, inside the rack
+    and scrolling with it, as wide as the rack, the whole editor
+    (280 dp): a plot from 20 Hz to 20 kHz and ±24 dB with the curve of
+    every band, the curve of all the units (what is heard: see
   the response there) and a numbered handle for every band, at the
   frequency and the gain that its units have, or at 0 dB for a band without
   gain. Under it the selected band: its type (a menu), on or off, its
   frequency, gain and Q as numbers to type (`1.2k`, `-4,5 dB`), then what
   it was compiled to (`→ 990 Hz · 3.12 dB · Q 1.23 · 1 unit`, with
   `Go synth and wasm only` for a ladder), the number of units of the eq and
-  the gain of its gain unit. `examples/eq.yml` has three.
+  the gain of its gain unit. The signals passing the eq run on through
+  the rail beside the editor, and the rows after it move down by its
+  height; when it is unfolded and does not fit, the rack scrolls the row to
+  the top. `examples/eq.yml` has three.
   - *Mouse.* Dragging a handle changes the frequency and the gain, or for a
     band without gain the frequency and the Q; with Shift a fifth as far;
-    with Alt the Q only (60 dp up doubles it). Scrolling over the plot
-    changes the Q of the band under the pointer, or of the selected one. A
+    with Alt the Q only (60 dp up doubles it). Scrolling over a handle
+    changes the Q of its band; elsewhere the scrolling is the rack's. A
     double click on empty space adds a band there and drags it: a bell, a
     low cut below 40 Hz, a `ladder` high cut above 12 kHz. A double click
     on a handle removes its band; the right button switches it on or off.
-  - *Keys*, with the focus on the plot (Tab, or a click): Left and Right
+  - *Keys*, with the focus on a plot, small or large (Tab, or a click):
+    Left and Right
     select a band, Shift+Left and Shift+Right change its frequency by a
     semitone, Up and Down its gain by 0.5 dB, Alt+Up and Alt+Down its Q by
     a sixth of an octave, Alt+Left and Alt+Right its type; with Ctrl/Cmd the
@@ -1325,9 +1345,13 @@ the last time they were asked for, the synth records nothing).
     each new window counting a quarter. The button next to the unit count
     hides them, and the synth then records nothing. With the native synth
     there are none.
-  - `tracker/eq.go` (`Model.EQ`), `tracker/gioui/eq_editor.go`
-    (`eqGeometry`, `eqHit`, `eqDragged`: where things are and what a drag
-    does, without a window).
+  - `tracker/eq.go` (`Model.EQ` for the selected unit, `Model.EQAt` for the
+    unit on a row; their state by instrument or module and unit ID),
+    `tracker/gioui/eq_editor.go` (`eqGeometry`, `eqHit`, `eqDragged`: where
+    things are and what a drag does, without a window), `layoutEQ` and
+    `rowHeight` in `tracker/gioui/instrument_editor.go` (the rows of the
+    rack are not all as high: `ScrollTableStyle.RowHeight`). Headless
+    renders: `SOINTU_TEST_SCREENSHOTS=<dir> go test ./tracker/gioui -run EQ`.
 - **Global mastering presets** (UTIL), next to upstream's Global mastering,
   which is unchanged:
   - Global mastering reverb: the aux signal through the reverb unit, then

@@ -247,3 +247,73 @@ func TestEQSaved(t *testing.T) {
 		t.Errorf("the instrument counts as %d units, not 11", count)
 	}
 }
+
+// TestEQRows checks that each eq unit of the unit editor has its own bands
+// and selected band, by its row, and that it folds and unfolds like a
+// module unit, which is saved and undone without adding rows.
+func TestEQRows(t *testing.T) {
+	m, _ := newEQTestModel(t)
+	first := m.EQ().Row()
+	m.Unit().Add(false).Do()
+	m.Unit().SetType("eq")
+	second := m.EQ().Row()
+	if second != first+1 || !m.EQAt(first).Active() || !m.EQAt(second).Active() || m.EQAt(first-1).Active() {
+		t.Fatalf("the eq units are on rows %d and %d", first, second)
+	}
+	a, b := m.EQAt(first), m.EQAt(second)
+	a.Add(sointu.EQBand{Type: sointu.EQBell, Frequency: 100, Gain: 3})
+	b.Add(sointu.EQBand{Type: sointu.EQBell, Frequency: 200, Gain: 3})
+	b.Add(sointu.EQBand{Type: sointu.EQBell, Frequency: 400, Gain: 3})
+	b.SetSelected(0)
+	a.SetSelected(0)
+	b.SetSelected(1)
+	if a.NumBands() != 1 || b.NumBands() != 2 || a.Selected() != 0 || b.Selected() != 1 {
+		t.Fatalf("bands %d and %d, selected %d and %d", a.NumBands(), b.NumBands(), a.Selected(), b.Selected())
+	}
+	if m.EQ().Row() != second || m.EQ().Selected() != 1 {
+		t.Errorf("the selected eq unit is on row %d with band %d selected", m.EQ().Row(), m.EQ().Selected())
+	}
+	// a drag of the first while the second is selected is one step
+	n := len(m.undoStack)
+	a.BeginGesture()
+	a.Step(0, 1, 0, 0, false)
+	a.Step(0, 1, 0, 0, false)
+	a.EndGesture()
+	if len(m.undoStack) != n+1 {
+		t.Errorf("a gesture on the first eq unit is %d steps", len(m.undoStack)-n)
+	}
+	if band, _ := b.Band(1); band.Frequency != 400 {
+		t.Errorf("the gesture on the first eq unit changed the second: %+v", band)
+	}
+	// unfolded, like a module unit
+	rows := m.Unit().List().Count()
+	unfold := m.Unit().Unfold()
+	if !unfold.Enabled() || unfold.Value() || m.Unit().EQExpanded(second) {
+		t.Fatalf("Unfold of a folded eq unit: enabled %v, value %v", unfold.Enabled(), unfold.Value())
+	}
+	unfold.SetValue(true)
+	if !unfold.Value() || !m.Unit().EQExpanded(second) || m.Unit().EQExpanded(first) || m.Unit().List().Count() != rows {
+		t.Errorf("unfolded: %v, rows %d, was %d", m.Unit().EQExpanded(second), m.Unit().List().Count(), rows)
+	}
+	if item := m.Unit().Item(second); !item.EQ || !item.Unfolded || item.Module {
+		t.Errorf("the item of the unfolded eq unit: %+v", item)
+	}
+	m.Unit().ToggleUnfold(first).Do()
+	if !m.Unit().EQExpanded(first) || !m.Unit().EQExpanded(second) {
+		t.Error("the two eq units are not unfolded at once")
+	}
+	var buf bytes.Buffer
+	m.Song().Write(nopWriteCloser{&buf})
+	if c := strings.Count(buf.String(), "unfolded: true"); c != 2 {
+		t.Errorf("the song saves %d unfolded units", c)
+	}
+	// folding and unfolding in a row is one step, as for module units
+	m.History().Undo().Do()
+	if m.Unit().EQExpanded(first) || m.Unit().EQExpanded(second) {
+		t.Error("undoing the unfolding left the eq units unfolded")
+	}
+	unfold.Toggle()
+	if !m.Unit().EQExpanded(second) || m.Unit().EQExpanded(first) {
+		t.Error("toggling did not unfold the selected eq unit")
+	}
+}
