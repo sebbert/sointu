@@ -505,7 +505,7 @@ func (t *MenuBar) Layout(gtx C) D {
 			ActionMenuChild(tr.Order().RemoveUnusedPatterns(), "Remove unused data", keyActionMap["RemoveUnused"], icons.ImageCrop),
 			DividerMenuChild(),
 			BoolMenuChild(tr.AlwaysOnTop(), "Keep window on top", "", icons.NavigationCheck),
-			BoolMenuChild(tr.LetClaudeEdit(), "Let Claude edit (MCP)", "", icons.NavigationCheck),
+			BoolMenuChild(tr.EnableMCP(), "Enable MCP", "", icons.NavigationCheck),
 		)
 	})
 	midiBtn := MenuBtn(&t.MenuStates[2], &t.Clickables[2], "MIDI")

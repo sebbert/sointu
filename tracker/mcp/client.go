@@ -105,7 +105,7 @@ func processRuns(pid int) bool {
 // Describe lists instances for a language model to choose from.
 func Describe(instances []Info) string {
 	if len(instances) == 0 {
-		return "No sointu tracker or plugin is listening. The user turns it on in the tracker or the plugin window: Edit > Let Claude edit (MCP)."
+		return "No sointu tracker or plugin is listening. The user turns it on in the tracker or the plugin window: Edit > Enable MCP."
 	}
 	var b strings.Builder
 	for _, info := range instances {

@@ -129,7 +129,7 @@ func TestStaleHostFilesAreRemoved(t *testing.T) {
 	if _, err := os.Stat(file); !os.IsNotExist(err) {
 		t.Error("the file of a host that is gone was not removed")
 	}
-	if _, err := Choose(instances, ""); err == nil || !strings.Contains(err.Error(), "Let Claude edit") {
+	if _, err := Choose(instances, ""); err == nil || !strings.Contains(err.Error(), "Enable MCP") {
 		t.Errorf("without hosts, the user is not told how to turn it on: %v", err)
 	}
 }

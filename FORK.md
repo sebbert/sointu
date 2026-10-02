@@ -3,7 +3,7 @@
 This branch of Sointu adds macOS and CLAP plugins, audio samples and buffers,
 granular synthesis, spectral processing, modules (reusable blocks of units),
 a graphical parametric equalizer, up to 255 voices and 16 output channels
-(seven aux pairs), and an [MCP server](#mcp-claude-edits-the-patch) through
+(seven aux pairs), and an [MCP server](#mcp-server) through
 which Claude reads and changes the patch of a running tracker or plugin. Most of the new
 synthesis features exist only in the Go synth and the WebAssembly player; the
 x86 players (`vm/compiler/templates/amd64-386`) and the native bridge were left
@@ -1571,7 +1571,7 @@ the last time they were asked for, the synth records nothing).
   Go synth; the long song takes most of two minutes and runs only with
   `SOINTU_TEST_LONG=1`, see [Tests](#tests)).
 
-## MCP: Claude edits the patch
+## MCP server
 
 A language model, e.g. Claude in Claude Code, can read and change the patch
 of a running tracker or plugin instance, through the Model Context Protocol:
@@ -1579,7 +1579,7 @@ it sees the instruments and units as the tracker shows them, changes them
 as the user would, and renders notes offline to measure what a change did.
 The user hears and sees every change at once, and undoes it like any other.
 
-**Turning it on.** Edit → Let Claude edit (MCP), in the tracker or a plugin
+**Turning it on.** Edit → Enable MCP, in the tracker or a plugin
 window. It is off by default; the choice is saved in the user's
 `preferences.yml` (`mcp: enabled:`), so every tracker and plugin instance
 started after that listens too. Instances that are already open change
@@ -1645,7 +1645,7 @@ names a value as it is displayed (`type: "sine"`). Each change is one step
 of the undo history, refused as a whole if any part is not valid (a value
 out of range, an unknown parameter, more than 63 units once expanded, an
 instrument left without units), moves the cursor to the unit or instrument
-it was about, and shows an alert ("Claude: ..."). It returns the units as
+it was about, and shows an alert ("MCP: ..."). It returns the units as
 they are after it. `get_song`, `get_instrument`, `get_module` and what the
 changes return end with a `selection:` line (`Remote.Selection`): the tab,
 the instrument, the module or the buffer of the tab, the selected units and

@@ -100,7 +100,7 @@ func TestServerEndToEnd(t *testing.T) {
 	if text, isErr := callText(t, s, "guide", nil); isErr || !strings.Contains(text, "The stack") {
 		t.Errorf("guide: %s", text)
 	}
-	if text, isErr := callText(t, s, "get_song", nil); !isErr || !strings.Contains(text, "Let Claude edit") {
+	if text, isErr := callText(t, s, "get_song", nil); !isErr || !strings.Contains(text, "Enable MCP") {
 		t.Errorf("get_song without a tracker: %s", text)
 	}
 	runTracker(t)

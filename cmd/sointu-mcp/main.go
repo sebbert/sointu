@@ -3,7 +3,7 @@
 // running. A client starts it and talks to it over standard input and
 // output; it passes the tool calls on to a tracker or a plugin instance,
 // over the unix socket that the instance listens on once the user has
-// turned it on (Edit > Let Claude edit). See tracker/mcp.
+// turned it on (Edit > Enable MCP). See tracker/mcp.
 //
 //	claude mcp add sointu -- /path/to/sointu-mcp
 package main

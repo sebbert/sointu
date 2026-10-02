@@ -227,7 +227,7 @@ func (r *Remote) edit(t ChangeType, f func() (remoteFocus, string, error)) (text
 	}
 	r.setCursor(focus)
 	done()
-	m.Alerts().Add("Claude: "+summary, Info)
+	m.Alerts().Add("MCP: "+summary, Info)
 	return summary + "\n\n" + r.describeFocus(focus), nil
 }
 
@@ -1117,7 +1117,7 @@ func (r *Remote) history(steps int, redo bool) (string, error) {
 		return "", errors.New("nothing to " + word)
 	}
 	summary := fmt.Sprintf("%s %d steps", past, done)
-	m.Alerts().Add("Claude: "+summary, Info)
+	m.Alerts().Add("MCP: "+summary, Info)
 	return summary + "\n\n" + r.Song(), nil
 }
 
