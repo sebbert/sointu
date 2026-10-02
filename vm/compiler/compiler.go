@@ -32,6 +32,49 @@ type Compiler struct {
 	// it exports r(rows), which renders the next rows of the song and can be
 	// called until the song ends.
 	Progressive bool
+	// Stages makes the progressive wasm player able to render the song in
+	// a pipeline of up to this many stages, each a range of voices run by
+	// its own instance (see wasm_stages.go); StageCuts sets the first
+	// voices of the stages after the first instead. ChunkRows is the most
+	// rows a stage renders in a call; by default, the rows of about half a
+	// second. The player without stages is the same.
+	Stages    int
+	StageCuts []int
+	ChunkRows int
+	// Log, if not nil, is told how the compiler laid out the stages.
+	Log func(string)
+	// Layout is set by Song to the layout of the wasm player it compiled.
+	Layout *WasmLayout
+}
+
+// WasmLayout tells a host where the wasm player keeps what the host reads
+// and writes, as addresses in the memory of the player.
+type WasmLayout struct {
+	Output      int // address of the audio: interleaved stereo float32, or int16 with Output16Bit
+	OutputBytes int // size of the audio of the song
+	Rows        int // rows of the song
+	RowSamples  int // samples of a row
+	ChunkRows   int // the rows to render at a time; with stages, the most a call to r may render
+	// Stages is the number of stages of the pipeline, 0 without. TapeIn and
+	// TapeOut are the addresses of the tapes a stage reads and writes, and
+	// StageCells the number of cells (4 bytes) that each stage reads for
+	// every sample, which the stage before it writes.
+	Stages          int
+	TapeIn, TapeOut int
+	StageCells      []int
+	StageVoices     [][2]int // first voice and the voice after the last of each stage
+}
+
+// chunkRows returns the rows the players render at a time: ChunkRows, or
+// by default the rows of about half a second.
+func (com *Compiler) chunkRows(song *sointu.Song) int {
+	if com.ChunkRows > 0 {
+		return com.ChunkRows
+	}
+	if spr := song.SamplesPerRow(); spr > 0 {
+		return max(1, (22050+spr/2)/spr)
+	}
+	return 1
 }
 
 // EncodedBuffer is the sample of a buffer encoded for the compiled player,
@@ -302,6 +345,18 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 			}
 			buffers.wasmBufferFeatures = bufferFeatures(song, features, encodedPatch, &buffers)
 			units := unitFeatures(song, encodedPatch)
+			if (com.Stages > 1 || len(com.StageCuts) > 0) && !com.Progressive {
+				return nil, nil, errors.New("only the progressive player renders in stages")
+			}
+			stages, report, stageErr := wasmStages(song, features, com.Stages, com.StageCuts, com.chunkRows(song))
+			if stageErr != nil {
+				return nil, nil, stageErr
+			}
+			if com.Log != nil {
+				for _, line := range report {
+					com.Log(line)
+				}
+			}
 			data := struct {
 				CompilerMacros
 				FeatureSetMacros
@@ -317,8 +372,18 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 				wasmSpectralData
 				wasmMCData
 				wasmUnitFeatures
-			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers, wasmSpectral(encodedPatch, units), wasmMC(encodedPatch, units, featureSetMacros.MCDelayMod()), units}
+				wasmStageData
+			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers, wasmSpectral(encodedPatch, units), wasmMC(encodedPatch, units, featureSetMacros.MCDelayMod()), units, stages}
 			populatedTemplate, extension, err = com.compile(templateName, &data)
+			com.Layout = &WasmLayout{
+				Output: wasmMacros.Labels["su_outputbuffer"], OutputBytes: wasmMacros.Labels["su_outputend"] - wasmMacros.Labels["su_outputbuffer"],
+				Rows: song.Score.LengthInRows(), RowSamples: song.SamplesPerRow(), ChunkRows: com.chunkRows(song),
+				Stages: stages.NumStages, TapeIn: wasmMacros.Labels["su_tape_in"], TapeOut: wasmMacros.Labels["su_tape_out"],
+			}
+			for _, s := range stages.Stages[:stages.NumStages] {
+				com.Layout.StageCells = append(com.Layout.StageCells, len(s.InCells))
+				com.Layout.StageVoices = append(com.Layout.StageVoices, [2]int{s.First, s.End})
+			}
 		}
 		if err != nil {
 			return nil, nil, fmt.Errorf(`could not execute template "%v": %v`, templateName, err)

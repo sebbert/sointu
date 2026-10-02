@@ -161,6 +161,22 @@
 {{- range .Instructions}}
 {{- $.TransformCount . | $.ToByte | $.DataB}}
 {{- end}}
+{{- if .NumStages}}
+{{- /*
+;-------------------------------------------------------------------------------
+;    Stages (see wasm_stages.go): the offsets from su_synth of the cells
+;    that each cut of the pipeline tapes, and 13 i32s for each stage
+;-------------------------------------------------------------------------------
+*/}}
+{{- .SetDataLabel "su_stage_cells"}}
+{{- range .StageCells}}
+{{- $.DataD .}}
+{{- end}}
+{{- .SetDataLabel "su_stages"}}
+{{- range .StageTable}}
+{{- $.DataD .}}
+{{- end}}
+{{- end}}
 
 {{- /*
 ;-------------------------------------------------------------------------------
@@ -258,6 +274,12 @@
 {{- .Block (int (mul .PatternLength .SequenceLength .Song.SamplesPerRow 8))}}
 {{- end}}
 {{- .SetBlockLabel "su_outputend"}}
+{{- if .NumStages}}
+{{- .SetBlockLabel "su_tape_in"}}
+{{- .Block (.StageTapeBytes .Song.SamplesPerRow)}}
+{{- .SetBlockLabel "su_tape_out"}}
+{{- .Block (.StageTapeBytes .Song.SamplesPerRow)}}
+{{- end}}
 
 
 ;;------------------------------------------------------------------------------
@@ -320,6 +342,13 @@
 (global $outputStart (export "s") i32 (i32.const {{index .Labels "su_outputbuffer"}}))
 (global $outputLength (export "l") i32 (i32.const {{if .Output16Bit}}{{mul .PatternLength .SequenceLength .Song.SamplesPerRow 4}}{{else}}{{mul .PatternLength .SequenceLength .Song.SamplesPerRow 8}}{{end}}))
 (global $output16bit (export "t") i32 (i32.const {{if .Output16Bit}}1{{else}}0{{end}}))
+{{- if .NumStages}}
+;; the stage this instance runs, as the address of its 13 i32s in su_stages:
+;; at first the stage after those of the pipeline, which runs all voices
+(global $stage (mut i32) (i32.const {{add (index .Labels "su_stages") (mul .NumStages 52)}}))
+(global $tapeIn (mut i32) (i32.const 0))
+(global $tapeOut (mut i32) (i32.const 0))
+{{- end}}
 
 
 ;;------------------------------------------------------------------------------
@@ -402,6 +431,10 @@
 {{- if and .Progressive (or .Buffers .SpectralTable)}}
     ))
 {{- end}}
+{{- if .NumStages}}
+    (global.set $tapeIn (i32.const {{index .Labels "su_tape_in"}}))
+    (global.set $tapeOut (i32.const {{index .Labels "su_tape_out"}}))
+{{- end}}
 {{- if .Progressive}}
         loop $row_loop
 {{- else}}
@@ -412,6 +445,32 @@
             (call $su_update_voices)
             (global.set $sample (i32.const 0))
             loop $sample_loop
+{{- if .NumStages}}
+                (global.set $COM (i32.add (i32.const {{index .Labels "su_patch_opcodes"}}) (i32.load (global.get $stage))))
+                (global.set $VAL (i32.add (i32.const {{index .Labels "su_patch_operands"}}) (i32.load offset=4 (global.get $stage))))
+{{- if .SupportsPolyphony}}
+                (global.set $COM_instr_start (global.get $COM))
+                (global.set $VAL_instr_start (global.get $VAL))
+{{- end}}
+                (global.set $WRK (i32.add (i32.const {{index .Labels "su_voices"}}) (i32.load offset=8 (global.get $stage))))
+                (global.set $voice (global.get $WRK))
+                (global.set $voicesRemain (i32.load offset=12 (global.get $stage)))
+{{- if .HasOp "delay"}}
+                (global.set $delayWRK (i32.add (i32.const {{index .Labels "su_delaylines"}}) (i32.load offset=20 (global.get $stage))))
+{{- end}}
+{{- if .HasOp "ott"}}
+                (global.set $ottWRK (i32.add (i32.const {{index .Labels "su_ott"}}) (i32.load offset=24 (global.get $stage))))
+{{- end}}
+{{- if .HasOp "limiter"}}
+                (global.set $limiterWRK (i32.add (i32.const {{index .Labels "su_limiter"}}) (i32.load offset=28 (global.get $stage))))
+{{- end}}
+                (call $stageIn)
+                (call $su_run_vm)
+                (call $stageOut)
+                (if (i32.eqz (i32.load offset=16 (global.get $stage))) (then ;; the stage with the last voice writes the audio
+                {{- template "output_sound.wat" .}}
+                ))
+{{- else}}
                 (global.set $COM (i32.const {{index .Labels "su_patch_opcodes"}}))
                 (global.set $VAL (i32.const {{index .Labels "su_patch_operands"}}))
 {{- if .SupportsPolyphony}}
@@ -432,6 +491,7 @@
 {{- end}}
                 (call $su_run_vm)
                 {{- template "output_sound.wat" .}}
+{{- end}}
                 (global.set $sample (i32.add (global.get $sample) (i32.const 1)))
                 (global.set $globaltick (i32.add (global.get $globaltick) (i32.const 1)))
                 (br_if $sample_loop (i32.lt_s (global.get $sample) (i32.const {{.Song.SamplesPerRow}})))
@@ -452,6 +512,57 @@
     end
 {{- end}}
 )
+
+{{- if .NumStages}}
+
+;; g(stage) selects the stage this instance runs, before the first call to r:
+;; one of the {{.NumStages}} stages of the pipeline. Without the call, the instance
+;; runs all voices.
+(func (export "g") (param $s i32)
+    (global.set $stage (i32.add (i32.const {{index .Labels "su_stages"}}) (i32.mul (local.get $s) (i32.const 52))))
+{{- if .HasOp "noise"}}
+    (global.set $randseed (i32.load offset=32 (global.get $stage)))
+{{- end}}
+)
+
+;; $stageIn sets the cells that the earlier stages and this one both use to
+;; what the earlier stages left in them for this sample, from the tape.
+(func $stageIn (local $p i32)
+    (local.set $p (i32.load offset=40 (global.get $stage)))
+    loop $cells
+        (if (i32.lt_u (local.get $p) (i32.load offset=44 (global.get $stage))) (then
+            (i32.store offset={{index .Labels "su_synth"}}
+                (i32.load offset={{index .Labels "su_stage_cells"}} (local.get $p))
+                (i32.load (global.get $tapeIn))
+            )
+            (global.set $tapeIn (i32.add (global.get $tapeIn) (i32.const 4)))
+            (local.set $p (i32.add (local.get $p) (i32.const 4)))
+            (br $cells)
+        ))
+    end
+)
+
+;; $stageOut writes the cells that this stage and the later ones both use to
+;; the tape and clears them, as the voice that clears them every sample is in
+;; a later stage. It also steps the noise seed over the noise of the voices
+;; of the other stages.
+(func $stageOut (local $p i32) (local $cell i32)
+    (local.set $p (i32.load offset=44 (global.get $stage)))
+    loop $cells
+        (if (i32.lt_u (local.get $p) (i32.load offset=48 (global.get $stage))) (then
+            (local.set $cell (i32.load offset={{index .Labels "su_stage_cells"}} (local.get $p)))
+            (i32.store (global.get $tapeOut) (i32.load offset={{index .Labels "su_synth"}} (local.get $cell)))
+            (i32.store offset={{index .Labels "su_synth"}} (local.get $cell) (i32.const 0))
+            (global.set $tapeOut (i32.add (global.get $tapeOut) (i32.const 4)))
+            (local.set $p (i32.add (local.get $p) (i32.const 4)))
+            (br $cells)
+        ))
+    end
+{{- if .HasOp "noise"}}
+    (global.set $randseed (i32.mul (global.get $randseed) (i32.load offset=36 (global.get $stage))))
+{{- end}}
+)
+{{- end}}
 
 {{- if .MultiVoiceTracks}}
 ;; the complex implementation of update_voices: at least one track has more than one voice
