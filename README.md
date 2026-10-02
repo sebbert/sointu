@@ -456,8 +456,9 @@ There are 16 output channels: left and right, and seven aux pairs, which
 `aux` writes and `in` reads (`channel` 0 to 14; aux1 to aux7), for buses like
 a reverb send, a delay send, a bus that the kick ducks and a drum bus in one
 song. The presets use 2/3 for the reverb, 4/5 for the ducked bus, 6/7 for the
-delay and 8/9 for the drum bus; the preset Global mastering 2 buses reads all
-of them, and `examples/buses.yml` uses it. The x86 players have the first 8
+delay and 8/9 for the drum bus; the presets Global mastering 2 buses and
+Global mastering 2 buses ducking read all of them, and `examples/buses.yml`
+uses the first. The x86 players have the first 8
 channels (three aux pairs); a song that uses no channel above 7 compiles as
 before. See [FORK.md](FORK.md#output-channels).
 
