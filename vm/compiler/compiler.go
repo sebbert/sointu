@@ -367,6 +367,9 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 	if vm.TransformsParam(features, "envelope", "curve") && com.Arch != "wasm" {
 		return nil, nil, fmt.Errorf(`curved or curve-modulated envelopes are only supported when compiling for wasm (targeted architecture was %v)`, com.Arch)
 	}
+	if n := song.Patch.MaxChannel(); n >= sointu.NarrowChannels && com.Arch != "wasm" {
+		return nil, nil, fmt.Errorf(`output channels above %v (aux4 to aux7) are only supported when compiling for wasm (song uses channel %v, targeted architecture was %v)`, sointu.NarrowChannels-1, n, com.Arch)
+	}
 	if n := max(song.Patch.NumVoices(), song.Score.NumVoices()); n > vm.MAX_VOICES_NARROW && com.Arch != "wasm" {
 		return nil, nil, fmt.Errorf(`more than %v voices are only supported when compiling for wasm (song uses %v voices, targeted architecture was %v)`, vm.MAX_VOICES_NARROW, n, com.Arch)
 	}

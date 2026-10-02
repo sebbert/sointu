@@ -81,7 +81,7 @@ type (
 	}
 
 	synthState struct {
-		outputs    [8]float32
+		outputs    [sointu.NumChannels]float32
 		randSeed   uint32
 		globalTime uint32
 		voices     [MAX_VOICES]voice

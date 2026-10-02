@@ -230,7 +230,12 @@
 {{- .SetBlockLabel "su_synth"}}
 {{- .Block 32}}
 {{- .SetBlockLabel "su_globalports"}}
+{{- /* left and right and three aux pairs, or seven in songs that use a channel above 7 */}}
+{{- if .WideAux}}
+{{- .Block 64}}
+{{- else}}
 {{- .Block 32}}
+{{- end}}
 {{- .SetBlockLabel "su_voices"}}
 {{- .Block .VoiceBytes}}
 {{- .Align}}

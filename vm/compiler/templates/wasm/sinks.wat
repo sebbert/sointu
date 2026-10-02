@@ -100,7 +100,8 @@
     (local.set $scaledAddress (i32.add (i32.mul (i32.and (local.get $address) (i32.const {{if .WideVoices}}0x7FFFF7{{else}}0x7FF7{{end}})) (i32.const 4))
 {{- if .SupportsGlobalSend}}
         (select
-            (i32.const {{index .Labels "su_synth"}})
+{{- /* global addresses count from 64 bytes before the voices: su_synth, unless the song has 16 global ports */}}
+            (i32.const {{sub (index .Labels "su_voices") 64}})
 {{- end}}
             (global.get $voice)
 {{- if .SupportsGlobalSend}}
