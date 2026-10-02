@@ -118,6 +118,34 @@ type (
 		UnitLevels(unitID int, dst []float32) []float32
 	}
 
+	// TapPoint is a place in a patch where a synth can record the signal: in
+	// the instrument Instrument, before the unit with the index Unit among
+	// its units, as the patch that the synth got has them. That is after the
+	// unit before it; with the number of units, after the last one. Voice
+	// is the voice of the instrument, from 1; with 0, the signals of all its
+	// voices are added up.
+	TapPoint struct {
+		Instrument, Unit, Voice int
+	}
+
+	// Tapper is implemented by Synths that can record the signal at places
+	// in the patch, for what shows it: spectra, oscilloscopes, level meters.
+	// Without taps, it costs the synth nothing but asking if there are any.
+	Tapper interface {
+		// SetTaps sets the places where the synth records the signal from
+		// now on, in place of those set before; a place that stays keeps
+		// what it has recorded. After the patch changes (Synth.Update), the
+		// places are those of the new patch.
+		SetTaps(points []TapPoint)
+		// Tapped appends to dst the frames that tap i (of those last set)
+		// recorded since they were last taken, one for every frame rendered,
+		// and returns them. A frame is the two signals on top of the stack
+		// at the place: the top one first, which of a stereo signal is the
+		// left one; of a mono signal, only the first is the signal. If
+		// nobody takes them, the synth keeps only the latest.
+		Tapped(i int, dst AudioBuffer) AudioBuffer
+	}
+
 	// UnitSpectrumReporter is implemented by Synths that can report the
 	// spectrum right after each spectral unit processed it.
 	UnitSpectrumReporter interface {

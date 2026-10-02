@@ -37,6 +37,8 @@ type (
 		mc         []mcState // states of the mc units
 		scratch    []float32
 		cpuLoad    sointu.CPULoad
+		layout     synthLayout // of the patch, for the states of its units: see carry.go
+		taps       []tap       // where the signal is recorded: see tap.go; nil if nowhere
 	}
 
 	// GoSynther is a Synther implementation that can converts patches into
@@ -124,6 +126,7 @@ func (s GoSynther) Synth(patch sointu.Patch, bpm int) (sointu.Synth, error) {
 	}
 	ret := &GoSynth{bytecode: *bytecode, stack: make([]float32, 0, 4), delaylines: make([]delayline, patch.NumDelayLines()), otts: make([]ottState, patch.NumOtts()), limiters: make([]limiterState, patch.NumLimiters())}
 	ret.state.randSeed = 1
+	ret.layout = newSynthLayout(patch)
 	ret.setSpectra(nil)
 	ret.setMC(nil)
 	return ret, nil
@@ -242,15 +245,6 @@ func (s *GoSynth) Update(patch sointu.Patch, bpm int) error {
 	if err != nil {
 		return fmt.Errorf("error compiling %v", err)
 	}
-	needsRefresh := len(bytecode.Opcodes) != len(s.bytecode.Opcodes)
-	if !needsRefresh {
-		for i, c := range bytecode.Opcodes {
-			if s.bytecode.Opcodes[i] != c {
-				needsRefresh = true
-				break
-			}
-		}
-	}
 	old := s.bytecode
 	s.bytecode = *bytecode
 	s.setSpectra(&old)
@@ -264,14 +258,15 @@ func (s *GoSynth) Update(patch sointu.Patch, bpm int) error {
 	for len(s.limiters) < patch.NumLimiters() {
 		s.limiters = append(s.limiters, limiterState{})
 	}
-	if needsRefresh {
-		clear(s.otts)
-		clear(s.limiters)
-		for i := range s.state.voices {
-			for j := range s.state.voices[i].units {
-				s.state.voices[i].units[j] = unit{}
-			}
-		}
+	// the units that are still there keep their state
+	if layout := newSynthLayout(patch); !layout.same(s.layout) {
+		s.carryState(s.layout, layout)
+		s.layout = layout
+	} else {
+		s.layout = layout
+	}
+	if s.taps != nil {
+		s.resolveTaps()
 	}
 	return nil
 }
@@ -317,6 +312,9 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 					opcodesInstr, operandsInstr = opcodes, operands
 				}
 				continue
+			}
+			if s.taps != nil {
+				s.tapUnit(int(s.bytecode.NumVoices-voicesRemaining), MAX_UNITS-len(units), stack)
 			}
 			tcount := transformCounts[opNoStereo-1]
 			if len(operands) < tcount {
@@ -887,6 +885,9 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 		}
 		if len(stack) > 4 {
 			return samples, renderTime, errors.New("stack not empty")
+		}
+		if s.taps != nil {
+			s.tapFrame()
 		}
 		buffer[0][0], buffer[0][1] = synth.outputs[0], synth.outputs[1]
 		synth.outputs[0] = 0
