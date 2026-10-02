@@ -436,19 +436,14 @@ type wasmMCData struct {
 }
 
 // wasmReverbData is the constant data of the reverb units in the wasm
-// player, su_reverb_consts: the taps of the diffuser, a byte for each of the
-// 8 channels of its 4 steps (vm.ReverbTaps), then 176 bytes for each unit:
-// the coefficients A, B and C of the decay of the 8 lines (floats), the
-// lengths of the lines and the delays of the 32 taps (16 bits each).
+// player, su_reverb_consts, 192 bytes for each unit (vm.Reverb): the
+// coefficients A, B and C of the decay of the 8 lines and their lengths
+// (floats), and the 32 taps of the diffuser (16 bits each).
 type wasmReverbData struct {
 	ReverbData []byte
 }
 
 func wasmReverb(b *vm.Bytecode) (ret wasmReverbData) {
-	if len(b.Reverbs) == 0 {
-		return ret
-	}
-	ret.ReverbData = vm.ReverbTaps()
 	for _, r := range b.Reverbs {
 		ret.ReverbData, _ = binary.Append(ret.ReverbData, binary.LittleEndian, r)
 	}

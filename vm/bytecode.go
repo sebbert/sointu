@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/bits"
+	"slices"
 
 	"github.com/vsariola/sointu"
 )
@@ -399,13 +400,18 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 			case "reverb":
 				// operands: mod, and the frequencies of the high cut and
 				// the low cut as those of mcfilter, then the index in
-				// Reverbs
-				if len(b.Reverbs) > 255 {
-					return nil, errors.New("Patch uses over 256 reverb units")
+				// Reverbs; units with the same constants share them
+				r := newReverb(p)
+				index := slices.Index(b.Reverbs, r)
+				if index < 0 {
+					index = len(b.Reverbs)
+					b.Reverbs = append(b.Reverbs, r)
+				}
+				if index > 255 {
+					return nil, errors.New("Patch uses over 256 different reverb units")
 				}
 				b.op(opcode)
-				b.operand(min(max(p["mod"], 0), 128), sointu.ReverbScale(p["highcut"], 72, 128), sointu.ReverbScale(p["lowcut"], 0, 85), len(b.Reverbs))
-				b.Reverbs = append(b.Reverbs, newReverb(p))
+				b.operand(min(max(p["mod"], 0), 128), sointu.ReverbScale(p["highcut"], 72, 128), sointu.ReverbScale(p["lowcut"], 0, 85), index)
 			case "limiter":
 				b.op(opcode + p["stereo"])
 				b.defOperands(unit)

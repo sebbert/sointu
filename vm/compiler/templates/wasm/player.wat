@@ -155,11 +155,9 @@
 {{- if .ReverbData}}
 {{- /*
 ;-------------------------------------------------------------------------------
-;    The constant data of the reverb units: the taps of the diffuser, a byte
-;    for each of the 8 channels of its 4 steps (the byte offset in the frame
-;    of the channel to read, and in bit 0 whether to flip its sign), then 176
-;    bytes for each unit: the coefficients A, B and C of the decay of the 8
-;    lines, the lengths of the lines and the delays of the 32 taps
+;    The constant data of the reverb units, 192 bytes each: the coefficients
+;    A, B and C of the decay of the 8 lines and their lengths (floats), and
+;    the 32 taps of the diffuser (16 bits each)
 ;-------------------------------------------------------------------------------
 */}}
 {{- .SetDataLabel "su_reverb_consts"}}
