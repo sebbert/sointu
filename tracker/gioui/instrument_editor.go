@@ -65,6 +65,11 @@ type (
 		searching tracker.Bool
 		previews  []Clickable // of the units' buffers, by unit
 		railLane  RailLane
+
+		eqEditor *EQEditor // shown under the rack while the selected unit is an eq unit
+		eqShown  bool
+		eqRow    int // the row of that unit, or -1
+		eqScroll int // frames left in which the rack scrolls to that row
 	}
 )
 
@@ -90,6 +95,8 @@ func NewInstrumentEditor(m *tracker.Model) *InstrumentEditor {
 		unfoldBtn:       new(Clickable),
 		bindBtn:         new(Clickable),
 		bindMenu:        new(MenuState),
+		eqEditor:        NewEQEditor(),
+		eqRow:           -1,
 	}
 	ret.caser = cases.Title(language.English)
 	ret.copyHint = makeHint("Copy unit", " (%s)", "Copy")
@@ -116,8 +123,12 @@ func (ie *InstrumentEditor) Tags(level int, yield TagYieldFunc) bool {
 	if ie.searching.Value() {
 		return ret && yield(level, ie.searchList)
 	}
-	return ret && yield(level+1, ie.paramTable.RowTitleList) && yield(level, ie.paramTable) && yield(level+1, &ie.commentEditor.widgetEditor) &&
+	ret = ret && yield(level+1, ie.paramTable.RowTitleList) && yield(level, ie.paramTable) && yield(level+1, &ie.commentEditor.widgetEditor) &&
 		ie.bindMenu.Tags(level+1, yield)
+	if ie.eqShown {
+		ret = ret && ie.eqEditor.Tags(level, yield)
+	}
+	return ret
 }
 
 func (ul *InstrumentEditor) layoutList(gtx C) D {
@@ -332,9 +343,34 @@ func (pe *InstrumentEditor) layoutTable(gtx C) D {
 	if pe.searching.Value() {
 		editorFunc = pe.layoutUnitTypeChooser
 	}
+	// the editor of the selected eq unit, under the rack
+	pe.eqShown = t.EQ().Active() && !pe.searching.Value()
+	// the rack is lower with the editor under it: the row of the eq unit,
+	// with its stereo switch and its gain, stays in view
+	row := -1
+	if pe.eqShown {
+		row = t.Params().Cursor().Y
+	}
+	if row != pe.eqRow {
+		pe.eqRow, pe.eqScroll = row, 2 // the rack knows its new height only once it is laid out
+	}
+	if pe.eqScroll > 0 && row >= 0 {
+		pe.eqScroll--
+		pe.paramTable.EnsureCursorVisible()
+		gtx.Execute(op.InvalidateCmd{})
+	}
+	eqEditor := func(gtx C) D {
+		if !pe.eqShown {
+			return D{}
+		}
+		gtx.Constraints.Max.Y = min(gtx.Dp(eqEditorHeight), gtx.Constraints.Max.Y*3/5)
+		gtx.Constraints.Min = gtx.Constraints.Max
+		return pe.eqEditor.Layout(gtx)
+	}
 	return Surface{Height: 3, Focus: t.PatchPanel.TreeFocused(gtx)}.Layout(gtx, func(gtx C) D {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Flexed(1, editorFunc),
+			layout.Rigid(eqEditor),
 			layout.Rigid(pe.layoutFooter),
 		)
 	})

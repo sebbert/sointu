@@ -23,6 +23,7 @@ type (
 		hostBPM       int                        // the tempo of the host, last told to the model
 		playheads     []sointu.Playhead          // reused for updatePlayheads
 		spectra       []SpectrumSource           // the spectra to report
+		taps          []sointu.TapPoint          // where the synth records the signal: see taps.go
 		sinceSpectrum int                        // frames since the spectrum was last reported
 		preview       sointu.BufferAudio         // buffer audio being previewed, mixed into the output
 		previewPos    int                        // next frame of the preview
@@ -201,6 +202,7 @@ func (p *Player) Process(buffer sointu.AudioBuffer, context PlayerProcessContext
 					p.updatePlayheads()
 				}
 				p.reportSpectrum(frames)
+				p.reportTaps()
 			}
 			p.send(nil)
 			return
@@ -338,6 +340,9 @@ loop:
 				p.song.Score = m
 			case SpectrumWatchMsg:
 				p.spectra = m
+			case TapsMsg:
+				p.taps = m
+				p.applyTaps()
 			case PreviewMsg:
 				p.preview, p.previewPos = m.Audio, 0
 				p.status.Previewing = m.Audio.Frames() > 0
@@ -521,6 +526,7 @@ func (p *Player) compileOrUpdateSynth() {
 		if s, ok := p.synth.(sointu.BufferSetter); ok {
 			s.SetBuffers(p.buffers)
 		}
+		p.applyTaps()
 	}
 	voice := 0
 	for _, instr := range p.song.Patch {

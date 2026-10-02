@@ -69,7 +69,19 @@ func (m *Model) unitTitle(u *sointu.Unit) string {
 // units replaced by the units of their modules, as the synths need it. It
 // warns about what could not be expanded.
 func (m *Model) playerSong() sointu.Song {
-	song, expansion := m.d.Song.Expand()
+	// units of a type that this version does not have, e.g. of a song saved
+	// by a newer one, stay in the song, but are not played
+	known, unknown := m.d.Song.WithoutUnknownUnits()
+	if len(unknown) > 0 {
+		text := fmt.Sprintf("This version has no unit of the type %q (%v): it is kept, but not played", unknown[0].Type, unknown[0])
+		if len(unknown) > 1 {
+			text = fmt.Sprintf("%s, and %d more", text, len(unknown)-1)
+		}
+		m.Alerts().AddNamed("UnknownUnits", text, Warning)
+	} else {
+		m.Alerts().ClearNamed("UnknownUnits")
+	}
+	song, expansion := known.Expand()
 	m.expansion, m.expanded = expansion, song.Patch
 	if len(expansion.Problems) > 0 {
 		m.Alerts().AddNamed("Modules", "Modules: "+expansion.Problems[0].Error(), Error)
@@ -82,10 +94,11 @@ func (m *Model) playerSong() sointu.Song {
 // runPatch returns the patch as the synth runs it, with the module units
 // replaced by the units of their modules, for checking it.
 func (m *Model) runPatch() sointu.Patch {
-	if !m.d.Song.HasModules() {
-		return m.d.Song.Patch
+	known, _ := m.d.Song.WithoutUnknownUnits()
+	if !known.NeedsExpand() {
+		return known.Patch
 	}
-	song, _ := m.d.Song.Expand()
+	song, _ := known.Expand()
 	return song.Patch
 }
 

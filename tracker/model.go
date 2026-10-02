@@ -77,6 +77,12 @@ type (
 		// rowCache holds the rows of the unit editor
 		rowCache rowCache
 
+		// eq is what the editor of the eq unit keeps: see EQModel
+		eq eqState
+
+		// taps are the watches of the signal at units: see taps.go
+		taps map[tapKey]*tapWatch
+
 		// modulePresets are the module presets: first those of the user,
 		// userModulePresets of them, read from modulePresetPath or, if it is
 		// empty, from the user's configuration directory; then those that
@@ -444,6 +450,8 @@ func (m *Model) ProcessMsg(msg MsgToModel) {
 		m.d.Song.Score = score
 		m.d.Song.BPM = int(e.BPM + 0.5)
 		m.trackerHidden = false
+	case TapAudio:
+		m.tapped(e)
 	case SpectrumMsg:
 		if m.spectra == nil {
 			m.spectra = map[SpectrumSource]SpectrumMsg{}
@@ -567,29 +575,54 @@ func (m *Model) fixIDCollisions() {
 	// loop over all instruments, modules and units and check if two units
 	// have the same ID. If so, give the later units new IDs. Units without an
 	// ID (0), e.g. in hand-written songs, get one too, without a warning.
+	//
+	// What refers to a unit that gets a new ID has to follow it. The sends
+	// do, by the ID of their target, and a send means the unit of its own
+	// instrument or module, if that has one with the ID: so when the first
+	// unit with an ID among the units of a module (or an instrument) gets a
+	// new ID, as a unit before them has it, the sends among those units go
+	// to the new ID. The sends of the others keep going to the unit that
+	// keeps the ID.
 	usedIDs := map[int]bool{}
 	needsFix, collided := false, false
 	maxID := 0
 	for units := range m.d.Song.UnitLists() {
-		for j, unit := range units {
-			if unit.ID == 0 {
-				needsFix = true
-				continue
-			}
-			if usedIDs[unit.ID] {
-				units[j].ID = 0
-				needsFix, collided = true, true
-			}
-			if unit.ID > maxID {
-				maxID = unit.ID
-			}
-			usedIDs[unit.ID] = true
+		for _, unit := range units {
+			maxID = max(maxID, unit.ID)
+			needsFix = needsFix || unit.ID == 0
 		}
 	}
-	if needsFix {
-		if collided {
-			m.Alerts().AddNamed("IDCollision", "Some units had duplicate IDs, they were fixed", Error)
+	for units := range m.d.Song.UnitLists() {
+		var renamed map[int]int // of the units of this list: the old ID to the new one
+		seen := map[int]bool{}  // the IDs of the units of this list so far
+		for j := range units {
+			id := units[j].ID
+			if id == 0 {
+				continue
+			}
+			if usedIDs[id] {
+				maxID++
+				units[j].ID = maxID
+				usedIDs[maxID] = true
+				collided = true
+				if !seen[id] {
+					if renamed == nil {
+						renamed = map[int]int{}
+					}
+					renamed[id] = maxID
+				}
+			}
+			seen[id] = true
+			usedIDs[id] = true
 		}
+		if renamed != nil {
+			rewriteSendTargets(units, renamed)
+		}
+	}
+	if collided {
+		m.Alerts().AddNamed("IDCollision", "Some units had duplicate IDs, they were fixed", Error)
+	}
+	if needsFix {
 		for units := range m.d.Song.UnitLists() {
 			for j, unit := range units {
 				if unit.ID == 0 {
@@ -636,6 +669,9 @@ func RemoveUnusedUnitParameters(instr *sointu.Instrument) bool {
 func removeUnusedUnitParameters(units []sointu.Unit) bool {
 	fixed := false
 	for _, unit := range units {
+		if _, known := sointu.UnitTypes[unit.Type]; !known && unit.Type != "" {
+			continue // of a type that this version does not have: kept as it is
+		}
 		for paramName := range unit.Parameters {
 			if !validParameters[unit.Type][paramName] {
 				delete(unit.Parameters, paramName)

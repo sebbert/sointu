@@ -75,9 +75,21 @@ type (
 		// Buffers maps the ID of each buffer cloned for a module unit to the
 		// ID of the buffer it is a clone of.
 		Buffers map[int]int
+		// EQs maps the ID of each eq unit to where the units that it stands
+		// for are among the units of the expanded song: for an eq unit of a
+		// module, the ID of its copy (see Units). Eq units without an ID,
+		// and disabled ones, are not in it.
+		EQs map[int]ExpandedEQ
 		// Problems are the things that could not be expanded as meant, e.g.
 		// modules using themselves. The expanded song leaves them out.
 		Problems []error
+	}
+
+	// ExpandedEQ is where the units of an eq unit are in the expanded
+	// song: Count units of the instrument, from the unit First on. With
+	// Count 0, First is where they would be.
+	ExpandedEQ struct {
+		Instrument, First, Count int
 	}
 
 	// ExpandedUnit is where a unit copied from a module came from: the ID
@@ -185,6 +197,8 @@ func CanBind(unitType, param string) bool {
 		if param == "module" {
 			return false
 		}
+	case "eq":
+		return false // its units are not there to bind until it is expanded
 	}
 	if _, ok := delayTimeIndex(param); ok && unitType == "delay" {
 		return true
@@ -553,6 +567,10 @@ func (s *Song) FindUnit(id int) *Unit {
 	return nil
 }
 
+// NeedsExpand reports whether the song has units that the synths do not
+// run, for Song.Expand to replace: module units and eq units.
+func (s *Song) NeedsExpand() bool { return s.HasModules() || s.HasEQs() }
+
 // HasModules reports whether the song has module units to expand.
 func (s *Song) HasModules() bool {
 	for _, instr := range s.Patch {
@@ -566,9 +584,9 @@ func (s *Song) HasModules() bool {
 }
 
 // Expand returns the song with every module unit replaced by a copy of the
-// units of its module, as the synths and the compiler need it: without
-// modules. A song without module units is returned as it is, sharing its
-// data with s.
+// units of its module, and every eq unit by the units that it stands for
+// (Unit.CompileEQ), as the synths and the compiler need it. A song without
+// such units is returned as it is, sharing its data with s.
 //
 //   - The parameters bound to the parameters of a module (Unit.Bind) get the
 //     values of the module unit, mapped by a scaled Binding, and clamped to
@@ -596,7 +614,7 @@ func (s *Song) HasModules() bool {
 func (s *Song) Expand() (Song, *Expansion) {
 	exp := &Expansion{}
 	if !s.HasModules() {
-		return *s, exp
+		return s.expandEQs(exp), exp
 	}
 	e := expander{song: s, exp: exp, ports: map[int]*ModulePorts{}, bodyIDs: map[int]int{}}
 	exp.Units, exp.Buffers = map[int]ExpandedUnit{}, map[int]int{}
@@ -666,7 +684,9 @@ func (s *Song) Expand() (Song, *Expansion) {
 			ret.Patch[i].Units = out
 		}
 	}
-	return ret, exp
+	// last the eq units, also those that were units of modules: each copy
+	// has its own place among the units that are played
+	return ret.expandEQs(exp), exp
 }
 
 // SendToPorts returns the units that a send to a module unit becomes once
@@ -1055,7 +1075,7 @@ func (e *expander) instantiate(units []Unit, call *Unit, id int, path []int) []U
 }
 
 // NumExpandedUnits returns the number of units that the units have once
-// their module units are expanded, without the sends added for sends to
+// their module units and eq units are expanded, without the sends added for sends to
 // module units: what counts towards the units an instrument can have.
 func (m Modules) NumExpandedUnits(units []Unit) int {
 	return m.numExpanded(units, 0)
@@ -1066,6 +1086,8 @@ func (m Modules) numExpanded(units []Unit, depth int) int {
 	for _, u := range units {
 		switch {
 		case u.Disabled || u.Type == "":
+		case u.Type == "eq":
+			n += u.NumEQUnits()
 		case u.Type != "module":
 			n++
 		default:

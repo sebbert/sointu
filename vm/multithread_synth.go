@@ -19,6 +19,11 @@ type (
 		pool         sync.Pool
 		synther      sointu.Synther
 		buffers      map[int]sointu.BufferAudio
+		// the taps: see tap.go. instruments tells where each instrument of
+		// the patch is: its thread, and its index there
+		instruments [][2]int
+		tapPoints   []sointu.TapPoint
+		taps        []multithreadTap
 	}
 
 	MultithreadSynther struct {
@@ -68,6 +73,7 @@ func (s MultithreadSynther) Synth(patch sointu.Patch, bpm int) (sointu.Synth, er
 	}
 	ret.startProcesses()
 	ret.synther = s.synther
+	ret.instruments = threadInstruments(patch)
 	return ret, nil
 }
 
@@ -97,6 +103,10 @@ func (s *MultithreadSynth) Update(patch sointu.Patch, bpm int) error {
 				return err
 			}
 		}
+	}
+	s.instruments = threadInstruments(patch)
+	if len(s.tapPoints) > 0 {
+		s.setTaps()
 	}
 	return nil
 }

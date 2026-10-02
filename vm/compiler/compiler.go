@@ -29,6 +29,10 @@ type Compiler struct {
 	// JavaScript instead of computing them itself: a smaller player, but its
 	// output then differs slightly from the Go synth, and between browsers.
 	MathImports bool
+	// AllowUnknownUnits makes Song leave out the units whose type this
+	// version of Sointu does not have, with a warning for each, instead of
+	// refusing the song.
+	AllowUnknownUnits bool
 	// Progressive makes the wasm player render nothing at instantiation:
 	// it exports r(rows), which renders the next rows of the song and can be
 	// called until the song ends.
@@ -326,7 +330,19 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 	} else if com.Arch == "wasm" {
 		templates = []string{"player.wat"}
 	}
-	if song.HasModules() {
+	// units of a type that this version does not have: the players have no
+	// code for them
+	if unknown := song.UnknownUnits(); len(unknown) > 0 {
+		if !com.AllowUnknownUnits {
+			return nil, nil, song.CheckUnitTypes()
+		}
+		stripped, _ := song.WithoutUnknownUnits()
+		song = &stripped
+		for _, u := range unknown {
+			warnings = append(warnings, u.Error()+": the unit is left out")
+		}
+	}
+	if song.NeedsExpand() {
 		// the players only know the units the module units stand for
 		expanded, expansion := song.Expand()
 		if len(expansion.Problems) > 0 {
