@@ -78,6 +78,9 @@ type (
 		// a Binding. Each module unit calling the module gives the bound
 		// parameters its own values. See Module.
 		Bind map[string]Binding `yaml:",flow,omitempty"`
+
+		// Bands are the bands of an eq unit: see EQBand.
+		Bands []EQBand `yaml:",omitempty"`
 	}
 
 	// MIDI contains info on how MIDI events should trigger an instrument
@@ -99,7 +102,8 @@ type (
 		DefaultVarArgs []int
 		StackUse       func(*Unit) StackUse
 		// Virtual is true for unit types that the synths never run, as
-		// Song.Expand replaces them: the module unit. They have no opcode.
+		// Song.Expand replaces them: the module unit and the eq unit. They
+		// have no opcode.
 		Virtual bool
 	}
 
@@ -884,6 +888,22 @@ var UnitTypes = map[string]UnitType{
 		StackUse: func(u *Unit) StackUse { return StackUse{} },
 		Virtual:  true,
 	},
+	"eq": {
+		// eq is a parametric equalizer: its bands (Unit.Bands) are bells,
+		// cuts, shelves, a notch or a band-pass, each with a frequency, a
+		// gain and a Q. Song.Expand replaces it with the filter, belleq,
+		// ladder and gain units that do that (Unit.CompileEQ), so the synths
+		// never see it. gain is the gain of the whole eq, in tenths of a
+		// decibel.
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "gain", MinValue: -10 * EQMaxGain, MaxValue: 10 * EQMaxGain, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(float64(v)/10, 'f', 1, 64), "dB"
+			}},
+		},
+		StackUse: stackUseEffect,
+		Virtual:  true,
+	},
 	"sync": {
 		Params:   []UnitParameter{},
 		StackUse: func(u *Unit) StackUse { return StackUse{Inputs: [][]int{{0}}, Modifies: []bool{false}, NumOutputs: 1} },
@@ -1445,6 +1465,9 @@ func (u *Unit) Copy() Unit {
 		for k, v := range u.Bind {
 			ret.Bind[k] = v
 		}
+	}
+	if u.Bands != nil {
+		ret.Bands = append([]EQBand{}, u.Bands...)
 	}
 	return ret
 }

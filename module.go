@@ -185,6 +185,8 @@ func CanBind(unitType, param string) bool {
 		if param == "module" {
 			return false
 		}
+	case "eq":
+		return false // its units are not there to bind until it is expanded
 	}
 	if _, ok := delayTimeIndex(param); ok && unitType == "delay" {
 		return true
@@ -553,6 +555,10 @@ func (s *Song) FindUnit(id int) *Unit {
 	return nil
 }
 
+// NeedsExpand reports whether the song has units that the synths do not
+// run, for Song.Expand to replace: module units and eq units.
+func (s *Song) NeedsExpand() bool { return s.HasModules() || s.HasEQs() }
+
 // HasModules reports whether the song has module units to expand.
 func (s *Song) HasModules() bool {
 	for _, instr := range s.Patch {
@@ -566,9 +572,9 @@ func (s *Song) HasModules() bool {
 }
 
 // Expand returns the song with every module unit replaced by a copy of the
-// units of its module, as the synths and the compiler need it: without
-// modules. A song without module units is returned as it is, sharing its
-// data with s.
+// units of its module, and every eq unit by the units that it stands for
+// (Unit.CompileEQ), as the synths and the compiler need it. A song without
+// such units is returned as it is, sharing its data with s.
 //
 //   - The parameters bound to the parameters of a module (Unit.Bind) get the
 //     values of the module unit, mapped by a scaled Binding, and clamped to
@@ -595,6 +601,12 @@ func (s *Song) HasModules() bool {
 // outside a module to one of its units, as they are ambiguous.
 func (s *Song) Expand() (Song, *Expansion) {
 	exp := &Expansion{}
+	if s.HasEQs() {
+		// first the eq units, also those of the modules: the units they
+		// stand for are then units of the modules like any other
+		expanded := s.expandEQs()
+		s = &expanded
+	}
 	if !s.HasModules() {
 		return *s, exp
 	}
@@ -1055,7 +1067,7 @@ func (e *expander) instantiate(units []Unit, call *Unit, id int, path []int) []U
 }
 
 // NumExpandedUnits returns the number of units that the units have once
-// their module units are expanded, without the sends added for sends to
+// their module units and eq units are expanded, without the sends added for sends to
 // module units: what counts towards the units an instrument can have.
 func (m Modules) NumExpandedUnits(units []Unit) int {
 	return m.numExpanded(units, 0)
@@ -1066,6 +1078,8 @@ func (m Modules) numExpanded(units []Unit, depth int) int {
 	for _, u := range units {
 		switch {
 		case u.Disabled || u.Type == "":
+		case u.Type == "eq":
+			n += u.NumEQUnits()
 		case u.Type != "module":
 			n++
 		default:

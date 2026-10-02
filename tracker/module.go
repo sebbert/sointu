@@ -82,7 +82,7 @@ func (m *Model) playerSong() sointu.Song {
 // runPatch returns the patch as the synth runs it, with the module units
 // replaced by the units of their modules, for checking it.
 func (m *Model) runPatch() sointu.Patch {
-	if !m.d.Song.HasModules() {
+	if !m.d.Song.NeedsExpand() {
 		return m.d.Song.Patch
 	}
 	song, _ := m.d.Song.Expand()

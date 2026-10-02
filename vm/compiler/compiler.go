@@ -229,7 +229,7 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 	} else if com.Arch == "wasm" {
 		templates = []string{"player.wat"}
 	}
-	if song.HasModules() {
+	if song.NeedsExpand() {
 		// the players only know the units the module units stand for
 		expanded, expansion := song.Expand()
 		if len(expansion.Problems) > 0 {

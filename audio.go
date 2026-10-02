@@ -177,7 +177,7 @@ func PlayWithBuffers(synther Synther, song Song, buffers map[int]BufferAudio, pr
 	if err != nil {
 		return nil, err
 	}
-	if song.HasModules() {
+	if song.NeedsExpand() {
 		// the synths only know the units the module units stand for
 		var expansion *Expansion
 		if song, expansion = song.Expand(); len(expansion.Problems) > 0 {
