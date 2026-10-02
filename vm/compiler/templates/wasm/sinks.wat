@@ -219,14 +219,21 @@
 ;;   last spawned, at offset 12 the global time when to release them (0 for
 ;;   never), at offset 16 the arguments and at offset 32 the length of the
 ;;   note in frames (0 for none). Matches spawn in
-;;   vm/go_synth.go.
+;;   vm/go_synth.go. The parts that no spawn unit of the song uses are left
+;;   out, and the flags, when the units do not differ in them.
 ;;-------------------------------------------------------------------------------
+{{- $modes := and .SpawnEdge (or .SpawnRate .SpawnSync)}}
 (func $su_op_spawn (param $stereo i32) (local $first i32) (local $count i32) (local $flags i32) (local $held i32) (local $fire i32) (local $in f32) (local $n f32) (local $target i32) (local $busy i32) (local $i i32) (local $v i32)
     (local.set $first (call $scanOperand))
     (local.set $count (call $scanOperand))
-    (local.set $flags (call $scanOperand))
+{{- if .SpawnFlagsOperand}}
+    (local.set $flags (call $scanOperand)) ;; the flags of the spawn
+{{- end}}
+{{- if .SpawnLength}}
     ;; release the notes that have lasted their length
+{{- if .SpawnNoTarget}}
     (if (local.get $count) (then
+{{- end}}
         (local.set $i (local.get $first))
         loop $release_loop
             (local.set $v (i32.add (i32.const {{index .Labels "su_voices"}}) (i32.mul (local.get $i) (i32.const 4096))))
@@ -241,19 +248,29 @@
                 (i32.add (local.get $first) (local.get $count))
             ))
         end
+{{- if .SpawnNoTarget}}
     ))
+{{- end}}
+{{- end}}
     (local.set $held (i32.and
         (i32.ne (i32.load (global.get $voice)) (i32.const 0))
         (i32.ne (i32.load offset=4 (global.get $voice)) (i32.const 0))
     ))
+{{- if $modes}}
     (if (i32.and (local.get $flags) (i32.const 1)) (then ;; edge mode
-        (local.set $in (call $pop))
+{{- end}}
+{{- if .SpawnEdge}}
+        (local.set $in (call $pop)) ;; the input of the edge mode
         (local.set $fire (i32.and (local.get $held) (i32.and
             (f32.le (f32.load offset=4 (global.get $WRK)) (f32.const 0))
             (f32.gt (local.get $in) (f32.const 0))
         )))
         (f32.store offset=4 (global.get $WRK) (local.get $in))
+{{- end}}
+{{- if $modes}}
     )(else
+{{- end}}
+{{- if or .SpawnRate .SpawnSync}}
         (if (local.get $held) (then
             ;; counting down whole frames is exact, so spawns do not drift
             (if (f32.le (f32.load (global.get $WRK)) (f32.const 0)) (then
@@ -262,26 +279,47 @@
                     (f32.load (global.get $WRK))
                     (f32.div
                         (f32.const 44100)
+{{- if and .SpawnRate .SpawnSync}}
                         (if (result f32) (i32.and (local.get $flags) (i32.const 32)) (then ;; sync: spawns per beat
-                            (f32.mul
+{{- end}}
+{{- if .SpawnSync}}
+                            (f32.mul ;; spawns per beat
                                 (call $pow2 (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spawn" "rate"}})) (f32.const 16)) (f32.const 8)))
                                 (f32.div (f32.const {{.Song.BPM}}) (f32.const 60))
                             )
+{{- end}}
+{{- if and .SpawnRate .SpawnSync}}
                         )(else
-                            (call $pow2 (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spawn" "rate"}})) (f32.const 16)) (f32.const 5)))
+{{- end}}
+{{- if .SpawnRate}}
+                            (call $pow2 (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spawn" "rate"}})) (f32.const 16)) (f32.const 5))) ;; spawns per second
+{{- end}}
+{{- if and .SpawnRate .SpawnSync}}
                         ))
+{{- end}}
                     )
                 ))
             ))
             (f32.store (global.get $WRK) (f32.sub (f32.load (global.get $WRK)) (f32.const 1)))
         ))
+{{- end}}
+{{- if $modes}}
     ))
+{{- end}}
+{{- if .SpawnArgs}}
+{{- if .SpawnFlagsOperand}}
     (local.set $i (i32.and (i32.shr_u (local.get $flags) (i32.const 2)) (i32.const 7))) ;; number of arguments
-    (if (i32.and (local.get $fire) (i32.ne (local.get $count) (i32.const 0))) (then
+{{- else}}
+    (local.set $i (i32.const {{.SpawnArgs}})) ;; number of arguments
+{{- end}}
+{{- end}}
+    (if {{if .SpawnNoTarget}}(i32.and (local.get $fire) (i32.ne (local.get $count) (i32.const 0))){{else}}(local.get $fire){{end}} (then
         ;; take the released voice spawned longest ago, or the held one with
         ;; steal; -1 is none
         (local.set $target (i32.const -1))
+{{- if .SpawnSteal}}
         (local.set $busy (i32.const -1))
+{{- end}}
         (local.set $v (local.get $first))
         loop $voice_loop
             (if (i32.eqz (i32.load offset={{add (index .Labels "su_voices") 4}} (i32.mul (local.get $v) (i32.const 4096)))) (then ;; released
@@ -294,6 +332,7 @@
                         (local.set $target (local.get $v))
                     ))
                 ))
+{{- if .SpawnSteal}}
             )(else
                 (if (i32.lt_s (local.get $busy) (i32.const 0)) (then ;; the first one (no short-circuit or in wasm)
                     (local.set $busy (local.get $v))
@@ -304,26 +343,43 @@
                         (local.set $busy (local.get $v))
                     ))
                 ))
+{{- end}}
             ))
             (br_if $voice_loop (i32.lt_u
                 (local.tee $v (i32.add (local.get $v) (i32.const 1)))
                 (i32.add (local.get $first) (local.get $count))
             ))
         end
+{{- if .SpawnSteal}}
+{{- if .SpawnNoSteal}}
         (if (i32.and (i32.lt_s (local.get $target) (i32.const 0)) (i32.ne (i32.and (local.get $flags) (i32.const 64)) (i32.const 0))) (then
+{{- else}}
+        (if (i32.lt_s (local.get $target) (i32.const 0)) (then
+{{- end}}
             (local.set $target (local.get $busy)) ;; steal
         ))
+{{- end}}
         (if (i32.ge_s (local.get $target) (i32.const 0)) (then
+{{- if and .SpawnTracking .SpawnNoTracking}}
             (local.set $n (select
                 (f32.convert_i32_u (i32.load (global.get $voice)))
                 (f32.const 60)
                 (i32.and (local.get $flags) (i32.const 2)) ;; note tracking
             ))
+{{- else if .SpawnTracking}}
+            (local.set $n (f32.convert_i32_u (i32.load (global.get $voice)))) ;; note tracking
+{{- else}}
+            (local.set $n (f32.const 60))
+{{- end}}
             (local.set $n (f32.add
-                (f32.add
+{{- if .SpawnTranspose}}
+                (f32.add ;; transpose
                     (local.get $n)
                     (f32.mul (call $inputSigned (i32.const {{.InputNumber "spawn" "transpose"}})) (f32.const 64))
                 )
+{{- else}}
+                (local.get $n)
+{{- end}}
                 (f32.const 0.5)
             ))
             (local.set $v (i32.add (i32.const {{index .Labels "su_voices"}}) (i32.mul (local.get $target) (i32.const 4096))))
@@ -331,12 +387,15 @@
             (i32.store (local.get $v) (i32.trunc_f32_s (f32.floor (f32.max (f32.min (local.get $n) (f32.const 127)) (f32.const 1)))))
             (i32.store offset=4 (local.get $v) (i32.load (local.get $v)))
             (i32.store offset=8 (local.get $v) (i32.add (global.get $globaltick) (i32.const 1)))
+{{- if .SpawnLength}}
             (if (f32.gt (call $input (i32.const {{.InputNumber "spawn" "length"}})) (f32.const 0)) (then
                 (i32.store offset=32 (local.get $v)
                     (i32.trunc_f32_u (f32.max (call $lengthFrames (call $input (i32.const {{.InputNumber "spawn" "length"}}))) (f32.const 1)))
                 )
                 (i32.store offset=12 (local.get $v) (i32.add (global.get $globaltick) (i32.load offset=32 (local.get $v))))
             ))
+{{- end}}
+{{- if .SpawnArgs}}
             loop $args_loop
                 (if (local.get $i) (then
                     (local.set $i (i32.sub (local.get $i) (i32.const 1)))
@@ -350,7 +409,12 @@
     )(else
         (call $spawnDropArgs (local.get $i))
     ))
+{{- else}}
+        ))
+    ))
+{{- end}}
 )
+{{- if .SpawnArgs}}
 
 ;; $spawnDropArgs pops n arguments of a spawn unit that does not spawn
 (func $spawnDropArgs (param $n i32)
@@ -362,6 +426,7 @@
         ))
     end
 )
+{{- end}}
 {{end}}
 
 

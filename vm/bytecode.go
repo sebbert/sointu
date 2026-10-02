@@ -271,9 +271,13 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				b.operand(len(b.SpectralUnits))
 				switch unit.Type {
 				case "spgate":
-					b.operand(p["invert"] & 1)
+					if SpgateInvertOperand(featureSet) {
+						b.operand(p["invert"] & 1)
+					}
 				case "spphase":
-					b.operand(min(max(p["mode"], 0), 2))
+					if SpphaseModeOperand(featureSet) {
+						b.operand(min(max(p["mode"], 0), 2))
+					}
 				case "spcompress":
 					if u.Smooth {
 						b.operand(attack, release)
@@ -285,13 +289,19 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 					if t := p["instrument"] - 1; t >= 0 && t < len(patch) {
 						first, count = patch.FirstVoiceForInstrument(t), patch[t].NumVoices
 					}
-					b.operand(first, count, p["interval1"], p["interval2"], p["interval3"])
+					if SpcombVoicesOperands(featureSet) {
+						b.operand(first, count)
+					}
+					if SpcombIntervalOperands(featureSet) {
+						b.operand(p["interval1"], p["interval2"], p["interval3"])
+					}
 				}
 				b.SpectralUnits = append(b.SpectralUnits, u)
 			case "mcspread", "mcsum", "mcdelay", "mcmix", "mcloop", "mcloopend", "mcfilter":
 				// operands: the index in MCUnits, and for mcspread add, for
 				// mcmix the type, for mcfilter highpass and for mcdelay the
-				// flags
+				// flags; each only in songs whose units differ in it (see
+				// operands.go)
 				if len(b.MCUnits) > 255 {
 					return nil, errors.New("Patch uses over 256 mc units")
 				}
@@ -301,15 +311,21 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				b.operand(len(b.MCUnits))
 				switch unit.Type {
 				case "mcspread":
-					b.operand(p["add"] & 1)
+					if MCSpreadAddOperand(featureSet) {
+						b.operand(p["add"] & 1)
+					}
 				case "mcmix":
 					typ := min(max(p["type"], 0), sointu.MCMixShuffle)
 					if typ == sointu.MCMixShuffle {
 						u.Shuffle = newMCShuffle(p["seed"])
 					}
-					b.operand(typ)
+					if MCMixTypeOperand(featureSet) {
+						b.operand(typ)
+					}
 				case "mcfilter":
-					b.operand(p["type"] & 1)
+					if MCFilterTypeOperand(featureSet) {
+						b.operand(p["type"] & 1)
+					}
 				case "mcdelay":
 					u.Delay = newMCDelay(p)
 					flags := 0
@@ -319,7 +335,9 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 					if p["allpass"] == 1 {
 						flags |= MCDelayAllpass
 					}
-					b.operand(flags)
+					if MCDelayFlagsOperand(featureSet) {
+						b.operand(flags)
+					}
 				}
 				b.MCUnits = append(b.MCUnits, u)
 			case "bufread", "bufwrite":
@@ -337,7 +355,8 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				// operands: first voice and number of voices of the target
 				// instrument, and flags: bit 0 = edge mode, bit 1 = note
 				// tracking, bits 2-4 = number of arguments, bit 5 = sync mode,
-				// bit 6 = steal held voices
+				// bit 6 = steal held voices; the flags only in songs whose
+				// spawn units differ in them
 				first, count := 0, 0
 				if t := p["instrument"] - 1; t >= 0 && t < len(patch) {
 					first, count = patch.FirstVoiceForInstrument(t), patch[t].NumVoices
@@ -352,7 +371,10 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				case sointu.SpawnModeSync:
 					flags |= 32
 				}
-				b.operand(first, count, flags)
+				b.operand(first, count)
+				if SpawnFlagsOperand(featureSet) {
+					b.operand(flags)
+				}
 			case "window":
 				b.op(opcode)
 				b.defOperands(unit)

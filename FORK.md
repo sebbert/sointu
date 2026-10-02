@@ -375,23 +375,26 @@ p(c) times ±1, from the generator above.
 **Encoding.** Operands: the transformed parameters, then the index of the
 unit in `Bytecode.MCUnits`, then for `mcspread` add, for `mcmix` the type,
 for `mcfilter` the type and for `mcdelay` flags (1 note tracking, 2
-allpass). `mcspread` and `mcsum` use the stereo bit. `Bytecode.Buses` are
+allpass); each of these four only in songs whose units differ in it (see
+[Parts conditional on use](#parts-conditional-on-use)). `mcspread` and
+`mcsum` use the stereo bit. `Bytecode.Buses` are
 the buffer IDs of the buses, `MCUnit.Delay` and `MCUnit.Shuffle` the
 tables.
 
-**Wasm player.** `su_mc_table` has 4 i32s per unit: the offset of the
-voice running it from `su_voices`, the offsets of its bus and state in
-`su_mc`, and the offset of its constants in `su_mc_consts`. A bus is 16
+**Wasm player.** `su_mc_table` has 4 i32s per unit: the offsets of its bus
+and state in `su_mc`, the offset of its constants in `su_mc_consts`, and the
+offset of the voice running it from `su_voices`; the voice, and the check
+for it, only when an instrument with mc units has several voices. A bus is 16
 floats: the frame, and the frame stored by `mcloopend`. An `mcdelay` state
 is the phases, the low and high filter states, the ring position (128
 bytes) and the ring; an `mcfilter` state 64 bytes. `su_mc_consts` starts
-with the modulation rates, phase offsets and channel byte offsets, then
-per `mcdelay` the lengths, A, B, C, the ring mask, the longest delay and
+with the modulation rates and phase offsets (only in songs that modulate
+an `mcdelay`) and the channel byte offsets, then per `mcdelay` the lengths, A, B, C, the ring mask, the longest delay and
 apgain, and per shuffle the source offsets and signs. Every unit computes
 the 8 channels as two f32x4 vectors; `mcdelay` gathers its reads lane by
-lane. Code for `add`, each `mcmix` type, the high-pass, note tracking and
-allpass is included only when a unit uses it; without mc units, nothing
-changes. The shuffle uses the unit's own state in the voice as scratch.
+lane. Code for `add`, each `mcmix` type, the high-pass, note tracking,
+allpass, the modulation, the gains, the width and the feedback is included
+only when a unit uses it; without mc units, nothing changes. The shuffle uses the unit's own state in the voice as scratch.
 
 **Costs.** Under node, a song of 20 s with a burst of noise into the
 Reverb FDN Hall preset renders in 2.2 s (0.3 s without the reverb), like
@@ -425,9 +428,9 @@ polyBLAMP, in the Go synth and the wasm player (not x86):
 never goes with sine (0x40), trisaw (0x20) or pulse (0x10). So 0x04 together
 with one of them means bandlimited: no extra bytes at all. A gate is then
 flags & 0x74 == 0x04. The compiler sets the bit only where bandlimit has an
-effect, and the wasm player's correction code, the dt computation and the
-stricter gate test are included only when some oscillator uses it; songs
-without it compile to the same wasm as before.
+effect, and the wasm player's correction code (of each waveform only when
+a bandlimited oscillator has it), the dt computation and the stricter gate
+test are included only when some oscillator uses it.
 
 ## Envelope curve
 
@@ -504,6 +507,9 @@ by operation, in float32:
 - **pan.** A mono pan is s·p and s − s·p, unless the patch has stereo pans;
   the wasm player's code depends on that (`Bytecode.StereoPan`).
 - **waveshape.** It matches the wasm and x86 waveshapers and clips its input.
+- **crush.** It rounds halves to even, like `f32.nearest` of the wasm player
+  and the x87; `math.Round` differed by a step on samples exactly between
+  two steps.
 - **Rounding.** Products that are added are rounded with `float32()` first.
   Go may otherwise fuse them into multiply-adds on arm64, even across
   statements, which the wasm player never does.
@@ -983,6 +989,57 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
 - Stereo `push` copies the pair (left and right), like the Go synth and the
   x86 players; it used to copy the top signal twice. This changes the players
   of songs with stereo pushes.
+- Stereo `xch` exchanges the two pairs in place. Before (and upstream), a
+  song with a mono and a stereo `xch` compiled to a player that did not
+  assemble, and a stereo `xch` next to a stereo `delay` exchanged wrongly.
+
+### Parts conditional on use
+
+The player has the code of a unit only when the song has the unit, and of
+many units only the parts the song uses. The compiler finds them in three
+ways, and the templates test them:
+
+- `FeatureSetMacros` (`vm/compiler/featureset_macros.go`): what follows from
+  the values of one parameter, e.g. `MCDelayMod`, `SpfilterTilt`, `OttTime`.
+- `wasmUnitFeatures` and `wasmBufferFeatures`
+  (`vm/compiler/wasm_features.go`, `compiler.go`): what needs the units
+  themselves, e.g. which waveforms are bandlimited, whether an instrument
+  with mc units has several voices, whether a spectrum is stereo.
+- `vm/operands.go`: operands that only songs have whose units differ in
+  them. `vm.NewBytecode` and the templates ask the same function, so they
+  agree. Only for units that x86 does not have, as the bytecode is the same
+  for every target.
+
+| Unit | Conditional |
+|---|---|
+| `bufread`, `bufwrite` | looping, crossfade, backwards in a loop, modulated and negative positions, edge fade, note tracking, pitch, channel mixes; one shot, ring, mixing writers, feedback, no pop |
+| mc units | the first-voice check and the voice in the table; `mcdelay` modulation (with its 16 constants), the clamp of its lengths, note tracking, allpass; gain of `mcspread` and `mcsum`, width of `mcsum`, feedback of `mcloop`, stereo lanes of `mcspread`, each `mcmix` type, the high-pass. Operands: add of `mcspread`, type of `mcmix` and `mcfilter`, flags of `mcdelay` |
+| `spawn`, `window` | each mode, arguments, stealing, note tracking, transpose, note length and the release loop, the test for a missing target; own length, note length and the clamp of a modulated shape of `window`. Operand: the flags of `spawn` |
+| spectral units | the first-voice check and the voice in the table; the loops over channels, the rings of `spifft` and the channels in the spectrum table (only with a stereo spectrum); low, high and tilt of `spfilter` (`$log2f`, `$powf`); freeze of `spblur`; each mode of `spphase` (`$rotate`, `$tablePhase`, `$randomPhase`); scale and shift of `spscale`; voices and intervals of `spcomb`. Operands: invert of `spgate`, mode of `spphase`, voices and intervals of `spcomb` |
+| `ott` | time, upward, downward, the right channel's powers |
+| `softclip`, `limiter`, `width`, `ladder`, `envelope` | drive and oversampling of `softclip`; drive of `limiter` and `ladder`, lowcut of `width`, curve of `envelope` (optional last parameters, `optionalParams`) |
+| `oscillator` | the corrections of each bandlimited waveform; the LFO code |
+| shared | `$swap`, `$peek2`, `$stereoHelper`, each only when a unit calls it; stereo and mono `xch` |
+
+The rule for adding one:
+
+1. The part must do nothing in a song that does not use it, exactly: x·1,
+   x+0 and 2^0 = 1 are exact, a filter whose output is multiplied by 0 is
+   not (a huge input overflows to infinity, and 0·∞ is not 0), and neither
+   is (l+l)·0.5. A parameter counts as unused only if no unit has another
+   value than the neutral one and nothing modulates it
+   (`FeatureSetMacros.set`). When in doubt, keep the code.
+2. Test both ways: `vm/compiler/wasm_features_test.go` and
+   `wasm_buffeatures_test.go` have a table of songs for each group, with the
+   part used, not used, and mixed with units that use the other parts. Each
+   checks that the player has the code of the parts it uses and no others,
+   and that it renders the song exactly like the Go synth, whose bytecode
+   always has every operand (`AllFeatures`).
+3. Songs that do not use the unit must compile to the same player as
+   before, for wasm, 386 and amd64.
+
+Looked at and left, as not exact: the interpolation of `mcdelay` with whole
+lengths, its decay filter with decay 0, and depth 128 of `ott`.
 
 ## Updating the x86 backend
 
@@ -1016,13 +1073,16 @@ songs that need any of it for x86.
 4. **Spawn.** Voice allocation, the rate/sync/edge modes and the
    whole-frame countdown, as in `GoSynth.spawn`. The compiler keeps holds
    on tracks covering spawned voices (`spawnedVoices` in `patterns.go`).
+   The flags operand is only there when the spawn units differ in it
+   (`vm.SpawnFlagsOperand`).
 
 5. **Spectral units.**
    - Tables are in `su_spectral`, laid out by `wasmSpectral` in
      `vm/compiler/compiler.go`: spectra, unit states, scratch, Hann window
      and twiddles.
    - The operand of each spectral unit is its index in the spectral unit
-     table. `spgate`, `spphase` and `spcomb` have extra operands.
+     table. `spgate`, `spphase` and `spcomb` have extra operands, each only
+     in songs whose units differ in it or use it (`vm/operands.go`).
    - `spcompress` with a nonzero attack or release is encoded with the
      stereo bit, and its attack and release follow the index as two more
      operands. Its state holds a smoothed envelope, a float for each bin
@@ -1095,7 +1155,8 @@ songs that need any of it for x86.
 
 11. **mc units.** Tables and states as in the wasm player (see
    [mc units](#mc-units)), and the units as in `vm/mc.go`, operation by
-   operation in float32. The x86 templates have no stubs for them, as for
+   operation in float32. Their operands after the index are only there when
+   the units differ in them (`vm/operands.go`). The x86 templates have no stubs for them, as for
    the spectral units, so the x86 library does not assemble with
    `AllFeatures`; the compiler refuses songs with mc units for x86.
 

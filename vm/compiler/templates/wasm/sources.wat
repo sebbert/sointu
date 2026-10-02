@@ -195,6 +195,7 @@
                         (f32.const 0.015625)
                     ) ;; scale back to 0 - 128
                     (f32.add (local.get $detune)) ;; add detune. detune is -1 to 1 so can detune a full note up or down at max
+{{- if .SupportsParamValue "oscillator" "lfo" 1}}
                     (f32.add (select
                         (f32.const 0)
                         (f32.convert_i32_u (i32.load (global.get $voice)))
@@ -207,6 +208,12 @@
                         (f32.const 0.000092696138) ;; scaling constant to get middle-C to where it should be
                         (i32.and (local.get $flags) (i32.const 0x8))
                     ))
+{{- else}}
+                    (f32.add (f32.convert_i32_u (i32.load (global.get $voice)))) ;; no oscillator of the song is an lfo: add the note number
+                    (f32.mul (f32.const 0.0833333)) ;; /12, in full octaves
+                    (call $pow2)
+                    (f32.mul (f32.const 0.000092696138)) ;; scaling constant to get middle-C to where it should be
+{{- end}}
 {{- if .SupportsModulation "oscillator" "frequency"}}
                     (f32.add (local.get $freqMod))
 {{- end}}
@@ -233,17 +240,17 @@
     (local.set $color (call $input (i32.const {{.InputNumber "oscillator" "color"}})))
 {{- if .SupportsParamValue "oscillator" "type" .Sine}}
     (if (i32.and (local.get $flags) (i32.const 0x40)) (then
-        (local.set $amplitude (call $oscillator_sine (local.get $phase) (local.get $color){{- if .SupportsParamValue "oscillator" "bandlimit" 1}} (local.get $dt){{end}}))
+        (local.set $amplitude (call $oscillator_sine (local.get $phase) (local.get $color){{- if .BandlimitSine}} (local.get $dt){{end}}))
     ))
 {{- end}}
 {{- if .SupportsParamValue "oscillator" "type" .Trisaw}}
     (if (i32.and (local.get $flags) (i32.const 0x20)) (then
-        (local.set $amplitude (call $oscillator_trisaw (local.get $phase) (local.get $color){{- if .SupportsParamValue "oscillator" "bandlimit" 1}} (local.get $dt){{end}}))
+        (local.set $amplitude (call $oscillator_trisaw (local.get $phase) (local.get $color){{- if .BandlimitTrisaw}} (local.get $dt){{end}}))
     ))
 {{- end}}
 {{- if .SupportsParamValue "oscillator" "type" .Pulse}}
     (if (i32.and (local.get $flags) (i32.const 0x10)) (then
-        (local.set $amplitude (call $oscillator_pulse (local.get $phase) (local.get $color){{- if .SupportsParamValue "oscillator" "bandlimit" 1}} (local.get $dt){{end}}))
+        (local.set $amplitude (call $oscillator_pulse (local.get $phase) (local.get $color){{- if .BandlimitPulse}} (local.get $dt){{end}}))
     ))
 {{- end}}
 {{- if .SupportsParamValue "oscillator" "type" .Gate}}
@@ -292,8 +299,8 @@
 )
 
 {{- if .SupportsParamValue "oscillator" "type" .Pulse}}
-(func $oscillator_pulse (param $phase f32) (param $color f32){{- if .SupportsParamValue "oscillator" "bandlimit" 1}} (param $dt f32){{end}} (result f32)
-{{- if .SupportsParamValue "oscillator" "bandlimit" 1}} (local $amplitude f32)
+(func $oscillator_pulse (param $phase f32) (param $color f32){{- if .BandlimitPulse}} (param $dt f32){{end}} (result f32)
+{{- if .BandlimitPulse}} (local $amplitude f32)
     (if (f32.gt (local.get $dt) (f32.const 0)) (then
         (local.set $color (f32.min (f32.max (local.get $color) (f32.const 0)) (f32.const 1)))
     ))
@@ -304,7 +311,7 @@
         (f32.const 1)
         (f32.ge (local.get $phase) (local.get $color))
     )
-{{- if .SupportsParamValue "oscillator" "bandlimit" 1}}
+{{- if .BandlimitPulse}}
     )
     (if (f32.gt (local.get $dt) (f32.const 0)) (then
         (local.set $amplitude (f32.sub
@@ -318,8 +325,8 @@
 {{end}}
 
 {{- if .SupportsParamValue "oscillator" "type" .Sine}}
-(func $oscillator_sine (param $phase f32) (param $color f32){{- if .SupportsParamValue "oscillator" "bandlimit" 1}} (param $dt f32){{end}} (result f32)
-{{- if .SupportsParamValue "oscillator" "bandlimit" 1}} (local $h f32)
+(func $oscillator_sine (param $phase f32) (param $color f32){{- if .BandlimitSine}} (param $dt f32){{end}} (result f32)
+{{- if .BandlimitSine}} (local $h f32)
     (if (f32.gt (local.get $dt) (f32.const 0)) (then
         (local.set $color (f32.min (f32.max (local.get $color) (local.get $dt)) (f32.const 1)))
         ;; the slope changes by ±2π/color at 0 and color
@@ -347,15 +354,15 @@
 {{- end}}
         (f32.ge (local.get $phase) (local.get $color))
     )
-{{- if .SupportsParamValue "oscillator" "bandlimit" 1}}
+{{- if .BandlimitSine}}
     (f32.add (local.get $h))
 {{- end}}
 )
 {{end}}
 
 {{- if .SupportsParamValue "oscillator" "type" .Trisaw}}
-(func $oscillator_trisaw (param $phase f32) (param $color f32){{- if .SupportsParamValue "oscillator" "bandlimit" 1}} (param $dt f32){{end}} (result f32)
-{{- if .SupportsParamValue "oscillator" "bandlimit" 1}} (local $h f32)
+(func $oscillator_trisaw (param $phase f32) (param $color f32){{- if .BandlimitTrisaw}} (param $dt f32){{end}} (result f32)
+{{- if .BandlimitTrisaw}} (local $h f32)
     (if (f32.gt (local.get $dt) (f32.const 0)) (then
         (local.set $color (f32.min (f32.max (local.get $color) (local.get $dt)) (f32.sub (f32.const 1) (local.get $dt))))
         ;; the slope changes by ±2/(color·(1-color)) at 0 and color
@@ -378,7 +385,7 @@
     (f32.div (local.get $phase) (local.get $color))
     (f32.mul (f32.const 2))
     (f32.sub (f32.const 1))
-{{- if .SupportsParamValue "oscillator" "bandlimit" 1}}
+{{- if .BandlimitTrisaw}}
     (f32.add (local.get $h))
 {{- end}}
 )
@@ -386,7 +393,8 @@
 
 {{- if .SupportsParamValue "oscillator" "bandlimit" 1}}
 ;; The corrections of the bandlimited oscillators for a discontinuity at phase
-;; 0, as in vm/go_synth.go. $polywindow is 1 - |d|/dt within dt of it, where d
+;; 0, as in vm/go_synth.go; of each waveform only in songs with a bandlimited
+;; oscillator of it. $polywindow is 1 - |d|/dt within dt of it, where d
 ;; is the distance to it, and 0 further away.
 (func $polywindow (param $t f32) (param $dt f32) (result f32)
     (f32.max
@@ -397,6 +405,7 @@
         (f32.const 0)
     )
 )
+{{- if .BandlimitPulse}}
 
 ;; $polyblep corrects a step of +2: -(1-d/dt)² after it, (1-d/dt)² before
 (func $polyblep (param $t f32) (param $dt f32) (result f32) (local $y f32)
@@ -406,6 +415,8 @@
         (f32.sub (local.get $t) (f32.const 0.5))
     )
 )
+{{- end}}
+{{- if or .BandlimitSine .BandlimitTrisaw}}
 
 ;; $polyblamp is 6/dt times the correction for a corner where the slope
 ;; increases by 1: (1-|d|/dt)³
@@ -413,6 +424,7 @@
     (local.set $y (call $polywindow (local.get $t) (local.get $dt)))
     (f32.mul (f32.mul (local.get $y) (local.get $y)) (local.get $y))
 )
+{{- end}}
 
 (func $wrap (param $x f32) (result f32)
     (f32.sub (local.get $x) (f32.floor (local.get $x)))
@@ -516,7 +528,7 @@
 {{end}}
 
 
-{{- if or (.HasOp "spawn") (.HasOp "window")}}
+{{- if or .SpawnLength .WindowOwnLength}}
 ;; $lengthFrames returns the length in frames of a spawn or window unit for its
 ;; length parameter: 100 ms at the middle, doubling every 8 steps
 (func $lengthFrames (param $length f32) (result f32)
@@ -542,21 +554,35 @@
     ))
     (local.set $age (i32.load (global.get $WRK)))
     (i32.store (global.get $WRK) (i32.add (local.get $age) (i32.const 1)))
+{{- if .WindowNoteLength}}
     (local.set $frames (f32.convert_i32_u (i32.load offset=32 (global.get $voice)))) ;; the length of the spawned note
+{{- end}}
+{{- if .WindowOwnLength}}
+{{- if .WindowNoteLength}}
     (if (f32.gt (call $input (i32.const {{.InputNumber "window" "length"}})) (f32.const 0)) (then
+{{- end}}
         (local.set $frames (f32.max (call $lengthFrames (call $input (i32.const {{.InputNumber "window" "length"}}))) (f32.const 1)))
+{{- if .WindowNoteLength}}
     ))
+{{- end}}
+{{- end}}
+{{- if .WindowNoteLength}}
     (if (f32.eq (local.get $frames) (f32.const 0)) (then
         (call $push (f32.const 1)) ;; a note without a length
         return
     ))
+{{- end}}
     (local.set $t (f32.div (f32.convert_i32_u (local.get $age)) (local.get $frames)))
     (if (f32.ge (local.get $t) (f32.const 1)) (then
         (call $push (f32.const 0))
         return
     ))
     (local.set $half (f32.mul
+{{- if .SupportsModulation "window" "shape"}}
         (f32.min (f32.max (call $input (i32.const {{.InputNumber "window" "shape"}})) (f32.const 0)) (f32.const 1))
+{{- else}}
+        (call $input (i32.const {{.InputNumber "window" "shape"}})) ;; not modulated: within 0 and 1
+{{- end}}
         (f32.const 0.5)
     ))
     (local.set $d (f32.min (local.get $t) (f32.sub (f32.const 1) (local.get $t))))

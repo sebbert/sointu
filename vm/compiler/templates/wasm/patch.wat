@@ -135,7 +135,7 @@
 )
 {{- end}}
 
-{{- if or (and (not .MathImports) (.HasOp "compressor")) (.HasOp "spfilter") (.HasOp "spcompress") (.HasOp "spcross") (.HasOp "ott")}}
+{{- if or (and (not .MathImports) (.HasOp "compressor")) .SpfilterTilt (.HasOp "spcompress") (.HasOp "spcross") (.HasOp "ott")}}
 ;; $log2f, $exp2f, $powf and $sinTurns are the float32 math functions of the
 ;; player, computed like log2f, exp2f, powf and sinTurns in vm/mathf.go,
 ;; operation by operation, so that the Go synth renders exactly the same.
@@ -222,6 +222,8 @@
     (f32.min (f32.max (local.get $value) (f32.const -1.0)) (f32.const 1.0))
 )
 
+{{- if .StereoHelper}}
+
 (func $stereoHelper (param $stereo i32) (param $tableIndex i32)
     (if (local.get $stereo)(then
         (call $pop)
@@ -231,6 +233,7 @@
         (call $push)
     ))
 )
+{{- end}}
 
 ;;-------------------------------------------------------------------------------
 ;; The opcode table jump table. This is constructed to only include the opcodes

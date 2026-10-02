@@ -297,6 +297,7 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 				return nil, nil, bufErr
 			}
 			buffers.wasmBufferFeatures = bufferFeatures(song, features, encodedPatch, &buffers)
+			units := unitFeatures(song, encodedPatch)
 			data := struct {
 				CompilerMacros
 				FeatureSetMacros
@@ -311,7 +312,8 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 				wasmBufferData
 				wasmSpectralData
 				wasmMCData
-			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers, wasmSpectral(encodedPatch), wasmMC(encodedPatch)}
+				wasmUnitFeatures
+			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers, wasmSpectral(encodedPatch, units), wasmMC(encodedPatch, units, featureSetMacros.MCDelayMod()), units}
 			populatedTemplate, extension, err = com.compile(templateName, &data)
 		}
 		if err != nil {
@@ -335,11 +337,14 @@ func (com *Compiler) compile(templateName string, data interface{}) (string, str
 type wasmSpectralData struct {
 	// SpectrumTable has 4 i32s for each spectrum: offset of its data, base 2
 	// logarithm of its size, the number of spectra written to it and the
-	// number of channels, whose data follow each other.
+	// number of channels, whose data follow each other. Without stereo
+	// spectra in the song (SpectralStereo), it has no channels: 3 i32s.
 	SpectrumTable []uint32
-	// SpectralTable has 4 i32s for each spectral unit: the offset of the
-	// voice that runs it from su_voices, the offset of its state, and the
-	// offsets of its spectrum and source spectrum in SpectrumTable. The state
+	// SpectralTable has 4 i32s for each spectral unit: the offset of its
+	// state, the offsets of its spectrum and source spectrum in
+	// SpectrumTable, and the offset of the voice that runs it from
+	// su_voices; that only when an instrument with spectral units has
+	// several voices (SpectralVoices), otherwise 3 i32s. The state
 	// is the position in its ring, the count of the spectrum it processed
 	// last and the state of its random number generator, 16 bytes, followed
 	// by the rings of spfft and spifft, the held spectrum of spblur and the
@@ -357,21 +362,29 @@ type wasmSpectralData struct {
 	SpectralMaxSize                                      int
 }
 
-const wasmSpectrumTableStride = 16
-
-func wasmSpectral(b *vm.Bytecode) (ret wasmSpectralData) {
+func wasmSpectral(b *vm.Bytecode, f wasmUnitFeatures) (ret wasmSpectralData) {
 	offset := 0
+	stride := 12 // of the spectrum table, in bytes
+	if f.SpectralStereo {
+		stride = 16
+	}
 	for _, sp := range b.Spectra {
-		ret.SpectrumTable = append(ret.SpectrumTable, uint32(offset), uint32(sp.Log2Size), 0, uint32(sp.Channels))
+		ret.SpectrumTable = append(ret.SpectrumTable, uint32(offset), uint32(sp.Log2Size), 0)
+		if f.SpectralStereo {
+			ret.SpectrumTable = append(ret.SpectrumTable, uint32(sp.Channels))
+		}
 		offset += 2 * (1 << sp.Log2Size) * 4 * sp.Channels
 		ret.SpectralMaxLog2 = max(ret.SpectralMaxLog2, sp.Log2Size)
 	}
 	for _, u := range b.SpectralUnits {
 		source := 0
 		if u.Source >= 0 {
-			source = u.Source * wasmSpectrumTableStride
+			source = u.Source * stride
 		}
-		ret.SpectralTable = append(ret.SpectralTable, uint32(u.Voice*4096), uint32(offset), uint32(u.Spectrum*wasmSpectrumTableStride), uint32(source))
+		ret.SpectralTable = append(ret.SpectralTable, uint32(offset), uint32(u.Spectrum*stride), uint32(source))
+		if f.SpectralVoices {
+			ret.SpectralTable = append(ret.SpectralTable, uint32(u.Voice*4096))
+		}
 		offset += 16
 		switch u.Type {
 		case "spfft", "spifft": // a ring for each channel of the unit
@@ -398,36 +411,43 @@ func wasmSpectral(b *vm.Bytecode) (ret wasmSpectralData) {
 // the states of the units are in su_mc, with offsets in bytes from it; their
 // constant data in su_mc_consts.
 type wasmMCData struct {
-	// MCTable has 4 i32s for each mc unit: the offset of the voice that runs
-	// it from su_voices, the offsets of its bus and its state in su_mc and
-	// the offset of its constant data in su_mc_consts. A bus is the frame
+	// MCTable has 4 i32s for each mc unit: the offsets of its bus and its
+	// state in su_mc, the offset of its constant data in su_mc_consts and
+	// the offset of the voice that runs it from su_voices; that only when an
+	// instrument with mc units has several voices (MCVoices), otherwise 3
+	// i32s. A bus is the frame
 	// the units process and the frame stored by mcloopend, 8 floats each. A
 	// state is the phases of the modulation, the states of the low and high
 	// decay filters (8 floats each) and the position in the ring, 128 bytes,
 	// followed by the ring, frames of 8 floats.
 	MCTable []uint32
 	// MCConsts starts with the rates and the phase offsets of the
-	// modulation of mcdelay and the byte offsets of the channels, 8 each.
+	// modulation of mcdelay, 8 each, in songs that modulate an mcdelay, and
+	// the byte offsets of the channels, 8, at MCChannelOffsets.
 	// The constant data of an mcdelay follows: its lengths and decay
 	// coefficients A, B and C (8 floats each), the mask of its ring, the
 	// longest delay and the allpass coefficient; of an mcmix of type shuffle
 	// the byte offsets of the source channels and their signs.
-	MCConsts []uint32
-	MCBytes  int
+	MCConsts         []uint32
+	MCBytes          int
+	MCChannelOffsets int
 }
 
 // wasmMCStateBytes is the size of the state of an mcdelay in the wasm player
 // before its ring.
 const wasmMCStateBytes = 128
 
-func wasmMC(b *vm.Bytecode) (ret wasmMCData) {
+func wasmMC(b *vm.Bytecode, features wasmUnitFeatures, delayMod bool) (ret wasmMCData) {
 	if len(b.MCUnits) == 0 {
 		return ret
 	}
 	f := math.Float32bits
-	for _, x := range [...]float32{1, 1.125, 1.25, 1.375, 1.5, 1.625, 1.75, 1.875, 0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875} {
-		ret.MCConsts = append(ret.MCConsts, f(x))
+	if delayMod {
+		for _, x := range [...]float32{1, 1.125, 1.25, 1.375, 1.5, 1.625, 1.75, 1.875, 0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875} {
+			ret.MCConsts = append(ret.MCConsts, f(x))
+		}
 	}
+	ret.MCChannelOffsets = 4 * len(ret.MCConsts)
 	for c := range sointu.MCChannels {
 		ret.MCConsts = append(ret.MCConsts, uint32(4*c))
 	}
@@ -457,7 +477,10 @@ func wasmMC(b *vm.Bytecode) (ret wasmMCData) {
 				ret.MCConsts = append(ret.MCConsts, f(x))
 			}
 		}
-		ret.MCTable = append(ret.MCTable, uint32(u.Voice*4096), uint32(64*u.Bus), uint32(state), uint32(consts))
+		ret.MCTable = append(ret.MCTable, uint32(64*u.Bus), uint32(state), uint32(consts))
+		if features.MCVoices {
+			ret.MCTable = append(ret.MCTable, uint32(u.Voice*4096))
+		}
 	}
 	return ret
 }

@@ -578,27 +578,30 @@
         (local.set $h1) (local.set $m1) (local.set $l1)
     ))
 {{- end}}
+{{- if .OttTime}}
     ;; 1 / the time multiplier
     (local.set $inv (call $exp2f (f32.mul
         (f32.sub (f32.const 0.5) (call $input (i32.const {{.InputNumber "ott" "time"}})))
         (f32.const 8)
     )))
-    ;; in mono, the right channel's bands are 0 and add nothing to the powers
+{{- end}}
+    ;; in mono, the right channel's bands are 0 and add nothing to the powers:
+    ;; without a stereo ott in the song, they are left out
     (local.set $g0 (call $ottGain
-        (f32.add (f32.mul (local.get $l0) (local.get $l0)) (f32.mul (local.get $l1) (local.get $l1)))
-        (i32.add (global.get $ottWRK) (i32.const 32)) (local.get $inv)
+        {{if .Stereo "ott"}}(f32.add (f32.mul (local.get $l0) (local.get $l0)) (f32.mul (local.get $l1) (local.get $l1))){{else}}(f32.mul (local.get $l0) (local.get $l0)){{end}}
+        (i32.add (global.get $ottWRK) (i32.const 32)){{if .OttTime}} (local.get $inv){{end}}
         (f32.const -0.00068439695) (f32.const -0.00011600771) (f32.const -11.228117) (f32.const -13.553467)
         (call $input (i32.const {{.InputNumber "ott" "low"}}))
     ))
     (local.set $g1 (call $ottGain
-        (f32.add (f32.mul (local.get $m0) (local.get $m0)) (f32.mul (local.get $m1) (local.get $m1)))
-        (i32.add (global.get $ottWRK) (i32.const 36)) (local.get $inv)
+        {{if .Stereo "ott"}}(f32.add (f32.mul (local.get $m0) (local.get $m0)) (f32.mul (local.get $m1) (local.get $m1))){{else}}(f32.mul (local.get $m0) (local.get $m0)){{end}}
+        (i32.add (global.get $ottWRK) (i32.const 36)){{if .OttTime}} (local.get $inv){{end}}
         (f32.const -0.0014604542) (f32.const -0.00011600771) (f32.const -10.032223) (f32.const -13.885659)
         (call $input (i32.const {{.InputNumber "ott" "mid"}}))
     ))
     (local.set $inv (call $ottGain
-        (f32.add (f32.mul (local.get $h0) (local.get $h0)) (f32.mul (local.get $h1) (local.get $h1)))
-        (i32.add (global.get $ottWRK) (i32.const 40)) (local.get $inv)
+        {{if .Stereo "ott"}}(f32.add (f32.mul (local.get $h0) (local.get $h0)) (f32.mul (local.get $h1) (local.get $h1))){{else}}(f32.mul (local.get $h0) (local.get $h0)){{end}}
+        (i32.add (global.get $ottWRK) (i32.const 40)){{if .OttTime}} (local.get $inv){{end}}
         (f32.const -0.0024232720) (f32.const -0.00024783466) (f32.const -11.792845) (f32.const -13.553467)
         (call $input (i32.const {{.InputNumber "ott" "high"}}))
     )) ;; $inv is the gain of the high band from here on
@@ -634,26 +637,36 @@
 
 ;; $ottGain moves the level of a band at $a toward the power $x2 of the band
 ;; and returns the gain of the band: downward above $down, upward below $up,
-;; times the band's gain parameter $gain
-(func $ottGain (param $x2 f32) (param $a i32) (param $inv f32) (param $attack f32) (param $release f32) (param $down f32) (param $up f32) (param $gain f32) (result f32) (local $level f32) (local $g f32)
+;; times the band's gain parameter $gain. $inv is 1 over the time multiplier,
+;; in songs that set the time.
+(func $ottGain (param $x2 f32) (param $a i32){{if .OttTime}} (param $inv f32){{end}} (param $attack f32) (param $release f32) (param $down f32) (param $up f32) (param $gain f32) (result f32) (local $level f32) (local $g f32)
     (local.set $level (f32.load (local.get $a)))
     (local.set $level (f32.add (local.get $level) (f32.mul
         (f32.sub (local.get $x2) (local.get $level))
+{{- if .OttTime}}
         (f32.sub (f32.const 1) (call $exp2f (f32.mul
             (select (local.get $release) (local.get $attack) (f32.lt (local.get $x2) (local.get $level)))
             (local.get $inv)
         )))
+{{- else}}
+        (f32.sub (f32.const 1) (call $exp2f
+            (select (local.get $release) (local.get $attack) (f32.lt (local.get $x2) (local.get $level)))
+        ))
+{{- end}}
     )))
     (f32.store (local.get $a) (local.get $level))
     (local.set $level (call $log2f (local.get $level)))
     (local.set $g (f32.mul (f32.sub (local.get $gain) (f32.const 0.5)) (f32.const 8)))
-    (if (f32.gt (local.get $level) (local.get $down)) (then
+{{- if .OttDownward}}
+    (if (f32.gt (local.get $level) (local.get $down)) (then ;; downward
         (local.set $g (f32.sub (local.get $g) (f32.mul
             (f32.mul (f32.sub (local.get $level) (local.get $down)) (f32.const 0.49250376))
             (call $input (i32.const {{.InputNumber "ott" "downward"}}))
         )))
     ))
-    (if (f32.lt (local.get $level) (local.get $up)) (then
+{{- end}}
+{{- if .OttUpward}}
+    (if (f32.lt (local.get $level) (local.get $up)) (then ;; upward
         (local.set $g (f32.add (local.get $g) (f32.min
             (f32.mul
                 (f32.mul (f32.sub (local.get $up) (local.get $level)) (f32.const 0.375))
@@ -662,6 +675,7 @@
             (f32.const 3.9863138)
         )))
     ))
+{{- end}}
     (call $exp2f (local.get $g))
 )
 
@@ -764,21 +778,28 @@
 ;;   Matches softclip and softclipOversampled in vm/shaping.go, where they
 ;;   are explained.
 ;;-------------------------------------------------------------------------------
+{{- /* without drive in the song, the gain is 1 and left out */}}
+{{- $left := "(call $peek)"}}{{$right := "(call $peek2)"}}
+{{- if .SoftclipDrive}}
+{{- $left = "(f32.mul (call $peek) (local.get $drive))"}}{{$right = "(f32.mul (call $peek2) (local.get $drive))"}}
+{{- end}}
 (func $su_op_softclip (param $stereo i32) (local $drive f32)
 {{- if .SoftclipOversample}} (local $over i32){{end}}
+{{- if .SoftclipDrive}}
     (local.set $drive (f32.add (f32.const 1) (f32.mul (f32.const 7) (call $input (i32.const {{.InputNumber "softclip" "drive"}})))))
+{{- end}}
 {{- if .SoftclipOversample}}
     (local.set $over (call $scanOperand))
-    (f32.store (global.get $sp) (call $softclipOver (f32.mul (call $peek) (local.get $drive)) (global.get $WRK) (local.get $over)))
+    (f32.store (global.get $sp) (call $softclipOver {{$left}} (global.get $WRK) (local.get $over)))
 {{- else}}
-    (f32.store (global.get $sp) (call $softclip (f32.mul (call $peek) (local.get $drive))))
+    (f32.store (global.get $sp) (call $softclip {{$left}}))
 {{- end}}
 {{- if .Stereo "softclip"}}
     (if (local.get $stereo) (then
 {{- if .SoftclipOversample}}
-        (f32.store offset=4 (global.get $sp) (call $softclipOver (f32.mul (call $peek2) (local.get $drive)) (i32.add (global.get $WRK) (i32.const 16)) (local.get $over)))
+        (f32.store offset=4 (global.get $sp) (call $softclipOver {{$right}} (i32.add (global.get $WRK) (i32.const 16)) (local.get $over)))
 {{- else}}
-        (f32.store offset=4 (global.get $sp) (call $softclip (f32.mul (call $peek2) (local.get $drive))))
+        (f32.store offset=4 (global.get $sp) (call $softclip {{$right}}))
 {{- end}}
     ))
 {{- end}}

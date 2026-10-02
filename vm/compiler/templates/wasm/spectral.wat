@@ -6,21 +6,30 @@
 ;;   vm/spectral.go operation by operation.
 ;;
 ;;   $spectralUnit returns the address of the unit's entry in
-;;   su_spectral_table: the offset of the voice running it from su_voices, the
-;;   offset of its state in su_spectral, and the offsets of its spectrum and
-;;   source spectrum in su_spectrum_table. The state is the position in its
+;;   su_spectral_table: the offset of its state in su_spectral, the offsets of
+;;   its spectrum and source spectrum in su_spectrum_table, and, when an
+;;   instrument with spectral units has several voices, the offset of the
+;;   voice running it from su_voices. The state is the position in its
 ;;   ring and the count of the spectrum it processed last, followed by the
 ;;   ring. A spectrum entry is the offset of its data in su_spectral, the base
-;;   2 logarithm of its size and the number of spectra written to it.
+;;   2 logarithm of its size, the number of spectra written to it and, when
+;;   the song has stereo spectra, the number of its channels. Without stereo
+;;   spectra, the units have no loops over the channels.
 ;;-------------------------------------------------------------------------------
 (func $spectralUnit (result i32)
+{{- if .SpectralVoices}}
     (i32.add (i32.const {{index .Labels "su_spectral_table"}}) (i32.shl (call $scanOperand) (i32.const 4)))
+{{- else}}
+    (i32.add (i32.const {{index .Labels "su_spectral_table"}}) (i32.mul (call $scanOperand) (i32.const 12)))
+{{- end}}
 )
+{{- if .SpectralVoices}}
 
 ;; $spectralVoice is true if the current voice runs the unit
 (func $spectralVoice (param $u i32) (result i32)
-    (i32.eq (i32.sub (global.get $voice) (i32.const {{index .Labels "su_voices"}})) (i32.load (local.get $u)))
+    (i32.eq (i32.sub (global.get $voice) (i32.const {{index .Labels "su_voices"}})) (i32.load offset=12 (local.get $u)))
 )
+{{- end}}
 
 ;; $spectralInit computes the tables at su_spectral + SpectralHann, like
 ;; spectralTables in vm/spectral.go: the Hann window of the largest spectrum
@@ -53,17 +62,24 @@
     end
 )
 
+{{- if or (.HasOp "spcopy") (and (.HasOp "spcross") .SpectralStereo)}}
+
 ;; $minU returns the smaller of two unsigned integers
 (func $minU (param $a i32) (param $b i32) (result i32)
     (select (local.get $a) (local.get $b) (i32.lt_u (local.get $a) (local.get $b)))
 )
+{{- end}}
 
 ;; $channelData returns the address of channel $c of the spectrum whose entry
 ;; is at $h: a spectrum has 2^log2 complex values for each channel
 (func $channelData (param $h i32) (param $c i32) (result i32)
+{{- if .SpectralStereo}}
     (i32.add
         (i32.add (i32.const {{index .Labels "su_spectral"}}) (i32.load (local.get $h)))
         (i32.shl (local.get $c) (i32.add (i32.load offset=4 (local.get $h)) (i32.const 3))))
+{{- else}}
+    (i32.add (i32.const {{index .Labels "su_spectral"}}) (i32.load (local.get $h)))
+{{- end}}
 )
 
 ;; $hann returns the Hann window of size 2^$log2n at $j: sin²(πj/n)
@@ -161,12 +177,14 @@
     ))
 {{- end}}
     (local.set $u (call $spectralUnit))
+{{- if .SpectralVoices}}
     (if (i32.eqz (call $spectralVoice (local.get $u))) (then
         return
     ))
+{{- end}}
     ;; the ring of channel c is at st+16+c*4n
-    (local.set $st (i32.add (i32.const {{index .Labels "su_spectral"}}) (i32.load offset=4 (local.get $u))))
-    (local.set $h (i32.add (i32.const {{index .Labels "su_spectrum_table"}}) (i32.load offset=8 (local.get $u))))
+    (local.set $st (i32.add (i32.const {{index .Labels "su_spectral"}}) (i32.load (local.get $u))))
+    (local.set $h (i32.add (i32.const {{index .Labels "su_spectrum_table"}}) (i32.load offset=4 (local.get $u))))
     (local.set $n (i32.shl (i32.const 1) (i32.load offset=4 (local.get $h))))
     (local.set $pos (i32.load (local.get $st)))
     (local.set $ring (i32.add (local.get $st) (i32.shl (local.get $pos) (i32.const 2))))
@@ -180,7 +198,9 @@
     (if (i32.and (local.get $pos) (i32.sub (i32.shr_u (local.get $n) (i32.const 2)) (i32.const 1))) (then
         return
     ))
+{{- if .SpectralStereo}}
     loop $channels
+{{- end}}
         (local.set $x (call $channelData (local.get $h) (local.get $c)))
         (local.set $ring (i32.add (local.get $st) (i32.mul (local.get $c) (i32.shl (local.get $n) (i32.const 2)))))
         (local.set $j (i32.const 0))
@@ -195,11 +215,13 @@
             (br_if $window (i32.lt_u (local.tee $j (i32.add (local.get $j) (i32.const 1))) (local.get $n)))
         end
         (call $fft (local.get $x) (local.get $n))
+{{- if .SpectralStereo}}
         ;; the channels of both the unit and the spectrum
         (br_if $channels (i32.and
             (i32.lt_u (local.tee $c (i32.add (local.get $c) (i32.const 1))) (i32.load offset=12 (local.get $h)))
             (i32.le_u (local.get $c) (local.get $stereo))))
     end
+{{- end}}
     (i32.store offset=8 (local.get $h) (i32.add (i32.load offset=8 (local.get $h)) (i32.const 1)))
 )
 {{- end}}
@@ -215,22 +237,32 @@
 ;;-------------------------------------------------------------------------------
 (func $su_op_spifft (param $stereo i32) (local $u i32) (local $st i32) (local $h i32) (local $x i32) (local $s i32) (local $n i32) (local $pos i32) (local $k i32) (local $p i32) (local $scale f32) (local $c i32) (local $rings i32) (local $ring i32) (local $l f32) (local $r f32)
     (local.set $u (call $spectralUnit))
+{{- if .SpectralVoices}}
     (if (call $spectralVoice (local.get $u)) (then
-        (local.set $st (i32.add (i32.const {{index .Labels "su_spectral"}}) (i32.load offset=4 (local.get $u))))
-        (local.set $h (i32.add (i32.const {{index .Labels "su_spectrum_table"}}) (i32.load offset=8 (local.get $u))))
+{{- end}}
+        (local.set $st (i32.add (i32.const {{index .Labels "su_spectral"}}) (i32.load (local.get $u))))
+        (local.set $h (i32.add (i32.const {{index .Labels "su_spectrum_table"}}) (i32.load offset=4 (local.get $u))))
         (local.set $n (i32.shl (i32.const 1) (i32.load offset=4 (local.get $h))))
         (local.set $pos (i32.load (local.get $st)))
+{{- if .SpectralStereo}}
         ;; the rings used: min(channels of the unit, channels of the spectrum)
         (local.set $rings (select (i32.const 2) (i32.const 1) (i32.and (local.get $stereo) (i32.eq (i32.load offset=12 (local.get $h)) (i32.const 2)))))
+{{- else}}
+        (local.set $ring (i32.add (local.get $st) (i32.const 16))) ;; the only ring: no spectrum is stereo
+{{- end}}
         (if (i32.ne (i32.load offset=8 (local.get $h)) (i32.load offset=4 (local.get $st))) (then
             (i32.store offset=4 (local.get $st) (i32.load offset=8 (local.get $h)))
             ;; the squared Hann windows overlapping by 3/4 sum to 3/2
             (local.set $scale (f32.div (f32.const 0.6666667) (f32.convert_i32_u (local.get $n))))
+{{- if .SpectralStereo}}
             (if (i32.gt_u (i32.load offset=12 (local.get $h)) (local.get $rings)) (then
                 (local.set $scale (f32.mul (local.get $scale) (f32.const 0.5)))
             ))
+{{- end}}
             (local.set $s (i32.const {{add (index .Labels "su_spectral") .SpectralScratch}}))
+{{- if .SpectralStereo}}
             loop $channels
+{{- end}}
                 (local.set $x (call $channelData (local.get $h) (local.get $c)))
                 (local.set $k (i32.const 0))
                 loop $conjugate
@@ -245,7 +277,9 @@
                     (br_if $mirror (i32.lt_u (local.tee $k (i32.add (local.get $k) (i32.const 1))) (local.get $n)))
                 end
                 (call $fft (local.get $s) (local.get $n))
+{{- if .SpectralStereo}}
                 (local.set $ring (call $spifftRing (local.get $st) (local.get $n) (local.get $c) (local.get $rings)))
+{{- end}}
                 (local.set $k (i32.const 0))
                 loop $overlapAdd
                     (local.set $p (i32.add (local.get $ring) (i32.shl
@@ -259,9 +293,12 @@
                     ))
                     (br_if $overlapAdd (i32.lt_u (local.tee $k (i32.add (local.get $k) (i32.const 1))) (local.get $n)))
                 end
+{{- if .SpectralStereo}}
                 (br_if $channels (i32.lt_u (local.tee $c (i32.add (local.get $c) (i32.const 1))) (i32.load offset=12 (local.get $h))))
             end
+{{- end}}
         ))
+{{- if .SpectralStereo}}
         (local.set $p (i32.add (call $spifftRing (local.get $st) (local.get $n) (i32.const 0) (local.get $rings)) (i32.shl (local.get $pos) (i32.const 2))))
         (local.set $l (f32.mul (f32.load (local.get $p)) (call $input (i32.const {{.InputNumber "spifft" "gain"}}))))
         (f32.store (local.get $p) (f32.const 0))
@@ -271,8 +308,15 @@
             (local.set $r (local.get $l))
         ))
         (f32.store (local.get $p) (f32.const 0))
+{{- else}}
+        (local.set $p (i32.add (local.get $ring) (i32.shl (local.get $pos) (i32.const 2))))
+        (local.set $r (local.tee $l (f32.mul (f32.load (local.get $p)) (call $input (i32.const {{.InputNumber "spifft" "gain"}})))))
+        (f32.store (local.get $p) (f32.const 0))
+{{- end}}
         (i32.store (local.get $st) (i32.and (i32.add (local.get $pos) (i32.const 1)) (i32.sub (local.get $n) (i32.const 1))))
+{{- if .SpectralVoices}}
     ))
+{{- end}}
 {{- if .Stereo "spifft"}}
     (if (local.get $stereo) (then
         (call $push (local.get $r))
@@ -280,6 +324,7 @@
 {{- end}}
     (call $push (local.get $l))
 )
+{{- if .SpectralStereo}}
 
 ;; $spifftRing returns the address of the ring of an spifft unit, whose state
 ;; is at $st, for channel $c of its spectrum: ring min(c, rings-1), c and
@@ -290,6 +335,7 @@
         (select (i32.shl (local.get $n) (i32.const 2)) (i32.const 0) (i32.and (local.get $c) (i32.sub (local.get $rings) (i32.const 1)))))
 )
 {{- end}}
+{{- end}}
 
 {{- if .HasOp "spcopy"}}
 ;;-------------------------------------------------------------------------------
@@ -297,12 +343,14 @@
 ;;-------------------------------------------------------------------------------
 (func $su_op_spcopy (param $stereo i32) (local $u i32) (local $st i32) (local $h i32) (local $src i32)
     (local.set $u (call $spectralUnit))
+{{- if .SpectralVoices}}
     (if (i32.eqz (call $spectralVoice (local.get $u))) (then
         return
     ))
-    (local.set $st (i32.add (i32.const {{index .Labels "su_spectral"}}) (i32.load offset=4 (local.get $u))))
-    (local.set $h (i32.add (i32.const {{index .Labels "su_spectrum_table"}}) (i32.load offset=8 (local.get $u))))
-    (local.set $src (i32.add (i32.const {{index .Labels "su_spectrum_table"}}) (i32.load offset=12 (local.get $u))))
+{{- end}}
+    (local.set $st (i32.add (i32.const {{index .Labels "su_spectral"}}) (i32.load (local.get $u))))
+    (local.set $h (i32.add (i32.const {{index .Labels "su_spectrum_table"}}) (i32.load offset=4 (local.get $u))))
+    (local.set $src (i32.add (i32.const {{index .Labels "su_spectrum_table"}}) (i32.load offset=8 (local.get $u))))
     (if (i32.eq (i32.load offset=8 (local.get $src)) (i32.load offset=4 (local.get $st))) (then
         return
     ))
@@ -311,9 +359,13 @@
         (i32.add (i32.const {{index .Labels "su_spectral"}}) (i32.load (local.get $h)))
         (i32.add (i32.const {{index .Labels "su_spectral"}}) (i32.load (local.get $src)))
         ;; the smaller of the two, channels * 8 bytes * size
+{{- if .SpectralStereo}}
         (call $minU
             (i32.shl (i32.load offset=12 (local.get $h)) (i32.add (i32.load offset=4 (local.get $h)) (i32.const 3)))
             (i32.shl (i32.load offset=12 (local.get $src)) (i32.add (i32.load offset=4 (local.get $src)) (i32.const 3))))
+{{- else}}
+        (i32.shl (i32.const 8) (call $minU (i32.load offset=4 (local.get $h)) (i32.load offset=4 (local.get $src))))
+{{- end}}
     )
     (i32.store offset=8 (local.get $h) (i32.add (i32.load offset=8 (local.get $h)) (i32.const 1)))
 )
@@ -323,11 +375,13 @@
 ;; spectral unit if the current voice runs it and there is a new spectrum it
 ;; has not processed yet, marking it processed; otherwise 0.
 (func $spectralFrame (param $u i32) (result i32) (local $st i32) (local $h i32)
+{{- if .SpectralVoices}}
     (if (i32.eqz (call $spectralVoice (local.get $u))) (then
         (return (i32.const 0))
     ))
-    (local.set $st (i32.add (i32.const {{index .Labels "su_spectral"}}) (i32.load offset=4 (local.get $u))))
-    (local.set $h (i32.add (i32.const {{index .Labels "su_spectrum_table"}}) (i32.load offset=8 (local.get $u))))
+{{- end}}
+    (local.set $st (i32.add (i32.const {{index .Labels "su_spectral"}}) (i32.load (local.get $u))))
+    (local.set $h (i32.add (i32.const {{index .Labels "su_spectrum_table"}}) (i32.load offset=4 (local.get $u))))
     (if (i32.eq (i32.load offset=8 (local.get $h)) (i32.load offset=4 (local.get $st))) (then
         (return (i32.const 0))
     ))
@@ -336,7 +390,7 @@
 )
 {{- end}}
 
-{{- if or (.HasOp "spblur") (.HasOp "spphase")}}
+{{- if or .SpblurFreeze .SpphaseDisperse .SpphaseRandom}}
 ;; $tablePhase returns the cosine and sine of the phase -πp/128, p modulo 256,
 ;; from the twiddle factors e^(-πik/128), k < 128
 (func $tablePhase (param $p i32) (result f32 f32) (local $j i32)
@@ -349,7 +403,9 @@
         (f32.reinterpret_i32 (local.get $j))
     ))
 )
+{{- end}}
 
+{{- if .SpblurFreeze}}
 ;; $randomPhase updates the random number generator at $rng and returns the
 ;; cosine and sine of a random phase, one of 256
 (func $randomPhase (param $rng i32) (result f32 f32) (local $r i32)
@@ -369,31 +425,56 @@
         return
     ))
     (local.set $n (i32.shl (i32.const 1) (i32.load offset=4 (local.get $h))))
-    (local.set $lo (f32.mul (f32.convert_i32_u (i32.shr_u (local.get $n) (i32.const 1)))
+{{- /* low at 0 and high at 128 cut no bin, tilt at 64 is the exponent 0: without them in the song, their code is left out */}}
+{{- if .SpfilterLow}}
+    (local.set $lo (f32.mul (f32.convert_i32_u (i32.shr_u (local.get $n) (i32.const 1))) ;; the low cut
         (f32.div (f32.sub (call $exp2f (f32.mul (call $input (i32.const {{.InputNumber "spfilter" "low"}})) (f32.const 10))) (f32.const 1)) (f32.const 1023))))
-    (local.set $hi (f32.mul (f32.convert_i32_u (i32.shr_u (local.get $n) (i32.const 1)))
+{{- end}}
+{{- if .SpfilterHigh}}
+    (local.set $hi (f32.mul (f32.convert_i32_u (i32.shr_u (local.get $n) (i32.const 1))) ;; the high cut
         (f32.div (f32.sub (call $exp2f (f32.mul (call $input (i32.const {{.InputNumber "spfilter" "high"}})) (f32.const 10))) (f32.const 1)) (f32.const 1023))))
-    (local.set $e (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spfilter" "tilt"}})) (f32.const 4)) (f32.const 2)))
+{{- end}}
+{{- if .SpfilterTilt}}
+    (local.set $e (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spfilter" "tilt"}})) (f32.const 4)) (f32.const 2))) ;; the tilt
     (local.set $ref (f32.div (f32.convert_i32_u (local.get $n)) (f32.const 44.1)))
+{{- end}}
+{{- if .SpectralStereo}}
     loop $channels
+{{- end}}
         (local.set $x (call $channelData (local.get $h) (local.get $c)))
         (local.set $k (i32.const 0))
         loop $bins
             (local.set $fk (f32.convert_i32_u (local.get $k)))
+{{- if or .SpfilterLow .SpfilterHigh}}
+{{- if and .SpfilterLow .SpfilterHigh}}
             (if (i32.or (f32.lt (local.get $fk) (local.get $lo)) (f32.gt (local.get $fk) (local.get $hi))) (then
+{{- else if .SpfilterLow}}
+            (if (f32.lt (local.get $fk) (local.get $lo)) (then
+{{- else}}
+            (if (f32.gt (local.get $fk) (local.get $hi)) (then
+{{- end}}
                 (i64.store (local.get $x) (i64.const 0))
+{{- if .SpfilterTilt}}
             )(else
+{{- end}}
+{{- end}}
+{{- if .SpfilterTilt}}
                 (if (f32.ne (local.get $e) (f32.const 0)) (then
                     (local.set $g (call $powf (f32.div (f32.max (local.get $fk) (f32.const 1)) (local.get $ref)) (local.get $e)))
                     (f32.store (local.get $x) (f32.mul (f32.load (local.get $x)) (local.get $g)))
                     (f32.store offset=4 (local.get $x) (f32.mul (f32.load offset=4 (local.get $x)) (local.get $g)))
                 ))
+{{- end}}
+{{- if or .SpfilterLow .SpfilterHigh}}
             ))
+{{- end}}
             (local.set $x (i32.add (local.get $x) (i32.const 8)))
             (br_if $bins (i32.le_u (local.tee $k (i32.add (local.get $k) (i32.const 1))) (i32.shr_u (local.get $n) (i32.const 1))))
         end
+{{- if .SpectralStereo}}
         (br_if $channels (i32.lt_u (local.tee $c (i32.add (local.get $c) (i32.const 1))) (i32.load offset=12 (local.get $h))))
     end
+{{- end}}
 )
 {{- end}}
 
@@ -459,7 +540,9 @@
     (local.set $w (i32.add (i32.const 1) (i32.trunc_f32_u (f32.mul
         (f32.min (f32.max (call $input (i32.const {{.InputNumber "spcompress" "width"}})) (f32.const 0)) (f32.const 1))
         (f32.convert_i32_u (i32.shr_u (local.get $half) (i32.const 4)))))))
+{{- if .SpectralStereo}}
     loop $channels
+{{- end}}
         (local.set $x (call $channelData (local.get $h) (local.get $c)))
         (local.set $k (i32.const 0))
         (local.set $sum (f32.const 0))
@@ -478,7 +561,7 @@
         (if (local.get $stereo) (then
             ;; the smoothed envelope of channel c is at st+16+c*4(half+1)
             (local.set $env (i32.add
-                (i32.add (i32.const {{add (index .Labels "su_spectral") 16}}) (i32.load offset=4 (local.get $u)))
+                (i32.add (i32.const {{add (index .Labels "su_spectral") 16}}) (i32.load (local.get $u)))
                 (i32.mul (local.get $c) (i32.shl (i32.add (local.get $half) (i32.const 1)) (i32.const 2)))))
             (local.set $sum (f32.const 0))
             (local.set $k (i32.const 0))
@@ -532,8 +615,10 @@
             (f32.store offset=4 (local.get $p) (f32.mul (f32.load offset=4 (local.get $p)) (local.get $g)))
             (br_if $bins (i32.le_s (local.tee $k (i32.add (local.get $k) (i32.const 1))) (local.get $half)))
         end
+{{- if .SpectralStereo}}
         (br_if $channels (i32.lt_u (local.tee $c (i32.add (local.get $c) (i32.const 1))) (i32.load offset=12 (local.get $h))))
     end
+{{- end}}
 )
 {{- end}}
 
@@ -549,17 +634,24 @@
         return
     ))
     (local.set $a (call $input (i32.const {{.InputNumber "spblur" "amount"}})))
+{{- if .SpblurFreeze}}
     (local.set $frozen (f32.gt (call $input (i32.const {{.InputNumber "spblur" "freeze"}})) (f32.const 0.5)))
-    (local.set $st (i32.add (i32.const {{index .Labels "su_spectral"}}) (i32.load offset=4 (local.get $u))))
+{{- end}}
+    (local.set $st (i32.add (i32.const {{index .Labels "su_spectral"}}) (i32.load (local.get $u))))
     (local.set $half (i32.shl (i32.const 1) (i32.sub (i32.load offset=4 (local.get $h)) (i32.const 1))))
+{{- if .SpectralStereo}}
     loop $channels
         ;; the held spectrum of channel c is at st+16+c*8(half+1)
-        (local.set $x (call $channelData (local.get $h) (local.get $c)))
         (local.set $y (i32.add (i32.add (local.get $st) (i32.const 16)) (i32.mul (local.get $c) (i32.shl (i32.add (local.get $half) (i32.const 1)) (i32.const 3)))))
+{{- else}}
+        (local.set $y (i32.add (local.get $st) (i32.const 16))) ;; the held spectrum
+{{- end}}
+        (local.set $x (call $channelData (local.get $h) (local.get $c)))
         (local.set $k (i32.const 0))
         loop $bins
             (local.set $yr (f32.load (local.get $y)))
             (local.set $yi (f32.load offset=4 (local.get $y)))
+{{- if .SpblurFreeze}}
             (if (local.get $frozen) (then
                 (local.set $m (f32.sqrt (f32.add (f32.mul (local.get $yr) (local.get $yr)) (f32.mul (local.get $yi) (local.get $yi)))))
                 (call $randomPhase (i32.add (local.get $st) (i32.const 8)))
@@ -568,6 +660,7 @@
                 (f32.store (local.get $x) (f32.mul (local.get $m) (local.get $b)))
                 (f32.store offset=4 (local.get $x) (f32.mul (local.get $m) (local.get $t)))
             )(else
+{{- end}}
                 (local.set $xr (f32.load (local.get $x)))
                 (local.set $xi (f32.load offset=4 (local.get $x)))
                 (local.set $m (f32.sqrt (f32.add (f32.mul (local.get $xr) (local.get $xr)) (f32.mul (local.get $xi) (local.get $xi)))))
@@ -588,13 +681,17 @@
                 (f32.store offset=4 (local.get $y) (local.get $yi))
                 (f32.store (local.get $x) (local.get $yr))
                 (f32.store offset=4 (local.get $x) (local.get $yi))
+{{- if .SpblurFreeze}}
             ))
+{{- end}}
             (local.set $x (i32.add (local.get $x) (i32.const 8)))
             (local.set $y (i32.add (local.get $y) (i32.const 8)))
             (br_if $bins (i32.le_u (local.tee $k (i32.add (local.get $k) (i32.const 1))) (local.get $half)))
         end
+{{- if .SpectralStereo}}
         (br_if $channels (i32.lt_u (local.tee $c (i32.add (local.get $c) (i32.const 1))) (i32.load offset=12 (local.get $h))))
     end
+{{- end}}
 )
 {{- end}}
 
@@ -605,7 +702,9 @@
 ;;-------------------------------------------------------------------------------
 (func $su_op_spgate (param $stereo i32) (local $c i32) (local $h i32) (local $invert i32) (local $x i32) (local $half i32) (local $k i32) (local $thr f32)
     (local.set $h (call $spectralFrame (call $spectralUnit)))
-    (local.set $invert (call $scanOperand))
+{{- if .SpgateInvertOperand}}
+    (local.set $invert (call $scanOperand)) ;; invert
+{{- end}}
     (if (i32.eqz (local.get $h)) (then
         return
     ))
@@ -614,22 +713,27 @@
         (call $exp2f (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spgate" "threshold"}})) (f32.const 16)) (f32.const 16)))
         (f32.convert_i32_u (i32.shr_u (local.get $half) (i32.const 1)))))
     (local.set $thr (f32.mul (local.get $thr) (local.get $thr)))
+{{- if .SpectralStereo}}
     loop $channels
+{{- end}}
         (local.set $x (call $channelData (local.get $h) (local.get $c)))
         (local.set $k (i32.const 0))
         loop $bins
-            (if (i32.ne
+{{- /* without the operand, all spgate units invert or none does */}}
+            (if {{if .SpgateInvertOperand}}(i32.ne{{else if .SupportsParamValue "spgate" "invert" 1}}(i32.eqz{{end}}
                     (f32.lt (f32.add
                         (f32.mul (f32.load (local.get $x)) (f32.load (local.get $x)))
                         (f32.mul (f32.load offset=4 (local.get $x)) (f32.load offset=4 (local.get $x)))) (local.get $thr))
-                    (local.get $invert)) (then
+                    {{if .SpgateInvertOperand}}(local.get $invert)){{else if .SupportsParamValue "spgate" "invert" 1}}){{end}} (then{{if not .SpgateInvertOperand}}{{if .SupportsParamValue "spgate" "invert" 1}} ;; inverted{{end}}{{end}}
                 (i64.store (local.get $x) (i64.const 0))
             ))
             (local.set $x (i32.add (local.get $x) (i32.const 8)))
             (br_if $bins (i32.le_u (local.tee $k (i32.add (local.get $k) (i32.const 1))) (local.get $half)))
         end
+{{- if .SpectralStereo}}
         (br_if $channels (i32.lt_u (local.tee $c (i32.add (local.get $c) (i32.const 1))) (i32.load offset=12 (local.get $h))))
     end
+{{- end}}
 )
 {{- end}}
 
@@ -638,53 +742,86 @@
 ;;   SPPHASE opcode: disperse rotates bin k by -πp/128, p growing with k²,
 ;;   random by a random phase, robot blends toward phase 0
 ;;-------------------------------------------------------------------------------
+{{- $mode := .SpphaseModeOperand}}
+{{- if or .SpphaseDisperse .SpphaseRandom}}
 ;; $rotate returns x times e^(iθ), given the cosine and sine of θ
 (func $rotate (param $xr f32) (param $xi f32) (param $c f32) (param $s f32) (result f32 f32)
     (f32.sub (f32.mul (local.get $xr) (local.get $c)) (f32.mul (local.get $xi) (local.get $s)))
     (f32.add (f32.mul (local.get $xr) (local.get $s)) (f32.mul (local.get $xi) (local.get $c)))
 )
+{{- end}}
 
 (func $su_op_spphase (param $stereo i32) (local $c i32) (local $u i32) (local $h i32) (local $mode i32) (local $x i32) (local $half i32) (local $k i32) (local $a f32) (local $xr f32) (local $xi f32) (local $st i32) (local $m f32)
     (local.set $u (call $spectralUnit))
-    (local.set $mode (call $scanOperand))
+{{- if $mode}}
+    (local.set $mode (call $scanOperand)) ;; the mode of the phases
+{{- end}}
     (local.set $h (call $spectralFrame (local.get $u)))
     (if (i32.eqz (local.get $h)) (then
         return
     ))
     (local.set $a (call $input (i32.const {{.InputNumber "spphase" "amount"}})))
-    (local.set $st (i32.add (i32.const {{index .Labels "su_spectral"}}) (i32.load offset=4 (local.get $u))))
+    (local.set $st (i32.add (i32.const {{index .Labels "su_spectral"}}) (i32.load (local.get $u))))
     (local.set $half (i32.shl (i32.const 1) (i32.sub (i32.load offset=4 (local.get $h)) (i32.const 1))))
+{{- if .SpectralStereo}}
     loop $channels
+{{- end}}
         (local.set $x (call $channelData (local.get $h) (local.get $c)))
         (local.set $k (i32.const 0))
         loop $bins
             (local.set $xr (f32.load (local.get $x)))
             (local.set $xi (f32.load offset=4 (local.get $x)))
-            (if (i32.eqz (local.get $mode)) (then ;; disperse
+{{- /* only the modes that the spphase units of the song have; without the operand, they all have the same */}}
+{{- if .SpphaseDisperse}}
+{{- if $mode}}
+            (if (i32.eqz (local.get $mode)) (then
+{{- end}}
+                ;; disperse
                 (call $rotate (local.get $xr) (local.get $xi) (call $tablePhase (i32.trunc_sat_f32_s
                     (f32.div
                         (f32.mul (f32.mul (f32.mul (local.get $a) (f32.convert_i32_u (local.get $k))) (f32.convert_i32_u (local.get $k))) (f32.const 64))
                         (f32.convert_i32_u (local.get $half))))))
                 (local.set $xi)
                 (local.set $xr)
-            )(else (if (i32.eq (local.get $mode) (i32.const 1)) (then ;; random
+{{- if $mode}}
+            )(else
+{{- end}}
+{{- end}}
+{{- if .SpphaseRandom}}
+{{- if and $mode .SpphaseRobot}}
+            (if (i32.eq (local.get $mode) (i32.const 1)) (then
+{{- end}}
+                ;; random
                 (i32.store offset=8 (local.get $st) (i32.add (i32.mul (i32.load offset=8 (local.get $st)) (i32.const 1664525)) (i32.const 1013904223)))
                 (call $rotate (local.get $xr) (local.get $xi) (call $tablePhase (i32.trunc_sat_f32_s
                     (f32.mul (local.get $a) (f32.convert_i32_u (i32.shr_u (i32.load offset=8 (local.get $st)) (i32.const 24)))))))
                 (local.set $xi)
                 (local.set $xr)
-            )(else ;; robot
+{{- if and $mode .SpphaseRobot}}
+            )(else
+{{- end}}
+{{- end}}
+{{- if .SpphaseRobot}}
+                ;; robot
                 (local.set $m (f32.sqrt (f32.add (f32.mul (local.get $xr) (local.get $xr)) (f32.mul (local.get $xi) (local.get $xi)))))
                 (local.set $xr (f32.add (f32.mul (f32.sub (local.get $m) (local.get $xr)) (local.get $a)) (local.get $xr)))
                 (local.set $xi (f32.sub (local.get $xi) (f32.mul (local.get $xi) (local.get $a))))
-            ))))
+{{- end}}
+{{- if and $mode .SpphaseRandom .SpphaseRobot}}
+            ))
+{{- end}}
+{{- if and $mode .SpphaseDisperse}}
+            ))
+{{- end}}
             (f32.store (local.get $x) (local.get $xr))
             (f32.store offset=4 (local.get $x) (local.get $xi))
             (local.set $x (i32.add (local.get $x) (i32.const 8)))
             (br_if $bins (i32.le_u (local.tee $k (i32.add (local.get $k) (i32.const 1))) (local.get $half)))
         end
+{{- if .SpectralStereo}}
         (br_if $channels (i32.lt_u (local.tee $c (i32.add (local.get $c) (i32.const 1))) (i32.load offset=12 (local.get $h))))
     end
+{{- end}}
 )
 {{- end}}
 
@@ -698,16 +835,29 @@
         return
     ))
     (local.set $half (i32.shl (i32.const 1) (i32.sub (i32.load offset=4 (local.get $h)) (i32.const 1))))
+{{- /* scale at 64 is the ratio 1 and shift at 64 the offset 0: without them in the song, their code is left out */}}
+{{- if .SpscaleScale}}
     (local.set $ratio (call $exp2f (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spscale" "scale"}})) (f32.const 2)) (f32.const 1))))
+{{- end}}
+{{- if .SpscaleShift}}
     (local.set $offset (f32.mul
         (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spscale" "shift"}})) (f32.const 2)) (f32.const 1))
         (f32.mul (f32.convert_i32_u (i32.shl (local.get $half) (i32.const 1))) (f32.const 0.022675737))))
+{{- end}}
+{{- if .SpectralStereo}}
     loop $channels
+{{- end}}
         (local.set $x (call $channelData (local.get $h) (local.get $c)))
         (local.set $k (i32.const 0))
         (memory.fill (i32.const {{add (index .Labels "su_spectral") .SpectralScratch}}) (i32.const 0) (i32.shl (i32.add (local.get $half) (i32.const 1)) (i32.const 3)))
         loop $bins
-            (local.set $j (f32.add (f32.mul (f32.convert_i32_u (local.get $k)) (local.get $ratio)) (local.get $offset)))
+            (local.set $j (f32.convert_i32_u (local.get $k)))
+{{- if .SpscaleScale}}
+            (local.set $j (f32.mul (local.get $j) (local.get $ratio)))
+{{- end}}
+{{- if .SpscaleShift}}
+            (local.set $j (f32.add (local.get $j) (local.get $offset)))
+{{- end}}
             (if (f32.ge (local.get $j) (f32.const 0)) (then
                 (local.set $i (i32.trunc_sat_f32_u (f32.add (local.get $j) (f32.const 0.5))))
                 (if (i32.le_u (local.get $i) (local.get $half)) (then
@@ -720,8 +870,10 @@
             (br_if $bins (i32.le_u (local.tee $k (i32.add (local.get $k) (i32.const 1))) (local.get $half)))
         end
         (memory.copy (local.get $x) (i32.const {{add (index .Labels "su_spectral") .SpectralScratch}}) (i32.shl (i32.add (local.get $half) (i32.const 1)) (i32.const 3)))
+{{- if .SpectralStereo}}
         (br_if $channels (i32.lt_u (local.tee $c (i32.add (local.get $c) (i32.const 1))) (i32.load offset=12 (local.get $h))))
     end
+{{- end}}
 )
 {{- end}}
 
@@ -766,7 +918,9 @@
     ))
     (local.set $half (i32.shl (i32.const 1) (i32.sub (i32.load offset=4 (local.get $h)) (i32.const 1))))
     (local.set $ratio (call $exp2f (f32.sub (f32.mul (call $input (i32.const {{.InputNumber "spformant" "shift"}})) (f32.const 2)) (f32.const 1))))
+{{- if .SpectralStereo}}
     loop $channels
+{{- end}}
         (local.set $x (call $channelData (local.get $h) (local.get $c)))
         (local.set $k (i32.const 0))
         (call $envelope (local.get $x) (local.get $half)
@@ -792,8 +946,10 @@
             (f32.store offset=4 (local.get $p) (f32.mul (f32.load offset=4 (local.get $p)) (local.get $g)))
             (br_if $bins (i32.le_u (local.tee $k (i32.add (local.get $k) (i32.const 1))) (local.get $half)))
         end
+{{- if .SpectralStereo}}
         (br_if $channels (i32.lt_u (local.tee $c (i32.add (local.get $c) (i32.const 1))) (i32.load offset=12 (local.get $h))))
     end
+{{- end}}
 )
 
 ;; $envelopeAt returns the envelope of spformant at bin $k
@@ -814,7 +970,7 @@
     (if (i32.eqz (local.get $h)) (then
         return
     ))
-    (local.set $src (i32.add (i32.const {{index .Labels "su_spectrum_table"}}) (i32.load offset=12 (local.get $u))))
+    (local.set $src (i32.add (i32.const {{index .Labels "su_spectrum_table"}}) (i32.load offset=8 (local.get $u))))
     (if (i32.ne (i32.load offset=4 (local.get $src)) (i32.load offset=4 (local.get $h))) (then
         return
     ))
@@ -823,11 +979,17 @@
         (f32.min (f32.max (call $input (i32.const {{.InputNumber "spcross" "width"}})) (f32.const 0)) (f32.const 1))
         (f32.convert_i32_u (i32.shr_u (local.get $half) (i32.const 4))))))
     (local.set $a (call $input (i32.const {{.InputNumber "spcross" "amount"}})))
+{{- if .SpectralStereo}}
     loop $channels
-        ;; a mono source is used for both channels
+{{- end}}
         (local.set $x (call $channelData (local.get $h) (local.get $c)))
         (local.set $k (i32.const 0))
+{{- if .SpectralStereo}}
+        ;; a mono source is used for both channels
         (call $envelope (call $channelData (local.get $src) (call $minU (local.get $c) (i32.sub (i32.load offset=12 (local.get $src)) (i32.const 1)))) (local.get $half) (local.get $w)
+{{- else}}
+        (call $envelope (call $channelData (local.get $src) (local.get $c)) (local.get $half) (local.get $w)
+{{- end}}
             (i32.const {{add (index .Labels "su_spectral") .SpectralScratch}})
             (i32.add (i32.const {{add (index .Labels "su_spectral") .SpectralScratch 8}}) (i32.shl (local.get $half) (i32.const 2))))
         (call $envelope (local.get $x) (local.get $half) (local.get $w)
@@ -844,8 +1006,10 @@
             (local.set $x (i32.add (local.get $x) (i32.const 8)))
             (br_if $bins (i32.le_u (local.tee $k (i32.add (local.get $k) (i32.const 1))) (local.get $half)))
         end
+{{- if .SpectralStereo}}
         (br_if $channels (i32.lt_u (local.tee $c (i32.add (local.get $c) (i32.const 1))) (i32.load offset=12 (local.get $h))))
     end
+{{- end}}
 )
 {{- end}}
 
@@ -870,14 +1034,19 @@
 
 (func $su_op_spcomb (param $stereo i32) (local $c i32) (local $p i32) (local $u i32) (local $h i32) (local $v i32) (local $end i32) (local $nf i32) (local $note i32) (local $intervals i32) (local $i i32) (local $x i32) (local $half i32) (local $k i32) (local $j i32) (local $sharp f32) (local $binHz f32) (local $m f32) (local $r f32) (local $a f32) (local $g f32)
     (local.set $u (call $spectralUnit))
-    (local.set $v (call $scanOperand))
+{{- if .SpcombVoicesOperands}}
+    (local.set $v (call $scanOperand)) ;; the voices of the notes
     (local.set $end (i32.add (local.get $v) (call $scanOperand)))
+{{- end}}
+{{- if .SpcombIntervalOperands}}
     (local.set $intervals (global.get $VAL))
     (global.set $VAL (i32.add (global.get $VAL) (i32.const 3)))
+{{- end}}
     (local.set $h (call $spectralFrame (local.get $u)))
     (if (i32.eqz (local.get $h)) (then
         return
     ))
+{{- if .SpcombVoicesOperands}}
     block $gathered
         loop $voices
             (br_if $gathered (i32.ge_u (local.get $v) (local.get $end)))
@@ -893,17 +1062,22 @@
         end
     end
     (if (i32.eqz (local.get $nf)) (then
+{{- end}}
         (local.set $note (i32.load (global.get $voice)))
         (if (local.get $note) (then
             (local.set $nf (call $addNote (local.get $nf) (local.get $note)))
+{{- if .SpcombIntervalOperands}}
             loop $intervalLoop
                 (if (i32.load8_u (i32.add (local.get $intervals) (local.get $i))) (then
                     (local.set $nf (call $addNote (local.get $nf) (i32.add (local.get $note) (i32.load8_u (i32.add (local.get $intervals) (local.get $i))))))
                 ))
                 (br_if $intervalLoop (i32.lt_u (local.tee $i (i32.add (local.get $i) (i32.const 1))) (i32.const 3)))
             end
+{{- end}}
         ))
+{{- if .SpcombVoicesOperands}}
     ))
+{{- end}}
     (if (i32.eqz (local.get $nf)) (then
         return
     ))
@@ -926,13 +1100,17 @@
             (br_if $notes (i32.lt_u (local.tee $j (i32.add (local.get $j) (i32.const 1))) (local.get $nf)))
         end
         (local.set $g (f32.add (f32.mul (f32.sub (local.get $m) (f32.const 1)) (local.get $a)) (f32.const 1)))
+{{- if .SpectralStereo}}
         (local.set $c (i32.const 0))
         loop $channels
+{{- end}}
             (local.set $p (i32.add (call $channelData (local.get $h) (local.get $c)) (i32.shl (local.get $k) (i32.const 3))))
             (f32.store (local.get $p) (f32.mul (f32.load (local.get $p)) (local.get $g)))
             (f32.store offset=4 (local.get $p) (f32.mul (f32.load offset=4 (local.get $p)) (local.get $g)))
+{{- if .SpectralStereo}}
             (br_if $channels (i32.lt_u (local.tee $c (i32.add (local.get $c) (i32.const 1))) (i32.load offset=12 (local.get $h))))
         end
+{{- end}}
         (br_if $bins (i32.le_u (local.tee $k (i32.add (local.get $k) (i32.const 1))) (local.get $half)))
     end
 )
