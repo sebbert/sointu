@@ -210,34 +210,28 @@
 ;;   Mono:   a b -> b a
 ;;   stereo: a b c d -> c d a b
 ;;-------------------------------------------------------------------------------
-(func $su_op_xch (param $stereo i32)
-    call $pop
-    call $pop
-{{- if .StereoAndMono "xch"}}
+(func $su_op_xch (param $stereo i32){{if .Stereo "xch"}} (local $pair i64){{end}}
+{{- if .Stereo "xch"}}
+{{- if or (.Mono "xch") (.Stereo "delay")}}
     (if (local.get $stereo) (then
 {{- end}}
-{{- if .Stereo "xch"}}
-        call $pop  ;; F: d       P: c b a
-        call $swap ;; F: d       P: b c a
-        call $pop  ;; F:         P: d b c a
-        call $swap ;; F:         P: b d c a
-        call $push ;; F: b       P: d c a
-        call $push ;; F: d b     P: c a
-        call $swap ;; F: d b     P: a c
-        call $pop  ;; F: b       P: d a c
-        call $swap ;; F: b       P: a d c
-        call $push ;; F: a b     P: d c
-{{- end}}
-{{- if .StereoAndMono "xch"}}
+        ;; exchange the pairs, each as one i64
+        (local.set $pair (i64.load (global.get $sp)))
+        (i64.store (global.get $sp) (i64.load offset=8 (global.get $sp)))
+        (i64.store offset=8 (global.get $sp) (local.get $pair))
+{{- if or (.Mono "xch") (.Stereo "delay")}}
     )(else
 {{- end}}
-{{- if or (.Mono "xch") (.Stereo "delay")}}
-        call $swap
 {{- end}}
-{{- if .StereoAndMono "xch"}}
+{{- if or (.Mono "xch") (.Stereo "delay")}}
+    call $pop
+    call $pop
+        call $swap
+    call $push
+    call $push
+{{- end}}
+{{- if and (.Stereo "xch") (or (.Mono "xch") (.Stereo "delay"))}}
     ))
 {{- end}}
-    call $push
-    call $push
 )
 {{end}}
