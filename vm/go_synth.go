@@ -30,6 +30,7 @@ type (
 		delaylines []delayline
 		otts       []ottState
 		limiters   []limiterState
+		reverbs    []reverbState
 		buffers    map[int]*synthBuffer
 		spectra    []spectrum
 		spectral   []spectralState // states of the spectral units
@@ -122,7 +123,7 @@ func (s GoSynther) Synth(patch sointu.Patch, bpm int) (sointu.Synth, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error compiling %v", err)
 	}
-	ret := &GoSynth{bytecode: *bytecode, stack: make([]float32, 0, 4), delaylines: make([]delayline, patch.NumDelayLines()), otts: make([]ottState, patch.NumOtts()), limiters: make([]limiterState, patch.NumLimiters())}
+	ret := &GoSynth{bytecode: *bytecode, stack: make([]float32, 0, 4), delaylines: make([]delayline, patch.NumDelayLines()), otts: make([]ottState, patch.NumOtts()), limiters: make([]limiterState, patch.NumLimiters()), reverbs: make([]reverbState, patch.NumReverbs())}
 	ret.state.randSeed = 1
 	ret.setSpectra(nil)
 	ret.setMC(nil)
@@ -264,9 +265,13 @@ func (s *GoSynth) Update(patch sointu.Patch, bpm int) error {
 	for len(s.limiters) < patch.NumLimiters() {
 		s.limiters = append(s.limiters, limiterState{})
 	}
+	for len(s.reverbs) < patch.NumReverbs() {
+		s.reverbs = append(s.reverbs, reverbState{})
+	}
 	if needsRefresh {
 		clear(s.otts)
 		clear(s.limiters)
+		clear(s.reverbs)
 		for i := range s.state.voices {
 			for j := range s.state.voices[i].units {
 				s.state.voices[i].units[j] = unit{}
@@ -296,6 +301,7 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 		delaylines := s.delaylines
 		otts := s.otts
 		limiters := s.limiters
+		reverbs := s.reverbs
 		voicesRemaining := s.bytecode.NumVoices
 		voices := s.state.voices[:]
 		units := voices[0].units[:]
@@ -831,6 +837,11 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 				lookahead, operands = operands[0], operands[1:]
 				limiter(&limiters[0], &params, int(lookahead)*4, channels, stack)
 				limiters = limiters[1:]
+			case opReverb:
+				var index byte
+				index, operands = operands[0], operands[1:]
+				reverb(&s.bytecode.Reverbs[index], &reverbs[0], &params, stack)
+				reverbs = reverbs[1:]
 			case opCompressor:
 				signalLevel := float32(stack[l-1] * stack[l-1]) // square the signal to get power
 				if stereo {

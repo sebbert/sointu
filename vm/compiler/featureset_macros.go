@@ -53,6 +53,11 @@ func (p *FeatureSetMacros) LadderDrive() bool {
 	return vm.TransformsParam(p.FeatureSet, "ladder", "drive")
 }
 
+// ReverbMod is true when the lines of a reverb unit are modulated: mod is
+// not 0, or something modulates it. Otherwise the wasm player leaves the
+// modulation out.
+func (p *FeatureSetMacros) ReverbMod() bool { return p.set("reverb", "mod", 0) }
+
 // EnvelopeCurve is true when the envelopes of the song have the curve
 // parameter; otherwise the players leave the curved envelope out.
 func (p *FeatureSetMacros) EnvelopeCurve() bool {

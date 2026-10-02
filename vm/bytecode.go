@@ -89,6 +89,11 @@ type (
 		// is its index in MCUnits.
 		Buses   []int
 		MCUnits []MCUnit
+
+		// Reverbs are the constant data of the reverb units, in the order
+		// of the patch. The operand of a reverb unit after its transformed
+		// parameters is its index in Reverbs.
+		Reverbs []Reverb
 	}
 
 	// Spectrum is a spectrum buffer: the ID of the buffer, the base 2
@@ -391,6 +396,16 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				if featureSet.SupportsParamValue("softclip", "oversample", 1) {
 					b.operand(p["oversample"] & 1) // songs with no oversampled softclip do without
 				}
+			case "reverb":
+				// operands: mod, and the frequencies of the high cut and
+				// the low cut as those of mcfilter, then the index in
+				// Reverbs
+				if len(b.Reverbs) > 255 {
+					return nil, errors.New("Patch uses over 256 reverb units")
+				}
+				b.op(opcode)
+				b.operand(min(max(p["mod"], 0), 128), sointu.ReverbScale(p["highcut"], 72, 128), sointu.ReverbScale(p["lowcut"], 0, 85), len(b.Reverbs))
+				b.Reverbs = append(b.Reverbs, newReverb(p))
 			case "limiter":
 				b.op(opcode + p["stereo"])
 				b.defOperands(unit)

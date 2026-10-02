@@ -3,6 +3,7 @@ package compiler
 import (
 	"bytes"
 	"embed"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -241,7 +242,7 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 	for _, unit := range features.Instructions() {
 		wasmOnly := len(sointu.SpectrumBufferParams(unit)) > 0 || len(sointu.BusParams(unit)) > 0
 		switch unit {
-		case "bufread", "bufwrite", "spawn", "arg", "window", "ott", "limiter", "softclip", "width", "ladder":
+		case "bufread", "bufwrite", "spawn", "arg", "window", "ott", "limiter", "softclip", "width", "ladder", "reverb":
 			wasmOnly = true
 		}
 		if wasmOnly && com.Arch != "wasm" {
@@ -312,8 +313,9 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 				wasmBufferData
 				wasmSpectralData
 				wasmMCData
+				wasmReverbData
 				wasmUnitFeatures
-			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers, wasmSpectral(encodedPatch, units), wasmMC(encodedPatch, units, featureSetMacros.MCDelayMod()), units}
+			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers, wasmSpectral(encodedPatch, units), wasmMC(encodedPatch, units, featureSetMacros.MCDelayMod()), wasmReverb(encodedPatch), units}
 			populatedTemplate, extension, err = com.compile(templateName, &data)
 		}
 		if err != nil {
@@ -431,6 +433,26 @@ type wasmMCData struct {
 	MCConsts         []uint32
 	MCBytes          int
 	MCChannelOffsets int
+}
+
+// wasmReverbData is the constant data of the reverb units in the wasm
+// player, su_reverb_consts: the taps of the diffuser, a byte for each of the
+// 8 channels of its 4 steps (vm.ReverbTaps), then 176 bytes for each unit:
+// the coefficients A, B and C of the decay of the 8 lines (floats), the
+// lengths of the lines and the delays of the 32 taps (16 bits each).
+type wasmReverbData struct {
+	ReverbData []byte
+}
+
+func wasmReverb(b *vm.Bytecode) (ret wasmReverbData) {
+	if len(b.Reverbs) == 0 {
+		return ret
+	}
+	ret.ReverbData = vm.ReverbTaps()
+	for _, r := range b.Reverbs {
+		ret.ReverbData, _ = binary.Append(ret.ReverbData, binary.LittleEndian, r)
+	}
+	return ret
 }
 
 // wasmMCStateBytes is the size of the state of an mcdelay in the wasm player

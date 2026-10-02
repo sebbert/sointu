@@ -389,6 +389,52 @@ var UnitTypes = map[string]UnitType{
 			return StackUse{Inputs: [][]int{{0, 1}, {0, 1}}, Modifies: []bool{true, true}, NumOutputs: 2}
 		},
 	},
+	"reverb": {
+		// reverb is the Reverb module preset (tracker/modules/Reverb.yml) as
+		// one unit: stereo in, the wet signal out. Low cut and high cut on
+		// the input, predelay, a diffuser of four steps for the early
+		// reflections and a feedback delay network of 8 lines for the tail,
+		// with the lengths, shuffles and mixes that the module gets from its
+		// mc units, fixed. It renders what the module renders with the same
+		// values of its parameters. size sets the lengths of the lines, decay
+		// the reverb time (0 holds the sound), highs and lows the times
+		// above 3 kHz and below 250 Hz relative to it; mod moves the lines
+		// of the network. Each voice of the instrument has a reverb of its
+		// own. Songs that leave mod at 0 and do not modulate it compile
+		// without the modulation.
+		Params: []UnitParameter{
+			{Name: "size", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(float64(ReverbScale(v, 400, 2800))/10, 'f', 0, 64), "ms"
+			}},
+			{Name: "decay", MinValue: 0, Default: 90, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				if v <= 0 {
+					return "off", ""
+				}
+				return strconv.FormatFloat(MCDecaySeconds(v), 'g', 3, 64), "s"
+			}},
+			{Name: "highs", MinValue: 0, Default: 48, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(MCHFDecayRatio(v), 'g', 3, 64), "×"
+			}},
+			{Name: "lows", MinValue: 0, Default: 72, Neutral: 64, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(MCLFDecayRatio(v), 'g', 3, 64), "×"
+			}},
+			{Name: "predelay", MinValue: 0, Default: 13, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(float64(ReverbScale(v, 1, 2000))/10, 'f', 1, 64), "ms"
+			}},
+			{Name: "mod", MinValue: 0, Default: 24, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(MCModDepthMs(float64(v)/128), 'g', 3, 64), "ms"
+			}},
+			{Name: "highcut", MinValue: 0, Default: 98, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				return reverbHzDispFunc(ReverbScale(v, 72, 128))
+			}},
+			{Name: "lowcut", MinValue: 0, Default: 56, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				return reverbHzDispFunc(ReverbScale(v, 0, 85))
+			}},
+		},
+		StackUse: func(u *Unit) StackUse {
+			return StackUse{Inputs: [][]int{{0, 1}, {0, 1}}, Modifies: []bool{true, true}, NumOutputs: 2}
+		},
+	},
 	"ladder": {
 		// ladder is a low-pass of 24 dB per octave with resonance, like the
 		// transistor ladder of a Moog: four one-pole low-passes in a row
@@ -1561,6 +1607,36 @@ func (p Patch) NumLimiters() int {
 	for _, instr := range p {
 		for _, unit := range instr.Units {
 			if unit.Type == "limiter" && !unit.Disabled {
+				total += instr.NumVoices
+			}
+		}
+	}
+	return total
+}
+
+// ReverbScale maps a parameter of the reverb unit, 0 to 128, onto the range
+// from lo to hi of the parameter of the mc unit it stands for, as a scaled
+// binding of the Reverb module does.
+func ReverbScale(v, lo, hi int) int {
+	return lo + int(math.Round(float64((hi-lo)*min(max(v, 0), 128))/128))
+}
+
+func reverbHzDispFunc(v int) (string, string) {
+	f := MCFilterHz(float64(v) / 128)
+	if f >= 1000 {
+		return strconv.FormatFloat(f/1000, 'f', 2, 64), "kHz"
+	}
+	return strconv.FormatFloat(f, 'f', 0, 64), "Hz"
+}
+
+// NumReverbs returns the number of reverb states of the patch: the number of
+// reverb units of every instrument times its number of voices. The synths
+// keep them outside the voices, like the states of ott.
+func (p Patch) NumReverbs() int {
+	total := 0
+	for _, instr := range p {
+		for _, unit := range instr.Units {
+			if unit.Type == "reverb" && !unit.Disabled {
 				total += instr.NumVoices
 			}
 		}
