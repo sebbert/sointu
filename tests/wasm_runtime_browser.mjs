@@ -4,7 +4,7 @@
 // (the same song compiled without -js), sample by sample.
 //
 // Usage:
-//   node tests/wasm_runtime_browser.mjs dir [--scenario play] [--runway 0.5] [--out result.json] [--firefox]
+//   node tests/wasm_runtime_browser.mjs dir [--scenario play] [--runway 0.5] [--margin 0.8] [--out result.json] [--firefox]
 //
 // dir has song.js and song.wasm (compiled with -js), oneshot.wasm (compiled
 // without) and, for songs compiled with -samples, the sample files song.0.*,
@@ -15,6 +15,7 @@
 //             wait for it, with a gap in the sound and a clock that stops
 //   measure   no recording: only the times from load to ready and to the end
 //             of rendering
+// With --margin 0 the song must not be ready before all of it is rendered.
 // Prints a JSON summary and exits with 1 if the played audio differs. The
 // song plays in real time. Chrome is found from $CHROME or the usual install
 // locations; it runs muted, with a temporary profile. With --firefox, Firefox
@@ -36,6 +37,7 @@ const opt = (name, def) => {
 };
 const scenario = opt("--scenario", "play");
 const runway = opt("--runway", "0.5");
+const margin = opt("--margin", "0.8");
 const outFile = opt("--out");
 const timeout = +opt("--timeout", "120") * 1000;
 const firefox = args.includes("--firefox");
@@ -71,7 +73,7 @@ const sampleFiles = readdirSync(dir)
   .sort((a, b) => parseInt(a.split(".")[1]) - parseInt(b.split(".")[1]));
 
 const page = `<!DOCTYPE html><script type="module">
-const scenario = ${JSON.stringify(scenario)}, runway = ${runway}, sampleFiles = ${JSON.stringify(sampleFiles)};
+const scenario = ${JSON.stringify(scenario)}, runway = ${runway}, margin = ${margin}, sampleFiles = ${JSON.stringify(sampleFiles)};
 const bytes = async (name) => new Uint8Array(await (await fetch("/" + name)).arrayBuffer());
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 try {
@@ -90,7 +92,9 @@ try {
     const a = exports.t.value
       ? Float32Array.from(new Int16Array(exports.m.buffer, exports.s.value, exports.l.value / 2), (v) => v / 32767)
       : new Float32Array(exports.m.buffer, exports.s.value, exports.l.value / 4);
-    return { audio: a, ms };
+    // the sync values, in songs that have them
+    const sync = exports.y && new Float32Array(exports.m.buffer, exports.y.value, exports.z.value / 4);
+    return { audio: a, ms, sync };
   };
   const want = scenario == "measure" ? null : await expected();
 
@@ -116,7 +120,7 @@ try {
   const wasm = await bytes("song.wasm");
   const samples = await Promise.all(sampleFiles.map(bytes));
   const t0 = performance.now();
-  const song = sampleFiles.length ? lib.load(wasm, samples, runway) : lib.load(wasm, runway);
+  const song = sampleFiles.length ? lib.load(wasm, samples, runway, margin) : lib.load(wasm, runway, margin);
   const summary = { ok: true, scenario, duration: lib.duration, rowsPerSecond: lib.rowsPerSecond, wasmBytes: wasm.length };
   // progress, by polling
   let longest = 0, last = performance.now();
@@ -210,6 +214,19 @@ try {
       }
     }
     Object.assign(summary, { differingFrames: differing, maxDiff, gaps });
+    // the sync values of every 256th sample, read through the module
+    let syncDiffers = 0, syncPeak = 0;
+    if (want.sync) {
+      const n = lib.syncChannels, ticks = want.sync.length / n;
+      for (let k = 0; k < ticks; k++)
+        for (let c = 0; c < n; c++) {
+          if (song.sync(c, (k * 256 + 0.5) / 44100) !== want.sync[k * n + c]) syncDiffers++;
+          syncPeak = Math.max(syncPeak, Math.abs(want.sync[k * n + c]));
+        }
+      // by default, the values of now: the song is over
+      if (song.sync(n - 1) !== want.sync[(ticks - 1) * n + n - 1] || song.sync(0, 0) !== want.sync[0]) syncDiffers++;
+      Object.assign(summary, { syncChannels: n, syncTicks: ticks, syncDiffers, syncPeak });
+    }
     let peak = 0;
     for (const v of exp) peak = Math.max(peak, Math.abs(v));
     summary.peak = peak;
@@ -218,6 +235,11 @@ try {
     summary.failures = [
       differing && "the played audio differs",
       peak <= 0.01 && "the song is silent",
+      margin == 0 && summary.readyRendered < lib.duration && "the song was ready before all of it was rendered, with a margin of 0",
+      margin > 0 && runway < lib.duration && summary.readyRendered >= lib.duration && "the song was only ready when all of it was rendered",
+      syncDiffers && "the sync values differ",
+      want.sync && !syncPeak && "the sync values are all zero",
+      !want.sync != !lib.syncChannels && "the module and the one-shot player differ in having sync values",
       back && "the clock went back",
       Math.abs(summary.clockEnd - lib.duration) > 1e-6 && "the clock did not reach the end of the song",
       !gaps.every((g) => g.silent) && "a gap is not silent",

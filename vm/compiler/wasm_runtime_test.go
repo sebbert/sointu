@@ -28,6 +28,9 @@ func TestRuntimeModule(t *testing.T) {
 	sampled := bufreadTestSong()
 	sampled.Buffers[0].Sample.Encoding = &sointu.Encoding{Format: "flac"}
 	encoded := map[int]compiler.EncodedBuffer{1: {Encoded: []byte("one"), Frames: 10, Channels: 1, Format: "flac"}, 2: {Encoded: []byte("two"), Frames: 10, Channels: 2}}
+	synced := plain.Copy()
+	synced.Patch[0].Units = append([]sointu.Unit{synced.Patch[0].Units[0], {Type: "sync", Parameters: sointu.ParamMap{}}}, synced.Patch[0].Units[1:]...)
+	synced.Patch[1].Units = append([]sointu.Unit{synced.Patch[1].Units[0], {Type: "sync", Parameters: sointu.ParamMap{}}}, synced.Patch[1].Units[1:]...)
 	for _, tc := range []struct {
 		name      string
 		song      sointu.Song
@@ -35,7 +38,11 @@ func TestRuntimeModule(t *testing.T) {
 		has, not  []string // in the module
 		files     []string
 	}{
-		{"plain", plain, func(c *compiler.Compiler) {}, []string{"new Worker(", "Float32Array(m.buffer"}, []string{"MessageChannel", "decodeAudioData", "sampleFiles", "Int16Array", "m: Math", "tape"}, nil},
+		{"plain", plain, func(c *compiler.Compiler) {}, []string{"new Worker(", "Float32Array(m.buffer", "runway = 2, margin = 0.8"}, []string{"MessageChannel", "decodeAudioData", "sampleFiles", "Int16Array", "m: Math", "tape", "sync"}, nil},
+		{"sync units", synced, func(c *compiler.Compiler) {}, []string{"sync: (channel, time = song.time())", "syncChannels = 2;", "post([audio, sync]"}, []string{"MessageChannel"}, nil},
+		{"sync units and the row", synced, func(c *compiler.Compiler) { c.RowSync = true }, []string{"syncChannels = 3;"}, nil, nil},
+		{"the row", plain, func(c *compiler.Compiler) { c.RowSync = true }, []string{"syncChannels = 1;", "sync: (channel"}, nil, nil},
+		{"sync units in stages", synced, func(c *compiler.Compiler) { c.Stages = 2 }, []string{"sink.postMessage([out, sync]", "set(tape.data[1])"}, nil, nil},
 		{"stages", plain, func(c *compiler.Compiler) { c.Stages = 2 }, []string{"MessageChannel", "g(stage)", "tape"}, []string{"decodeAudioData"}, nil},
 		{"16 bit", plain, func(c *compiler.Compiler) { c.Output16Bit = true }, []string{"Int16Array(m.buffer", "/ 32767"}, []string{"Float32Array(m.buffer"}, nil},
 		{"math imports", plain, func(c *compiler.Compiler) { c.MathImports = true }, []string{"{ m: Math }"}, nil, nil},
@@ -68,6 +75,12 @@ func TestRuntimeModule(t *testing.T) {
 			}
 			if strings.Contains(js, "sampleFiles") != strings.Contains(types, "sampleFiles") {
 				t.Errorf("the types and the module differ in the sample files")
+			}
+			if strings.Contains(js, "sync: (") != strings.Contains(types, "sync(channel") || strings.Contains(js, "syncChannels") != strings.Contains(types, "syncChannels") {
+				t.Errorf("the types and the module differ in the sync values")
+			}
+			if strings.Contains(js, "syncChannels") != strings.Contains(files[".wat"], "su_syncbuffer") && strings.Contains(js, "syncChannels") != strings.Contains(files[".wat"], "$syncBufPtr") {
+				t.Errorf("the module and the player differ in the sync values")
 			}
 			for _, ext := range tc.files {
 				if files[ext] == "" {
@@ -142,6 +155,17 @@ func TestRuntimeInBrowser(t *testing.T) {
 	}
 	loop.Score.Length = 3 // 5 s
 	sampled := bufreadTestSong()
+	// three voices, two with sync units: an envelope, and a slow oscillator
+	envelope := sointu.Unit{Type: "envelope", Parameters: sointu.ParamMap{"stereo": 0, "attack": 50, "decay": 64, "sustain": 64, "release": 64, "gain": 128}}
+	osc := sointu.Unit{Type: "oscillator", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "phase": 0, "color": 128, "shape": 64, "gain": 100, "type": sointu.Sine}}
+	mulp := sointu.Unit{Type: "mulp", Parameters: sointu.ParamMap{"stereo": 0}}
+	out := sointu.Unit{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 64}}
+	syncUnit := sointu.Unit{Type: "sync", Parameters: sointu.ParamMap{}}
+	synced := stageTestSong([]sointu.Unit{envelope, syncUnit, osc, mulp, out}, []sointu.Unit{envelope, osc, mulp, out}, []sointu.Unit{envelope, osc, syncUnit, mulp, out})
+	synced.Score.Length = 4 // 4 s
+	for i := range synced.Score.Tracks {
+		synced.Score.Tracks[i].Order = sointu.Order{0, 0, 0, 0}
+	}
 	var encoded map[int]compiler.EncodedBuffer
 	if ff, err := ffmpeg.Find(""); err == nil {
 		encoded, _, _, _ = encodeTestBuffers(t, ff, sampled)
@@ -157,6 +181,7 @@ func TestRuntimeInBrowser(t *testing.T) {
 		configure func(*compiler.Compiler)
 	}{
 		{"worker", loop, "play", func(c *compiler.Compiler) {}},
+		{"margin 0", loop, "play --margin 0", func(c *compiler.Compiler) {}},
 		{"main thread", loop, "noworker", func(c *compiler.Compiler) {}},
 		{"late audio", loop, "stall", func(c *compiler.Compiler) {}},
 		{"stages", loop, "play", func(c *compiler.Compiler) { c.Stages = 4 }},
@@ -167,6 +192,11 @@ func TestRuntimeInBrowser(t *testing.T) {
 		{"samples on the main thread", sampled, "noworker", func(c *compiler.Compiler) {}},
 		{"separate samples", sampled, "play", func(c *compiler.Compiler) { c.SeparateSamples = true }},
 		{"separate samples in stages", sampled, "play", func(c *compiler.Compiler) { c.SeparateSamples, c.Stages = true, 2 }},
+		{"sync values", synced, "play", func(c *compiler.Compiler) {}},
+		{"sync values and the row", synced, "play", func(c *compiler.Compiler) { c.RowSync = true }},
+		{"sync values in stages", synced, "play", func(c *compiler.Compiler) { c.RowSync, c.Stages = true, 3 }},
+		{"sync values on the main thread", synced, "noworker", func(c *compiler.Compiler) { c.RowSync, c.Stages = true, 3 }},
+		{"sync values with late audio", synced, "stall", func(c *compiler.Compiler) { c.RowSync, c.Stages = true, 2 }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var buffers map[int]compiler.EncodedBuffer
@@ -199,11 +229,12 @@ func TestRuntimeInBrowser(t *testing.T) {
 					t.Fatalf("wat2wasm failed: %v\n%s", err, out)
 				}
 			}
-			out, err := exec.Command(node, append([]string{harness, dir, "--scenario", tc.scenario}, browser...)...).CombinedOutput()
+			args := append(append([]string{harness, dir, "--scenario"}, strings.Fields(tc.scenario)...), browser...)
+			out, err := exec.Command(node, args...).CombinedOutput()
 			t.Logf("%s", out)
 			if err != nil && strings.Contains(string(out), `"playing caught up with rendering"`) && !strings.Contains(string(out), "differs") {
 				// a busy machine: once more, rendering everything first
-				out, err = exec.Command(node, append([]string{harness, dir, "--scenario", tc.scenario, "--runway", "100"}, browser...)...).CombinedOutput()
+				out, err = exec.Command(node, append(args, "--runway", "100")...).CombinedOutput()
 				t.Logf("again, with all rendered before the start:\n%s", out)
 			}
 			if err != nil {

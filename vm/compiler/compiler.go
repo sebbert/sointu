@@ -458,7 +458,8 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 					FrameBytes                                int // of the audio of a frame
 					Samples                                   int // buffers with samples
 					SeparateSamples, MathImports, Output16Bit bool
-				}{com.Layout, song, com.Layout.OutputBytes / frameBytes, frameBytes, len(buffers.Buffers), com.SeparateSamples, com.MathImports, com.Output16Bit}
+					RowSync                                   bool
+				}{com.Layout, song, com.Layout.OutputBytes / frameBytes, frameBytes, len(buffers.Buffers), com.SeparateSamples, com.MathImports, com.Output16Bit, com.RowSync}
 				for _, name := range []string{"player.js", "player.d.ts"} {
 					result := bytes.NewBufferString("")
 					if err := com.Template.ExecuteTemplate(result, name, &jsData); err != nil {

@@ -380,6 +380,9 @@ func wasmStages(song *sointu.Song, features vm.FeatureSet, numStages int, cuts [
 			}
 		}
 		cuts = balanceStages(legal, voiceCost, numStages)
+		if len(cuts) == 0 {
+			return ret, []string{"the song cannot be cut into stages: it renders in one worker"}, nil
+		}
 		if len(cuts)+1 < numStages {
 			report = append(report, fmt.Sprintf("the song can be cut into %d stages only, not %d", len(cuts)+1, numStages))
 		}

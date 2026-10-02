@@ -21,6 +21,15 @@ export interface Song {
    * the renderer, should playing catch up with it.
    */
   time(): number;
+{{- if .SyncValues}}
+  /**
+   * A sync value at a time of the song, by default now (`time()`): channel
+   * {{if .RowSync}}0 is the row with its fraction, the next ones are{{else}}0 and up are{{end}} the signals at the
+   * `sync` units in the order of the patch, voice by voice. The song has
+   * {{.SyncValues}} channel{{if gt .SyncValues 1}}s{{end}}, with a value for every 256 samples (5.8 ms).
+   */
+  sync(channel: number, time?: number): number;
+{{- end}}
 }
 
 /**
@@ -29,9 +38,15 @@ export interface Song {
 {{- if .SeparateSamples}}
  * @param sampleFiles the bytes of the {{.Samples}} sample file{{if gt .Samples 1}}s written next to it, in the order of their numbers{{else}} written next to it{{end}}
 {{- end}}
- * @param runway seconds to render before the song is ready, 2 by default
+ * @param runway seconds to render before the song is ready, 2 by default.
+ *   It has to cover the longest time the page keeps the main thread busy
+ *   after the start, as the audio is scheduled from there.
+ * @param margin the part of the rendering speed measured so far that the
+ *   rest of the song is expected to render at, 0.8 by default: the song is
+ *   ready when rendering the rest at that speed ends before playing gets
+ *   there. Lower is safer and starts later; 0 waits for the whole song.
  */
-export function load(wasm: BufferSource{{if .SeparateSamples}}, sampleFiles: BufferSource[]{{end}}, runway?: number): Song;
+export function load(wasm: BufferSource{{if .SeparateSamples}}, sampleFiles: BufferSource[]{{end}}, runway?: number, margin?: number): Song;
 
 /** Length of the song in seconds. */
 export const duration: number;
@@ -39,3 +54,7 @@ export const duration: number;
 export const rowsPerSecond: number;
 /** Rows of a pattern. */
 export const rowsPerPattern: number;
+{{- if .SyncValues}}
+/** Number of sync channels. */
+export const syncChannels: number;
+{{- end}}

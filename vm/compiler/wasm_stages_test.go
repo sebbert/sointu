@@ -134,7 +134,11 @@ func testStages(t *testing.T, node, wat2wasm string, song sointu.Song) (cuts []i
 		if err != nil {
 			t.Fatalf("%d stages: %v", n, err)
 		}
-		if want := min(n, len(cuts)+1); layout.Stages != want {
+		want := min(n, len(cuts)+1)
+		if want == 1 {
+			want = 0 // a song that cannot be cut has no stages
+		}
+		if layout.Stages != want {
 			t.Errorf("asked for %d stages with %d possible cuts: got %d stages, want %d", n, len(cuts), layout.Stages, want)
 		}
 	}
@@ -297,6 +301,14 @@ func TestStageCuts(t *testing.T) {
 		}
 		if got := testStages(t, node, wat2wasm, song); fmt.Sprint(got) != "[1 2 3 4 5]" {
 			t.Errorf("cuts before voices %v", got)
+		}
+	})
+	t.Run("row sync", func(t *testing.T) {
+		song := stageTestSong([]sointu.Unit{env, sync, osc(0), mulp, out}, noisy, []sointu.Unit{env, osc(0), sync, mulp, out})
+		oneshot, _ := compileWasm(t, wat2wasm, song, nil, func(c *compiler.Compiler) { c.RowSync = true })
+		layout, err := renderStages(t, node, wat2wasm, oneshot, song, func(c *compiler.Compiler) { c.Stages, c.RowSync, c.ChunkRows = 3, true, 3 })
+		if err != nil || layout.Stages != 3 || layout.SyncValues != 3 {
+			t.Errorf("3 stages with the row and 2 sync units: %v, %+v", err, layout)
 		}
 	})
 	t.Run("speed", func(t *testing.T) {
