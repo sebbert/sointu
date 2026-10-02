@@ -113,10 +113,12 @@
 {{- /*
 ;-------------------------------------------------------------------------------
 ;    Spectra, 4 i32s each: offset of the spectrum in su_spectral, base 2
-;    logarithm of its size, number of spectra written to it and 0. Spectral
-;    units, 4 i32s each: offset of the voice running the unit from su_voices,
-;    offset of its state in su_spectral, offsets of its spectrum and source
-;    spectrum in su_spectrum_table.
+;    logarithm of its size, number of spectra written to it and its channels
+;    (those only with a stereo spectrum in the song). Spectral units, 4 i32s
+;    each: offset of its state in su_spectral, offsets of its spectrum and
+;    source spectrum in su_spectrum_table, and offset of the voice running
+;    the unit from su_voices (that only when an instrument with spectral
+;    units has several voices).
 ;-------------------------------------------------------------------------------
 */}}
 {{- .SetDataLabel "su_spectrum_table"}}
@@ -132,10 +134,12 @@
 {{- if .MCTable}}
 {{- /*
 ;-------------------------------------------------------------------------------
-;    mc units, 4 i32s each: offset of the voice running the unit from
-;    su_voices, offsets of its bus and its state in su_mc, and offset of its
-;    constant data in su_mc_consts. The constants start with the modulation
-;    rates and phases of mcdelay and the byte offsets of the 8 channels.
+;    mc units, 4 i32s each: offsets of its bus and its state in su_mc, offset
+;    of its constant data in su_mc_consts, and offset of the voice running
+;    the unit from su_voices (that only when an instrument with mc units has
+;    several voices). The constants start with the modulation rates and
+;    phases of mcdelay (only in songs that modulate one) and the byte offsets
+;    of the 8 channels.
 ;-------------------------------------------------------------------------------
 */}}
 {{- .SetDataLabel "su_mc_table"}}
