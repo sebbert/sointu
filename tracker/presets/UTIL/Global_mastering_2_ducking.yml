@@ -129,22 +129,18 @@ modules:
           parameters: {attack: 40, invgain: 128, ratio: 96, release: 62, stereo: 1, threshold: 8}
           bind: {ratio: 6, release: 7, threshold: 8}
           comment: 'The gain from the level of the input: duck is how far the repeats are turned down while the input is above threshold, release how soon they come back'
-        - type: send
+        - type: xch
           id: 2
-          parameters: {amount: 128, port: 0, sendpop: 1, target: 5}
-          comment: The gain to the gain below
-        - type: pop
-          id: 3
-          parameters: {stereo: 0}
-          comment: 'The compressor leaves its gain twice. Not xch and mulp: the wasm player does not assemble with a stereo xch next to a mono one'
+          parameters: {stereo: 1}
+          comment: The gain below the input
         - type: module
-          id: 4
+          id: 3
           parameters: {module: 1, p1: 36, p2: 80, p3: 80, p4: 32, p5: 0}
           bind: {p1: 1, p2: 2, p3: 3, p4: 4, p5: 5}
           comment: The Ping pong delay module
-        - type: gain
-          id: 5
-          parameters: {gain: 0, stereo: 1}
+        - type: mulp
+          id: 4
+          parameters: {stereo: 1}
           comment: The repeats times the gain
     - id: 3
       name: Reverb
@@ -243,20 +239,16 @@ modules:
           parameters: {attack: 40, invgain: 128, ratio: 96, release: 62, stereo: 1, threshold: 8}
           bind: {ratio: 6, release: 7, threshold: 8}
           comment: 'The gain from the level of the input: duck is how far the reverb is turned down while the input is above threshold, release how soon it comes back'
-        - type: send
+        - type: xch
           id: 2
-          parameters: {amount: 128, port: 0, sendpop: 1, target: 5}
-          comment: The gain to the gain below
-        - type: pop
-          id: 3
-          parameters: {stereo: 0}
-          comment: 'The compressor leaves its gain twice. Not xch and mulp: the wasm player does not assemble with a stereo xch next to a mono one'
+          parameters: {stereo: 1}
+          comment: The gain below the input
         - type: module
-          id: 4
+          id: 3
           parameters: {module: 3, p1: 64, p2: 90, p3: 48, p4: 72, p8: 56}
           bind: {p1: 1, p2: 2, p3: 3, p4: 4, p8: 5}
           comment: 'The Reverb module; predelay, mod and highcut stay at their defaults'
-        - type: gain
-          id: 5
-          parameters: {gain: 0, stereo: 1}
+        - type: mulp
+          id: 4
+          parameters: {stereo: 1}
           comment: The reverb times the gain

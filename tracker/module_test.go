@@ -978,7 +978,7 @@ func TestBuiltinModulePresetsCanonical(t *testing.T) {
 	m.modulePresetPath = t.TempDir()
 	m.loadModulePresets()
 	keys := builtinModuleKeys(t, m)
-	want := map[string]int{"Reverb": 23, "Ducker": 3, "Sidechain": 4, "Ping pong delay": 10, "Ducking reverb": 27, "Ducking delay": 14}
+	want := map[string]int{"Reverb": 23, "Ducker": 3, "Sidechain": 4, "Ping pong delay": 10, "Ducking reverb": 26, "Ducking delay": 13}
 	for i := range m.modulePresets {
 		p := &m.modulePresets[i]
 		if p.file != "" {
@@ -1065,9 +1065,9 @@ func TestDuckingPresets(t *testing.T) {
 	}
 	want := map[string]preset{
 		"Kick ducker":                {1, 18, "out"},
-		"Global ducking reverb":      {2, 29, "out"},
+		"Global ducking reverb":      {2, 28, "out"},
 		"Global ping pong delay":     {1, 12, "outaux"},
-		"Global mastering 2 ducking": {4, 52, "out"},
+		"Global mastering 2 ducking": {4, 50, "out"},
 	}
 	var patch sointu.Patch
 	var modules []sointu.Modules

@@ -749,11 +749,12 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   the loop has to lose more than that. The worst setting still decays, by
   5 dB per second at 174 beats per minute with a time of 12.
 - **Ducking reverb and Ducking delay modules:** the module presets
-  `Ducking reverb` (27 units) and `Ducking delay` (14 units) are the Reverb
+  `Ducking reverb` (26 units) and `Ducking delay` (13 units) are the Reverb
   and the Ping pong delay module with the wet signal turned down while the
   dry input plays: the space stays out of the way of the notes and blooms
   after them. A stereo `compressor` computes a gain from the input, a
-  `send` gives it to a `gain` unit after the module unit. They use the
+  stereo `xch` puts it below the input, and after the module unit a stereo
+  `mulp` multiplies the wet signal by it. They use the
   modules instead of copying their units, so their files carry `Reverb` or
   `Ping pong delay` too, the same as the module presets, and a song gets
   each once. Parameters: `size`, `decay`, `highs`, `lows` and `lowcut` of
@@ -768,17 +769,17 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   compressor, the depth follows the level of the input: 6 dB less input,
   4.5 dB less ducking. The delay measures the same.
 
-  `xch` and `mulp`, a unit less, would do the same, but the wasm player
-  does not assemble a song that has a stereo `xch` and a mono one (as the
-  Ping pong delay has), and plays a stereo `xch` wrongly in a song with a
-  stereo `delay`. That is not fixed here.
+  The stereo `xch` next to the mono one of the Ping pong delay, and next to
+  its stereo `delay`, needs the wasm player with the stereo `xch` fixed (see
+  [Wasm player](#wasm-player)). Before that fix the modules had a `send`,
+  a `pop` and a `gain` instead, a unit more, and rendered exactly the same.
 - **Global presets with them** (UTIL), which leave the existing ones as
-  they are: Global ducking reverb (aux 2/3 through `Ducking reverb`, 29
+  they are: Global ducking reverb (aux 2/3 through `Ducking reverb`, 28
   units), Global ping pong delay (aux 6/7 through `Ping pong delay`, 12
   units; its `outaux` can send the repeats on to the reverb) and Global
   mastering 2 ducking (aux 6/7 through `Ducking delay`, a quarter of it on
   to the reverb, aux 2/3 through `Ducking reverb`, then Global mastering 2;
-  52 units).
+  50 units).
 
   All of this is measured on rendered audio, not judged by ear. Tests:
   `vm/compiler/wasm_ducking_test.go` (what the modules do, and that the
