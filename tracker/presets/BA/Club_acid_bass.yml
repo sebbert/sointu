@@ -1,0 +1,33 @@
+name: Club acid bass
+comment: 'An acid bass line sound: a saw through a resonant ladder filter, with an envelope on the cutoff. Suggested notes: C-1 to C-3. Bandlimited oscillator, curved envelopes and ladder: Go synth and wasm player only.'
+numvoices: 1
+units:
+    - type: envelope
+      id: 1
+      parameters: {attack: 0, curve: 64, decay: 74, gain: 128, release: 74, stereo: 0, sustain: 0}
+      comment: 'Cutoff envelope: decay is how long the filter takes to close'
+    - type: send
+      id: 2
+      parameters: {amount: 96, port: 0, sendpop: 1, stereo: 0, target: 6, voice: 0}
+      comment: How far the envelope opens the filter
+    - type: envelope
+      id: 3
+      parameters: {attack: 24, curve: 48, decay: 76, gain: 128, release: 48, stereo: 0, sustain: 64}
+      comment: Level
+    - type: oscillator
+      id: 4
+      parameters: {bandlimit: 1, color: 128, detune: 64, gain: 80, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 1, unison: 0}
+      comment: A saw; type 2 with color 64 is the square wave of a 303
+    - type: mulp
+      id: 5
+      parameters: {stereo: 0}
+    - type: ladder
+      id: 6
+      parameters: {drive: 40, frequency: 24, resonance: 100, stereo: 0}
+      comment: 'frequency is the cutoff with the envelope closed, resonance the squelch, drive the growl'
+    - type: pan
+      id: 7
+      parameters: {panning: 64, stereo: 0}
+    - type: out
+      id: 8
+      parameters: {gain: 96, stereo: 1}

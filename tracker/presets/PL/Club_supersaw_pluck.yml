@@ -1,0 +1,41 @@
+name: Club supersaw pluck
+comment: 'A supersaw pluck: detuned saws through a ladder filter that an envelope closes quickly. auxgain sends it to the reverb. Bandlimited oscillators, curved envelopes, ladder and width: Go synth and wasm player only.'
+numvoices: 4
+units:
+    - type: envelope
+      id: 1
+      parameters: {attack: 0, curve: 56, decay: 68, gain: 128, release: 68, stereo: 0, sustain: 0}
+      comment: 'Cutoff envelope: decay is how long the pluck stays bright'
+    - type: send
+      id: 2
+      parameters: {amount: 96, port: 0, sendpop: 1, stereo: 0, target: 8, voice: 0}
+      comment: How far the envelope opens the filter
+    - type: envelope
+      id: 3
+      parameters: {attack: 16, curve: 64, decay: 74, gain: 128, release: 64, stereo: 1, sustain: 0}
+      comment: 'Level: decay is the length'
+    - type: oscillator
+      id: 4
+      parameters: {bandlimit: 1, color: 128, detune: 78, gain: 24, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 3}
+      comment: Four saws on each side; detune is the spread
+    - type: oscillator
+      id: 5
+      parameters: {bandlimit: 1, color: 128, detune: 48, gain: 24, lfo: 0, phase: 76, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 3}
+      comment: 'Four more, detuned the other way and a little further, a good half cycle later: with phase 76 the two sides are about equally loud from the start of a note, which one detuned oscillator alone is not'
+    - type: addp
+      id: 6
+      parameters: {stereo: 1}
+    - type: mulp
+      id: 7
+      parameters: {stereo: 1}
+    - type: ladder
+      id: 8
+      parameters: {drive: 0, frequency: 28, resonance: 40, stereo: 1}
+      comment: frequency is the cutoff with the envelope closed
+    - type: width
+      id: 9
+      parameters: {lowcut: 19, width: 48}
+      comment: 'Width, and mono below lowcut'
+    - type: outaux
+      id: 10
+      parameters: {auxgain: 32, outgain: 64, stereo: 1}

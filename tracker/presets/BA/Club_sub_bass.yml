@@ -1,0 +1,21 @@
+name: Club sub bass
+comment: 'A clean sub bass: a sine with an attack and release just long enough not to click. Suggested notes: C-1 to C-2. Mono. It uses nothing that only this fork has, so it plays on every target.'
+numvoices: 1
+units:
+    - type: envelope
+      id: 1
+      parameters: {attack: 44, curve: 0, decay: 64, gain: 128, release: 52, stereo: 0, sustain: 128}
+      comment: Attack and release against clicks
+    - type: oscillator
+      id: 2
+      parameters: {bandlimit: 0, color: 128, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+      comment: 'shape above 64 adds overtones, for small speakers'
+    - type: mulp
+      id: 3
+      parameters: {stereo: 0}
+    - type: pan
+      id: 4
+      parameters: {panning: 64, stereo: 0}
+    - type: out
+      id: 5
+      parameters: {gain: 90, stereo: 1}
