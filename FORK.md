@@ -326,7 +326,7 @@ the units in the Go synth, for 27 bands of every type and for 8 bands in a
 row; the level of each is within 0.03 dB of the computed one. Checked
 another way, with noise instead of sines (32 s of the `noise` unit through
 three eqs of 3 to 5 bands, the transfer function estimated with numpy over
-172 windows of 16384 samples): 0.004 to 0.02 dB RMS apart over the 7423
+about 170 windows of 16384 samples): 0.004 to 0.02 dB RMS apart over the 7423
 bins from 20 Hz to 20 kHz, the most where a window is too coarse: 0.2 dB
 on the slope of a low cut below 25 Hz, 1.5 dB at the bottom of a notch.
 
