@@ -73,8 +73,8 @@ type EQBand struct {
 	// Q is how narrow a bell, a notch or a band-pass is, and how resonant a
 	// cut or a shelf is. 0 means the default of the type: see EQDefaultQ.
 	Q float64 `yaml:",omitempty"`
-	// Off bands are kept, but have no units.
-	Off bool `yaml:",omitempty"`
+	// Disabled bands are kept, but have no units.
+	Disabled bool `yaml:",omitempty"`
 }
 
 // MarshalYAML implements yaml.Marshaler: a band is written on one line.
@@ -363,7 +363,7 @@ func compileEQBand(b EQBand, stereo int) (ret EQCompiledBand) {
 	b = b.Normalized()
 	ret.Makeup = 1
 	ret.Actual = b
-	if b.Off {
+	if b.Disabled {
 		return ret
 	}
 	fv := eqFilterValue(b.Frequency)

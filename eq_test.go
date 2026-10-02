@@ -141,12 +141,12 @@ func TestEQResponseMatchesSynth(t *testing.T) {
 }
 
 func TestEQYAML(t *testing.T) {
-	u := eqUnit(1, -15, band(sointu.EQBell, 1000, 3.5, 1.4), sointu.EQBand{Type: sointu.EQLowCut, Frequency: 30, Off: true})
+	u := eqUnit(1, -15, band(sointu.EQBell, 1000, 3.5, 1.4), sointu.EQBand{Type: sointu.EQLowCut, Frequency: 30, Disabled: true})
 	out, err := yaml.Marshal(u)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "bands:\n    - {type: bell, frequency: 1000, gain: 3.5, q: 1.4}\n    - {type: lowcut, frequency: 30, \"off\": true}\n"
+	want := "bands:\n    - {type: bell, frequency: 1000, gain: 3.5, q: 1.4}\n    - {type: lowcut, frequency: 30, disabled: true}\n"
 	if !strings.Contains(string(out), want) {
 		t.Errorf("the bands are written as\n%s", out)
 	}
@@ -182,7 +182,7 @@ func TestEQUnits(t *testing.T) {
 		{band(sointu.EQBell, 1000, 6, 1), "belleq"},
 		{band(sointu.EQBell, 1000, 0, 1), ""},
 		{band(sointu.EQBell, 1000, 0.2, 1), ""}, // the gain of belleq has steps of 0.625 dB
-		{sointu.EQBand{Type: sointu.EQBell, Frequency: 1000, Gain: 6, Off: true}, ""},
+		{sointu.EQBand{Type: sointu.EQBell, Frequency: 1000, Gain: 6, Disabled: true}, ""},
 		{band(sointu.EQLowCut, 80, 0, 1), "filter"},
 		{band(sointu.EQLowCut, 80, 0, 3), "filter"},
 		{band(sointu.EQLowCut, 80, 0, 0.71), "filter belleq"},
@@ -374,7 +374,7 @@ func TestEQExpand(t *testing.T) {
 	// off, flat and disabled: nothing
 	for i, u := range []sointu.Unit{
 		eqUnit(0, 0),
-		eqUnit(0, 0, band(sointu.EQBell, 1000, 0, 1), sointu.EQBand{Type: sointu.EQLowCut, Frequency: 80, Off: true}),
+		eqUnit(0, 0, band(sointu.EQBell, 1000, 0, 1), sointu.EQBand{Type: sointu.EQLowCut, Frequency: 80, Disabled: true}),
 		{Type: "eq", Parameters: sointu.ParamMap{"stereo": 0}, Bands: eq.Bands, Disabled: true},
 	} {
 		s := sointu.Song{BPM: 100, RowsPerBeat: 4, Patch: sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{osc, u, out}}}}

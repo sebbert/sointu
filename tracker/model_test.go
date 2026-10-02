@@ -190,6 +190,41 @@ func (s *modelFuzzState) Iterate(yield func(string, func(p string, t *testing.T)
 		s.model.Instrument().Write(writeCloser)
 		s.file = writer.Bytes()
 	})
+	// the eq unit and its bands
+	eq := s.model.EQ()
+	yield("SetUnitTypeEQ", func(p string, t *testing.T) { s.model.Unit().SetType("eq") })
+	s.IterateAction("EQAddBand", eq.AddBand(), yield, seed)
+	s.IterateAction("EQDeleteBand", eq.DeleteBand(), yield, seed)
+	s.IterateInt("EQType", eq.Type(), yield, seed)
+	s.IterateBool("EQOn", eq.On(), yield, seed)
+	yield("EQSelect", func(p string, t *testing.T) { eq.SetSelected(seed%20 - 2) })
+	yield("EQSet", func(p string, t *testing.T) {
+		// like a drag: a gesture of several changes
+		i := eq.Selected()
+		b, _ := eq.Band(i)
+		eq.BeginGesture()
+		for k := range seed%3 + 1 {
+			b.Frequency = float64(seed>>4%30000) + float64(k)
+			b.Gain = float64(seed>>8%100) - 50
+			b.Q = float64(seed>>12%500) / 10
+			eq.Set(i, b)
+		}
+		eq.EndGesture()
+	})
+	yield("EQStep", func(p string, t *testing.T) {
+		eq.Step(eq.Selected(), float64(seed%7-3), float64(seed>>3%7-3), float64(seed>>6%7-3), seed%2 == 0)
+	})
+	yield("EQCheck", func(p string, t *testing.T) {
+		c, _, ok := eq.Compiled()
+		if ok != eq.Active() || ok && len(c.Bands) != eq.NumBands() {
+			t.Errorf("Path: %s the eq is compiled to %d bands of %d", p, len(c.Bands), eq.NumBands())
+		}
+		if i := eq.Selected(); i < -1 || i >= eq.NumBands() {
+			t.Errorf("Path: %s band %d of %d is selected", p, i, eq.NumBands())
+		}
+		eq.Info()
+		eq.Units()
+	})
 }
 
 func (s *modelFuzzState) IterateInt(name string, i tracker.Int, yield func(string, func(p string, t *testing.T)) bool, seed int) {
