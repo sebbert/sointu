@@ -718,6 +718,113 @@ These change the Go synth's sound by tiny amounts, mostly below 1e-5.
   the knob moved.
 - **Other:** no notes play while typing in text fields; recordings survive
   synth rebuilds; NaNs recorded into buffers are cleared.
+- **Club presets:** a sound set for dnb, techno and trance: 21 instrument
+  presets whose names start with `Club`, in the directories of their kind,
+  and two Global presets with a bus for the drums. They are **tuned by
+  measurement, not by ear**: nobody has listened to them yet. Each was
+  rendered with the Go synth and its level, spectrum, envelope, pitch,
+  stereo image and aliasing measured; the values below are from those
+  renders. All but Club sub bass use units or parameters that only the Go
+  synth and the wasm player have, which their comments say.
+
+  | Preset | Units | What it is | Measured |
+  |---|---|---|---|
+  | DR Club 909 kick | 8 | a sine swept down to the note, soft-clipped | at A-1: 226 Hz after 4 ms, 117 after 11, 70 after 24, 55 from 50 ms; -20 dB after 240 ms |
+  | DR Club kick hard | 14 | a kick driven hard, and its own echoes in 16th notes, low-passed below about 100 Hz, driven and faded in after each hit: the rumble | 429 Hz after 2 ms, 57 after 57 ms; crest 5.7 dB; the rumble is 5 dB below the kick in the 16th after it and 10 dB below it in the next |
+  | DR Club 909 snare | 13 | a sine body with a pitch drop, and band-passed noise | body at the note (F#3: 185 Hz), noise from 2.4 kHz up, most of it between 5 and 10 kHz; -20 dB after 86 ms, -40 after 142 |
+  | DR Club 909 clap | 9 | band-passed noise in four bursts 11 ms apart, then a tail | 0.6 to 2.4 kHz; the tail 8 dB below the bursts, -40 dB after 250 ms |
+  | DR Club 909 hat closed, hat open | 11 | square waves, frequency modulated into a dense spectrum, and noise, through a low cut and a band-pass | centre of the spectrum 9.2 kHz, most of it from 5 to 15 kHz; -40 dB after 42 ms closed, 526 ms open; releasing the note chokes the open hat within 6 ms |
+  | DR Club 909 ride, crash | 11 | the same, more metal for the ride, more noise for the crash | centre 7.7 and 12 kHz; -40 dB after 1.1 and 1.7 s |
+  | DR Club 909 tom | 8 | a sine with a pitch drop | starts an octave above the note, at the note after 45 ms; -20 dB after 210 ms |
+  | BA Club sub bass | 5 | a sine | nothing else above -87 dB; no click (largest step at the start 0.001) |
+  | BA Club acid bass | 8 | a saw through a `ladder` with resonance, drive and an envelope on the cutoff | the highs above 2.4 kHz fall by 19 dB within 200 ms and are gone after that; aliasing -52 dB at A-2, -42 at A-4 (-42 and -34 without `bandlimit`) |
+  | BA Club reese bass | 13 | two detuned saws a side through a slowly moving `ladder` and a `softclip`, over a sine sub | the sub varies by 1.1 dB (below 65 Hz, at F-1); side 21 dB below mid under 150 Hz; crest 10 dB |
+  | BA Club dist bass | 11 | a saw a side, clipped hard above a crossover, over a sine sub | the sub varies by 1.3 dB; side 22 dB below mid under 150 Hz; aliasing -75 dB at F-1, -65 at F-3 (-65 and -54 without `oversample`) |
+  | LEAD Club supersaw lead | 8 | 16 detuned saws, 8 a side, through a `ladder` | aliasing -47 dB at C-7, -53 at C-5 (-16 and -25 without `bandlimit`); correlation 0.2 to 0.5, mono 1.2 to 2.3 dB quieter than stereo; side 8 to 37 dB below mid under 150 Hz |
+  | PAD Club supersaw pad | 8 | the same, slow, darker, wider | correlation 0 to 0.35; attack 340 ms, release 580 ms |
+  | PL Club supersaw pluck | 10 | the same with an envelope closing the `ladder` | bright for 60 ms, -20 dB after 120 to 190 ms; left and right within 1.5 dB of each other |
+  | LEAD Club hoover | 14 | four detuned pulses with a moving pulse width, four detuned saws a side an octave below, and a pitch swoop from 6 semitones below | correlation 0.6 to 0.9; no offset from the moving pulse width |
+  | FX Club riser | 8 | detuned saws rising two octaves in 5.9 s while the `ladder` opens | the level rises by 28 dB, the centre of the spectrum from 280 Hz to 1.1 kHz |
+  | FX Club noise sweep up | 7 | stereo noise through a resonant low-pass that opens in 5.9 s | -56 to -19 dB, centre of the spectrum 300 Hz to 3.7 kHz |
+  | FX Club downlifter | 7 | the same, falling | -19 to -64 dB in 5.5 s, 3.5 kHz to 250 Hz |
+  | FX Club impact | 11 | a sine dropping two octaves to the note, with low-passed noise, soft-clipped, long | at C-1: 117 Hz after 9 ms, 34 Hz after 200 ms; -20 dB after 1.7 s |
+
+  **Levels.** The presets are levelled against each other, so that a mix
+  starts without gain changes. The anchor is the kick at -6 dB peak, which
+  leaves 6 dB for what plays with it: kick and sub together stay below full
+  scale (-1.4 dB). Peaks: kicks and impact -6 dB, snare and clap -8, tom
+  -9, crash -12, hats -15 to -16, ride -16, sub -9 (-12 dB RMS), reese -5,
+  dist bass -7, acid -8.5, pluck -12. RMS of a held note: acid, reese and
+  dist bass -15 to -17 dB, hoover -20, lead -22 (a chord of three -17), pad
+  -24 (a chord of four -18), the riser and the sweeps -16 to -18 at their
+  loudest. The loop of `examples/soundset_loop.yml` peaks at +3.2 dB before
+  the master, mostly the drums (+2.8 dB alone), which is what the master
+  chain and the drum bus are for.
+
+  **What the measurements changed.**
+  - *A clean sub under distortion.* Saturating saws makes tones at their
+    fundamental, which beat against a sub. So reese and dist bass cut the
+    saws below 200 Hz *before* the clipper and add a sine that the clipper
+    never sees. With the low cut after the clipper the sub was steadier
+    still (0.4 dB), but the peaks were 4 dB higher at the same loudness
+    (crest 14 dB against 10): a high-pass turns a clipped wave into
+    spikes.
+  - *Left and right equally loud.* A stereo oscillator with unison starts
+    every note with its voices a twelfth of a cycle apart, and the detune
+    brings them together on one side and apart on the other: for the first
+    100 ms one side is 5 dB louder, on every note. A second oscillator
+    detuned the other way, 1.125 times as far, with `phase` 76, brings that
+    to within 1.5 dB with a correlation above 0 (lead, pad, pluck). In the
+    hoover it is the pulses, which are therefore in the middle.
+  - *Mono compatibility.* Mirrored detune makes the sides differ more than
+    they agree: at `width` 64 the lead was 4 dB quieter in mono. `width` 48
+    makes that 2 dB.
+  - *The hoover's pulse width* moves the mean of the signal a few times a
+    second, by a fifth of full scale as computed from its values. A low
+    cut at 43 Hz removes it.
+  - *`ott`* was tried on the saws of the reese: the level was steady
+    without it, and with it the crest of the saws rose from 13 to 20 dB.
+    None of the presets uses it.
+
+  Known: reese, dist and acid bass leave an offset of up to 0.02 (-34 dB),
+  as their clippers bend an asymmetric wave; the low cut of Global
+  mastering 2 removes it. A drum released before its decay ends is shorter
+  (the kick: -20 dB after 158 ms instead of 240, released after one row
+  at 140 BPM); hold drum notes for two rows or more. "Mono below 150 Hz"
+  is the side signal cut at 12 dB per octave from there: a note between
+  100 and 150 Hz keeps some width.
+- **Drum bus** (UTIL): Global mastering 2 drumbus, and Global mastering 2
+  drumbus reverb with the Reverb module, are Global mastering 2 with a
+  group bus for the drums in front. The channels: 0/1 the mix, 2/3 the
+  reverb send, 4/5 left free for a sidechain bus, 6/7 the drum bus.
+  - The drums send to the bus with an `aux` unit, channel 6, in place of
+    their `out` unit. The drum presets come with `out`, so that a preset
+    makes sound in any song, also one without this Global instrument; the
+    comment of each says which unit to change, and `gain` stays as it is.
+  - The Global instrument reads the bus (`in`, channel 6), compresses it
+    (about 2:1 above -11 dB, 20 ms attack, 93 ms release, +2 dB makeup),
+    clips it softly (`softclip`: +3.2 dB drive, knee at -6 dB) and adds it
+    to the mix (`out`, gain 108) before the mix is read and mastered.
+  - Measured on the drums of the example loop: on the main output they peak
+    at +2.8 dB with -14.9 dB RMS (crest 17.7 dB); through the bus at
+    -1.5 dB with -13.6 dB RMS (crest 12.1 dB): 4.3 dB less peak, 1.3 dB
+    more level. The whole loop comes out of the master at -9.0 dB RMS
+    either way, as the limiter sets that.
+- **Examples:** `examples/soundset.yml` plays every Club preset in turn,
+  with the preset Global reverb and no mastering, for listening and
+  measuring: in patterns of 1.7 s, kick (0), hard kick (1-2), snare (3),
+  clap (4), closed hat (5), open hat (6), ride (7), crash (8-9), tom (10),
+  sub (11-12), acid (13-14), reese (15-16), dist bass (17-18), lead
+  (19-20), hoover (21), pad (22-24), pluck (25), riser (26-29), noise
+  sweep (30-33), downlifter (34-37), impact (38-39).
+  `examples/soundset_loop.yml` is a loop of kit, acid bass and lead chords
+  with the drums on the bus, through Global mastering 2 drumbus reverb.
+  Their instruments are the presets (`TestSoundsetExamplesUseThePresets`).
+  Compiled for wasm they are 9.9 and 8.7 KB (4.3 and 4.2 KB gzipped).
+  Tests: `tracker/soundset_test.go`, and `vm/compiler/wasm_soundset_test.go`
+  (every preset and both songs render in the wasm player exactly as in the
+  Go synth; the long song takes most of two minutes and is skipped with
+  `-short`).
 
 ## Wasm player
 
