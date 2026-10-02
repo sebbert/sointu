@@ -68,6 +68,8 @@ type (
 
 		eqEditor *EQEditor // shown under the rack while the selected unit is an eq unit
 		eqShown  bool
+		eqRow    int // the row of that unit, or -1
+		eqScroll int // frames left in which the rack scrolls to that row
 	}
 )
 
@@ -94,6 +96,7 @@ func NewInstrumentEditor(m *tracker.Model) *InstrumentEditor {
 		bindBtn:         new(Clickable),
 		bindMenu:        new(MenuState),
 		eqEditor:        NewEQEditor(),
+		eqRow:           -1,
 	}
 	ret.caser = cases.Title(language.English)
 	ret.copyHint = makeHint("Copy unit", " (%s)", "Copy")
@@ -342,6 +345,20 @@ func (pe *InstrumentEditor) layoutTable(gtx C) D {
 	}
 	// the editor of the selected eq unit, under the rack
 	pe.eqShown = t.EQ().Active() && !pe.searching.Value()
+	// the rack is lower with the editor under it: the row of the eq unit,
+	// with its stereo switch and its gain, stays in view
+	row := -1
+	if pe.eqShown {
+		row = t.Params().Cursor().Y
+	}
+	if row != pe.eqRow {
+		pe.eqRow, pe.eqScroll = row, 2 // the rack knows its new height only once it is laid out
+	}
+	if pe.eqScroll > 0 && row >= 0 {
+		pe.eqScroll--
+		pe.paramTable.EnsureCursorVisible()
+		gtx.Execute(op.InvalidateCmd{})
+	}
 	eqEditor := func(gtx C) D {
 		if !pe.eqShown {
 			return D{}

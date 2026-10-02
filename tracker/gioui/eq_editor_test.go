@@ -39,16 +39,23 @@ func TestEQEditorInTracker(t *testing.T) {
 	var ops op.Ops
 	var router input.Router
 	dir := os.Getenv("SOINTU_TEST_SCREENSHOTS")
-	frame := func(name string) {
+	var focused bool // the plot of the editor has the focus
+	frame := func(name string, before ...func(gtx C)) {
 		t.Helper()
-		for range 2 { // the second frame sees what the first one changed
+		for i := range 2 { // the second frame sees what the first one changed
 			ops.Reset()
 			gtx := layout.Context{Ops: &ops, Now: time.Now(), Source: router.Source(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1},
 				Constraints: layout.Exact(size), Values: map[string]any{"Tracker": tr}}
+			if i == 0 {
+				for _, f := range before {
+					f(gtx)
+				}
+			}
 			tr.Layout(gtx)
+			focused = gtx.Focused(tr.PatchPanel.instrEditor.eqEditor)
 			router.Frame(gtx.Ops)
 		}
-		if dir == "" {
+		if dir == "" || name == "" {
 			return
 		}
 		window, err := headless.NewWindow(size.X, size.Y)
@@ -88,6 +95,58 @@ func TestEQEditorInTracker(t *testing.T) {
 	frame("eq-2-bands")
 	if n := eq.NumBands(); n != 6 {
 		t.Fatalf("%d bands", n)
+	}
+	// the row of the eq unit is in view above the editor
+	ie := &tr.PatchPanel.instrEditor
+	if !ie.eqShown {
+		t.Fatal("the editor is not shown")
+	}
+	pos := ie.paramTable.RowTitleList.List.Position
+	if row := model.Params().Cursor().Y; row < pos.First || row >= pos.First+pos.Count {
+		t.Errorf("the rack shows rows %d to %d, the eq unit is on row %d", pos.First, pos.First+pos.Count-1, row)
+	}
+	// with the pointer over the plot, and a spectrum of the master behind
+	// the curves
+	spectrum := &tracker.Spectrum{make([]float32, 1024), make([]float32, 1024)}
+	for i := range spectrum[0] {
+		f := float64(i+1) / 1024 * 22050
+		spectrum[0][i] = float32(-20 - 10*math.Log2(f/100) + 6*math.Sin(f/300))
+		spectrum[1][i] = spectrum[0][i] - 3
+	}
+	model.ProcessMsg(tracker.MsgToModel{Data: spectrum})
+	g := ie.eqEditor.geometry
+	if g.w < 600 || g.h < 150 {
+		t.Fatalf("the plot is %v by %v pixels", g.w, g.h)
+	}
+	router.Queue(pointer.Event{Kind: pointer.Move, Source: pointer.Mouse, Position: f32.Pt(900, 300)})
+	frame("eq-3-hover-spectrum")
+	if !ie.eqEditor.hovered {
+		t.Error("the pointer is not over the plot at 900, 300")
+	}
+	// Tab reaches the plot, and the keys then change the selected band
+	if focused {
+		t.Error("the plot has the focus before anything was pressed")
+	}
+	for range 60 {
+		if frame("", func(gtx C) { tr.FocusNext(gtx, true) }); focused {
+			break
+		}
+	}
+	if !focused {
+		t.Fatal("Tab does not reach the plot")
+	}
+	gain := func() float64 { b, _ := eq.Band(eq.Selected()); return b.Gain }
+	was := gain()
+	router.Queue(key.Event{Name: key.NameUpArrow, State: key.Press})
+	frame("eq-3b-focused")
+	if got := gain(); got != was+tracker.EQGainStep {
+		t.Errorf("Up with the focus on the plot: the gain is %v, was %v", got, was)
+	}
+	// another unit selected: the editor goes
+	model.Unit().List().SetSelected(0)
+	frame("eq-4-other-unit")
+	if ie.eqShown {
+		t.Error("the editor is shown for an envelope")
 	}
 }
 

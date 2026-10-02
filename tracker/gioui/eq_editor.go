@@ -490,7 +490,7 @@ func (e *EQEditor) layoutPlot(gtx C) D {
 
 	// the spectrum of the master, behind the curves
 	if e.spectrumOn {
-		e.drawSpectrum(gtx, g, eq.Spectrum(), withAlpha(offColor, 110))
+		e.drawSpectrum(gtx, g, eq.Spectrum(), withAlpha(offColor, 80))
 	}
 
 	// the curve of each band, and of all the units
