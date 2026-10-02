@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -33,6 +34,7 @@ func main() {
 	versionFlag := flag.Bool("v", false, "Print version.")
 	syntherInt := flag.Int("synth", 0, "Select the synther to use. By default, uses the first one in the list of available synthers.")
 	ffmpegPath := flag.String("ffmpeg", "", "Path of ffmpeg, for encoding and decoding the samples of songs that play buffers. By default, $"+ffmpeg.EnvVar+", PATH and common installation directories are searched.")
+	allowUnknown := flag.Bool("allow-unknown-units", false, "Play songs with units of a type that this version does not have, e.g. songs of a newer version, without those units, with a warning for each. By default such songs are an error.")
 	flag.Usage = printUsage
 	flag.Parse()
 	if *versionFlag {
@@ -108,8 +110,18 @@ func main() {
 		if err != nil {
 			return fmt.Errorf("could not decode the samples of the song: %v", err)
 		}
+		if *allowUnknown {
+			var unknown []sointu.UnknownUnit
+			song, unknown = song.WithoutUnknownUnits()
+			for _, u := range unknown {
+				fmt.Fprintf(os.Stderr, "warning: %v: the unit is left out\n", u)
+			}
+		}
 		buffer, err := sointu.PlayWithBuffers(cmd.Synthers[*syntherInt], song, buffers, nil) // render the song to calculate its length
 		if err != nil {
+			if errors.As(err, new(sointu.UnknownUnit)) {
+				return fmt.Errorf("%v\n(-allow-unknown-units plays the song without these units)", err)
+			}
 			return fmt.Errorf("sointu.Play failed: %v", err)
 		}
 		if *play {

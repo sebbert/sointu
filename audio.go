@@ -205,6 +205,10 @@ func PlayWithBuffers(synther Synther, song Song, buffers map[int]BufferAudio, pr
 	if err != nil {
 		return nil, err
 	}
+	// units of a type that this version does not have cannot be played
+	if err := song.CheckUnitTypes(); err != nil {
+		return nil, fmt.Errorf("sointu.Play failed: %w", err)
+	}
 	if song.NeedsExpand() {
 		// the synths only know the units the module units stand for
 		var expansion *Expansion

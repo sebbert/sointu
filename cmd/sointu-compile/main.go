@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -48,6 +49,7 @@ func main() {
 	versionFlag := flag.Bool("v", false, "Print version.")
 	mathImports := flag.Bool("imports", false, "Make the wasm player call Math.pow and Math.sin of JavaScript instead of computing them itself: a smaller player, whose output differs slightly from the Go synth, as used by the tracker, and between browsers.")
 	ffmpegPath := flag.String("ffmpeg", "", "Path of ffmpeg, for encoding the samples of songs that play buffers. By default, $"+ffmpeg.EnvVar+", PATH and common installation directories are searched.")
+	allowUnknown := flag.Bool("allow-unknown-units", false, "Compile songs with units of a type that this version does not have, e.g. songs of a newer version, without those units, with a warning for each. By default such songs are an error.")
 	flag.Usage = printUsage
 	flag.Parse()
 	// Validate and guard against some oddly specific typos:
@@ -160,8 +162,12 @@ func main() {
 				return fmt.Errorf("encoding buffers failed: %v", err)
 			}
 			var warnings []string
+			comp.AllowUnknownUnits = *allowUnknown
 			compiledPlayer, warnings, err = comp.Song(&song)
 			if err != nil {
+				if errors.As(err, new(sointu.UnknownUnit)) {
+					return fmt.Errorf("compiling player failed: %v\n(-allow-unknown-units compiles the song without these units)", err)
+				}
 				return fmt.Errorf("compiling player failed: %v", err)
 			}
 			for _, warning := range warnings {

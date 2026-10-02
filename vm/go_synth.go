@@ -123,7 +123,7 @@ func (s GoSynther) SupportsMultithreading() bool { return false }
 func (s GoSynther) Synth(patch sointu.Patch, bpm int) (sointu.Synth, error) {
 	bytecode, err := NewBytecode(patch, AllFeatures{}, bpm)
 	if err != nil {
-		return nil, fmt.Errorf("error compiling %v", err)
+		return nil, fmt.Errorf("error compiling %w", err)
 	}
 	ret := &GoSynth{bytecode: *bytecode, stack: make([]float32, 0, 4), delaylines: make([]delayline, patch.NumDelayLines()), otts: make([]ottState, patch.NumOtts()), limiters: make([]limiterState, patch.NumLimiters()), reverbs: make([]reverbState, patch.NumReverbs())}
 	ret.state.randSeed = 1
@@ -244,7 +244,7 @@ func (s *GoSynth) CPULoad(loads []sointu.CPULoad) int {
 func (s *GoSynth) Update(patch sointu.Patch, bpm int) error {
 	bytecode, err := NewBytecode(patch, AllFeatures{}, bpm)
 	if err != nil {
-		return fmt.Errorf("error compiling %v", err)
+		return fmt.Errorf("error compiling %w", err)
 	}
 	old := s.bytecode
 	s.bytecode = *bytecode

@@ -196,6 +196,10 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 			if unit.Type == "" || unit.Disabled { // empty units are just ignored & skipped
 				continue
 			}
+			if _, known := sointu.UnitTypes[unit.Type]; !known {
+				// NecessaryFeatures has an opcode for every type it is given
+				return nil, sointu.UnknownUnit{Instrument: instrIndex, Name: instr.Name, Unit: unitIndex, Type: unit.Type}
+			}
 			opcode, ok := featureSet.Opcode(unit.Type)
 			if !ok {
 				return nil, fmt.Errorf(`VM is not configured to support unit type "%v"`, unit.Type)

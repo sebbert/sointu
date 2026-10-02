@@ -238,6 +238,11 @@ did in the tracker, in every browser. With `-imports`, it calls `Math.pow` and
 smaller, but its output differs slightly from the tracker's (by about 1e-5)
 and between browsers. Loaders can pass `{m: Math}` either way.
 
+A song with a unit of a type that this version does not have, e.g. one saved
+by a newer version, is refused, with the type and the instrument in the
+error. `-allow-unknown-units` compiles it without those units, with a
+warning for each; `sointu-play` has the same flag.
+
 Songs can play audio samples, imported in the tracker's Buffers tab and played
 with the `bufread` unit (WebAssembly only for now). The compiler encodes each
 sample with its encoding preset using [ffmpeg](https://ffmpeg.org/), found

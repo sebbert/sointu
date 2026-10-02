@@ -1363,6 +1363,31 @@ the last time they were asked for, the synth records nothing).
   window, also when the knob itself moves, as when the rail widens. Before,
   the drag was measured from the knob, and the value jumped by the distance
   the knob moved.
+- **Colliding IDs:** when two units of a song have the same ID, e.g. a unit
+  of a module and one of an instrument in a song put together from parts,
+  the later one gets a new ID, as before; now the sends follow. A send
+  means the unit of its own instrument or module with that ID, if there is
+  one: when that unit gets a new ID, the sends among the same units go to
+  it (`fixIDCollisions`). Before, the sends of the module went to the unit
+  of the instrument that kept the ID.
+- **Unknown unit types:** a song with a unit of a type that this version
+  does not have (`sointu.UnknownUnit`), e.g. saved by a newer version, is
+  no longer played or compiled as if it were fine.
+  - `sointu-compile` and `sointu-play` refuse it, naming the type, the unit
+    and the instrument or module, for every architecture; so do
+    `sointu.Play`, `vm.NewBytecode` and the synths. Before, the compiler
+    gave the type an opcode of its own and wrote a player that had no code
+    for it. With `-allow-unknown-units` (`Compiler.AllowUnknownUnits`,
+    `Song.WithoutUnknownUnits`) the song is compiled or played without
+    those units, with a warning for each. Disabled units are not looked
+    at, as they are not played.
+  - The tracker keeps such a unit in the song, with its parameters, and
+    saves it; it shows a warning naming the first one, and plays the song
+    without them. Before, the synth refused the whole patch (silence, and
+    an error), and the next change of the patch removed the parameters of
+    the unit as invalid. What it cannot keep is what the unit has besides
+    parameters that this version does not read, like the bands of an `eq`
+    unit in a version without it.
 - **Other:** no notes play while typing in text fields; recordings survive
   synth rebuilds; NaNs recorded into buffers are cleared.
 - **Club presets:** a sound set for dnb, techno and trance: 21 instrument

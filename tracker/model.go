@@ -669,6 +669,9 @@ func RemoveUnusedUnitParameters(instr *sointu.Instrument) bool {
 func removeUnusedUnitParameters(units []sointu.Unit) bool {
 	fixed := false
 	for _, unit := range units {
+		if _, known := sointu.UnitTypes[unit.Type]; !known && unit.Type != "" {
+			continue // of a type that this version does not have: kept as it is
+		}
 		for paramName := range unit.Parameters {
 			if !validParameters[unit.Type][paramName] {
 				delete(unit.Parameters, paramName)

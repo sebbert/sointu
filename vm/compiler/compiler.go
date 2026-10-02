@@ -29,6 +29,10 @@ type Compiler struct {
 	// JavaScript instead of computing them itself: a smaller player, but its
 	// output then differs slightly from the Go synth, and between browsers.
 	MathImports bool
+	// AllowUnknownUnits makes Song leave out the units whose type this
+	// version of Sointu does not have, with a warning for each, instead of
+	// refusing the song.
+	AllowUnknownUnits bool
 }
 
 // EncodedBuffer is the sample of a buffer encoded for the compiled player,
@@ -229,6 +233,18 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 		templates = []string{"player.asm", "player.h", "player.inc"}
 	} else if com.Arch == "wasm" {
 		templates = []string{"player.wat"}
+	}
+	// units of a type that this version does not have: the players have no
+	// code for them
+	if unknown := song.UnknownUnits(); len(unknown) > 0 {
+		if !com.AllowUnknownUnits {
+			return nil, nil, song.CheckUnitTypes()
+		}
+		stripped, _ := song.WithoutUnknownUnits()
+		song = &stripped
+		for _, u := range unknown {
+			warnings = append(warnings, u.Error()+": the unit is left out")
+		}
 	}
 	if song.NeedsExpand() {
 		// the players only know the units the module units stand for
