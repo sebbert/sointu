@@ -1,5 +1,5 @@
 name: Club 909 hat closed
-comment: 'A closed hi-hat: frequency modulated square waves and noise, through a low cut and a band-pass. Suggested note: C-5; the note tunes the metal. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes: Go synth and wasm player only.'
+comment: 'A closed hi-hat: frequency modulated square waves and noise, through a low cut and a band-pass. Suggested note: C-5; the note tunes the metal. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 8 (aux4 left; Go synth and wasm player only). Curved envelopes: Go synth and wasm player only.'
 numvoices: 1
 units:
     - type: oscillator
@@ -42,4 +42,4 @@ units:
     - type: out
       id: 11
       parameters: {gain: 23, stereo: 1}
-      comment: 'The level. For the drum bus, make this an aux unit with channel 6'
+      comment: 'The level. For the drum bus, make this an aux unit with channel 8'

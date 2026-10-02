@@ -2,10 +2,12 @@ package compiler_test
 
 import (
 	"bytes"
+	"maps"
 	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -38,7 +40,8 @@ func soundsetPreset(t *testing.T, file string) (sointu.Instrument, sointu.Module
 // soundsetPresetSong is a song that plays a preset: two notes of an
 // instrument, slowly for the sounds that rise slowly, or for a Global
 // preset, bursts of noise sent to the main output, the reverb send and the
-// drum bus, with the preset as the last instrument.
+// drum bus on channels 8 and 9, and for Global mastering 2 buses to the
+// delay send too, with the preset as the last instrument.
 func soundsetPresetSong(instr sointu.Instrument, modules sointu.Modules) sointu.Song {
 	song := sointu.Song{BPM: 140, RowsPerBeat: 4, Modules: modules,
 		Score: sointu.Score{RowsPerPattern: 16, Length: 1, Tracks: []sointu.Track{
@@ -54,8 +57,14 @@ func soundsetPresetSong(instr sointu.Instrument, modules sointu.Modules) sointu.
 			{Type: "push", Parameters: sointu.ParamMap{"stereo": 1}},
 			{Type: "out", Parameters: sointu.ParamMap{"stereo": 1, "gain": 32}},
 			{Type: "aux", Parameters: sointu.ParamMap{"stereo": 1, "gain": 32, "channel": 2}},
-			{Type: "aux", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128, "channel": 6}},
+			{Type: "aux", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128, "channel": 8}},
 		}}, instr}
+		if strings.HasSuffix(instr.Name, "buses") {
+			// a copy more of the burst, to the delay send
+			units := &song.Patch[0].Units
+			*units = slices.Insert(*units, 3, sointu.Unit{Type: "push", Parameters: sointu.ParamMap{"stereo": 1}})
+			*units = append(*units, sointu.Unit{Type: "aux", Parameters: sointu.ParamMap{"stereo": 1, "gain": 24, "channel": 6}})
+		}
 		return song
 	}
 	if instr.NumVoices == 0 {
@@ -69,7 +78,8 @@ func soundsetPresetSong(instr sointu.Instrument, modules sointu.Modules) sointu.
 }
 
 // TestSoundsetPresets checks every preset of the sound set (Club ...) and the
-// Global presets with the drum bus: the preset loads, stays within the 63
+// Global presets with the drum bus, Global mastering 2 buses among them: the
+// preset loads, stays within the 63
 // units of an instrument, compiles for wasm, and the Go synth renders sound
 // from it without NaN; with node and wat2wasm, the wasm player renders
 // exactly the same.
@@ -82,7 +92,8 @@ func TestSoundsetPresets(t *testing.T) {
 	if len(files) != 21 {
 		t.Errorf("%d Club presets, want 21", len(files))
 	}
-	files = append(files, "../../tracker/presets/UTIL/Global_mastering_2_drumbus.yml", "../../tracker/presets/UTIL/Global_mastering_2_drumbus_reverb.yml")
+	files = append(files, "../../tracker/presets/UTIL/Global_mastering_2_drumbus.yml", "../../tracker/presets/UTIL/Global_mastering_2_drumbus_reverb.yml",
+		"../../tracker/presets/UTIL/Global_mastering_2_buses.yml")
 	node, nodeErr := exec.LookPath("node")
 	wat2wasm, watErr := exec.LookPath("wat2wasm")
 	for _, file := range files {
@@ -175,4 +186,120 @@ func TestSoundsetExamplesWasmMatchGoSynth(t *testing.T) {
 			compareWasmToGo(t, want, renderWasm(t, node, wat2wasm, song, nil, nil, nil))
 		})
 	}
+}
+
+// mapChannel returns the song with the aux and in units of one channel
+// moved to another.
+func mapChannel(song sointu.Song, from, to int) sointu.Song {
+	song = song.Copy()
+	for _, instr := range song.Patch {
+		for _, u := range instr.Units {
+			if (u.Type == "aux" || u.Type == "in") && u.Parameters["channel"] == from {
+				u.Parameters["channel"] = to
+			}
+		}
+	}
+	return song
+}
+
+// TestDrumBusChannel checks that the drum bus of the Global presets is on
+// channels 8 and 9, where it does what it did on 6 and 7: the Go synth
+// renders the same with the bus and the drums moved there. On 8 and 9 the
+// presets are for the Go synth and the wasm player only, as their comments
+// say.
+func TestDrumBusChannel(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"Global mastering 2 drumbus", "Global mastering 2 drumbus reverb", "Global mastering 2 buses"} {
+		instr, modules := soundsetPreset(t, "../../tracker/presets/UTIL/"+strings.ReplaceAll(name, " ", "_")+".yml")
+		if !strings.Contains(instr.Units[0].Comment, "channels above 7: Go synth and wasm player only") {
+			t.Errorf("%s: the comment does not say that the channels above 7 are for the Go synth and the wasm player only", name)
+		}
+		song := soundsetPresetSong(instr, modules)
+		expanded, _ := song.Expand()
+		if got := expanded.Patch.MaxChannel(); got != 9 {
+			t.Errorf("%s: the highest channel is %d, want 9", name, got)
+		}
+		delay := mapChannel(song, 6, 10) // the delay send, out of the way
+		old := mapChannel(delay, 8, 6)
+		expanded, _ = old.Expand()
+		if got := expanded.Patch.MaxChannel(); name != "Global mastering 2 buses" && got != 7 {
+			t.Errorf("%s with the bus on 6: the highest channel is %d, want 7", name, got)
+		}
+		want, got := playGo(t, old), playGo(t, delay)
+		if !slices.Equal(want, got) {
+			t.Errorf("%s: the drum bus on channels 8 and 9 renders differently from the one on 6 and 7", name)
+		}
+		// the bus is heard: not with the drums sent elsewhere
+		elsewhere := song.Copy()
+		elsewhere.Patch = append(mapChannel(sointu.Song{Patch: song.Patch[:1]}, 8, 12).Patch, elsewhere.Patch[1:]...)
+		if slices.Equal(playGo(t, elsewhere), playGo(t, song)) {
+			t.Errorf("%s: the drum bus is not heard", name)
+		}
+	}
+}
+
+// TestBusesExample renders examples/buses.yml in both synths: the reverb
+// send on aux 2/3, the bus that the Kick ducker ducks on 4/5, the delay send
+// on 6/7 and the drum bus on 8/9 in one song, through the preset Global
+// mastering 2 buses. Each of the four buses is heard: without what is sent
+// to it, the song renders differently.
+func TestBusesExample(t *testing.T) {
+	t.Parallel()
+	data, err := os.ReadFile("../../examples/buses.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var song sointu.Song
+	if err := yaml.Unmarshal(data, &song); err != nil {
+		t.Fatal(err)
+	}
+	// the last instrument is the preset, apart from the IDs
+	preset, _ := soundsetPreset(t, "../../tracker/presets/UTIL/Global_mastering_2_buses.yml")
+	global := song.Patch[len(song.Patch)-1]
+	if global.Name != preset.Name || len(global.Units) != len(preset.Units) {
+		t.Fatalf("the last instrument is %s with %d units, the preset %s has %d", global.Name, len(global.Units), preset.Name, len(preset.Units))
+	}
+	for i, u := range global.Units {
+		p := preset.Units[i].Copy()
+		if u.Type == "module" {
+			p.Parameters["module"] = u.Parameters["module"]
+		}
+		if u.Type != p.Type || !maps.Equal(u.Parameters, p.Parameters) {
+			t.Errorf("unit %d of the last instrument is %s %v, of the preset %s %v", i, u.Type, u.Parameters, p.Type, p.Parameters)
+		}
+	}
+	want := playGo(t, song)
+	for _, channel := range []int{2, 4, 6, 8} {
+		muted := song.Copy()
+		sends := 0
+		for _, instr := range muted.Patch {
+			for _, u := range instr.Units {
+				switch {
+				case u.Type == "aux" && u.Parameters["channel"] == channel:
+					u.Parameters["gain"] = 0
+					sends++
+				case u.Type == "outaux" && channel == 2:
+					u.Parameters["auxgain"] = 0
+					sends++
+				}
+			}
+		}
+		if sends == 0 || slices.Equal(playGo(t, muted), want) {
+			t.Errorf("channel %d: %d units send to it, and the song is the same without them", channel, sends)
+		}
+	}
+	for i, f := range want {
+		if v := float64(f[0] + f[1]); math.IsNaN(v) || math.Abs(float64(f[0])) > 1 || math.Abs(float64(f[1])) > 1 {
+			t.Fatalf("frame %d: %v", i, f)
+		}
+	}
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not found")
+	}
+	wat2wasm, err := exec.LookPath("wat2wasm")
+	if err != nil {
+		t.Skip("wat2wasm not found")
+	}
+	compareWasmToGo(t, want, renderWasm(t, node, wat2wasm, song, nil, nil, nil))
 }
