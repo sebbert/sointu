@@ -870,8 +870,8 @@ kept in the order the units run, belonged to other units than before. Only
 the Go synth does this; the compiled players have one patch.
 
 - What a unit keeps: its 8 floats of state and its 8 ports in each voice,
-  and its delay lines, `ott` and `limiter` states. Spectral units and mc
-  units already kept theirs, by their buffers.
+  and its delay lines, `ott`, `limiter` and `reverb` states. Spectral units and
+  mc units already kept theirs, by their buffers.
 - **Instruments** are matched by the units they share, by ID and type, in
   their order (the longest common sequence, weighted by the shared units).
   An instrument that shares no unit with any is matched with the one in its

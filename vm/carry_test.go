@@ -205,3 +205,63 @@ func TestUpdateStartsChangedUnits(t *testing.T) {
 		t.Errorf("after the type of a unit changed, the render differs from that of a unit added after the same envelope and oscillator")
 	}
 }
+
+// reverbVoice returns the units of a voice with a reverb unit, whose state
+// the synth keeps in a table of its own. The IDs start from id.
+func reverbVoice(id int) []sointu.Unit {
+	return []sointu.Unit{
+		carryUnit("envelope", id, sointu.ParamMap{"attack": 40, "decay": 60, "sustain": 0, "release": 60, "gain": 128}),
+		carryUnit("oscillator", id+1, sointu.ParamMap{"transpose": 64, "detune": 64, "color": 100, "shape": 64, "gain": 128, "type": sointu.Trisaw}),
+		carryUnit("mulp", id+2, nil),
+		carryUnit("pan", id+3, sointu.ParamMap{"panning": 50}),
+		carryUnit("reverb", id+4, sointu.ParamMap{"decay": 100, "mod": 30}),
+		carryUnit("out", id+5, sointu.ParamMap{"stereo": 1, "gain": 128}),
+	}
+}
+
+// TestUpdateKeepsReverb checks that a reverb unit keeps its state, the
+// tail of what it was given, when units before it and instruments with
+// reverbs before its own come and go.
+func TestUpdateKeepsReverb(t *testing.T) {
+	const n = 6000
+	base := reverbVoice(1)
+	stereoUnity := carryUnit("gain", 30, sointu.ParamMap{"gain": 128, "stereo": 1})
+	one := func(units []sointu.Unit) sointu.Patch { return sointu.Patch{{NumVoices: 1, Units: units}} }
+	other := sointu.Instrument{NumVoices: 2, Units: reverbVoice(11)}
+	// a reverb of its own in the same instrument, whose output is dropped:
+	// with it, the state of the other reverb is the second of the table
+	aside := func() []sointu.Unit {
+		return []sointu.Unit{
+			carryUnit("loadval", 40, sointu.ParamMap{"stereo": 1, "value": 100}),
+			carryUnit("reverb", 41, nil),
+			carryUnit("pop", 42, sointu.ParamMap{"stereo": 1}),
+		}
+	}
+	tests := []struct {
+		name          string
+		before, after sointu.Patch
+		voice, moved  int
+	}{
+		{"unit added before the reverb", one(base), one(withUnit(base, 4, stereoUnity)), 0, 0},
+		{"unit removed after the reverb", one(withUnit(base, 5, stereoUnity)), one(base), 0, 0},
+		{"without IDs", one(withoutIDs(base)), one(withoutIDs(withUnit(base, 4, stereoUnity))), 0, 0},
+		{"instrument with reverbs removed before it", sointu.Patch{other, one(base)[0]}, one(base), 2, 0},
+		{"instrument with reverbs added before it", one(base), sointu.Patch{other, one(base)[0]}, 0, 2},
+		{"another reverb removed before it", one(append(aside(), base...)), one(base), 0, 0},
+		{"another reverb added before it", one(base), one(append(aside(), base...)), 0, 0},
+	}
+	// what the instrument plays alone: a note that ends before the change,
+	// so that after it only the tail of the reverb is left
+	want := carryRender(t, []carryStep{{patch: one(base), triggers: map[int]byte{0: 60}, frames: n}, {releases: []int{0}, frames: n}}, 1)
+	loud(t, "the tail of the reverb", want)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := carryRender(t, []carryStep{
+				{patch: test.before, triggers: map[int]byte{test.voice: 60}, frames: n},
+				{patch: test.after, releases: []int{test.moved}, frames: n}}, 1)
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("after the change, the reverb does not go on as it would have")
+			}
+		})
+	}
+}
