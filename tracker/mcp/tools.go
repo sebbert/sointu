@@ -176,6 +176,8 @@ func Tools() []Tool {
 			func(noArgs) (string, error) { return Guide, nil }),
 		localTool("unit_types", "The unit types: all in a line each (what it does, its effect on the stack, its parameters), or one with the ranges, defaults and displayed values of its parameters.",
 			func(a unitTypesArgs) (string, error) { return tracker.RemoteUnitTypes(a.Type) }),
+		modelTool("get_selection", "What the user has open and selected in the tracker: the tab, the instrument, the module (Modules tab), the buffer (Buffers tab), the units and the parameter under the cursor, whether the song plays, and the cursor in the score. What the user means by this, here or the selected one.", true,
+			func(r *tracker.Remote, _ noArgs) (string, error) { return r.Selection(true), nil }),
 		modelTool("get_song", "The song of the tracker in overview: tempo, score in summary, the instruments, modules and buffers in a line each, and what is wrong with the patch.", true,
 			func(r *tracker.Remote, _ noArgs) (string, error) { return r.Song(), nil }),
 		modelTool("get_instrument", "An instrument with its units in order: each with its ID, type, the signals on the stack before and after it, and its parameters as name=value(what the tracker displays). Sends show what they modulate.", true,
@@ -248,6 +250,7 @@ sointu is a modular software synthesizer and tracker for 4k/64k intros. These to
 
 - Start with list_instances (if several run, pass instance to every tool), then get_song and get_instrument. Call guide once before changing a patch.
 - Units are named by their ID (#12), instruments by index from 0 or by name, parameters by name. Parameter values are whole numbers, mostly 0 to 128; listings show what the tracker displays for them, e.g. frequency=40(686 Hz).
+- The selection: line of get_song and get_instrument (and get_selection) tells what the user has open and selected in the tracker: "this unit", "here", "the selected instrument" mean that. It changes as the user clicks, so read it again when they refer to it.
 - Each change tool is one undo step and returns the units after it. Watch the stack numbers and any PROBLEM line in what comes back.
 - You cannot hear: use render_note before and after a change to check what it did (level, pitch, spectrum, envelope). The user judges the sound; play_note lets them hear a note.
 `)

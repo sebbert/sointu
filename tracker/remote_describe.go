@@ -247,6 +247,7 @@ func (r *Remote) Song() string {
 		}
 	}
 	b.WriteString(r.problems())
+	b.WriteString(r.Selection(false))
 	return strings.TrimRight(b.String(), "\n")
 }
 
@@ -366,6 +367,7 @@ func (r *Remote) describeInstrument(index int, verbose bool) string {
 	}
 	r.describeUnits(&b, unitLoc{&instr.Units, 0, index, -1}, rails, verbose)
 	b.WriteString(r.problems())
+	b.WriteString(r.Selection(false))
 	return strings.TrimRight(b.String(), "\n")
 }
 
@@ -396,6 +398,7 @@ func (r *Remote) describeModule(index int, verbose bool) string {
 	}
 	r.describeUnits(&b, unitLoc{&mod.Units, 0, -1, index}, rails, verbose)
 	b.WriteString(r.problems())
+	b.WriteString(r.Selection(false))
 	return strings.TrimRight(b.String(), "\n")
 }
 

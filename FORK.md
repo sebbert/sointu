@@ -1646,13 +1646,18 @@ of the undo history, refused as a whole if any part is not valid (a value
 out of range, an unknown parameter, more than 63 units once expanded, an
 instrument left without units), moves the cursor to the unit or instrument
 it was about, and shows an alert ("Claude: ..."). It returns the units as
-they are after it.
+they are after it. `get_song`, `get_instrument`, `get_module` and what the
+changes return end with a `selection:` line (`Remote.Selection`): the tab,
+the instrument, the module or the buffer of the tab, the selected units and
+the parameter under the cursor, so that "this unit" or "here" can be
+resolved; the instructions say so.
 
 | Tool | What it does |
 |---|---|
 | `list_instances` | the trackers and plugin instances listening: ID, program, host process, file, instruments |
 | `guide` | how sointu patches work, for a model that has not seen the repository |
 | `unit_types` | every unit type in a line (stack effect, go/wasm only, parameters), or one with ranges, defaults and the displayed values at every 8th value |
+| `get_selection` | what the user has open and selected: the tab, the instrument, the module (Modules tab), the buffer (Buffers tab), the units and the parameter under the cursor, whether the song plays and where, the cursor in the score |
 | `get_song` | tempo, score in summary, instruments, modules and buffers in a line each, problems |
 | `get_instrument`, `get_module` | the units in order: `#id type [stack before>after] name=value(displayed)`, sends with what they modulate, eq bands, bindings, comments, the go/wasm only units; with `verbose`, ranges |
 | `list_presets` | instrument presets by directory, and module presets with their parameters |

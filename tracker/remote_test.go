@@ -2,6 +2,7 @@ package tracker
 
 import (
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -405,3 +406,35 @@ func TestRemotePanicLeavesTheSong(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+func TestRemoteSelection(t *testing.T) {
+	m, r := newRemoteTestModel(t)
+	m.d.InstrIndex, m.d.UnitIndex, m.d.UnitIndex2, m.d.ParamIndex = 0, 1, 2, 0
+	sel := r.Selection(true)
+	osc, mulp := m.d.Song.Patch[0].Units[1].ID, m.d.Song.Patch[0].Units[2].ID
+	for _, want := range []string{"tab Editor", `instrument 0 "Instr"`, "unit #" + itoa(osc) + " oscillator", "(units #" + itoa(osc) + " #" + itoa(mulp) + " selected)", "parameter ", "not playing", "score cursor: track 0"} {
+		if !strings.Contains(sel, want) {
+			t.Errorf("the selection does not tell %q:\n%s", want, sel)
+		}
+	}
+	if song := r.Song(); !strings.Contains(song, "selection: tab Editor") {
+		t.Errorf("get_song does not tell the selection:\n%s", song)
+	}
+	m.d.InstrumentTab = InstrumentBuffersTab
+	if sel := r.Selection(false); strings.Contains(sel, "unit #") || !strings.Contains(sel, "tab Buffers") {
+		t.Errorf("the Buffers tab without buffers: %s", sel)
+	}
+	if _, err := r.AddModule("", "Reverb", 0); err != nil {
+		t.Fatal(err)
+	}
+	// a change moves the cursor, so the selection is what it was about
+	if sel := r.Selection(false); !strings.Contains(sel, `tab Modules | instrument 0 "Instr" | module "Reverb" | unit #`) {
+		t.Errorf("the selection after adding a module: %s", sel)
+	}
+	m.d.InstrumentTab, m.d.BufferIndex = InstrumentBuffersTab, 0
+	if sel := r.Selection(false); !strings.Contains(sel, `buffer `) || !strings.Contains(sel, `"Bus 1"`) {
+		t.Errorf("the selected buffer is not told: %s", sel)
+	}
+}
+
+func itoa(i int) string { return strconv.Itoa(i) }
