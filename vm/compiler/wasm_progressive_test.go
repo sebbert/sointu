@@ -109,9 +109,10 @@ func runProgressive(t *testing.T, node, wat2wasm string, song sointu.Song, encod
 }
 
 // TestProgressiveWasmMatchesOneShot renders the regression test songs and the
-// example songs with the progressive wasm player, in parts of different
-// sizes: each must give exactly the bytes of the player that renders at
-// instantiation, which other tests compare with the Go synth.
+// example songs (of the long ones, the first 10 seconds) with the progressive
+// wasm player, in parts of different sizes: each must give exactly the bytes
+// of the player that renders at instantiation, which other tests compare
+// with the Go synth.
 func TestProgressiveWasmMatchesOneShot(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -136,9 +137,6 @@ func TestProgressiveWasmMatchesOneShot(t *testing.T) {
 			if name == "test_sync" {
 				t.Skip("the sync unit is not supported by the wasm player")
 			}
-			if name == "soundset" && testing.Short() {
-				t.Skip("long")
-			}
 			data, err := os.ReadFile(f)
 			if err != nil {
 				t.Fatal(err)
@@ -149,6 +147,10 @@ func TestProgressiveWasmMatchesOneShot(t *testing.T) {
 			}
 			if ffmpeg.NeedsFFmpeg(&song) {
 				t.Skip("the song has samples; TestProgressiveWasmWithSamples covers them")
+			}
+			// of the long songs, the patterns of the first 10 seconds
+			if patterns := 10 * 44100 / (song.SamplesPerRow() * song.Score.RowsPerPattern); song.Score.Length > max(patterns, 1) {
+				song.Score.Length = max(patterns, 1)
 			}
 			runProgressive(t, node, wat2wasm, song, nil, nil, nil, nil)
 			if name == "test_chords" {

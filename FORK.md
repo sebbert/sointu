@@ -1205,12 +1205,14 @@ is for that: 0.3 % more bytes for the samples, a second less for each 40 KB.
 
 ### Verified, and not
 
-- The progressive player renders, in parts of any size, the bytes of the
-  one-shot player, for all regression and example songs
-  (`wasm_progressive_test.go`), which other tests compare with the Go synth.
+- The progressive player renders, in parts of different sizes, the bytes of
+  the one-shot player, for all regression and example songs (the first 10 s
+  of the long ones; `wasm_progressive_test.go`), which other tests compare
+  with the Go synth.
 - The pipeline renders the same bytes for every cut the compiler allows in
-  those songs (soundset: all 29), and for songs made for each kind of
-  dependency, where the cuts found are checked too (`wasm_stages_test.go`).
+  the first second of those songs (soundset: all 29), and for songs made for
+  each kind of dependency, where the cuts found are checked too
+  (`wasm_stages_test.go`).
 - In headless Chrome 154 and Firefox 157 (`TestRuntimeInBrowser`, with
   `SOINTU_TEST_BROWSER=1` or `=firefox`): an AudioWorklet records what the
   audio context plays, and it is the one-shot render sample for sample,
