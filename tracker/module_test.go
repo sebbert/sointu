@@ -814,9 +814,10 @@ func TestBuiltinModulePresets(t *testing.T) {
 	}
 }
 
-// The preset Global reverb is the aux signal through the Reverb module. It
-// carries the module, which must be the same as the module preset Reverb, so
-// that a song gets it only once.
+// The preset Global reverb is the aux signal through a reverb unit with the
+// defaults of its type, which are the defaults of the module preset Reverb
+// for the parameters that the two share. It carries no module, and the
+// module preset Reverb can still be added to a song with it.
 func TestGlobalReverbPreset(t *testing.T) {
 	m, _ := newModuleTestModel(t)
 	m.modulePresetPath = t.TempDir()
@@ -827,8 +828,8 @@ func TestGlobalReverbPreset(t *testing.T) {
 			global = p
 		}
 	}
-	if global == nil || len(global.modules) != 1 {
-		t.Fatalf("no preset Global reverb with one module")
+	if global == nil || len(global.modules) != 0 {
+		t.Fatalf("no preset Global reverb without modules")
 	}
 	var reverb *modulePreset
 	for i := range m.modulePresets {
@@ -839,11 +840,7 @@ func TestGlobalReverbPreset(t *testing.T) {
 	if reverb == nil {
 		t.Fatal("no module preset Reverb")
 	}
-	a, b := global.modules[0], reverb.modules[len(reverb.modules)-1]
-	if a.Name != b.Name || moduleKey(&a) != moduleKey(&b) {
-		t.Errorf("the module of the preset Global reverb differs from the module preset Reverb")
-	}
-	// the instrument: in from aux, the module unit, out
+	// the instrument: in from aux, the reverb unit, out
 	units := global.instr.Units
 	var types []string
 	for _, u := range units {
@@ -851,11 +848,22 @@ func TestGlobalReverbPreset(t *testing.T) {
 			types = append(types, u.Type)
 		}
 	}
-	if strings.Join(types, " ") != "in module out" || units[1].Parameters["channel"] != 2 {
-		t.Errorf("the units of the preset: %v", types)
+	if strings.Join(types, " ") != "in reverb out" || units[1].Parameters["channel"] != 2 {
+		t.Fatalf("the units of the preset: %v", types)
 	}
-	// as an instrument of a song it expands and encodes, and the module
-	// preset then adds nothing
+	unit := units[2]
+	for _, p := range sointu.UnitTypes["reverb"].Params {
+		if got, ok := unit.Parameters[p.Name]; !ok || got != p.Default {
+			t.Errorf("the reverb unit of the preset has %s %d (set: %v), the default is %d", p.Name, got, ok, p.Default)
+		}
+	}
+	for _, p := range reverb.modules[len(reverb.modules)-1].Params {
+		if got, ok := unit.Parameters[p.Name]; !ok || got != p.Default {
+			t.Errorf("the reverb unit of the preset has %s %d (set: %v), the module preset Reverb %d", p.Name, got, ok, p.Default)
+		}
+	}
+	// as an instrument of a song it encodes, and the module preset adds
+	// its module
 	func() {
 		defer m.change("Test", SongChange, MajorChange)()
 		instr := global.instr.Copy()
@@ -877,14 +885,15 @@ func TestGlobalReverbPreset(t *testing.T) {
 			presets.SetValue(i)
 		}
 	}
-	if len(m.d.Song.Modules) != n {
-		t.Errorf("adding the module preset Reverb after the preset Global reverb: %d modules, want %d", len(m.d.Song.Modules), n)
+	if len(m.d.Song.Modules) != n+1 {
+		t.Errorf("adding the module preset Reverb after the preset Global reverb: %d modules, want %d", len(m.d.Song.Modules), n+1)
 	}
 }
 
-// Every preset that the tracker comes with and that carries the Reverb
-// module carries it as the module preset Reverb has it; and the Global
-// presets are complete instruments: they expand and encode.
+// A preset that the tracker comes with and that carries the Reverb module
+// carries it as the module preset Reverb has it; the Global presets with a
+// reverb have a reverb unit instead and carry no module. The Global presets
+// are complete instruments: they expand and encode.
 func TestGlobalPresets(t *testing.T) {
 	m, _ := newModuleTestModel(t)
 	m.modulePresetPath = t.TempDir()
@@ -898,7 +907,8 @@ func TestGlobalPresets(t *testing.T) {
 	if reverb == nil {
 		t.Fatal("no module preset Reverb")
 	}
-	want := map[string]int{"Global reverb": 1, "Global mastering": 0, "Global mastering reverb": 1, "Global mastering 2": 0, "Global mastering 2 reverb": 1}
+	want := map[string]int{"Global reverb": 0, "Global mastering": 0, "Global mastering reverb": 0, "Global mastering 2": 0, "Global mastering 2 reverb": 0, "Global mastering 2 drumbus reverb": 0}
+	reverbs := map[string]int{"Global reverb": 1, "Global mastering reverb": 1, "Global mastering 2 reverb": 1, "Global mastering 2 drumbus reverb": 1}
 	for i := range m.presetData.presets {
 		p := &m.presetData.presets[i]
 		if p.user {
@@ -928,6 +938,18 @@ func TestGlobalPresets(t *testing.T) {
 		// the last unit sends the result out
 		if last := song.Patch[0].Units[len(song.Patch[0].Units)-1]; last.Type != "out" {
 			t.Errorf("the preset %s ends in %s, want out", p.instr.Name, last.Type)
+		}
+		n := 0
+		for _, u := range song.Patch[0].Units {
+			if u.Type == "reverb" {
+				n++
+			}
+			if len(sointu.BusParams(u.Type)) > 0 {
+				t.Errorf("the preset %s has the mc unit %s", p.instr.Name, u.Type)
+			}
+		}
+		if n != reverbs[p.instr.Name] {
+			t.Errorf("the preset %s has %d reverb units, want %d", p.instr.Name, n, reverbs[p.instr.Name])
 		}
 	}
 	for name := range want {
@@ -978,7 +1000,7 @@ func TestBuiltinModulePresetsCanonical(t *testing.T) {
 	m.modulePresetPath = t.TempDir()
 	m.loadModulePresets()
 	keys := builtinModuleKeys(t, m)
-	want := map[string]int{"Reverb": 23, "Ducker": 3, "Sidechain": 4, "Ping pong delay": 10, "Ducking reverb": 26, "Ducking delay": 13}
+	want := map[string]int{"Reverb": 23, "Ducker": 3, "Sidechain": 4, "Ping pong delay": 10, "Ducking reverb": 4, "Ducking delay": 13}
 	for i := range m.modulePresets {
 		p := &m.modulePresets[i]
 		if p.file != "" {
@@ -1065,9 +1087,9 @@ func TestDuckingPresets(t *testing.T) {
 	}
 	want := map[string]preset{
 		"Kick ducker":                {1, 18, "out"},
-		"Global ducking reverb":      {2, 28, "out"},
+		"Global ducking reverb":      {1, 6, "out"},
 		"Global ping pong delay":     {1, 12, "outaux"},
-		"Global mastering 2 ducking": {4, 50, "out"},
+		"Global mastering 2 ducking": {3, 28, "out"},
 	}
 	var patch sointu.Patch
 	var modules []sointu.Modules
@@ -1116,11 +1138,14 @@ func TestDuckingPresets(t *testing.T) {
 	// all of them in one song
 	func() {
 		defer m.change("Test", SongChange, MajorChange)()
-		m.d.Song.Modules = nil
+		// each instrument with IDs that the song does not have yet, then
+		// its modules, as when the presets are loaded one after the other
+		m.d.Song.Modules, m.d.Song.Patch = nil, nil
 		for i := range patch {
+			m.assignUnitIDs(patch[i].Units)
+			m.d.Song.Patch = append(m.d.Song.Patch, patch[i])
 			m.importModules(modules[i], patch[i].Units)
 		}
-		m.d.Song.Patch = patch
 	}()
 	names := func() string {
 		var ret []string
@@ -1130,7 +1155,7 @@ func TestDuckingPresets(t *testing.T) {
 		slices.Sort(ret)
 		return strings.Join(ret, ", ")
 	}
-	if got := names(); got != "Ducker, Ducking delay, Ducking reverb, Ping pong delay, Reverb" {
+	if got := names(); got != "Ducker, Ducking delay, Ducking reverb, Ping pong delay" {
 		t.Errorf("the modules of a song with the four presets: %s", got)
 	}
 	for _, instr := range m.d.Song.Patch {
@@ -1140,7 +1165,7 @@ func TestDuckingPresets(t *testing.T) {
 			}
 		}
 	}
-	// the module presets add only the one that no preset uses
+	// the module presets add only the ones that no preset uses
 	m.Instrument().Tab().SetValue(int(InstrumentModulesTab))
 	presets := m.Module().Presets()
 	for i := presets.Range().Min; i <= presets.Range().Max; i++ {

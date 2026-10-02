@@ -4,6 +4,9 @@ import (
 	"maps"
 	"math"
 	"os"
+	"slices"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/vsariola/sointu"
@@ -143,6 +146,151 @@ func TestReverbUnitRendersLikeThePresets(t *testing.T) {
 	unit.Patch[2].Units[1] = reverbUnit(sointu.ParamMap{"size": 64, "decay": 90, "highs": 48, "lows": 72, "mod": 24, "lowcut": 56,
 		"network": 1500, "pretime": 200, "bypass": sointu.ReverbBypassHighcut})
 	compare("examples/reverb.yml", unit, mc)
+}
+
+// withTheModule replaces the reverb units among the units, which must have
+// the parameters that the Reverb module fixes at their defaults, with module
+// units of the module with the ID given: the unit's size, decay, highs, lows,
+// predelay, mod, highcut and lowcut as the parameters of the module, and
+// their bindings as bindings of those. It returns how many it replaced.
+func withTheModule(t testing.TB, units []sointu.Unit, module int) (n int) {
+	t.Helper()
+	shared := []string{"size", "decay", "highs", "lows", "predelay", "mod", "highcut", "lowcut"}
+	for i := range units {
+		u := &units[i]
+		if u.Type != "reverb" {
+			continue
+		}
+		n++
+		c := sointu.Unit{Type: "module", ID: u.ID, Parameters: sointu.ParamMap{"module": module}}
+		for _, p := range sointu.UnitTypes["reverb"].Params {
+			k := slices.Index(shared, p.Name)
+			if k < 0 {
+				if u.Parameters[p.Name] != p.Default {
+					t.Fatalf("a reverb unit with %s %d: the Reverb module has %d", p.Name, u.Parameters[p.Name], p.Default)
+				}
+				continue
+			}
+			name := "p" + strconv.Itoa(k+1)
+			c.Parameters[name] = u.Parameters[p.Name]
+			if b, ok := u.Bind[p.Name]; ok {
+				if c.Bind == nil {
+					c.Bind = map[string]sointu.Binding{}
+				}
+				c.Bind[name] = b
+			}
+		}
+		*u = c
+	}
+	return n
+}
+
+// TestSwitchedPresetsRenderAsBefore checks the presets and the module preset
+// that had the Reverb module before they got a reverb unit: each renders
+// exactly what it renders with the module preset Reverb in place of its
+// reverb unit, which is what it was. The parameters of the Ducking reverb
+// module, which are bound to those of the unit, are set too.
+func TestSwitchedPresetsRenderAsBefore(t *testing.T) {
+	read := func(file string, v any) {
+		t.Helper()
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := yaml.Unmarshal(data, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var reverb struct{ Modules sointu.Modules }
+	read("../tracker/modules/Reverb.yml", &reverb)
+	if len(reverb.Modules) != 1 {
+		t.Fatalf("the module preset Reverb has %d modules", len(reverb.Modules))
+	}
+	// before returns the song with the Reverb module in place of every
+	// reverb unit, of its last instrument and of its modules
+	before := func(name string, song sointu.Song, want int) sointu.Song {
+		t.Helper()
+		old := song.Copy()
+		mod := reverb.Modules[0].Copy()
+		mod.ID = 1000
+		n := withTheModule(t, old.Patch[len(old.Patch)-1].Units, mod.ID)
+		for i := range old.Modules {
+			n += withTheModule(t, old.Modules[i].Units, mod.ID)
+		}
+		old.Modules = append(old.Modules, mod)
+		if n != want {
+			t.Fatalf("%s has %d reverb units, want %d", name, n, want)
+		}
+		return old
+	}
+	compare := func(name string, song sointu.Song, reverbs int) {
+		t.Helper()
+		got, err := sointu.Play(vm.GoSynther{}, song, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		want, err := sointu.Play(vm.GoSynther{}, before(name, song, reverbs), nil)
+		if err != nil {
+			t.Fatalf("%s with the module: %v", name, err)
+		}
+		peak, differing := 0.0, 0
+		for i := range want {
+			for c := range 2 {
+				peak = max(peak, math.Abs(float64(want[i][c])))
+				if got[i][c] != want[i][c] {
+					differing++
+				}
+			}
+		}
+		if peak < 0.01 || len(got) != len(want) || differing > 0 {
+			t.Errorf("%s: %d samples differ from those with the Reverb module (peak %v, %d and %d frames)", name, differing, peak, len(got), len(want))
+		}
+	}
+	for _, name := range []string{"Global reverb", "Global mastering reverb", "Global mastering 2 reverb", "Global mastering 2 drumbus reverb", "Global ducking reverb", "Global mastering 2 ducking"} {
+		var preset struct {
+			sointu.Instrument `yaml:",inline"`
+			Modules           sointu.Modules
+		}
+		read("../tracker/presets/UTIL/"+strings.ReplaceAll(name, " ", "_")+".yml", &preset)
+		song := reverbSong(t, true, reverbSettings["defaults"], false)
+		song.Patch[2], song.Modules = preset.Instrument, preset.Modules
+		for _, u := range preset.Units {
+			if len(sointu.BusParams(u.Type)) > 0 {
+				t.Errorf("%s has the mc unit %s", name, u.Type)
+			}
+		}
+		compare(name, song, 1)
+		// the parameters of the module unit of the Ducking reverb module
+		for i := range song.Patch[2].Units {
+			u := &song.Patch[2].Units[i]
+			if j, ok := song.Modules.Find(u.Parameters["module"]); u.Type == "module" && ok && song.Modules[j].Name == "Ducking reverb" {
+				c := song.Copy()
+				maps.Copy(c.Patch[2].Units[i].Parameters, sointu.ParamMap{"p1": 20, "p2": 70, "p3": 100, "p4": 40, "p5": 90, "p6": 60, "p7": 50, "p8": 20})
+				compare(name+", parameters set", c, 1)
+			}
+		}
+	}
+	// the module preset itself, with the defaults and with every parameter set
+	var ducking struct{ Modules sointu.Modules }
+	read("../tracker/modules/Ducking_reverb.yml", &ducking)
+	if len(ducking.Modules) != 1 {
+		t.Fatalf("the module preset Ducking reverb has %d modules, want 1", len(ducking.Modules))
+	}
+	for name, params := range map[string]sointu.ParamMap{
+		"Ducking reverb":                 {"module": ducking.Modules[0].ID},
+		"Ducking reverb, parameters set": {"module": ducking.Modules[0].ID, "p1": 110, "p2": 40, "p3": 10, "p4": 120, "p5": 0, "p6": 128, "p7": 80, "p8": 30},
+	} {
+		song := reverbSong(t, true, reverbSettings["defaults"], false)
+		song.Patch[2].Units[1] = sointu.Unit{Type: "module", ID: 1000, Parameters: params}
+		song.Modules = ducking.Modules
+		compare(name, song, 1)
+	}
+	// the examples of the sound set, whole songs
+	for _, file := range []string{"soundset_loop.yml"} {
+		var song sointu.Song
+		read("../examples/"+file, &song)
+		compare(file, song, 1)
+	}
 }
 
 // reverbSettings are values for the 8 parameters of the reverb: the defaults,
