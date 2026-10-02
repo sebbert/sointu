@@ -99,3 +99,21 @@ func (p *FeatureSetMacros) WindowOwnLength() bool { return p.set("window", "leng
 func (p *FeatureSetMacros) WindowNoteLength() bool {
 	return p.SupportsParamValue("window", "length", 0) || p.SupportsModulation("window", "length")
 }
+
+func (p *FeatureSetMacros) SpgateInvertOperand() bool  { return vm.SpgateInvertOperand(p.FeatureSet) }
+func (p *FeatureSetMacros) SpphaseModeOperand() bool   { return vm.SpphaseModeOperand(p.FeatureSet) }
+func (p *FeatureSetMacros) SpcombVoicesOperands() bool { return vm.SpcombVoicesOperands(p.FeatureSet) }
+func (p *FeatureSetMacros) SpcombIntervalOperands() bool {
+	return vm.SpcombIntervalOperands(p.FeatureSet)
+}
+
+// SpfilterLow, SpfilterHigh and SpfilterTilt are true when an spfilter unit
+// cuts the lows, cuts the highs or tilts; SpblurFreeze when an spblur unit
+// can freeze; SpscaleScale and SpscaleShift when an spscale unit scales or
+// shifts.
+func (p *FeatureSetMacros) SpfilterLow() bool  { return p.set("spfilter", "low", 0) }
+func (p *FeatureSetMacros) SpfilterHigh() bool { return p.set("spfilter", "high", 128) }
+func (p *FeatureSetMacros) SpfilterTilt() bool { return p.set("spfilter", "tilt", 64) }
+func (p *FeatureSetMacros) SpblurFreeze() bool { return p.set("spblur", "freeze", 0) }
+func (p *FeatureSetMacros) SpscaleScale() bool { return p.set("spscale", "scale", 64) }
+func (p *FeatureSetMacros) SpscaleShift() bool { return p.set("spscale", "shift", 64) }

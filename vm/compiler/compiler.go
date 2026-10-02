@@ -313,7 +313,7 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 				wasmSpectralData
 				wasmMCData
 				wasmUnitFeatures
-			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers, wasmSpectral(encodedPatch), wasmMC(encodedPatch, units, featureSetMacros.MCDelayMod()), units}
+			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers, wasmSpectral(encodedPatch, units), wasmMC(encodedPatch, units, featureSetMacros.MCDelayMod()), units}
 			populatedTemplate, extension, err = com.compile(templateName, &data)
 		}
 		if err != nil {
@@ -337,11 +337,14 @@ func (com *Compiler) compile(templateName string, data interface{}) (string, str
 type wasmSpectralData struct {
 	// SpectrumTable has 4 i32s for each spectrum: offset of its data, base 2
 	// logarithm of its size, the number of spectra written to it and the
-	// number of channels, whose data follow each other.
+	// number of channels, whose data follow each other. Without stereo
+	// spectra in the song (SpectralStereo), it has no channels: 3 i32s.
 	SpectrumTable []uint32
-	// SpectralTable has 4 i32s for each spectral unit: the offset of the
-	// voice that runs it from su_voices, the offset of its state, and the
-	// offsets of its spectrum and source spectrum in SpectrumTable. The state
+	// SpectralTable has 4 i32s for each spectral unit: the offset of its
+	// state, the offsets of its spectrum and source spectrum in
+	// SpectrumTable, and the offset of the voice that runs it from
+	// su_voices; that only when an instrument with spectral units has
+	// several voices (SpectralVoices), otherwise 3 i32s. The state
 	// is the position in its ring, the count of the spectrum it processed
 	// last and the state of its random number generator, 16 bytes, followed
 	// by the rings of spfft and spifft, the held spectrum of spblur and the
@@ -359,21 +362,29 @@ type wasmSpectralData struct {
 	SpectralMaxSize                                      int
 }
 
-const wasmSpectrumTableStride = 16
-
-func wasmSpectral(b *vm.Bytecode) (ret wasmSpectralData) {
+func wasmSpectral(b *vm.Bytecode, f wasmUnitFeatures) (ret wasmSpectralData) {
 	offset := 0
+	stride := 12 // of the spectrum table, in bytes
+	if f.SpectralStereo {
+		stride = 16
+	}
 	for _, sp := range b.Spectra {
-		ret.SpectrumTable = append(ret.SpectrumTable, uint32(offset), uint32(sp.Log2Size), 0, uint32(sp.Channels))
+		ret.SpectrumTable = append(ret.SpectrumTable, uint32(offset), uint32(sp.Log2Size), 0)
+		if f.SpectralStereo {
+			ret.SpectrumTable = append(ret.SpectrumTable, uint32(sp.Channels))
+		}
 		offset += 2 * (1 << sp.Log2Size) * 4 * sp.Channels
 		ret.SpectralMaxLog2 = max(ret.SpectralMaxLog2, sp.Log2Size)
 	}
 	for _, u := range b.SpectralUnits {
 		source := 0
 		if u.Source >= 0 {
-			source = u.Source * wasmSpectrumTableStride
+			source = u.Source * stride
 		}
-		ret.SpectralTable = append(ret.SpectralTable, uint32(u.Voice*4096), uint32(offset), uint32(u.Spectrum*wasmSpectrumTableStride), uint32(source))
+		ret.SpectralTable = append(ret.SpectralTable, uint32(offset), uint32(u.Spectrum*stride), uint32(source))
+		if f.SpectralVoices {
+			ret.SpectralTable = append(ret.SpectralTable, uint32(u.Voice*4096))
+		}
 		offset += 16
 		switch u.Type {
 		case "spfft", "spifft": // a ring for each channel of the unit

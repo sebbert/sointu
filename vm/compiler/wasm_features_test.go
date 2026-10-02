@@ -353,3 +353,116 @@ func spawnFeatureCases() []featureCase {
 func TestSpawnFeaturesWasmMatchGoSynth(t *testing.T) {
 	runFeatureCases(t, spawnFeatureCases())
 }
+
+// the code of the parts of the spectral units, as it is in the player
+const (
+	spVoice     = "(func $spectralVoice"
+	spStereo    = "loop $channels"
+	spRings     = "(func $spifftRing"
+	spMinU      = "(func $minU"
+	spLow       = ";; the low cut"
+	spHigh      = ";; the high cut"
+	spTilt      = ";; the tilt"
+	spLog       = "(func $log2f"
+	spFreeze    = "(func $randomPhase"
+	spTable     = "(func $tablePhase"
+	spRotate    = "(func $rotate"
+	spInvert    = ";; invert\n"
+	spInverted  = ";; inverted"
+	spMode      = ";; the mode of the phases"
+	spDisperse  = ";; disperse\n"
+	spRandom    = ";; random\n"
+	spRobot     = ";; robot\n"
+	spScale     = "(local.set $j (f32.mul (local.get $j) (local.get $ratio)))"
+	spShift     = "(local.set $j (f32.add (local.get $j) (local.get $offset)))"
+	spVoices    = ";; the voices of the notes"
+	spIntervals = "loop $intervalLoop"
+)
+
+var spAllParts = []string{spVoice, spStereo, spRings, spMinU, spLow, spHigh, spTilt, spLog, spFreeze, spTable, spRotate, spInvert, spInverted, spMode, spDisperse, spRandom, spRobot, spScale, spShift, spVoices, spIntervals}
+
+// spChain is an instrument of noise into spfft, the units, all on spectrum
+// 1, and spifft to the output.
+func spChain(stereo int, units ...sointu.Unit) []sointu.Unit {
+	ret := append(fsource("noise", stereo), fu("spfft", sointu.ParamMap{"stereo": stereo, "size": 1, "buffer": 1}))
+	for _, u := range units {
+		if _, ok := u.Parameters["buffer"]; !ok && len(sointu.SpectrumBufferParams(u.Type)) > 0 {
+			u.Parameters["buffer"] = 1
+		}
+		ret = append(ret, u)
+	}
+	return append(ret, fu("spifft", sointu.ParamMap{"stereo": stereo, "buffer": 1}), fu("out", sointu.ParamMap{"stereo": stereo, "gain": 128}))
+}
+
+func spectralFeatureCases() []featureCase {
+	type M = sointu.ParamMap
+	one := func(name string, has []string, units ...sointu.Unit) featureCase {
+		return featureCase{name: name, song: fsong(nil, spChain(0, units...)), has: has, not: without(spAllParts, has...)}
+	}
+	c := func(name string, has []string, song sointu.Song) featureCase {
+		return featureCase{name: name, song: song, has: has, not: without(spAllParts, has...)}
+	}
+	phase := func(mode int) sointu.Unit { return fu("spphase", M{"mode": mode, "amount": 50}) }
+	held := cat(fsource("saw", 0), []sointu.Unit{fu("out", M{"stereo": 0, "gain": 64})})
+	// an envelope that freezes the spblur with the ID 9 a while after the note starts
+	freeze := []sointu.Unit{fu("envelope", M{"attack": 72, "decay": 64, "sustain": 128, "release": 64}), fu("send", M{"amount": 128, "target": 9, "port": 1, "sendpop": 1})}
+	// a second, mono spectrum, analysed from noise
+	second := []sointu.Unit{fu("noise", M{"gain": 64}), fu("spfft", M{"size": 1, "buffer": 2})}
+	return []featureCase{
+		one("plain", nil),
+		c("stereo", []string{spStereo, spRings}, fsong(nil, spChain(1))),
+		c("stereo with a mono resynthesis", []string{spStereo, spRings}, fsong(nil, cat(fsource("noise", 1), []sointu.Unit{fu("spfft", M{"stereo": 1, "size": 1, "buffer": 1}), fu("spifft", M{"buffer": 1}), fu("out", M{"stereo": 0, "gain": 128})}))),
+		c("mono with a stereo resynthesis", nil, fsong(nil, cat(fsource("noise", 0), []sointu.Unit{fu("spfft", M{"size": 1, "buffer": 1}), fu("spifft", M{"stereo": 1, "buffer": 1}), fu("out", M{"stereo": 1, "gain": 128})}))),
+		c("two voices", []string{spVoice}, fsong([]int{2}, spChain(0, fu("spgate", nil)))),
+		c("two voices next to one", nil, fsong([]int{1, 2}, spChain(0, fu("spgate", nil)), held)),
+		one("filter with defaults", nil, fu("spfilter", nil)),
+		one("low cut", []string{spLow}, fu("spfilter", M{"low": 60})),
+		one("high cut", []string{spHigh}, fu("spfilter", M{"high": 90})),
+		one("tilt", []string{spTilt, spLog}, fu("spfilter", M{"tilt": 40})),
+		one("low and high cut", []string{spLow, spHigh}, fu("spfilter", M{"low": 40, "high": 100})),
+		one("low cut and tilt", []string{spLow, spTilt, spLog}, fu("spfilter", M{"low": 40, "tilt": 80})),
+		one("high cut and tilt", []string{spHigh, spTilt, spLog}, fu("spfilter", M{"high": 100}), fu("spfilter", M{"tilt": 80})),
+		c("low cut modulated", []string{spLow}, fsong(nil, cat(fmod(9, 0, 100), spChain(0, fu("spfilter", M{"id": 9}))))),
+		c("high cut modulated", []string{spHigh}, fsong(nil, cat(fmod(9, 1, 20), spChain(0, fu("spfilter", M{"id": 9}))))),
+		c("tilt modulated", []string{spTilt, spLog}, fsong(nil, cat(fmod(9, 2, 90), spChain(0, fu("spfilter", M{"id": 9}))))),
+		one("compress", []string{spLog}, fu("spcompress", nil)),
+		one("blur", nil, fu("spblur", nil)),
+		// frozen from the start, the spectrum is silent: the other instrument is heard
+		c("frozen", []string{spFreeze, spTable}, fsong(nil, spChain(0, fu("spblur", M{"freeze": 128})), held)),
+		c("freeze modulated", []string{spFreeze, spTable}, fsong(nil, cat(freeze, spChain(0, fu("spblur", M{"id": 9}))))),
+		one("gate", nil, fu("spgate", M{"threshold": 50})),
+		one("gate inverted", []string{spInverted}, fu("spgate", M{"threshold": 112, "invert": 1})),
+		one("gate and gate inverted", []string{spInvert}, fu("spgate", M{"threshold": 80, "invert": 1}), fu("spgate", M{"threshold": 40})),
+		one("disperse", []string{spDisperse, spTable, spRotate}, phase(0)),
+		one("random", []string{spRandom, spTable, spRotate}, phase(1)),
+		one("robot", []string{spRobot}, phase(2)),
+		one("two robots", []string{spRobot}, phase(2), fu("spphase", M{"mode": 2, "amount": 100})),
+		one("disperse and random", []string{spMode, spDisperse, spRandom, spTable, spRotate}, phase(1), phase(0)),
+		one("disperse and robot", []string{spMode, spDisperse, spRobot, spTable, spRotate}, phase(2), phase(0)),
+		one("random and robot", []string{spMode, spRandom, spRobot, spTable, spRotate}, phase(2), phase(1)),
+		one("all phase modes", []string{spMode, spDisperse, spRandom, spRobot, spTable, spRotate}, phase(2), phase(1), phase(0)),
+		one("scale with defaults", nil, fu("spscale", nil)),
+		one("scale", []string{spScale}, fu("spscale", M{"scale": 80})),
+		one("shift", []string{spShift}, fu("spscale", M{"shift": 70})),
+		one("scale and shift", []string{spScale, spShift}, fu("spscale", M{"scale": 50, "shift": 60})),
+		c("shift modulated", []string{spShift}, fsong(nil, cat(fmod(9, 1, 70), spChain(0, fu("spscale", M{"id": 9}))))),
+		one("formant", nil, fu("spformant", M{"shift": 80})),
+		one("comb", nil, fu("spcomb", nil)),
+		one("comb with intervals", []string{spIntervals}, fu("spcomb", M{"interval1": 7, "interval3": 12})),
+		c("comb with the notes of an instrument", []string{spVoices}, fsong([]int{1, 2}, spChain(0, fu("spcomb", M{"instrument": 2})), held)),
+		c("comb with both", []string{spVoices, spIntervals}, fsong([]int{1, 2}, spChain(0, fu("spcomb", M{"instrument": 2}), fu("spcomb", M{"interval2": 4})), held)),
+		c("copy", []string{spMinU}, fsong(nil, cat(second, spChain(0, fu("spcopy", M{"source": 2}))))),
+		c("cross", []string{spLog}, fsong(nil, cat(second, spChain(0, fu("spcross", M{"source": 2}))))),
+		c("cross stereo", []string{spLog, spStereo, spRings, spMinU}, fsong(nil, cat(second, spChain(1, fu("spcross", M{"source": 2}))))),
+		c("everything", without(spAllParts, spInverted), fsong([]int{2, 2}, cat(second, freeze, spChain(1,
+			fu("spfilter", M{"low": 20, "high": 120, "tilt": 70}), fu("spcompress", M{"attack": 40}), fu("spblur", M{"id": 9}), fu("spgate", nil), fu("spgate", M{"invert": 1, "threshold": 127}),
+			phase(0), phase(1), phase(2), fu("spscale", M{"scale": 70, "shift": 60}), fu("spformant", M{"shift": 50}), fu("spcross", M{"source": 2, "amount": 60}),
+			fu("spcomb", M{"instrument": 2, "interval1": 7, "amount": 60}), fu("spcopy", M{"source": 1, "buffer": 2}))), held)),
+	}
+}
+
+// TestSpectralFeaturesWasmMatchGoSynth checks the parts of the spectral
+// units that the wasm player only has when the song uses them.
+func TestSpectralFeaturesWasmMatchGoSynth(t *testing.T) {
+	runFeatureCases(t, spectralFeatureCases())
+}

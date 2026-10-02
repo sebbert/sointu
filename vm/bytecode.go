@@ -271,9 +271,13 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				b.operand(len(b.SpectralUnits))
 				switch unit.Type {
 				case "spgate":
-					b.operand(p["invert"] & 1)
+					if SpgateInvertOperand(featureSet) {
+						b.operand(p["invert"] & 1)
+					}
 				case "spphase":
-					b.operand(min(max(p["mode"], 0), 2))
+					if SpphaseModeOperand(featureSet) {
+						b.operand(min(max(p["mode"], 0), 2))
+					}
 				case "spcompress":
 					if u.Smooth {
 						b.operand(attack, release)
@@ -285,7 +289,12 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 					if t := p["instrument"] - 1; t >= 0 && t < len(patch) {
 						first, count = patch.FirstVoiceForInstrument(t), patch[t].NumVoices
 					}
-					b.operand(first, count, p["interval1"], p["interval2"], p["interval3"])
+					if SpcombVoicesOperands(featureSet) {
+						b.operand(first, count)
+					}
+					if SpcombIntervalOperands(featureSet) {
+						b.operand(p["interval1"], p["interval2"], p["interval3"])
+					}
 				}
 				b.SpectralUnits = append(b.SpectralUnits, u)
 			case "mcspread", "mcsum", "mcdelay", "mcmix", "mcloop", "mcloopend", "mcfilter":

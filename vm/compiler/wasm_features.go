@@ -16,6 +16,10 @@ type wasmUnitFeatures struct {
 	SpectralVoices bool // the same for spectral units
 	SpectralStereo bool // a spectrum has two channels
 
+	SpphaseDisperse bool // an spphase unit has the mode disperse
+	SpphaseRandom   bool
+	SpphaseRobot    bool
+
 	BandlimitSine   bool // a sine oscillator is bandlimited
 	BandlimitTrisaw bool
 	BandlimitPulse  bool
@@ -48,6 +52,16 @@ func unitFeatures(song *sointu.Song, b *vm.Bytecode) (f wasmUnitFeatures) {
 				f.MCVoices = f.MCVoices || instr.NumVoices > 1
 			case len(sointu.SpectrumBufferParams(u.Type)) > 0:
 				f.SpectralVoices = f.SpectralVoices || instr.NumVoices > 1
+				if u.Type == "spphase" {
+					switch min(max(p["mode"], 0), 2) { // like vm.NewBytecode
+					case 0:
+						f.SpphaseDisperse = true
+					case 1:
+						f.SpphaseRandom = true
+					default:
+						f.SpphaseRobot = true
+					}
+				}
 			case u.Type == "oscillator" && sointu.OscillatorBandlimited(u):
 				switch p["type"] {
 				case sointu.Sine:

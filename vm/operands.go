@@ -41,6 +41,31 @@ func MCDelayFlagsOperand(f FeatureSet) bool {
 	return f.SupportsParamValue("mcdelay", "notetracking", 1) || f.SupportsParamValue("mcdelay", "allpass", 1)
 }
 
+// SpgateInvertOperand is true when some spgate units invert and others do
+// not.
+func SpgateInvertOperand(f FeatureSet) bool {
+	return !uniformParam(f, "spgate", "invert", 0, 1)
+}
+
+// SpphaseModeOperand is true when the spphase units have different modes.
+func SpphaseModeOperand(f FeatureSet) bool {
+	return !uniformParam(f, "spphase", "mode", 0, 1, 2)
+}
+
+// SpcombVoicesOperands is true when an spcomb unit takes its notes from an
+// instrument: the units then have the first voice and the number of voices.
+func SpcombVoicesOperands(f FeatureSet) bool {
+	return f.SupportsParamValueOtherThan("spcomb", "instrument", 0)
+}
+
+// SpcombIntervalOperands is true when an spcomb unit has an interval: the
+// units then have the three intervals.
+func SpcombIntervalOperands(f FeatureSet) bool {
+	return f.SupportsParamValueOtherThan("spcomb", "interval1", 0) ||
+		f.SupportsParamValueOtherThan("spcomb", "interval2", 0) ||
+		f.SupportsParamValueOtherThan("spcomb", "interval3", 0)
+}
+
 // SpawnFlagsOperand is true when the spawn units differ in mode, note
 // tracking, number of arguments or stealing.
 func SpawnFlagsOperand(f FeatureSet) bool {

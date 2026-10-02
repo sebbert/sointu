@@ -135,7 +135,7 @@
 )
 {{- end}}
 
-{{- if or (and (not .MathImports) (.HasOp "compressor")) (.HasOp "spfilter") (.HasOp "spcompress") (.HasOp "spcross") (.HasOp "ott")}}
+{{- if or (and (not .MathImports) (.HasOp "compressor")) .SpfilterTilt (.HasOp "spcompress") (.HasOp "spcross") (.HasOp "ott")}}
 ;; $log2f, $exp2f, $powf and $sinTurns are the float32 math functions of the
 ;; player, computed like log2f, exp2f, powf and sinTurns in vm/mathf.go,
 ;; operation by operation, so that the Go synth renders exactly the same.
