@@ -86,3 +86,16 @@ func (p *FeatureSetMacros) MCSpreadGain() bool   { return p.set("mcspread", "gai
 func (p *FeatureSetMacros) MCSumGain() bool      { return p.set("mcsum", "gain", 64) }
 func (p *FeatureSetMacros) MCSumWidth() bool     { return p.set("mcsum", "width", 64) }
 func (p *FeatureSetMacros) MCLoopFeedback() bool { return p.set("mcloop", "feedback", 128) }
+
+func (p *FeatureSetMacros) SpawnFlagsOperand() bool { return vm.SpawnFlagsOperand(p.FeatureSet) }
+
+// SpawnTranspose and SpawnLength are true when a spawn unit transposes its
+// notes or gives them a length; WindowOwnLength when a window unit has a
+// length of its own, and WindowNoteLength when one takes the length of the
+// spawned note.
+func (p *FeatureSetMacros) SpawnTranspose() bool  { return p.set("spawn", "transpose", 64) }
+func (p *FeatureSetMacros) SpawnLength() bool     { return p.set("spawn", "length", 0) }
+func (p *FeatureSetMacros) WindowOwnLength() bool { return p.set("window", "length", 0) }
+func (p *FeatureSetMacros) WindowNoteLength() bool {
+	return p.SupportsParamValue("window", "length", 0) || p.SupportsModulation("window", "length")
+}

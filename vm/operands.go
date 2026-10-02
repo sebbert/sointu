@@ -40,3 +40,12 @@ func MCFilterTypeOperand(f FeatureSet) bool {
 func MCDelayFlagsOperand(f FeatureSet) bool {
 	return f.SupportsParamValue("mcdelay", "notetracking", 1) || f.SupportsParamValue("mcdelay", "allpass", 1)
 }
+
+// SpawnFlagsOperand is true when the spawn units differ in mode, note
+// tracking, number of arguments or stealing.
+func SpawnFlagsOperand(f FeatureSet) bool {
+	return !(uniformParam(f, "spawn", "mode", sointu.SpawnModeRate, sointu.SpawnModeEdge, sointu.SpawnModeSync) &&
+		uniformParam(f, "spawn", "notetracking", 0, 1) &&
+		uniformParam(f, "spawn", "args", 0, 1, 2, 3, 4) &&
+		uniformParam(f, "spawn", "steal", 0, 1))
+}

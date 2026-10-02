@@ -346,7 +346,8 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				// operands: first voice and number of voices of the target
 				// instrument, and flags: bit 0 = edge mode, bit 1 = note
 				// tracking, bits 2-4 = number of arguments, bit 5 = sync mode,
-				// bit 6 = steal held voices
+				// bit 6 = steal held voices; the flags only in songs whose
+				// spawn units differ in them
 				first, count := 0, 0
 				if t := p["instrument"] - 1; t >= 0 && t < len(patch) {
 					first, count = patch.FirstVoiceForInstrument(t), patch[t].NumVoices
@@ -361,7 +362,10 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				case sointu.SpawnModeSync:
 					flags |= 32
 				}
-				b.operand(first, count, flags)
+				b.operand(first, count)
+				if SpawnFlagsOperand(featureSet) {
+					b.operand(flags)
+				}
 			case "window":
 				b.op(opcode)
 				b.defOperands(unit)

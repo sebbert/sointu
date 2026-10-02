@@ -228,3 +228,128 @@ func mcFeatureCases() []featureCase {
 func TestMCFeaturesWasmMatchGoSynth(t *testing.T) {
 	runFeatureCases(t, mcFeatureCases())
 }
+
+// the code of the parts of spawn and window, as it is in the player
+const (
+	spawnFlags      = ";; the flags of the spawn"
+	spawnEdge       = ";; the input of the edge mode"
+	spawnModes      = "(i32.const 1)) (then ;; edge mode"
+	spawnSync       = ";; spawns per beat"
+	spawnRate       = ";; spawns per second"
+	spawnRates      = ";; sync: spawns per beat"
+	spawnArgs       = "(func $spawnDropArgs"
+	spawnSteal      = "(local.get $busy)) ;; steal"
+	spawnStealFlag  = "(i32.const 64)) (i32.const 0))"
+	spawnTracking   = ";; note tracking"
+	spawnTrackFlag  = "(i32.const 2)) ;; note tracking"
+	spawnNoTracking = "(local.set $n (f32.const 60))"
+	spawnTranspose  = ";; transpose"
+	spawnLength     = ";; release the notes"
+	spawnNoTarget   = "(i32.ne (local.get $count) (i32.const 0))"
+	lengthFrames    = "(func $lengthFrames"
+	windowNote      = ";; the length of the spawned note"
+	windowOwn       = "(local.set $frames (f32.max (call $lengthFrames"
+	windowClamp     = "(f32.const 0)) (f32.const 1))\n        (f32.const 0.5)"
+)
+
+var spawnAllParts = []string{spawnFlags, spawnEdge, spawnModes, spawnSync, spawnRate, spawnRates, spawnArgs, spawnSteal, spawnStealFlag, spawnTracking, spawnTrackFlag, spawnNoTracking, spawnTranspose, spawnLength, spawnNoTarget, lengthFrames, windowNote, windowOwn, windowClamp}
+
+// spawnSong is a song of an instrument of 3 voices that is only spawned,
+// and an instrument for each spawn unit, which gets a constant for each
+// argument and, in edge mode, noise as its input. The spawned voices put
+// their envelope times the first argument and the window on the left and
+// their note on the right. mods are sends of noise to ports of the first
+// spawn unit, windowMod one to a port of the window, if not -1. Like
+// TestSpawnWasmMatchesGoSynth, it has no oscillators.
+func spawnSong(window sointu.ParamMap, mods map[int]int, windowMod int, spawners ...sointu.ParamMap) sointu.Song {
+	type M = sointu.ParamMap
+	target := []sointu.Unit{fu("envelope", M{"attack": 32, "decay": 64, "sustain": 64, "release": 64})}
+	args := 0
+	for _, s := range spawners {
+		args = max(args, s["args"])
+	}
+	if args > 0 {
+		target = append(target, fu("arg", M{"index": 0}), fu("mulp", M{"stereo": 0}))
+	}
+	if window != nil {
+		if windowMod >= 0 {
+			target = append(target, fu("noise", M{"gain": 128}), fu("send", M{"amount": 96, "target": 50, "port": windowMod, "sendpop": 1}))
+		}
+		w := fu("window", window)
+		w.ID = 50
+		target = append(target, w, fu("mulp", M{"stereo": 0}))
+	}
+	target = append(target, fu("loadnote", nil), fu("out", M{"stereo": 1, "gain": 128}))
+	song := sointu.Song{BPM: 120, RowsPerBeat: 4, Score: sointu.Score{RowsPerPattern: 16, Length: 1}}
+	song.Patch = append(song.Patch, sointu.Instrument{NumVoices: 3, Units: target})
+	song.Score.Tracks = append(song.Score.Tracks, sointu.Track{NumVoices: 3, Order: sointu.Order{0}, Patterns: []sointu.Pattern{{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}}})
+	patterns := []sointu.Pattern{{60, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 72, 1, 1, 1}, {1, 1, 55, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1}}
+	for i, s := range spawners {
+		var units []sointu.Unit
+		if i == 0 {
+			for port, amount := range mods {
+				units = append(units, fu("noise", M{"gain": 128}), fu("send", M{"amount": amount, "target": 60, "port": port, "sendpop": 1}))
+			}
+		}
+		for a := range s["args"] {
+			units = append(units, fu("loadval", M{"value": 128 - 20*a - 10*i}))
+		}
+		if s["mode"] == sointu.SpawnModeEdge {
+			units = append(units, fu("noise", M{"gain": 128}))
+		}
+		u := fu("spawn", M{"instrument": 1, "rate": 88 + 6*i})
+		for k, v := range s {
+			u.Parameters[k] = v
+		}
+		u.ID = 60 + i
+		song.Patch = append(song.Patch, sointu.Instrument{NumVoices: 1, Units: append(units, u)})
+		song.Score.Tracks = append(song.Score.Tracks, sointu.Track{NumVoices: 1, Order: sointu.Order{0}, Patterns: []sointu.Pattern{patterns[i%2]}})
+	}
+	return song
+}
+
+func spawnFeatureCases() []featureCase {
+	type M = sointu.ParamMap
+	c := func(name string, has []string, song sointu.Song) featureCase {
+		return featureCase{name: name, song: song, has: has, not: without(spawnAllParts, has...)}
+	}
+	edge, sync := M{"mode": sointu.SpawnModeEdge}, M{"mode": sointu.SpawnModeSync, "rate": 80}
+	return []featureCase{
+		c("rate", []string{spawnRate, spawnTracking}, spawnSong(nil, nil, -1, M{})),
+		c("two at a rate", []string{spawnRate, spawnTracking}, spawnSong(nil, nil, -1, M{}, M{})),
+		c("sync", []string{spawnSync, spawnTracking}, spawnSong(nil, nil, -1, sync)),
+		c("edge", []string{spawnEdge, spawnTracking}, spawnSong(nil, nil, -1, edge)),
+		c("rate and sync", []string{spawnFlags, spawnRate, spawnSync, spawnRates, spawnTracking}, spawnSong(nil, nil, -1, M{}, sync)),
+		c("rate and edge", []string{spawnFlags, spawnRate, spawnEdge, spawnModes, spawnTracking}, spawnSong(nil, nil, -1, M{}, edge)),
+		c("sync and edge", []string{spawnFlags, spawnSync, spawnEdge, spawnModes, spawnTracking}, spawnSong(nil, nil, -1, edge, sync)),
+		c("all modes", []string{spawnFlags, spawnRate, spawnSync, spawnRates, spawnEdge, spawnModes, spawnTracking}, spawnSong(nil, nil, -1, M{}, edge, sync)),
+		c("no tracking", []string{spawnRate, spawnNoTracking}, spawnSong(nil, nil, -1, M{"notetracking": 0})),
+		c("tracking and not", []string{spawnFlags, spawnRate, spawnTracking, spawnTrackFlag}, spawnSong(nil, nil, -1, M{"notetracking": 0, "transpose": 64}, M{})),
+		c("steal", []string{spawnRate, spawnTracking, spawnSteal}, spawnSong(nil, nil, -1, M{"steal": 1, "rate": 100})),
+		c("steal and not", []string{spawnFlags, spawnRate, spawnTracking, spawnSteal, spawnStealFlag}, spawnSong(nil, nil, -1, M{"steal": 1, "rate": 100}, M{"rate": 100})),
+		c("arguments", []string{spawnRate, spawnTracking, spawnArgs}, spawnSong(nil, nil, -1, M{"args": 2})),
+		c("arguments and none", []string{spawnFlags, spawnRate, spawnTracking, spawnArgs}, spawnSong(nil, nil, -1, M{"args": 1}, M{})),
+		c("one and three arguments", []string{spawnFlags, spawnRate, spawnTracking, spawnArgs}, spawnSong(nil, nil, -1, M{"args": 1}, M{"args": 3})),
+		c("edge with arguments", []string{spawnEdge, spawnTracking, spawnArgs}, spawnSong(nil, nil, -1, M{"mode": sointu.SpawnModeEdge, "args": 1})),
+		c("transpose", []string{spawnRate, spawnTracking, spawnTranspose}, spawnSong(nil, nil, -1, M{"transpose": 71})),
+		c("transpose modulated", []string{spawnRate, spawnTracking, spawnTranspose}, spawnSong(nil, map[int]int{1: 80}, -1, M{})),
+		c("length", []string{spawnRate, spawnTracking, spawnLength, lengthFrames}, spawnSong(nil, nil, -1, M{"length": 40})),
+		c("length modulated", []string{spawnRate, spawnTracking, spawnLength, lengthFrames}, spawnSong(nil, map[int]int{2: 90}, -1, M{})),
+		c("no target", []string{spawnRate, spawnTracking, spawnNoTarget}, spawnSong(nil, nil, -1, M{}, M{"instrument": 0})),
+		c("no target with length and arguments", []string{spawnFlags, spawnRate, spawnTracking, spawnNoTarget, spawnLength, lengthFrames, spawnArgs}, spawnSong(nil, nil, -1, M{"length": 40}, M{"instrument": 0, "args": 2})),
+		c("window of the note", []string{spawnRate, spawnTracking, spawnLength, lengthFrames, windowNote}, spawnSong(M{}, nil, -1, M{"length": 50})),
+		c("window of the note without a length", []string{spawnRate, spawnTracking, windowNote}, spawnSong(M{}, nil, -1, M{})),
+		c("window with a length", []string{spawnRate, spawnTracking, lengthFrames, windowOwn}, spawnSong(M{"length": 50, "shape": 60}, nil, -1, M{})),
+		c("window with a modulated shape", []string{spawnRate, spawnTracking, lengthFrames, windowOwn, windowClamp}, spawnSong(M{"length": 50}, nil, 1, M{})),
+		c("window with a modulated length", []string{spawnRate, spawnTracking, lengthFrames, windowNote, windowOwn}, spawnSong(M{"length": 40}, nil, 0, M{})),
+		c("everything", without(spawnAllParts, spawnNoTracking, windowOwn), spawnSong(M{"length": 0, "shape": 80}, map[int]int{0: 70, 1: 80, 2: 75}, 1,
+			M{"args": 2, "steal": 1, "length": 30}, M{"mode": sointu.SpawnModeEdge, "notetracking": 0, "args": 1}, M{"mode": sointu.SpawnModeSync, "rate": 90, "instrument": 9},
+			M{"mode": sointu.SpawnModeSync, "rate": 96, "transpose": 59})),
+	}
+}
+
+// TestSpawnFeaturesWasmMatchGoSynth checks the parts of spawn and window
+// that the wasm player only has when the song uses them.
+func TestSpawnFeaturesWasmMatchGoSynth(t *testing.T) {
+	runFeatureCases(t, spawnFeatureCases())
+}

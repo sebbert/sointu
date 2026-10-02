@@ -516,7 +516,7 @@
 {{end}}
 
 
-{{- if or (.HasOp "spawn") (.HasOp "window")}}
+{{- if or .SpawnLength .WindowOwnLength}}
 ;; $lengthFrames returns the length in frames of a spawn or window unit for its
 ;; length parameter: 100 ms at the middle, doubling every 8 steps
 (func $lengthFrames (param $length f32) (result f32)
@@ -542,21 +542,35 @@
     ))
     (local.set $age (i32.load (global.get $WRK)))
     (i32.store (global.get $WRK) (i32.add (local.get $age) (i32.const 1)))
+{{- if .WindowNoteLength}}
     (local.set $frames (f32.convert_i32_u (i32.load offset=32 (global.get $voice)))) ;; the length of the spawned note
+{{- end}}
+{{- if .WindowOwnLength}}
+{{- if .WindowNoteLength}}
     (if (f32.gt (call $input (i32.const {{.InputNumber "window" "length"}})) (f32.const 0)) (then
+{{- end}}
         (local.set $frames (f32.max (call $lengthFrames (call $input (i32.const {{.InputNumber "window" "length"}}))) (f32.const 1)))
+{{- if .WindowNoteLength}}
     ))
+{{- end}}
+{{- end}}
+{{- if .WindowNoteLength}}
     (if (f32.eq (local.get $frames) (f32.const 0)) (then
         (call $push (f32.const 1)) ;; a note without a length
         return
     ))
+{{- end}}
     (local.set $t (f32.div (f32.convert_i32_u (local.get $age)) (local.get $frames)))
     (if (f32.ge (local.get $t) (f32.const 1)) (then
         (call $push (f32.const 0))
         return
     ))
     (local.set $half (f32.mul
+{{- if .SupportsModulation "window" "shape"}}
         (f32.min (f32.max (call $input (i32.const {{.InputNumber "window" "shape"}})) (f32.const 0)) (f32.const 1))
+{{- else}}
+        (call $input (i32.const {{.InputNumber "window" "shape"}})) ;; not modulated: within 0 and 1
+{{- end}}
         (f32.const 0.5)
     ))
     (local.set $d (f32.min (local.get $t) (f32.sub (f32.const 1) (local.get $t))))
