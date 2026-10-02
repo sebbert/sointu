@@ -110,10 +110,36 @@ func RemoteUnitTypes(name string) (string, error) {
 			if p.CanSet {
 				fmt.Fprintf(&b, " %d..%d, default %d", p.MinValue, p.MaxValue, p.Default)
 				if p.DisplayFunc != nil && p.MaxValue > p.MinValue {
-					lo, unit := p.DisplayFunc(p.MinValue)
-					def, _ := p.DisplayFunc(p.Default)
-					hi, _ := p.DisplayFunc(p.MaxValue)
-					fmt.Fprintf(&b, " (displayed as %s .. %s .. %s %s)", lo, def, hi, unit)
+					// what the values mean, at enough of them to choose one
+					step := max((p.MaxValue-p.MinValue)/16, 1)
+					if step > 1 {
+						step = 8
+					}
+					var at []int
+					for v := p.MinValue; v <= p.MaxValue && len(at) < 40; v += step {
+						at = append(at, v)
+						if v+step > p.MaxValue && v != p.MaxValue {
+							at = append(at, p.MaxValue)
+						}
+					}
+					_, unit := p.DisplayFunc(p.MinValue)
+					for _, v := range at {
+						if _, u := p.DisplayFunc(v); u != unit {
+							unit = "" // e.g. ms and s: each value with its unit
+						}
+					}
+					values := make([]string, len(at))
+					for i, v := range at {
+						value, u := p.DisplayFunc(v)
+						if unit == "" && u != "" {
+							value += " " + u
+						}
+						values[i] = fmt.Sprintf("%d=%s", v, value)
+					}
+					if unit != "" {
+						unit = " in " + unit
+					}
+					fmt.Fprintf(&b, "; displayed%s: %s", unit, strings.Join(values, ", "))
 				}
 			} else {
 				b.WriteString(" (no value: a port for sends only)")

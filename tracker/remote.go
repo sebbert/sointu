@@ -1228,7 +1228,7 @@ func (r *Remote) PlayNote(ref string, note int, duration time.Duration) (string,
 		return "", err
 	}
 	if note < 2 || note > 255 {
-		return "", errors.New("a note is 2 to 255: 60 is C4")
+		return "", errors.New("a note is 2 to 255: 60 is C-3 in the tracker")
 	}
 	duration = min(max(duration, 10*time.Millisecond), 30*time.Second)
 	frames := func() int64 { return time.Now().UnixMicro() * 441 / 10000 } // the clock of the source, in frames

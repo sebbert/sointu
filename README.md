@@ -190,6 +190,24 @@ bundle:
 xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/CLAP/sointu-clap.clap
 ```
 
+### Sointu-mcp
+
+An [MCP](https://modelcontextprotocol.io/) server, through which Claude (or
+another MCP client) reads and changes the patch of a running tracker or
+plugin instance, and renders notes offline to measure them. Turn it on in
+the tracker or the plugin window with Edit → Let Claude edit (MCP); it is
+off by default and listens only on a unix socket in your configuration
+directory, never on the network. Then build the command and register it
+with Claude Code:
+
+```
+make mcp                                                  # builds out/sointu-mcp
+claude mcp add --scope user sointu -- "$PWD/out/sointu-mcp"
+```
+
+See [FORK.md](FORK.md#mcp-claude-edits-the-patch) for the tools and how it
+works.
+
 ### Sointu-compile
 
 The command line interface to it is [sointu-compile](cmd/sointu-compile/main.go)

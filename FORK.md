@@ -3,7 +3,8 @@
 This branch of Sointu adds macOS and CLAP plugins, audio samples and buffers,
 granular synthesis, spectral processing, modules (reusable blocks of units),
 a graphical parametric equalizer, up to 255 voices and 16 output channels
-(seven aux pairs). Most of the new
+(seven aux pairs), and an [MCP server](#mcp-claude-edits-the-patch) through
+which Claude reads and changes the patch of a running tracker or plugin. Most of the new
 synthesis features exist only in the Go synth and the WebAssembly player; the
 x86 players (`vm/compiler/templates/amd64-386`) and the native bridge were left
 behind on purpose. The [x86 backend](#updating-the-x86-backend) section lists
@@ -1569,6 +1570,159 @@ the last time they were asked for, the synth records nothing).
   (every preset and both songs render in the wasm player exactly as in the
   Go synth; the long song takes most of two minutes and runs only with
   `SOINTU_TEST_LONG=1`, see [Tests](#tests)).
+
+## MCP: Claude edits the patch
+
+A language model, e.g. Claude in Claude Code, can read and change the patch
+of a running tracker or plugin instance, through the Model Context Protocol:
+it sees the instruments and units as the tracker shows them, changes them
+as the user would, and renders notes offline to measure what a change did.
+The user hears and sees every change at once, and undoes it like any other.
+
+**Turning it on.** Edit → Let Claude edit (MCP), in the tracker or a plugin
+window. It is off by default; the choice is saved in the user's
+`preferences.yml` (`mcp: enabled:`), so every tracker and plugin instance
+started after that listens too. Instances that are already open change
+when their own menu is used.
+
+**Connecting Claude Code.** Build the command and register it once:
+
+```
+make mcp                                   # out/sointu-mcp
+claude mcp add --scope user sointu -- "$PWD/out/sointu-mcp"
+```
+
+or in a project's `.mcp.json`:
+
+```json
+{"mcpServers": {"sointu": {"command": "/path/to/sointu-mcp"}}}
+```
+
+`sointu-mcp -list` prints the instances that are listening.
+
+**How it is built.** A plugin runs in the host's process, which Claude Code
+does not start, so its standard input and output cannot be the server's.
+Instead:
+
+```
+Claude Code --stdio--> sointu-mcp --unix socket--> tracker, plugin instances
+```
+
+- Each instance (`tracker/mcp.Host`) listens on a unix socket
+  `<config>/sointu/mcp/<kind>-<pid>-<n>.sock`, mode 0600 in a directory of
+  mode 0700 (on macOS `<config>` is `~/Library/Application Support`), and
+  writes `<kind>-<pid>-<n>.json` next to it with its ID, pid and socket.
+  Where that path is longer than a unix socket allows (104 bytes on macOS),
+  the socket goes to `$TMPDIR/sointu-mcp-<uid>/`, also mode 0700.
+- `sointu-mcp` (`cmd/sointu-mcp`) is the MCP server, with the official Go
+  SDK (`github.com/modelcontextprotocol/go-sdk`). Claude Code starts it; for
+  each call it reads the files, asks each instance for its song and
+  instruments, and passes the call on to the one chosen by the argument
+  `instance`, which every tool has: needed only when several listen. The
+  files of an instance that does not answer and whose process is gone are
+  removed. Each request is a line of JSON on the socket, and so is the
+  answer: the tool's name and arguments, the text or an error.
+- Only `sointu-mcp` links the SDK (it needs Go 1.25 from its v1.5.0 on, so
+  `go.mod` says 1.25). The tracker and the plugins only use the standard
+  library for the socket; the players and `sointu-compile` have none of it.
+
+**Safety.** Nothing listens on a network port: what can connect is what can
+open a file that only the user can, i.e. the user's own programs, which
+could change the song file anyway. There is no token. A call reaches the
+model as a `func()` message on the broker (`MsgToModel.Data`), the way a
+plugin host's request for the state does, so it runs on the goroutine that
+owns the model, between two frames of the GUI, never on the audio thread;
+the caller waits at most 10 s. A tool that panics is recovered: the song
+is put back as it was and the call fails, so a fault does not take the
+plugin host down. Renders run on the goroutine of the connection, with a
+synth of their own.
+
+**Tools.** The tools are `tracker.Remote` (`tracker/remote.go`): units by
+their ID, instruments by index (from 0) or name, modules by name, parameters
+by name. Values are checked against the ranges the tracker gives them,
+including those of buffers, spawn targets and module parameters; a string
+names a value as it is displayed (`type: "sine"`). Each change is one step
+of the undo history, refused as a whole if any part is not valid (a value
+out of range, an unknown parameter, more than 63 units once expanded, an
+instrument left without units), moves the cursor to the unit or instrument
+it was about, and shows an alert ("Claude: ..."). It returns the units as
+they are after it.
+
+| Tool | What it does |
+|---|---|
+| `list_instances` | the trackers and plugin instances listening: ID, program, host process, file, instruments |
+| `guide` | how sointu patches work, for a model that has not seen the repository |
+| `unit_types` | every unit type in a line (stack effect, go/wasm only, parameters), or one with ranges, defaults and the displayed values at every 8th value |
+| `get_song` | tempo, score in summary, instruments, modules and buffers in a line each, problems |
+| `get_instrument`, `get_module` | the units in order: `#id type [stack before>after] name=value(displayed)`, sends with what they modulate, eq bands, bindings, comments, the go/wasm only units; with `verbose`, ranges |
+| `list_presets` | instrument presets by directory, and module presets with their parameters |
+| `edit_units` | parameters, disabled, comment, eq bands and bindings of any number of units, as one step |
+| `add_units` | units in a row after or before a unit, or at the end of an instrument or a module; a send can target `new:N`, a unit of the same call |
+| `delete_units`, `move_units` | moved units keep their IDs, also into another instrument or module |
+| `add_instrument`, `edit_instrument`, `delete_instrument` | a preset or the default instrument; name, comment, voices, mute, solo, loading a preset |
+| `add_module`, `edit_module`, `delete_module` | a module preset or an empty module; name, comment, inputs, parameters (added, named, defaults, deleted) |
+| `set_bpm`, `undo`, `redo` | undo and redo go through the same history as the user's |
+| `render_note` | renders notes of an instrument offline and measures them (below) |
+| `play_note` | plays a note in the running tracker, for the user to hear |
+
+**Measuring.** A model cannot hear; until now the sounds of this fork were
+tuned by rendering and measuring, by hand. `render_note` takes a copy of the
+song from the model (`Remote.RenderSource`), with module and eq units
+expanded, triggers the notes on the first voices of the instrument in a new
+Go synth, holds them for `hold_ms`, releases them and renders `tail_ms`
+more. The measurements (`tracker/mcp/measure.go`): peak (per channel, and
+when), samples above full scale, rms, crest factor, DC, stereo correlation,
+side against mid, the pitch at 8 times (a YIN-like difference function, 25
+Hz to 4 kHz, none for noise), octave bands from 31 Hz to 16 kHz (Welch
+spectra, scaled so that the bands add up to the rms), the envelope in about
+16 steps, onset, attack to 90 % of the peak, and the time after the release
+until the level stays below -60 dBFS. About 600 bytes of text.
+
+- `output: dry` (the default) silences the outputs of the other instruments
+  (`out`, the main part of `outaux`, `aux` to channel 0) in the copy; an
+  instrument that only writes to aux channels gets them sent to the main
+  output, and is told so. `output: master` changes nothing: the instrument
+  through the buses and the mastering it sends to.
+- `edits` are changes made to the copy only, in the same form as
+  `edit_units`: to compare variants (a unit disabled, a parameter at several
+  values) without changing the song. They are made like any change and
+  then cancelled, so they are checked the same way, and the song, the undo
+  history and the player never see them.
+- `wav: true` also writes the render, 32-bit float stereo at 44100 Hz, to
+  `$TMPDIR/sointu-mcp-renders/` and returns its path, for analysis with
+  other tools (renders older than a day are removed).
+
+Notes are numbered as in the tracker and as MIDI input arrives in the
+plugin: 60 is C-3, 130.8 Hz for an oscillator with transpose 64, an octave
+below what the same MIDI number means elsewhere. The tool descriptions and
+the guide say so.
+
+**Verified.** `tracker/remote_test.go`: every change is one undo step that
+undo reverses and redo repeats, and invalid input (out of range, unknown
+parameters, units, presets or ports, too many units or voices, the last
+unit of an instrument, bindings outside modules) is refused without
+changing the song or the history; adding units with a send to a new unit
+and eq bands, moving them across instruments, presets, solo, modules from
+presets and empty ones with bound and scaled parameters, deleting module
+parameters with their bindings, a render whose edits leave the song as it
+was, the dry routing, and a panic inside a change. `tracker/mcp/mcp_test.go`:
+a model with a Host on a socket, as the tracker runs it: the info, the tools
+over the socket, a misspelled argument refused, undo, render_note of the
+default instrument (note 69: 220.0 Hz) with a wav file, play_note, the files
+gone when turned off and stale files removed; the measurements of a sine
+and of noise. `cmd/sointu-mcp/main_test.go`: the server with an MCP client
+of the SDK: instructions, the tools and their schemas with `instance`,
+local tools without a tracker, a change and a render through two hops, and
+two trackers. By hand: the standalone tracker with its own `HOME`, and
+`claude -p` with `--mcp-config`: Claude listed it, read an instrument,
+rendered, added a filter at 988 Hz and rendered again. The VST2 and CLAP
+plugins build. **Not verified:** in a plugin inside a DAW, and the menu item
+on screen.
+
+**Not done.** Notes and patterns; buffers and samples; the signal at a unit
+(the taps of the Go synth); rendering a passage of the song; capturing what
+the plugin plays while the host plays; the name of the host's track (CLAP
+`track-info`) and its transport.
 
 ## Wasm player
 

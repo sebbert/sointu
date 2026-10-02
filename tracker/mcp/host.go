@@ -132,6 +132,9 @@ func (h *Host) SetEnabled(on bool) error {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
+	if err := os.Chmod(dir, 0700); err != nil {
+		return err
+	}
 	socket := filepath.Join(dir, h.id+".sock")
 	if len(socket) > 100 {
 		// the path of a unix socket is at most 104 bytes on macOS: a

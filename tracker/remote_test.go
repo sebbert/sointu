@@ -99,6 +99,13 @@ func TestRemoteDescribe(t *testing.T) {
 	if err != nil || !strings.Contains(types, "filter [1>1 (2>2)]") || !strings.Contains(types, "reverb [2>2, go/wasm]") {
 		t.Errorf("the unit types do not tell the stack and go/wasm:\n%s", types)
 	}
+	filter, err := RemoteUnitTypes("filter")
+	if err != nil || !strings.Contains(filter, "48=988,") {
+		t.Errorf("the displayed values of the filter frequency are not listed:\n%s", filter)
+	}
+	if envelope, _ := RemoteUnitTypes("envelope"); !strings.Contains(envelope, "64=92.88 ms, 72=262.70 ms") {
+		t.Errorf("the displayed values of the envelope times are not listed with their units:\n%s", envelope)
+	}
 	for _, name := range sointu.UnitNames {
 		if unitDescriptions[name] == "" {
 			t.Errorf("the unit type %s has no description", name)
