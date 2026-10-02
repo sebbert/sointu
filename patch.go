@@ -393,6 +393,95 @@ var UnitTypes = map[string]UnitType{
 			return StackUse{Inputs: [][]int{{0, 1}, {0, 1}}, Modifies: []bool{true, true}, NumOutputs: 2}
 		},
 	},
+	"reverb": {
+		// reverb is the Reverb module preset (tracker/modules/Reverb.yml) as
+		// one unit: stereo in, the wet signal out. Low cut and high cut on
+		// the input, predelay, a diffuser of four steps for the early
+		// reflections and a feedback delay network of 8 lines for the tail,
+		// with the lengths, shuffles and mixes that the module gets from its
+		// mc units, fixed. It renders what the module renders with the same
+		// values of its parameters. size sets the lengths of the lines, decay
+		// the reverb time (0 holds the sound), highs and lows the times
+		// above 3 kHz and below 250 Hz relative to it; mod moves the lines
+		// of the network. Each voice of the instrument has a reverb of its
+		// own. Songs that leave mod at 0 and do not modulate it compile
+		// without the modulation.
+		//
+		// The parameters after lowcut are what the module fixes in its
+		// units, with the values of the module as defaults: gain is the
+		// level of the input, early the level of the early reflections,
+		// earlywidth and tailwidth the stereo widths, modrate the rate of
+		// the modulation, steps the number of steps of the diffuser, spread
+		// how far the lines of the network differ in length. network and
+		// diffuser set the longest line of the network and of the first step
+		// of the diffuser (each further step half of it) instead of size,
+		// and pretime the predelay instead of predelay; bypass leaves the
+		// low cut, the high cut or the predelay out. With these the unit
+		// renders the presets Reverb FDN Room, Hall and Ambient. They are
+		// all read when the patch is encoded; a song whose units leave them
+		// at their defaults compiles to the same player as without them.
+		//
+		// allpass makes the delays of the diffuser Schroeder allpasses with
+		// that coefficient, as allpass and apgain of mcdelay. loopsize puts
+		// a second set of 8 lines into the network, before the others, with
+		// lengths up to it, loopgain as their allpass coefficient, loopmod
+		// and looprate as their modulation, and the decay of the network.
+		// With these the unit renders the preset Reverb FDN Plate.
+		Params: []UnitParameter{
+			{Name: "size", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(float64(ReverbScale(v, 400, 2800))/10, 'f', 0, 64), "ms"
+			}},
+			{Name: "decay", MinValue: 0, Default: 90, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				if v <= 0 {
+					return "off", ""
+				}
+				return strconv.FormatFloat(MCDecaySeconds(v), 'g', 3, 64), "s"
+			}},
+			{Name: "highs", MinValue: 0, Default: 48, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(MCHFDecayRatio(v), 'g', 3, 64), "×"
+			}},
+			{Name: "lows", MinValue: 0, Default: 72, Neutral: 64, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(MCLFDecayRatio(v), 'g', 3, 64), "×"
+			}},
+			{Name: "predelay", MinValue: 0, Default: 13, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(float64(ReverbScale(v, 1, 2000))/10, 'f', 1, 64), "ms"
+			}},
+			{Name: "mod", MinValue: 0, Default: 24, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(MCModDepthMs(float64(v)/128), 'g', 3, 64), "ms"
+			}},
+			{Name: "highcut", MinValue: 0, Default: 98, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				return reverbHzDispFunc(ReverbScale(v, 72, 128))
+			}},
+			{Name: "lowcut", MinValue: 0, Default: 56, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				return reverbHzDispFunc(ReverbScale(v, 0, 85))
+			}},
+			{Name: "gain", MinValue: 0, Neutral: 64, Default: 76, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: mcGainDisplay},
+			{Name: "early", MinValue: 0, Neutral: 64, Default: 52, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: mcGainDisplay},
+			{Name: "earlywidth", MinValue: 0, Neutral: 64, Default: 80, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v * 100 / 64), "%" }},
+			{Name: "tailwidth", MinValue: 0, Neutral: 64, Default: 96, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v * 100 / 64), "%" }},
+			{Name: "modrate", MinValue: 0, Default: 56, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(MCModRateHz(float64(v)/128), 'g', 3, 64), "Hz"
+			}},
+			{Name: "steps", MinValue: 1, Default: ReverbSteps, MaxValue: ReverbSteps, CanSet: true, CanModulate: false},
+			{Name: "spread", MinValue: 0, Default: 77, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v * 100 / 128), "%" }},
+			{Name: "network", MinValue: 0, MaxValue: 2800, CanSet: true, CanModulate: false, DisplayFunc: reverbTimeDispFunc("by size")},
+			{Name: "diffuser", MinValue: 0, MaxValue: 700, CanSet: true, CanModulate: false, DisplayFunc: reverbTimeDispFunc("by size")},
+			{Name: "pretime", MinValue: 0, MaxValue: 2000, CanSet: true, CanModulate: false, DisplayFunc: reverbTimeDispFunc("by predelay")},
+			{Name: "bypass", MinValue: 0, MaxValue: 7, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"none", "lowcut", "highcut", "low+highcut", "predelay", "lowcut+pre", "highcut+pre", "all"})},
+			{Name: "allpass", MinValue: 0, MaxValue: MCAllpassGainMax, CanSet: true, CanModulate: false, DisplayFunc: reverbAllpassDispFunc},
+			{Name: "loopsize", MinValue: 0, MaxValue: 2800, CanSet: true, CanModulate: false, DisplayFunc: reverbTimeDispFunc("none")},
+			{Name: "loopgain", MinValue: 0, MaxValue: MCAllpassGainMax, CanSet: true, CanModulate: false, DisplayFunc: reverbAllpassDispFunc},
+			{Name: "loopmod", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(MCModDepthMs(float64(v)/128), 'g', 3, 64), "ms"
+			}},
+			{Name: "looprate", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				return strconv.FormatFloat(MCModRateHz(float64(v)/128), 'g', 3, 64), "Hz"
+			}},
+		},
+		StackUse: func(u *Unit) StackUse {
+			return StackUse{Inputs: [][]int{{0, 1}, {0, 1}}, Modifies: []bool{true, true}, NumOutputs: 2}
+		},
+	},
 	"ladder": {
 		// ladder is a low-pass of 24 dB per octave with resonance, like the
 		// transistor ladder of a Moog: four one-pole low-passes in a row
@@ -1208,7 +1297,13 @@ var addedParameters = map[string]map[string]int{
 	"oscillator": {"bandlimit": 0},            // naive waveforms
 	"spcompress": {"attack": 0, "release": 0}, // no smoothing
 	"envelope":   {"curve": 0},                // linear
+	// as the Reverb module preset
+	"reverb": {"gain": 76, "early": 52, "earlywidth": 80, "tailwidth": 96, "modrate": 56, "steps": ReverbSteps, "spread": 77},
 }
+
+// AddedParameters returns the parameters added to a unit type after songs
+// were saved without them, with the values filled in for such songs.
+func AddedParameters(unitType string) map[string]int { return addedParameters[unitType] }
 
 // compile errors if interface is not implemented.
 var _ yaml.Unmarshaler = &Unit{}
@@ -1584,6 +1679,65 @@ func (p Patch) NumLimiters() int {
 	for _, instr := range p {
 		for _, unit := range instr.Units {
 			if unit.Type == "limiter" && !unit.Disabled {
+				total += instr.NumVoices
+			}
+		}
+	}
+	return total
+}
+
+// ReverbScale maps a parameter of the reverb unit, 0 to 128, onto the range
+// from lo to hi of the parameter of the mc unit it stands for, as a scaled
+// binding of the Reverb module does.
+func ReverbScale(v, lo, hi int) int {
+	return lo + int(math.Round(float64((hi-lo)*min(max(v, 0), 128))/128))
+}
+
+// ReverbSteps is the largest number of steps of the diffuser of a reverb
+// unit, and that of the Reverb module.
+const ReverbSteps = 4
+
+// The bits of the parameter bypass of a reverb unit: what it leaves out.
+const (
+	ReverbBypassLowcut = 1 << iota
+	ReverbBypassHighcut
+	ReverbBypassPredelay
+)
+
+// reverbTimeDispFunc displays a time in tenths of a millisecond, or what
+// sets the time when the value is 0.
+func reverbTimeDispFunc(zero string) func(int) (string, string) {
+	return func(v int) (string, string) {
+		if v <= 0 {
+			return zero, ""
+		}
+		return strconv.FormatFloat(float64(v)/10, 'f', 1, 64), "ms"
+	}
+}
+
+func reverbAllpassDispFunc(v int) (string, string) {
+	if v <= 0 {
+		return "off", ""
+	}
+	return strconv.FormatFloat(float64(v)/128, 'f', 3, 64), ""
+}
+
+func reverbHzDispFunc(v int) (string, string) {
+	f := MCFilterHz(float64(v) / 128)
+	if f >= 1000 {
+		return strconv.FormatFloat(f/1000, 'f', 2, 64), "kHz"
+	}
+	return strconv.FormatFloat(f, 'f', 0, 64), "Hz"
+}
+
+// NumReverbs returns the number of reverb states of the patch: the number of
+// reverb units of every instrument times its number of voices. The synths
+// keep them outside the voices, like the states of ott.
+func (p Patch) NumReverbs() int {
+	total := 0
+	for _, instr := range p {
+		for _, unit := range instr.Units {
+			if unit.Type == "reverb" && !unit.Disabled {
 				total += instr.NumVoices
 			}
 		}

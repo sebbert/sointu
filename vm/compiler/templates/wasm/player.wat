@@ -152,6 +152,20 @@
 {{- end}}
 {{- end}}
 
+{{- if .ReverbData}}
+{{- /*
+;-------------------------------------------------------------------------------
+;    The constant data of the reverb units, 192 bytes each: the coefficients
+;    A, B and C of the decay of the 8 lines and their lengths (floats), and
+;    the 32 taps of the diffuser (16 bits each)
+;-------------------------------------------------------------------------------
+*/}}
+{{- .SetDataLabel "su_reverb_consts"}}
+{{- range .ReverbData}}
+{{- $.DataB .}}
+{{- end}}
+{{- end}}
+
 {{- /*
 ;-------------------------------------------------------------------------------
 ; The number of transformed parameters each opcode takes
@@ -230,6 +244,17 @@
 {{- .SetBlockLabel "su_limiter"}}
 {{- .Block (int (mul 4112 .Song.Patch.NumLimiters))}}
 {{- end}}
+{{- if .HasOp "reverb"}}
+{{- /*
+;-------------------------------------------------------------------------------
+;    The states of the reverb units, in the order the units run, voice by
+;    voice; see $su_op_reverb
+;-------------------------------------------------------------------------------
+*/}}
+{{- .Align}}
+{{- .SetBlockLabel "su_reverb"}}
+{{- .Block (int (mul .ReverbState .Song.Patch.NumReverbs))}}
+{{- end}}
 {{- if or (.HasOp "bufread") (.HasOp "bufwrite")}}
 {{- .Align}}
 {{- .SetBlockLabel "su_buffers"}}
@@ -305,6 +330,9 @@
 {{- end}}
 {{- if .HasOp "limiter"}}
 (global $limiterWRK (mut i32) (i32.const 0))
+{{- end}}
+{{- if .HasOp "reverb"}}
+(global $reverbWRK (mut i32) (i32.const 0))
 {{- end}}
 (global $globaltick (mut i32) (i32.const 0))
 (global $row (mut i32) (i32.const 0))
@@ -411,6 +439,9 @@
 {{- end}}
 {{- if .HasOp "limiter"}}
                 (global.set $limiterWRK (i32.const {{index .Labels "su_limiter"}}))
+{{- end}}
+{{- if .HasOp "reverb"}}
+                (global.set $reverbWRK (i32.const {{index .Labels "su_reverb"}}))
 {{- end}}
                 (call $su_run_vm)
                 {{- template "output_sound.wat" .}}
