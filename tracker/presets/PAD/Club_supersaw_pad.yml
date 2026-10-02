@@ -1,0 +1,33 @@
+name: Club supersaw pad
+comment: 'A supersaw pad: 16 detuned saws, slow attack and release, low-passed, wide but mono below about 150 Hz. auxgain sends it to the reverb. Bandlimited oscillators, ladder and width: Go synth and wasm player only.'
+numvoices: 4
+units:
+    - type: envelope
+      id: 1
+      parameters: {attack: 74, curve: 0, decay: 80, gain: 128, release: 80, stereo: 1, sustain: 100}
+      comment: attack and release are the fades
+    - type: oscillator
+      id: 2
+      parameters: {bandlimit: 1, color: 128, detune: 84, gain: 24, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 3}
+      comment: Four saws on each side; detune is the spread
+    - type: oscillator
+      id: 3
+      parameters: {bandlimit: 1, color: 128, detune: 42, gain: 24, lfo: 0, phase: 76, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 3}
+      comment: 'Four more, detuned the other way and a little further, a good half cycle later: with phase 76 the two sides are about equally loud from the start of a note, which one detuned oscillator alone is not'
+    - type: addp
+      id: 4
+      parameters: {stereo: 1}
+    - type: mulp
+      id: 5
+      parameters: {stereo: 1}
+    - type: ladder
+      id: 6
+      parameters: {drive: 0, frequency: 56, resonance: 8, stereo: 1}
+      comment: The brightness of the pad
+    - type: width
+      id: 7
+      parameters: {lowcut: 19, width: 56}
+      comment: 'Width, and mono below lowcut'
+    - type: outaux
+      id: 8
+      parameters: {auxgain: 48, outgain: 43, stereo: 1}

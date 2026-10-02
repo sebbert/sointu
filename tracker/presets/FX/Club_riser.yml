@@ -1,0 +1,34 @@
+name: Club riser
+comment: 'A riser: detuned saws that rise two octaves from the note while the filter opens and the level grows. Hold the note for the length of the rise. auxgain sends it to the reverb. Bandlimited oscillator, ladder and width: Go synth and wasm player only.'
+numvoices: 1
+units:
+    - type: envelope
+      id: 1
+      parameters: {attack: 96, curve: 0, decay: 64, gain: 128, release: 60, stereo: 1, sustain: 128}
+      comment: 'attack is the length of the rise: 96 is 5.9 s, and about 5 steps double it'
+    - type: send
+      id: 2
+      parameters: {amount: 76, port: 0, sendpop: 0, stereo: 0, target: 4, voice: 0}
+      comment: 'How far the pitch rises: 12 steps are 24 semitones'
+    - type: send
+      id: 3
+      parameters: {amount: 96, port: 0, sendpop: 0, stereo: 0, target: 6, voice: 0}
+      comment: How far the filter opens
+    - type: oscillator
+      id: 4
+      parameters: {bandlimit: 1, color: 128, detune: 84, gain: 32, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 3}
+      comment: Starts at the note
+    - type: mulp
+      id: 5
+      parameters: {stereo: 1}
+    - type: ladder
+      id: 6
+      parameters: {drive: 0, frequency: 32, resonance: 16, stereo: 1}
+      comment: frequency is where the filter starts
+    - type: width
+      id: 7
+      parameters: {lowcut: 19, width: 56}
+      comment: 'Width, and mono below lowcut'
+    - type: outaux
+      id: 8
+      parameters: {auxgain: 32, outgain: 100, stereo: 1}

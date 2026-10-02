@@ -1,0 +1,56 @@
+name: Club kick hard
+comment: 'A hard techno kick with a rumble: the kick, driven hard, and behind it its own echoes in 16th notes, low-passed, driven and faded in after each hit. Suggested notes: F-1 to A-1. Hold the note for as long as the rumble should last. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes, softclip and ladder: Go synth and wasm player only.'
+numvoices: 1
+units:
+    - type: envelope
+      id: 1
+      parameters: {attack: 0, curve: 104, decay: 62, gain: 128, release: 62, stereo: 0, sustain: 0}
+      comment: Pitch sweep
+    - type: send
+      id: 2
+      parameters: {amount: 84, port: 0, sendpop: 1, stereo: 0, target: 4, voice: 0}
+      comment: How far above the note the sweep starts
+    - type: envelope
+      id: 3
+      parameters: {attack: 0, curve: 64, decay: 72, gain: 128, release: 72, stereo: 0, sustain: 0}
+      comment: The length of the body
+    - type: oscillator
+      id: 4
+      parameters: {bandlimit: 0, color: 128, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+    - type: mulp
+      id: 5
+      parameters: {stereo: 0}
+    - type: softclip
+      id: 6
+      parameters: {drive: 40, knee: 32, oversample: 0, stereo: 0}
+      comment: 'The hardness of the kick: drive, and knee for how square it gets'
+    - type: push
+      id: 7
+      parameters: {stereo: 0}
+      comment: 'The rumble, from a copy of the kick'
+    - type: delay
+      id: 8
+      parameters: {damp: 64, dry: 0, feedback: 80, notetracking: 2, pregain: 128, stereo: 0}
+      varargs: [12]
+      comment: Echoes every 16th note; feedback is how long the rumble rolls on
+    - type: ladder
+      id: 9
+      parameters: {drive: 48, frequency: 11, resonance: 0, stereo: 0}
+      comment: 'Only the lows of the echoes, driven: frequency is how dark the rumble is, drive how dense'
+    - type: envelope
+      id: 10
+      parameters: {attack: 66, curve: 0, decay: 0, gain: 64, release: 70, stereo: 0, sustain: 128}
+      comment: 'Fades the rumble in after each kick, so that it stays out of the way of the body, and out when the note is released'
+    - type: mulp
+      id: 11
+      parameters: {stereo: 0}
+    - type: addp
+      id: 12
+      parameters: {stereo: 0}
+    - type: pan
+      id: 13
+      parameters: {panning: 64, stereo: 0}
+    - type: out
+      id: 14
+      parameters: {gain: 128, stereo: 1}
+      comment: 'The level. For the drum bus, make this an aux unit with channel 6'

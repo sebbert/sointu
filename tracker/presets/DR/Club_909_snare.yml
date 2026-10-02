@@ -1,0 +1,50 @@
+name: Club 909 snare
+comment: 'A 909-style snare: a sine body with a short pitch drop and band-passed noise. Suggested notes: around F#3; the note tunes the body. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes and softclip: Go synth and wasm player only.'
+numvoices: 1
+units:
+    - type: envelope
+      id: 1
+      parameters: {attack: 0, curve: 96, decay: 50, gain: 128, release: 50, stereo: 0, sustain: 0}
+      comment: Pitch drop of the body
+    - type: send
+      id: 2
+      parameters: {amount: 72, port: 0, sendpop: 1, stereo: 0, target: 4, voice: 0}
+      comment: How far above the note the body starts
+    - type: envelope
+      id: 3
+      parameters: {attack: 0, curve: 96, decay: 64, gain: 128, release: 64, stereo: 0, sustain: 0}
+      comment: The length of the body
+    - type: oscillator
+      id: 4
+      parameters: {bandlimit: 0, color: 128, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+      comment: The body; gain is its level against the noise
+    - type: mulp
+      id: 5
+      parameters: {stereo: 0}
+    - type: envelope
+      id: 6
+      parameters: {attack: 0, curve: 80, decay: 68, gain: 128, release: 68, stereo: 0, sustain: 0}
+      comment: The length of the noise (snappy)
+    - type: noise
+      id: 7
+      parameters: {gain: 72, shape: 64, stereo: 0}
+    - type: mulp
+      id: 8
+      parameters: {stereo: 0}
+    - type: filter
+      id: 9
+      parameters: {bandpass: 1, frequency: 100, highpass: 0, lowpass: 0, resonance: 128, stereo: 0}
+      comment: 'The band of the noise: frequency is its centre'
+    - type: addp
+      id: 10
+      parameters: {stereo: 0}
+    - type: softclip
+      id: 11
+      parameters: {drive: 8, knee: 64, oversample: 0, stereo: 0}
+    - type: pan
+      id: 12
+      parameters: {panning: 64, stereo: 0}
+    - type: out
+      id: 13
+      parameters: {gain: 100, stereo: 1}
+      comment: 'The level. For the drum bus, make this an aux unit with channel 6'

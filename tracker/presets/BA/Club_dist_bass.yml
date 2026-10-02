@@ -1,0 +1,43 @@
+name: Club dist bass
+comment: 'A distorted bass with a clean sub: a saw on each side, cut below about 200 Hz and then clipped hard, over a sine sub that the clipper never sees. Mono below about 150 Hz. Suggested notes: C-1 to C-2. Bandlimited oscillators, softclip, ladder and width: Go synth and wasm player only.'
+numvoices: 1
+units:
+    - type: oscillator
+      id: 1
+      parameters: {bandlimit: 1, color: 128, detune: 68, gain: 64, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 0}
+      comment: 'A saw on each side, detuned against each other'
+    - type: filter
+      id: 2
+      parameters: {bandpass: 0, frequency: 22, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+      comment: 'Low cut before the distortion: the crossover to the sub. Lower is fuller, but lets what the clipper makes into the sub'
+    - type: softclip
+      id: 3
+      parameters: {drive: 96, knee: 16, oversample: 1, stereo: 1}
+      comment: 'The distortion: drive, and knee for how hard; oversampled against aliasing'
+    - type: ladder
+      id: 4
+      parameters: {drive: 0, frequency: 56, resonance: 32, stereo: 1}
+      comment: The brightness of the distortion
+    - type: width
+      id: 5
+      parameters: {lowcut: 19, width: 64}
+      comment: 'Width, and mono below lowcut'
+    - type: oscillator
+      id: 6
+      parameters: {bandlimit: 0, color: 128, detune: 64, gain: 80, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+      comment: 'The sub: a clean sine, the same on both sides; gain is its level against the distortion'
+    - type: push
+      id: 7
+      parameters: {stereo: 0}
+    - type: addp
+      id: 8
+      parameters: {stereo: 1}
+    - type: envelope
+      id: 9
+      parameters: {attack: 40, curve: 0, decay: 64, gain: 128, release: 56, stereo: 1, sustain: 128}
+    - type: mulp
+      id: 10
+      parameters: {stereo: 1}
+    - type: out
+      id: 11
+      parameters: {gain: 40, stereo: 1}

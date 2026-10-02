@@ -1,0 +1,51 @@
+name: Global mastering 2 drumbus
+numvoices: 1
+units:
+    - id: 1
+      parameters: {}
+      comment: 'Global mastering 2 with a drum bus - Global mastering 2, and before it a group bus for the drums: aux channels 6 and 7 through a compressor and a soft clipper into the mix. Send the drums to it by making their last unit, out, an aux unit with channel 6. Set this preset as last instrument, load reverbs before this. Limiter and softclip: Go synth and wasm player only.'
+    - type: in
+      id: 20
+      parameters: {channel: 6, stereo: 1}
+      comment: 'The drum bus: what the drums send to channel 6 with an aux unit in place of their out unit'
+    - type: compressor
+      id: 21
+      parameters: {attack: 52, invgain: 102, ratio: 64, release: 64, stereo: 1, threshold: 36}
+      comment: 'Glue: about 2:1 above -11 dB, with 20 ms attack, which lets the hits through, 93 ms release and +2 dB makeup (invgain)'
+    - type: mulp
+      id: 22
+      parameters: {stereo: 1}
+    - type: softclip
+      id: 23
+      parameters: {drive: 8, knee: 64, oversample: 0, stereo: 1}
+      comment: 'Saturation: drive, +3.2 dB, pushes the hits into the knee at -6 dB, which rounds them off. More drive is denser and louder'
+    - type: out
+      id: 24
+      parameters: {gain: 108, stereo: 1}
+      comment: 'The level of the drums in the mix that is mastered below: the clipper stops at full scale, so at 108 they peak at -1.5 dB at most'
+    - type: in
+      id: 10
+      parameters: {channel: 0, stereo: 1}
+    - type: filter
+      id: 11
+      parameters: {bandpass: 0, frequency: 8, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+      comment: Low cut, 12 dB per octave below 27 Hz
+    - type: compressor
+      id: 12
+      parameters: {attack: 47, invgain: 54, ratio: 100, release: 68, stereo: 1, threshold: 64}
+      comment: 'About 4.6:1 above -6 dB, 10 ms attack and 150 ms release, +7.5 dB makeup (invgain). A shorter release distorts the bass more'
+    - type: mulp
+      id: 13
+      parameters: {stereo: 1}
+    - type: limiter
+      id: 16
+      parameters: {drive: 12, lookahead: 32, release: 64, stereo: 1, threshold: 124}
+      comment: 'Turns the gain down ahead of the peaks that the attack lets through, 2.9 ms ahead, to -0.3 dB. drive, +4.4 dB, is the loudness: more of it is louder and flatter'
+    - type: clip
+      id: 14
+      parameters: {stereo: 1}
+      comment: What little the limiter lets through is clipped at full scale
+    - type: out
+      id: 15
+      parameters: {gain: 128, stereo: 1}
+      comment: Master gain

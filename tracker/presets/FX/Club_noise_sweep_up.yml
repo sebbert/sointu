@@ -1,0 +1,29 @@
+name: Club noise sweep up
+comment: 'A noise sweep upward: stereo noise through a resonant filter that opens while the level grows. Hold the note for the length of the sweep. Mono below about 150 Hz. auxgain sends it to the reverb. The width unit: Go synth and wasm player only.'
+numvoices: 1
+units:
+    - type: envelope
+      id: 1
+      parameters: {attack: 96, curve: 0, decay: 64, gain: 128, release: 60, stereo: 1, sustain: 128}
+      comment: 'attack is the length of the sweep: 96 is 5.9 s, and about 5 steps double it'
+    - type: send
+      id: 2
+      parameters: {amount: 100, port: 0, sendpop: 0, stereo: 0, target: 5, voice: 0}
+      comment: How far the filter opens
+    - type: noise
+      id: 3
+      parameters: {gain: 128, shape: 64, stereo: 1}
+    - type: mulp
+      id: 4
+      parameters: {stereo: 1}
+    - type: filter
+      id: 5
+      parameters: {bandpass: 0, frequency: 24, highpass: 0, lowpass: 1, resonance: 48, stereo: 1}
+      comment: 'frequency is where the sweep starts, resonance how much it whistles'
+    - type: width
+      id: 6
+      parameters: {lowcut: 19, width: 48}
+      comment: 'Width, and mono below lowcut'
+    - type: outaux
+      id: 7
+      parameters: {auxgain: 32, outgain: 41, stereo: 1}

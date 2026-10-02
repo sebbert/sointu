@@ -1,0 +1,29 @@
+name: Club downlifter
+comment: 'A downlifter: stereo noise through a resonant filter that closes while the level falls. Mono below about 150 Hz. auxgain sends it to the reverb. Curved envelope and width: Go synth and wasm player only.'
+numvoices: 1
+units:
+    - type: envelope
+      id: 1
+      parameters: {attack: 0, curve: 48, decay: 96, gain: 128, release: 80, stereo: 1, sustain: 0}
+      comment: 'decay is the length of the fall: 96 is 5.9 s, and about 5 steps double it'
+    - type: send
+      id: 2
+      parameters: {amount: 100, port: 0, sendpop: 0, stereo: 0, target: 5, voice: 0}
+      comment: How far above its frequency the filter starts
+    - type: noise
+      id: 3
+      parameters: {gain: 128, shape: 64, stereo: 1}
+    - type: mulp
+      id: 4
+      parameters: {stereo: 1}
+    - type: filter
+      id: 5
+      parameters: {bandpass: 0, frequency: 24, highpass: 0, lowpass: 1, resonance: 48, stereo: 1}
+      comment: 'frequency is where the fall ends, resonance how much it whistles'
+    - type: width
+      id: 6
+      parameters: {lowcut: 19, width: 48}
+      comment: 'Width, and mono below lowcut'
+    - type: outaux
+      id: 7
+      parameters: {auxgain: 32, outgain: 44, stereo: 1}

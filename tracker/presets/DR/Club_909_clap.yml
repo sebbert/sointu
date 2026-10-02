@@ -1,0 +1,37 @@
+name: Club 909 clap
+comment: 'A 909-style clap: band-passed noise in four bursts, then a tail. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes: Go synth and wasm player only.'
+numvoices: 1
+units:
+    - type: envelope
+      id: 1
+      parameters: {attack: 0, curve: 64, decay: 46, gain: 128, release: 46, stereo: 0, sustain: 0}
+      comment: One burst
+    - type: delay
+      id: 2
+      parameters: {damp: 0, dry: 128, feedback: 0, notetracking: 0, pregain: 128, stereo: 0}
+      varargs: [485, 970, 1455]
+      comment: 'Repeats the burst three times; the delay times are the gaps, in samples'
+    - type: envelope
+      id: 3
+      parameters: {attack: 0, curve: 64, decay: 72, gain: 96, release: 72, stereo: 0, sustain: 0}
+      comment: 'The tail: decay is its length, gain its level'
+    - type: addp
+      id: 4
+      parameters: {stereo: 0}
+    - type: noise
+      id: 5
+      parameters: {gain: 128, shape: 64, stereo: 0}
+    - type: mulp
+      id: 6
+      parameters: {stereo: 0}
+    - type: filter
+      id: 7
+      parameters: {bandpass: 1, frequency: 52, highpass: 0, lowpass: 0, resonance: 48, stereo: 0}
+      comment: 'The colour of the clap: frequency, and resonance for how narrow'
+    - type: pan
+      id: 8
+      parameters: {panning: 64, stereo: 0}
+    - type: out
+      id: 9
+      parameters: {gain: 118, stereo: 1}
+      comment: 'The level. For the drum bus, make this an aux unit with channel 6'

@@ -1,0 +1,32 @@
+name: Club 909 tom
+comment: 'A 909-style tom: a sine with a pitch drop. Suggested notes: E-2 (low) to A-3 (high). To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 6. Curved envelopes and softclip: Go synth and wasm player only.'
+numvoices: 1
+units:
+    - type: envelope
+      id: 1
+      parameters: {attack: 0, curve: 96, decay: 58, gain: 128, release: 58, stereo: 0, sustain: 0}
+      comment: Pitch drop
+    - type: send
+      id: 2
+      parameters: {amount: 70, port: 0, sendpop: 1, stereo: 0, target: 4, voice: 0}
+      comment: How far above the note it starts
+    - type: envelope
+      id: 3
+      parameters: {attack: 0, curve: 88, decay: 74, gain: 128, release: 74, stereo: 0, sustain: 0}
+      comment: The length
+    - type: oscillator
+      id: 4
+      parameters: {bandlimit: 0, color: 128, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+    - type: mulp
+      id: 5
+      parameters: {stereo: 0}
+    - type: softclip
+      id: 6
+      parameters: {drive: 8, knee: 64, oversample: 0, stereo: 0}
+    - type: pan
+      id: 7
+      parameters: {panning: 64, stereo: 0}
+    - type: out
+      id: 8
+      parameters: {gain: 90, stereo: 1}
+      comment: 'The level. For the drum bus, make this an aux unit with channel 6'

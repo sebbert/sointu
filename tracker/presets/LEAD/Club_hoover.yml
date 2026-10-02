@@ -1,0 +1,55 @@
+name: Club hoover
+comment: 'A hoover: a pulse with a moving pulse width over a saw an octave below, both detuned, with a pitch swoop into each note. Mono below about 200 Hz. auxgain sends it to the reverb. Bandlimited oscillators, curved envelope and width: Go synth and wasm player only.'
+numvoices: 2
+units:
+    - type: envelope
+      id: 1
+      parameters: {attack: 0, curve: 64, decay: 60, gain: 128, release: 60, stereo: 0, sustain: 0}
+      comment: 'Pitch swoop: decay is how long it takes'
+    - type: send
+      id: 2
+      parameters: {amount: 61, port: 0, sendpop: 0, stereo: 0, target: 7, voice: 0}
+      comment: 'How far below the note the swoop starts, here 6 semitones; the same for both oscillators'
+    - type: send
+      id: 3
+      parameters: {amount: 61, port: 0, sendpop: 1, stereo: 0, target: 9, voice: 0}
+    - type: oscillator
+      id: 4
+      parameters: {bandlimit: 0, color: 128, detune: 64, gain: 128, lfo: 1, phase: 0, shape: 64, stereo: 0, transpose: 76, type: 0, unison: 0}
+      comment: 'Pulse width modulation: transpose is its speed'
+    - type: send
+      id: 5
+      parameters: {amount: 76, port: 3, sendpop: 1, stereo: 0, target: 7, voice: 0}
+      comment: How far the pulse width moves
+    - type: envelope
+      id: 6
+      parameters: {attack: 44, curve: 0, decay: 64, gain: 128, release: 62, stereo: 1, sustain: 128}
+    - type: oscillator
+      id: 7
+      parameters: {bandlimit: 1, color: 64, detune: 80, gain: 18, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 2, unison: 3}
+      comment: 'Four detuned pulses, in the middle'
+    - type: push
+      id: 8
+      parameters: {stereo: 0}
+      comment: 'The pulses on both sides: detuned pulses in stereo are louder on one side at the start of every note'
+    - type: oscillator
+      id: 9
+      parameters: {bandlimit: 1, color: 128, detune: 44, gain: 36, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 52, type: 1, unison: 3}
+      comment: 'Four detuned saws on each side, an octave below'
+    - type: addp
+      id: 10
+      parameters: {stereo: 1}
+    - type: mulp
+      id: 11
+      parameters: {stereo: 1}
+    - type: filter
+      id: 12
+      parameters: {bandpass: 0, frequency: 10, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+      comment: 'Low cut: the moving pulse width also moves the signal up and down, a few times a second, which this removes'
+    - type: width
+      id: 13
+      parameters: {lowcut: 22, width: 72}
+      comment: 'Width, and mono below lowcut, which is higher here than in the other sounds, as the saw an octave down is the widest part'
+    - type: outaux
+      id: 14
+      parameters: {auxgain: 16, outgain: 32, stereo: 1}
