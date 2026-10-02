@@ -125,3 +125,28 @@ func (p *FeatureSetMacros) OttTime() bool       { return p.set("ott", "time", 64
 func (p *FeatureSetMacros) OttUpward() bool     { return p.set("ott", "upward", 0) }
 func (p *FeatureSetMacros) OttDownward() bool   { return p.set("ott", "downward", 0) }
 func (p *FeatureSetMacros) SoftclipDrive() bool { return p.set("softclip", "drive", 0) }
+
+// anyStereo is true when a unit of one of the types is stereo.
+func (p *FeatureSetMacros) anyStereo(unitTypes ...string) bool {
+	for _, t := range unitTypes {
+		if p.Stereo(t) {
+			return true
+		}
+	}
+	return false
+}
+
+// Swap, Peek2 and StereoHelper are true when a unit of the song calls the
+// helper of the wasm player of that name; otherwise the player leaves it
+// out.
+func (p *FeatureSetMacros) Swap() bool {
+	return p.anyStereo("addp", "mulp", "delay") || p.Mono("xch")
+}
+
+func (p *FeatureSetMacros) Peek2() bool {
+	return p.anyStereo("add", "mul", "push", "send", "ott", "limiter", "softclip") || p.HasOp("width")
+}
+
+func (p *FeatureSetMacros) StereoHelper() bool {
+	return p.anyStereo("distort", "hold", "crush", "gain", "invgain", "dbgain", "filter", "belleq", "clip", "ladder")
+}

@@ -325,9 +325,12 @@
     (f32.load (global.get $sp))
 )
 
+{{- if .Peek2}}
+
 (func $peek2 (result f32)
     (f32.load offset=4 (global.get $sp))
 )
+{{- end}}
 
 (func $pop (result f32)
     (call $peek)
@@ -342,10 +345,12 @@
 ;;------------------------------------------------------------------------------
 ;; Helper functions
 ;;------------------------------------------------------------------------------
+{{- if .Swap}}
 (func $swap (param f32 f32) (result f32 f32) ;; x,y -> y,x
     local.get 1
     local.get 0
 )
+{{- end}}
 
 (func $scanOperand (result i32)        ;; scans positions $VAL for a byte, incrementing $VAL afterwards
     (i32.load8_u (global.get $VAL))      ;; in other words: returns byte [$VAL++]

@@ -195,6 +195,7 @@
                         (f32.const 0.015625)
                     ) ;; scale back to 0 - 128
                     (f32.add (local.get $detune)) ;; add detune. detune is -1 to 1 so can detune a full note up or down at max
+{{- if .SupportsParamValue "oscillator" "lfo" 1}}
                     (f32.add (select
                         (f32.const 0)
                         (f32.convert_i32_u (i32.load (global.get $voice)))
@@ -207,6 +208,12 @@
                         (f32.const 0.000092696138) ;; scaling constant to get middle-C to where it should be
                         (i32.and (local.get $flags) (i32.const 0x8))
                     ))
+{{- else}}
+                    (f32.add (f32.convert_i32_u (i32.load (global.get $voice)))) ;; no oscillator of the song is an lfo: add the note number
+                    (f32.mul (f32.const 0.0833333)) ;; /12, in full octaves
+                    (call $pow2)
+                    (f32.mul (f32.const 0.000092696138)) ;; scaling constant to get middle-C to where it should be
+{{- end}}
 {{- if .SupportsModulation "oscillator" "frequency"}}
                     (f32.add (local.get $freqMod))
 {{- end}}

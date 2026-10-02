@@ -222,6 +222,8 @@
     (f32.min (f32.max (local.get $value) (f32.const -1.0)) (f32.const 1.0))
 )
 
+{{- if .StereoHelper}}
+
 (func $stereoHelper (param $stereo i32) (param $tableIndex i32)
     (if (local.get $stereo)(then
         (call $pop)
@@ -231,6 +233,7 @@
         (call $push)
     ))
 )
+{{- end}}
 
 ;;-------------------------------------------------------------------------------
 ;; The opcode table jump table. This is constructed to only include the opcodes

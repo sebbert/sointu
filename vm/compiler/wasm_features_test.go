@@ -534,3 +534,67 @@ func effectFeatureCases() []featureCase {
 func TestEffectFeaturesWasmMatchGoSynth(t *testing.T) {
 	runFeatureCases(t, effectFeatureCases())
 }
+
+// the helpers of the player that only some units call, and the code of the
+// oscillator for LFOs
+const (
+	helperSwap   = "(func $swap"
+	helperPeek2  = "(func $peek2"
+	helperStereo = "(func $stereoHelper"
+	oscLFO       = "(f32.const 0.000038)"
+)
+
+var sharedAllParts = []string{helperSwap, helperPeek2, helperStereo, oscLFO}
+
+func sharedFeatureCases() []featureCase {
+	type M = sointu.ParamMap
+	c := func(name string, has []string, units ...[]sointu.Unit) featureCase {
+		return featureCase{name: name, song: fsong(nil, cat(units...)), has: has, not: without(sharedAllParts, has...)}
+	}
+	// the stereo sources have no envelope: a stereo mulp calls $swap
+	mono, stereo := fsource("noise", 0), []sointu.Unit{fu("noise", M{"stereo": 1, "gain": 100})}
+	saw, saws := fsource("saw", 0), []sointu.Unit{fu("oscillator", M{"stereo": 1, "type": sointu.Trisaw, "color": 128, "detune": 70, "gain": 100})}
+	out := func(stereo int) []sointu.Unit { return []sointu.Unit{fu("out", M{"stereo": stereo, "gain": 64})} }
+	one := func(typ string, p M) []sointu.Unit { return []sointu.Unit{fu(typ, p)} }
+	delay := fu("delay", M{"stereo": 1, "pregain": 60, "dry": 100, "feedback": 60, "damp": 40})
+	delay.VarArgs = []int{1116, 1188, 1277, 1356}
+	cases := []featureCase{
+		c("mono", nil, mono, one("gain", M{"gain": 100}), one("filter", M{"frequency": 60, "resonance": 60, "lowpass": 1}), one("clip", nil), saw, one("addp", nil), out(0)),
+		c("stereo without the helpers", nil, stereo, one("pan", M{"stereo": 1, "panning": 40}), out(1)),
+		c("lfo", []string{oscLFO}, saw, one("oscillator", M{"lfo": 1, "type": sointu.Sine, "transpose": 80, "gain": 128}), one("mulp", nil), out(0)),
+		c("stereo addp", []string{helperSwap}, stereo, saws, one("addp", M{"stereo": 1}), out(1)),
+		c("stereo mulp", []string{helperSwap}, stereo, one("loadval", M{"stereo": 1, "value": 110}), one("mulp", M{"stereo": 1}), out(1)),
+		c("mono xch", []string{helperSwap}, mono, saw, one("gain", M{"gain": 30}), one("xch", nil), out(1)),
+		c("stereo delay", []string{helperSwap}, stereo, []sointu.Unit{delay}, out(1)),
+		c("stereo add", []string{helperPeek2}, stereo, saws, one("add", M{"stereo": 1}), out(1), one("pop", M{"stereo": 1})),
+		c("stereo mul", []string{helperPeek2}, stereo, one("loadval", M{"stereo": 1, "value": 110}), one("mul", M{"stereo": 1}), out(1), one("pop", M{"stereo": 1})),
+		c("stereo push", []string{helperPeek2}, stereo, one("push", M{"stereo": 1}), out(1), out(1)),
+		c("stereo send", []string{helperPeek2}, stereo, one("send", M{"stereo": 1, "amount": 128, "target": 9, "port": 0, "sendpop": 1}), one("receive", M{"stereo": 1, "id": 9}), out(1)),
+		c("width", []string{helperPeek2}, stereo, one("width", M{"width": 100}), out(1)),
+		c("stereo limiter", []string{helperPeek2}, stereo, one("limiter", M{"stereo": 1, "threshold": 60}), out(1)),
+		c("mono limiter", nil, mono, one("limiter", M{"threshold": 60}), out(0)),
+		c("stereo ladder", []string{helperStereo}, stereo, one("ladder", M{"stereo": 1}), out(1)),
+		c("everything", sharedAllParts, stereo, saws, one("add", M{"stereo": 1}), one("addp", M{"stereo": 1}), one("xch", nil), []sointu.Unit{delay},
+			one("oscillator", M{"stereo": 1, "lfo": 1, "type": sointu.Sine, "transpose": 80, "gain": 128}), one("mulp", M{"stereo": 1}), one("push", M{"stereo": 1}), one("addp", M{"stereo": 1}), one("filter", M{"stereo": 1, "frequency": 80, "resonance": 80, "lowpass": 1}), out(1)),
+	}
+	for _, typ := range []string{"distort", "hold", "crush", "gain", "invgain", "dbgain", "filter", "belleq", "clip"} {
+		p := M{"stereo": 1}
+		switch typ {
+		case "filter":
+			p = M{"stereo": 1, "frequency": 70, "resonance": 70, "bandpass": 1}
+		case "distort":
+			p["drive"] = 90
+		case "invgain":
+			p["invgain"] = 100
+		}
+		cases = append(cases, c("stereo "+typ, []string{helperStereo}, stereo, one(typ, p), out(1)))
+	}
+	return cases
+}
+
+// TestSharedFeaturesWasmMatchGoSynth checks the helpers of the wasm player
+// that it only has when a unit of the song calls them, and the LFO code of
+// the oscillator.
+func TestSharedFeaturesWasmMatchGoSynth(t *testing.T) {
+	runFeatureCases(t, sharedFeatureCases())
+}
