@@ -25,6 +25,9 @@ changes to the sound are fine, as long as both stay in sync.
   note ports of 16 MIDI channels each: 64 MIDI channels.
 - The plugins follow the tempo of the host, one way: the song's tempo can be
   edited, and it follows again when the host's tempo changes.
+- The plugins play at any sample rate of the host, and the tracker at that
+  of the audio device: the synth stays at 44100 Hz and its output is
+  resampled. See [Sample rate](#sample-rate).
 - The song is saved in the host's project. Edits mark the project unsaved
   (CLAP `mark_dirty`, VST2 `audioMasterUpdateDisplay`).
 - The plugin window comes to the front when it opens. Edit → Keep window on
@@ -1003,6 +1006,111 @@ a player and the Go synth: the spectrum after the eq is that before it
 moved by the curve of the editor, within 1.5 dB over three ranges; the
 taps follow the eq when its units change, also in a module; a second after
 the last time they were asked for, the synth records nothing).
+
+## Sample rate
+
+The synth runs at 44100 Hz only. Where the audio device or the plugin host
+runs at another rate, the output of the player is resampled to it
+(`resample`); at 44100 Hz nothing touches the frames. Before, the plugins
+played too fast and too high at any other rate, with a warning, and the
+tracker left the conversion to the system.
+
+**The resampler** (`resample.Resampler`) is a windowed sinc kernel for any
+pair of rates: a low-pass at half the slower rate, 36 frames of the slower
+rate to each side, Kaiser window with β 10.06, evaluated where each output
+frame lies between the input frames. The positions are whole numbers of
+1/out of an input frame, so nothing drifts. With up to 2048 different
+positions (48000 Hz has 160, 96000 Hz 320, 192000 Hz 640, 88200 Hz 2) each
+has its own row of a table; other rates (47999 Hz) have 1024 rows and
+interpolate between two. Every row is scaled to pass DC as it is.
+
+| | 44100 → 48000, 88200, 96000, 176400, 192000 Hz | → 32000 Hz | → 22050 Hz |
+|---|---|---|---|
+| Level within 0.0001 dB up to | 20 kHz | 14.5 kHz | 10 kHz |
+| -0.36 dB at | 21 kHz | 15.2 kHz | 10.5 kHz |
+| -6 dB at | 22.05 kHz | 16 kHz | 11.025 kHz |
+| Below -99 dB from | 24.1 kHz | 17.5 kHz | 12.05 kHz |
+| Latency, frames of the output | 40, 72, 79, 144, 157 | 37 | 36 |
+| Latency | 0.82 to 0.83 ms | 1.16 ms | 1.63 ms |
+| One core, playing in real time (M3 Pro) | 0.17 % at 48000, 0.34 % at 96000, 0.72 % at 192000 | | 0.24 % |
+
+- Measured (`resample_test.go`): tones up to the end of the passband keep
+  their level within 0.0001 dB, and everything else in the output (images,
+  aliases, rounding) is 98.9 dB or more below the tone; the images of such
+  tones, fitted alone, are below -99 dB; the output is the input 40 frames
+  (at 48000 Hz) late within 0.00001. With numpy, 12 tones from 41 Hz to
+  19.9 kHz at once: no other bin above -104.9 dB at 48000, 96000 and
+  192000 Hz. Interpolated kernels (47999, 50000 Hz) measure the same, at
+  twice the time.
+- The transition lies around half the slower rate, not below it. Going up,
+  what the synth has between 20 and 22.05 kHz leaves images between 22.05
+  and 24.1 kHz, which no one hears. Going down to 32000 or 22050 Hz, tones
+  in the upper 9 % below half the output rate come with aliases.
+- A signal at full scale can exceed it after resampling, as its peaks
+  between the samples show: a square wave at full scale peaks 2.2 dB above
+  it at 48000 Hz.
+- The output is the input `Latency` output frames late, exactly, whatever
+  the sizes of the blocks, and after h output frames the resampler has
+  taken ⌈h·in/out⌉ input frames: `Need(n)` tells how many the next n take.
+  The output does not depend on the blocks, to the bit.
+
+**Plugins** (`cmd/plugin`, `output`). For a block of n frames the player
+renders `Need(n)` frames, n·44100/rate within one, which are resampled into
+the block.
+
+- The host tells its rate when it activates the plugin (CLAP) or with
+  `effSetSampleRate` (VST2, `Dispatcher.SetSampleRateFunc`, added to the
+  vendored vst2); the VST2 plugin also asks the time info every 2 seconds,
+  as before. The resampler is made there, not in the audio thread, which
+  takes it over at its next block.
+- The latency is told to the host: the CLAP latency extension (it changes
+  only in `activate`), and `initialDelay` with `audioMasterIOChanged` for
+  VST2 (`Host.SetInitialDelay`, added to the vendored vst2). 0 at 44100 Hz.
+- A MIDI event at frame d of a block is played at frame `Need(d)` of the
+  player's block: the first frame of the synth at or after its time. So a
+  note is heard at its frame plus the latency, up to one frame of the synth
+  (23 µs) late, never early, and the same wherever the host cuts its blocks
+  (`TestNoteTiming`, `TestBlockSizes`: blocks of 0 to 4096 frames give the
+  same output to the bit, with notes on the first and last frames of
+  blocks).
+- The clock of the player counts frames of the synth, as the tracker's
+  keyboard and MIDI inputs assume (44100 a second), and recordings, whose
+  rows are computed from it, are right at any rate. The tempo of the host is
+  in beats per minute and needs no conversion; the plugins use nothing else
+  of the host's transport. They have no audio input.
+- The alert tells the rate and the latency (info), in place of the error
+  that the rate was not supported.
+
+**Tracker and sointu-play** (`oto`). What oto does when it is asked for
+44100 Hz on a device that runs at another rate, in the version used here:
+on macOS the AudioQueue converts, on Windows WASAPI in shared mode (auto
+convert, default quality) or WinMM, on Linux ALSA's `plug` devices and the
+sound servers (PipeWire, PulseAudio). Only an ALSA device without any of
+those takes the nearest rate it has, which oto does not look at: that plays
+too fast. So `oto.NewContext(0)` asks for the rate the device runs at
+(`DeviceSampleRate`), opens it at that rate and resamples itself:
+
+- macOS: the nominal rate of the default output device (CoreAudio).
+- Windows: the rate of the mix format of the default device (WASAPI).
+- Linux: the rate ALSA gives for 44100 Hz with its own resampling off, on
+  the device oto will open: 48000 for a `dmix` or a card at 48000 Hz, 44100
+  behind a sound server, which then resamples as before.
+- Where the system tells nothing, 44100 Hz as before.
+
+`-samplerate` of `sointu-track` and `sointu-play` sets the rate instead
+(`-samplerate 44100` is how it was). The rate is read once, at the start;
+if the device changes later, the system converts from the rate chosen.
+The buffer of the player is as long in time as before. The tracker tells
+the rate in an alert when it resamples.
+
+Everything the tracker shows and measures is the signal of the synth at
+44100 Hz, before the resampler: the player sends its own frames to the
+model (oscilloscope, spectrum, loudness and peaks), and the taps are in the
+synth. Files that `sointu-play` writes are 44100 Hz.
+
+**Not verified here:** the Windows query was only compiled; the Linux one
+ran in a container against ALSA devices with fixed rates, not on hardware;
+no host was run with the plugins.
 
 ## Tracker
 

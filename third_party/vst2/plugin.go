@@ -51,6 +51,7 @@ type (
 	// Dispatcher handles plugin dispatch calls from the host.
 	Dispatcher struct {
 		SetBufferSizeFunc func(size int)
+		SetSampleRateFunc func(sampleRate float64)              // called by host to tell the sample rate, before processing starts
 		CanDoFunc         func(PluginCanDoString) CanDoResponse // called by host to query the plugin about its capabilities
 		CloseFunc         func()                                // called by host right before deleting the plugin, use to free up resources
 		ProcessEventsFunc func(*EventsPtr)                      // called by host to pass events (e.g. MIDI events) along with their time stamps (frames) within the next processing block
@@ -98,6 +99,11 @@ func (d Dispatcher) dispatchFunc(p Plugin) dispatchFunc {
 				return 0
 			}
 			d.SetBufferSizeFunc(int(value))
+		case plugSetSampleRate:
+			if d.SetSampleRateFunc == nil {
+				return 0
+			}
+			d.SetSampleRateFunc(float64(opt))
 		case PlugGetPluginName:
 			s := (*ascii32)(ptr)
 			copyASCII(s[:], p.Name)
@@ -161,6 +167,13 @@ func (h callbackHandler) host(cp *C.CPlugin) Host {
 		},
 		UpdateDisplay: func() {
 			C.callbackHost(h.callback, cp, C.int(HostUpdateDisplay), 0, 0, nil, 0)
+		},
+		SetInitialDelay: func(frames int) {
+			if int(cp.initialDelay) == frames {
+				return
+			}
+			cp.initialDelay = C.int32_t(frames)
+			C.callbackHost(h.callback, cp, C.int(HostIOChanged), 0, 0, nil, 0)
 		},
 	}
 }

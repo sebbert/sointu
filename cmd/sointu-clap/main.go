@@ -68,6 +68,14 @@ func sointuMIDI(h C.uintptr_t, time C.uint32_t, port C.int, d0, d1, d2 C.uint8_t
 	instance(h).MIDI(int(time), int(port), [3]byte{byte(d0), byte(d1), byte(d2)})
 }
 
+// sointuSetSampleRate tells the instance the sample rate of the host and
+// returns its latency at that rate, in frames.
+//
+//export sointuSetSampleRate
+func sointuSetSampleRate(h C.uintptr_t, sampleRate C.double) C.uint32_t {
+	return C.uint32_t(instance(h).SetSampleRate(float64(sampleRate)))
+}
+
 //export sointuProcess
 func sointuProcess(h C.uintptr_t, left, right *C.float, frames C.uint32_t, sampleRate C.double, hasTempo C.bool, tempo C.double) {
 	n := int(frames)

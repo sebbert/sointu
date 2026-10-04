@@ -15,9 +15,11 @@ typedef struct {
 	clap_plugin_t plugin;
 	const clap_host_t *host;
 	const clap_host_state_t *host_state;
+	const clap_host_latency_t *host_latency;
 	atomic_bool dirty; // the song changed; tell the host on the main thread
 	uintptr_t handle;  // cgo.Handle of the Go instance
 	double sample_rate;
+	uint32_t latency; // of the resampler at sample_rate, in frames
 } sointu_plugin_t;
 
 static const char *const features[] = {
@@ -145,11 +147,22 @@ static const clap_plugin_state_t state = {
 	.load = state_load,
 };
 
+// latency: that of the resampler, when the host does not run at 44100 Hz
+
+static uint32_t latency_get(const clap_plugin_t *plugin) {
+	return self(plugin)->latency;
+}
+
+static const clap_plugin_latency_t latency = {
+	.get = latency_get,
+};
+
 // plugin
 
 static bool plugin_init(const clap_plugin_t *plugin) {
 	sointu_plugin_t *p = self(plugin);
 	p->host_state = p->host->get_extension(p->host, CLAP_EXT_STATE);
+	p->host_latency = p->host->get_extension(p->host, CLAP_EXT_LATENCY);
 	p->handle = sointuNew((uintptr_t)p);
 	return true;
 }
@@ -170,7 +183,16 @@ static void plugin_destroy(const clap_plugin_t *plugin) {
 }
 
 static bool plugin_activate(const clap_plugin_t *plugin, double sample_rate, uint32_t min_frames, uint32_t max_frames) {
-	self(plugin)->sample_rate = sample_rate;
+	sointu_plugin_t *p = self(plugin);
+	p->sample_rate = sample_rate;
+	// the synth runs at 44100 Hz; at another rate the plugin resamples,
+	// which delays the output. The latency may only change here.
+	uint32_t latency = sointuSetSampleRate(p->handle, sample_rate);
+	if (latency != p->latency) {
+		p->latency = latency;
+		if (p->host_latency != NULL)
+			p->host_latency->changed(p->host);
+	}
 	return true;
 }
 
@@ -232,6 +254,8 @@ static const void *plugin_get_extension(const clap_plugin_t *plugin, const char 
 		return &note_ports;
 	if (strcmp(id, CLAP_EXT_STATE) == 0)
 		return &state;
+	if (strcmp(id, CLAP_EXT_LATENCY) == 0)
+		return &latency;
 	return NULL;
 }
 

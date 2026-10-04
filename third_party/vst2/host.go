@@ -10,6 +10,7 @@ type (
 		GetProcessLevel HostGetProcessLevelFunc
 		GetTimeInfo     HostGetTimeInfoFunc
 		UpdateDisplay   HostUpdateDisplayFunc
+		SetInitialDelay HostSetInitialDelayFunc
 	}
 
 	// HostGetSampleRateFunc returns host sample rate.
@@ -23,4 +24,7 @@ type (
 	// HostUpdateDisplayFunc tells the host that the plugin changed, e.g. its
 	// state; hosts use it to mark the project unsaved.
 	HostUpdateDisplayFunc func()
+	// HostSetInitialDelayFunc sets the latency of the plugin, in frames,
+	// and tells the host when it changed.
+	HostSetInitialDelayFunc func(frames int)
 )

@@ -14,6 +14,7 @@ import (
 	"github.com/vsariola/sointu"
 	"github.com/vsariola/sointu/cmd"
 	"github.com/vsariola/sointu/oto"
+	"github.com/vsariola/sointu/resample"
 	"github.com/vsariola/sointu/tracker"
 	"github.com/vsariola/sointu/tracker/gioui"
 	"github.com/vsariola/sointu/tracker/mcp"
@@ -21,6 +22,7 @@ import (
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to `file`")
 var memprofile = flag.String("memprofile", "", "write memory profile to `file`")
+var sampleRate = flag.Int("samplerate", 0, "sample rate of the audio device in `Hz`; 0 uses the rate the device runs at. The synth runs at 44100 Hz and is resampled to any other rate")
 var defaultMidiInput = flag.String("midi-input", "", "connect MIDI input to matching device name prefix")
 
 func main() {
@@ -36,7 +38,7 @@ func main() {
 			log.Fatal("could not start CPU profile: ", err)
 		}
 	}
-	audioContext, err := oto.NewContext()
+	audioContext, err := oto.NewContext(*sampleRate)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -59,6 +61,9 @@ func main() {
 		}
 		model.Alerts().Add(fmt.Sprintf("MIDI command line argument passed, but device with given prefix not found: %s", *defaultMidiInput), tracker.Error)
 	found:
+	}
+	if rate := audioContext.SampleRate(); rate != resample.SynthRate {
+		model.Alerts().Add(fmt.Sprintf("The audio device runs at %d Hz: resampling from %d Hz", rate, resample.SynthRate), tracker.Info)
 	}
 	if a := flag.Args(); len(a) > 0 {
 		f, err := os.Open(a[0])

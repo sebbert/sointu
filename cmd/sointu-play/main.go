@@ -34,6 +34,7 @@ func main() {
 	versionFlag := flag.Bool("v", false, "Print version.")
 	syntherInt := flag.Int("synth", 0, "Select the synther to use. By default, uses the first one in the list of available synthers.")
 	ffmpegPath := flag.String("ffmpeg", "", "Path of ffmpeg, for encoding and decoding the samples of songs that play buffers. By default, $"+ffmpeg.EnvVar+", PATH and common installation directories are searched.")
+	sampleRate := flag.Int("samplerate", 0, "Sample rate of the audio device for playing, in `Hz`. By default, the rate the device runs at. The song is rendered at 44100 Hz and resampled to any other rate; the files are always 44100 Hz.")
 	allowUnknown := flag.Bool("allow-unknown-units", false, "Play songs with units of a type that this version does not have, e.g. songs of a newer version, without those units, with a warning for each. By default such songs are an error.")
 	flag.Usage = printUsage
 	flag.Parse()
@@ -59,7 +60,7 @@ func main() {
 	var playWaiter sointu.CloserWaiter
 	if *play {
 		var err error
-		audioContext, err = oto.NewContext()
+		audioContext, err = oto.NewContext(*sampleRate)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "could not acquire oto AudioContext: %v\n", err)
 			os.Exit(1)
