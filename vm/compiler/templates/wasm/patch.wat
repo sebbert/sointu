@@ -64,6 +64,7 @@
 {{- template "spectral.wat" .}}
 {{- template "mc.wat" .}}
 {{- template "reverb.wat" .}}
+{{- template "convolution.wat" .}}
 
 ;;-------------------------------------------------------------------------------
 ;; $input returns the float value of a transformed to 0.0 - 1.0f range.
@@ -172,7 +173,7 @@
 )
 {{- end}}
 
-{{- if or (and (not .MathImports) (or (.SupportsParamValue "oscillator" "type" .Sine) (.HasOp "belleq"))) .SpectralTable}}
+{{- if or (and (not .MathImports) (or (.SupportsParamValue "oscillator" "type" .Sine) (.HasOp "belleq"))) .SpectralFFT}}
 ;; $sinTurns returns sin(2π·t): t is in turns, not radians. t is folded to x in
 ;; [-1/4, 1/4] turns, where an odd polynomial fitted to sin(2π·x) gives it.
 (func $sinTurns (param $t f32) (result f32) (local $x f32) (local $z f32)

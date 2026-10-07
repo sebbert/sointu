@@ -227,6 +227,11 @@ func SpectrumBufferParams(unitType string) []string {
 // in their buffer parameter, replacing its spectra.
 func WritesSpectrum(unitType string) bool { return unitType == "spfft" || unitType == "spcopy" }
 
+// ReadsAudioBuffer reports whether units of the type read the audio buffer
+// in their buffer parameter: bufread plays it, and convolution takes its
+// impulse response from it.
+func ReadsAudioBuffer(unitType string) bool { return unitType == "bufread" || unitType == "convolution" }
+
 // IsAudio reports whether the buffer holds audio, for bufread and bufwrite
 // units: it is neither a spectrum nor a bus.
 func (b *Buffer) IsAudio() bool { return !b.Spectrum && !b.Bus }

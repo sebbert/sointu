@@ -95,6 +95,14 @@ type (
 		// of the patch. The operand of a reverb unit after its transformed
 		// parameters is its index in Reverbs.
 		Reverbs []Reverb
+
+		// Convs are the constant data of the convolution units, in the
+		// order of the patch. The operand of a convolution unit after its
+		// transformed parameters is its index in Convs. ConvStates are
+		// the indices in Convs of the states of the convolution units, in
+		// the order the units run, voice by voice.
+		Convs      []Conv
+		ConvStates []int
 	}
 
 	// Spectrum is a spectrum buffer: the ID of the buffer, the base 2
@@ -192,6 +200,7 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 		if instr.NumVoices < 1 {
 			return nil, errors.New("Each instrument must have at least 1 voice")
 		}
+		var instrConvs []int // the convolution units of the instrument, as indices in Convs
 		for unitIndex, unit := range instr.Units {
 			if unit.Type == "" || unit.Disabled { // empty units are just ignored & skipped
 				continue
@@ -420,6 +429,22 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				b.op(opcode + p["stereo"])
 				b.defOperands(unit)
 				b.operand(min(max(p["lookahead"], 0), sointu.LimiterLookaheadMax)) // in steps of 4 samples
+			case "convolution":
+				// operands: gain, and dry in songs that use it, then the
+				// index in Convs; units with the same constants share them
+				cv := newConv(p)
+				index := slices.Index(b.Convs, cv)
+				if index < 0 {
+					index = len(b.Convs)
+					b.Convs = append(b.Convs, cv)
+				}
+				if index > 255 {
+					return nil, errors.New("Patch uses over 256 different convolution units")
+				}
+				instrConvs = append(instrConvs, index)
+				b.op(opcode + p["stereo"])
+				b.defOperands(unit)
+				b.operand(index)
 			case "filter":
 				flags := 0
 				if unit.Parameters["lowpass"] == 1 {
@@ -497,6 +522,9 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 			if b.unitNo > 63 {
 				return nil, fmt.Errorf(`Instrument %v has over 63 units`, instrIndex)
 			}
+		}
+		for range instr.NumVoices {
+			b.ConvStates = append(b.ConvStates, instrConvs...)
 		}
 		b.opFinish(instr)
 	}

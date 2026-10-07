@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/bits"
 	"path/filepath"
 	"strings"
 	"text/template"
@@ -165,6 +166,7 @@ type wasmBufferData struct {
 	Buffers     []wasmBuffer
 	Headers     []wasmBufferHeader
 	Regions     []wasmBufferRegion
+	ConvHeaders []uint32 // of the units of Bytecode.Convs: the offsets of the headers of their buffers
 	BufferBytes int
 	wasmBufferFeatures
 }
@@ -363,7 +365,7 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 	for _, unit := range features.Instructions() {
 		wasmOnly := len(sointu.SpectrumBufferParams(unit)) > 0 || len(sointu.BusParams(unit)) > 0
 		switch unit {
-		case "bufread", "bufwrite", "spawn", "arg", "window", "ott", "limiter", "softclip", "width", "ladder", "reverb":
+		case "bufread", "bufwrite", "spawn", "arg", "window", "ott", "limiter", "softclip", "width", "ladder", "reverb", "convolution":
 			wasmOnly = true
 		}
 		if wasmOnly && com.Arch != "wasm" {
@@ -423,6 +425,7 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 			}
 			buffers.wasmBufferFeatures = bufferFeatures(song, features, encodedPatch, &buffers)
 			units := unitFeatures(song, encodedPatch)
+			conv := wasmConv(song, encodedPatch, buffers.ConvHeaders)
 			if (com.Stages > 1 || len(com.StageCuts) > 0) && !com.Progressive {
 				return nil, nil, errors.New("only the progressive player renders in stages")
 			}
@@ -450,10 +453,11 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 				wasmSpectralData
 				wasmMCData
 				wasmReverbData
+				wasmConvData
 				wasmUnitFeatures
 				wasmStageData
 				wasmSyncData
-			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers, wasmSpectral(encodedPatch, units), wasmMC(encodedPatch, units, featureSetMacros.MCDelayMod()), wasmReverb(encodedPatch, &featureSetMacros, units), units, stages, wasmSync(song, com.RowSync)}
+			}{compilerMacros, featureSetMacros, wasmMacros, songMacros, encodedPatch, patterns, sequences, len(patterns[0]), len(sequences[0]), 1, buffers, wasmSpectral(encodedPatch, units, conv.ConvLog2), wasmMC(encodedPatch, units, featureSetMacros.MCDelayMod()), wasmReverb(encodedPatch, &featureSetMacros, units), conv, units, stages, wasmSync(song, com.RowSync)}
 			populatedTemplate, extension, err = com.compile(templateName, &data)
 			com.Layout = &WasmLayout{
 				Output: wasmMacros.Labels["su_outputbuffer"], OutputBytes: wasmMacros.Labels["su_outputend"] - wasmMacros.Labels["su_outputbuffer"],
@@ -543,10 +547,16 @@ type wasmSpectralData struct {
 	SpectralBytes, SpectralScratch, SpectralMaxLog2      int
 	SpectralHann, SpectralTwiddles, SpectralTwiddleBytes int
 	SpectralMaxSize                                      int
+	// SpectralFFT is true when the player has the FFT and its tables:
+	// with spectral units, and with convolution units whose responses are
+	// longer than their head, which need them up to 2^convLog2 too.
+	SpectralFFT bool
 }
 
-func wasmSpectral(b *vm.Bytecode, f wasmUnitFeatures) (ret wasmSpectralData) {
+func wasmSpectral(b *vm.Bytecode, f wasmUnitFeatures, convLog2 int) (ret wasmSpectralData) {
 	offset := 0
+	ret.SpectralFFT = len(b.SpectralUnits) > 0 || convLog2 > 0
+	ret.SpectralMaxLog2 = convLog2 // the FFTs of the convolution units use the tables and the scratch space
 	stride := 12 // of the spectrum table, in bytes
 	if f.SpectralStereo {
 		stride = 16
@@ -738,39 +748,47 @@ func wasmMC(b *vm.Bytecode, features wasmUnitFeatures, delayMod bool) (ret wasmM
 // samples after each other in su_buffers.
 func (com *Compiler) wasmBuffers(song *sointu.Song, b *vm.Bytecode) (ret wasmBufferData, err error) {
 	index := map[uint32]int{} // buffer ID -> header index
-	for _, r := range b.BufferRegions {
-		i, ok := index[r.BufferID]
-		if !ok {
-			i = len(ret.Headers)
-			index[r.BufferID] = i
-			header := wasmBufferHeader{Channels: 1} // a missing buffer has no frames and is silent
-			if buf, found := song.Buffers.Find(int(r.BufferID)); found && buf.Writable() {
-				if buf.Channels < 1 || buf.Channels > 2 {
-					return ret, fmt.Errorf("buffer %q has %d channels, expected 1 or 2", buf.Name, buf.Channels)
-				}
-				header = wasmBufferHeader{Offset: uint32(ret.BufferBytes), Capacity: uint32(buf.Frames), Channels: uint32(buf.Channels)}
-				ret.BufferBytes += buf.Frames * buf.Channels * 4
-			} else if found && buf.Sample != nil {
-				enc, ok := com.Buffers[buf.ID]
-				if !ok {
-					return ret, fmt.Errorf("buffer %q has not been encoded", buf.Name)
-				}
-				if enc.Channels < 1 || enc.Channels > 2 {
-					return ret, fmt.Errorf("buffer %q has %d channels, expected 1 or 2", buf.Name, enc.Channels)
-				}
-				var hex strings.Builder
-				for _, c := range enc.Encoded {
-					fmt.Fprintf(&hex, "\\%02x", c)
-				}
-				format := enc.Format
-				if format == "" {
-					format = "bin"
-				}
-				ret.Buffers = append(ret.Buffers, wasmBuffer{Offset: ret.BufferBytes, Frames: enc.Frames, Channels: enc.Channels, EncodedHex: hex.String(), encoded: enc.Encoded, format: format})
-				header = wasmBufferHeader{Offset: uint32(ret.BufferBytes), Capacity: uint32(enc.Frames), Channels: uint32(enc.Channels), Filled: uint32(enc.Frames)}
-				ret.BufferBytes += enc.Frames * enc.Channels * 4
+	header := func(id uint32) (int, error) {
+		i, ok := index[id]
+		if ok {
+			return i, nil
+		}
+		i = len(ret.Headers)
+		index[id] = i
+		header := wasmBufferHeader{Channels: 1} // a missing buffer has no frames and is silent
+		if buf, found := song.Buffers.Find(int(id)); found && buf.Writable() {
+			if buf.Channels < 1 || buf.Channels > 2 {
+				return 0, fmt.Errorf("buffer %q has %d channels, expected 1 or 2", buf.Name, buf.Channels)
 			}
-			ret.Headers = append(ret.Headers, header)
+			header = wasmBufferHeader{Offset: uint32(ret.BufferBytes), Capacity: uint32(buf.Frames), Channels: uint32(buf.Channels)}
+			ret.BufferBytes += buf.Frames * buf.Channels * 4
+		} else if found && buf.Sample != nil {
+			enc, ok := com.Buffers[buf.ID]
+			if !ok {
+				return 0, fmt.Errorf("buffer %q has not been encoded", buf.Name)
+			}
+			if enc.Channels < 1 || enc.Channels > 2 {
+				return 0, fmt.Errorf("buffer %q has %d channels, expected 1 or 2", buf.Name, enc.Channels)
+			}
+			var hex strings.Builder
+			for _, c := range enc.Encoded {
+				fmt.Fprintf(&hex, "\\%02x", c)
+			}
+			format := enc.Format
+			if format == "" {
+				format = "bin"
+			}
+			ret.Buffers = append(ret.Buffers, wasmBuffer{Offset: ret.BufferBytes, Frames: enc.Frames, Channels: enc.Channels, EncodedHex: hex.String(), encoded: enc.Encoded, format: format})
+			header = wasmBufferHeader{Offset: uint32(ret.BufferBytes), Capacity: uint32(enc.Frames), Channels: uint32(enc.Channels), Filled: uint32(enc.Frames)}
+			ret.BufferBytes += enc.Frames * enc.Channels * 4
+		}
+		ret.Headers = append(ret.Headers, header)
+		return i, nil
+	}
+	for _, r := range b.BufferRegions {
+		i, err := header(r.BufferID)
+		if err != nil {
+			return ret, err
 		}
 		if r.Flags&vm.BufferRegionWrite != 0 && ret.Headers[i].Capacity > 0 {
 			if buf, _ := song.Buffers.Find(int(r.BufferID)); !buf.Writable() {
@@ -782,5 +800,107 @@ func (com *Compiler) wasmBuffers(song *sointu.Song, b *vm.Bytecode) (ret wasmBuf
 			LoopLength: r.LoopLength, Fade: r.Fade, EdgeFade: r.EdgeFade, Flags: r.Flags,
 		})
 	}
+	// the buffers of the impulse responses of the convolution units
+	for _, cv := range b.Convs {
+		i, err := header(uint32(cv.BufferID))
+		if err != nil {
+			return ret, err
+		}
+		ret.ConvHeaders = append(ret.ConvHeaders, uint32(i*wasmBufferHeaderSize))
+	}
 	return ret, nil
+}
+
+// wasmConvData is the layout of the convolution units in the wasm player.
+type wasmConvData struct {
+	// ConvData has ConvRecord bytes for each unit of Bytecode.Convs, as
+	// i32s: the offset of the header of its buffer from su_buffer_headers,
+	// the first frame and the number of frames of its response, the size of
+	// a channel of its state and the partitions of its three levels; and
+	// in songs whose units differ in them, the predelay in frames at
+	// ConvPredelayAt, the partitions to read again at a time at
+	// ConvFollowAt and whether what they change is faded in at ConvFadeAt.
+	ConvData                                             []uint32
+	ConvRecord, ConvPredelayAt, ConvFollowAt, ConvFadeAt int
+	// ConvBytes is the size of su_conv: three spectra of the largest block
+	// (the sum of the products, the spectrum a partition had, the sum of
+	// what the partitions change), 3·ConvSpectrum bytes, and then the
+	// states of the units in the order they run, voice by voice.
+	ConvBytes, ConvSpectrum int
+	ConvFFT                 bool // a response is longer than the head: the levels
+	ConvLog2                int  // base 2 logarithm of the largest FFT
+	ConvScan                bool // a response is of a written buffer: it is read again
+	ConvLoad                bool // a response is of a sample: it is read at the first sample
+	ConvFade                bool // a unit fades in what a partition read again changes
+	ConvNoFade              bool // and one does not
+	ConvFollow              bool // a unit reads several partitions at a time
+	ConvPredelay            bool
+}
+
+func wasmConv(song *sointu.Song, b *vm.Bytecode, headers []uint32) (ret wasmConvData) {
+	if len(b.Convs) == 0 {
+		return
+	}
+	maxBlock := 0
+	written := make([]bool, len(b.Convs))
+	for i, cv := range b.Convs {
+		buf, found := song.Buffers.Find(cv.BufferID)
+		written[i] = found && buf.Writable()
+		if written[i] {
+			ret.ConvScan = true
+		} else if found {
+			ret.ConvLoad = true
+		}
+		for l, p := range cv.Partitions() {
+			if p > 0 {
+				ret.ConvFFT = true
+				maxBlock = max(maxBlock, int(vm.ConvBlock(l)))
+			}
+		}
+		ret.ConvPredelay = ret.ConvPredelay || cv.Predelay != 0
+	}
+	for i, cv := range b.Convs { // of the units that read again
+		if written[i] && ret.ConvFFT {
+			ret.ConvFade = ret.ConvFade || cv.Fade
+			ret.ConvNoFade = ret.ConvNoFade || !cv.Fade
+			ret.ConvFollow = ret.ConvFollow || cv.Follow != 1
+		}
+	}
+	if ret.ConvFFT {
+		ret.ConvLog2 = bits.Len(uint(2*maxBlock)) - 1
+		ret.ConvSpectrum = 8 * (maxBlock + 4)
+	}
+	ret.ConvRecord = 28
+	part := func(used bool) (at int) {
+		if used {
+			at = ret.ConvRecord
+			ret.ConvRecord += 4
+		}
+		return at
+	}
+	ret.ConvPredelayAt = part(ret.ConvPredelay)
+	ret.ConvFollowAt = part(ret.ConvFollow)
+	ret.ConvFadeAt = part(ret.ConvFade && ret.ConvNoFade)
+	for i, cv := range b.Convs {
+		parts := cv.Partitions()
+		ret.ConvData = append(ret.ConvData, headers[i], cv.Start, cv.Length, uint32(cv.ConvChannelBytes()), parts[0], parts[1], parts[2])
+		if ret.ConvPredelayAt > 0 {
+			ret.ConvData = append(ret.ConvData, cv.Predelay)
+		}
+		if ret.ConvFollowAt > 0 {
+			ret.ConvData = append(ret.ConvData, cv.Follow)
+		}
+		if ret.ConvFadeAt > 0 {
+			fade := uint32(0)
+			if cv.Fade {
+				fade = 1
+			}
+			ret.ConvData = append(ret.ConvData, fade)
+		}
+	}
+	ret.ConvBytes = 3 * ret.ConvSpectrum
+	for _, i := range b.ConvStates {
+		ret.ConvBytes += b.Convs[i].ConvStateBytes()
+	}
+	return
 }

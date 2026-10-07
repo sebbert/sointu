@@ -538,6 +538,15 @@ su_op_compressor_mono:
 {{end}}
 
 
+{{- if .HasOp "convolution"}}
+;-------------------------------------------------------------------------------
+;   CONVOLUTION opcode: not supported on x86 yet; leaves the signal unchanged
+;-------------------------------------------------------------------------------
+{{.Func "su_op_convolution" "Opcode"}}
+    ret
+{{end}}
+
+
 {{- if .HasOp "reverb"}}
 ;-------------------------------------------------------------------------------
 ;   REVERB opcode: not supported on x86 yet; leaves the signal unchanged

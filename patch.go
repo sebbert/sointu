@@ -393,6 +393,59 @@ var UnitTypes = map[string]UnitType{
 			return StackUse{Inputs: [][]int{{0, 1}, {0, 1}}, Modifies: []bool{true, true}, NumOutputs: 2}
 		},
 	},
+	"convolution": {
+		// convolution convolves the signal with an impulse response read
+		// from an audio buffer: a sample, or what bufwrite units wrote, so a
+		// song can make its own impulse responses, e.g. a burst of filtered
+		// noise with an envelope for a reverb. The output is the wet signal
+		// times gain, plus the input times dry. It has no latency: the first
+		// 64 frames of the response are a direct sum, the rest is computed
+		// with FFTs of blocks of 64, 512 and 4096 frames. Go synth and wasm
+		// player only.
+		//
+		// The response is length frames of the buffer from start, in frames
+		// from the beginning of the buffer; frames that are not valid (not
+		// written yet, or beyond the end) are silent. A mono unit uses the
+		// left channel of a stereo buffer; a stereo unit convolves left
+		// with left and right with right, or both with a mono buffer.
+		// predelay delays the wet signal. Each voice of the instrument has
+		// a convolution of its own.
+		//
+		// The response of a sample is read when the song starts. That of a
+		// written buffer is read again all the time: its first 64 frames
+		// every sample, the frames up to 512 once in 448 samples (10 ms),
+		// those up to 4096 once in 3584 samples (81 ms), and the rest, in
+		// blocks of 4096 frames, once in the time it lasts. follow reads 2,
+		// 4 or 8 times as fast, for more FFTs. A oneshot bufwrite that
+		// starts with the song is read just behind where it writes (with
+		// follow 1×). A block that changed is used at once; with fade, what
+		// it changes is faded in over 1.5, 11.6 or 93 ms, for an FFT more.
+		// Songs that leave dry at 0 and do not modulate it compile without
+		// it.
+		Params: []UnitParameter{
+			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "gain", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: mcGainDisplay},
+			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+			{Name: "start", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+			{Name: "length", MinValue: 0, Default: 88, MaxValue: ConvolutionLengthMax, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				return convolutionTimeDisplay(ConvolutionLength(v))
+			}},
+			{Name: "predelay", MinValue: 0, MaxValue: ConvolutionPredelayMax, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				return convolutionTimeDisplay(ConvolutionPredelay(v))
+			}},
+			{Name: "follow", MinValue: 0, MaxValue: ConvolutionFollowMax, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) {
+				return strconv.Itoa(ConvolutionFollow(v)), "×"
+			}},
+			{Name: "fade", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "dry", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
+				if v <= 0 {
+					return "off", ""
+				}
+				return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB"
+			}},
+		},
+		StackUse: stackUseEffect,
+	},
 	"reverb": {
 		// reverb is the Reverb module preset (tracker/modules/Reverb.yml) as
 		// one unit: stereo in, the wet signal out. Low cut and high cut on
@@ -1764,6 +1817,62 @@ func (p Patch) NumReverbs() int {
 	for _, instr := range p {
 		for _, unit := range instr.Units {
 			if unit.Type == "reverb" && !unit.Disabled {
+				total += instr.NumVoices
+			}
+		}
+	}
+	return total
+}
+
+// The convolution unit: the first ConvolutionHead frames of its impulse
+// response are a direct sum, and the rest is convolved in blocks, with FFTs:
+// see vm/convolution.go.
+const (
+	// ConvolutionHead is the number of frames at the beginning of an
+	// impulse response that the convolution unit sums directly.
+	ConvolutionHead = 64
+	// ConvolutionLengthMax is the largest length of a convolution unit:
+	// 2^19 frames, 11.9 s.
+	ConvolutionLengthMax = 104
+	// ConvolutionPredelayMax is the largest predelay of a convolution unit.
+	ConvolutionPredelayMax = 127
+	// ConvolutionFollowMax is the largest follow of a convolution unit.
+	ConvolutionFollowMax = 3
+)
+
+// ConvolutionFollow returns how many blocks of each part of its impulse
+// response a convolution unit reads again from a written buffer at a time:
+// 1, 2, 4 or 8.
+func ConvolutionFollow(v int) int { return 1 << min(max(v, 0), ConvolutionFollowMax) }
+
+// ConvolutionLength returns the length of the impulse response of a
+// convolution unit in frames: 64·2^(v/8), from 64 (1.5 ms) to 524288
+// (11.9 s) in steps of 9 %, doubling every 8.
+func ConvolutionLength(v int) int {
+	v = min(max(v, 0), ConvolutionLengthMax)
+	return int(math.Round(math.Ldexp(ConvolutionHead*math.Pow(2, float64(v%8)/8), v/8)))
+}
+
+// ConvolutionPredelay returns the predelay of a convolution unit in frames:
+// 64 for each step, up to 8128 (184 ms).
+func ConvolutionPredelay(v int) int { return 64 * min(max(v, 0), ConvolutionPredelayMax) }
+
+// convolutionTimeDisplay shows a number of frames as a time.
+func convolutionTimeDisplay(frames int) (string, string) {
+	if frames >= 44100 {
+		return strconv.FormatFloat(float64(frames)/44100, 'f', 2, 64), "s"
+	}
+	return strconv.FormatFloat(float64(frames)/44.1, 'g', 3, 64), "ms"
+}
+
+// NumConvolutions returns the number of convolution states of the patch:
+// the number of convolution units of every instrument times its number of
+// voices. The synths keep them outside the voices, like the states of ott.
+func (p Patch) NumConvolutions() int {
+	total := 0
+	for _, instr := range p {
+		for _, unit := range instr.Units {
+			if unit.Type == "convolution" && !unit.Disabled {
 				total += instr.NumVoices
 			}
 		}

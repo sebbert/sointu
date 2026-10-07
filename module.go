@@ -524,7 +524,7 @@ func (m Modules) MakeModuleUnit(index int) Unit {
 // the IDs of buffers.
 func bufferParams(unitType string) []string {
 	switch unitType {
-	case "bufread", "bufwrite":
+	case "bufread", "bufwrite", "convolution":
 		return []string{"buffer"}
 	}
 	if p := SpectrumBufferParams(unitType); p != nil {

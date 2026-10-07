@@ -31,6 +31,9 @@ type (
 		otts       []ottState
 		limiters   []limiterState
 		reverbs    []reverbState
+		convs      []convState
+		convX      []float32 // scratch of the convolution units: see convScratch
+		convAcc    []float32
 		buffers    map[int]*synthBuffer
 		spectra    []spectrum
 		spectral   []spectralState // states of the spectral units
@@ -137,6 +140,7 @@ func (s GoSynther) Synth(patch sointu.Patch, bpm int) (sointu.Synth, error) {
 	ret.syncs = s.Syncs
 	ret.setSpectra(nil)
 	ret.setMC(nil)
+	ret.loadConvs(false)
 	return ret, nil
 }
 
@@ -198,6 +202,7 @@ func (s *GoSynth) SetBuffers(buffers map[int]sointu.BufferAudio) {
 			s.buffers[id] = &synthBuffer{audio: b, filled: uint32(frames)}
 		}
 	}
+	s.loadConvs(true) // the impulse responses of the convolution units
 }
 
 func (s *GoSynth) Playheads(dst []sointu.Playhead) []sointu.Playhead {
@@ -276,6 +281,7 @@ func (s *GoSynth) Update(patch sointu.Patch, bpm int) error {
 	} else {
 		s.layout = layout
 	}
+	s.loadConvs(false) // of the convolution units that are new or changed
 	if s.taps != nil {
 		s.resolveTaps()
 	}
@@ -303,6 +309,7 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 		otts := s.otts
 		limiters := s.limiters
 		reverbs := s.reverbs
+		convs := s.convs
 		voicesRemaining := s.bytecode.NumVoices
 		voices := s.state.voices[:]
 		units := voices[0].units[:]
@@ -846,6 +853,12 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 				index, operands = operands[0], operands[1:]
 				reverb(&s.bytecode.Reverbs[index], &reverbs[0], &params, stack)
 				reverbs = reverbs[1:]
+			case opConvolution:
+				var index byte
+				index, operands = operands[0], operands[1:]
+				gain := exp2f(float32(params[0]-0.5) * 13.287712379549449)
+				s.convolution(&s.bytecode.Convs[index], &convs[0], gain, params[1], stack)
+				convs = convs[1:]
 			case opCompressor:
 				signalLevel := float32(stack[l-1] * stack[l-1]) // square the signal to get power
 				if stereo {

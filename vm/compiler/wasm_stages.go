@@ -34,6 +34,7 @@ type wasmStage struct {
 	Otts            int    // ott states of the voices before it
 	Limiters        int    // limiter states of the voices before it
 	Reverbs         int    // reverb states of the voices before it
+	Convs           int    // bytes of the convolution states of the voices before it
 	SeedInit        uint32 // 16007 to the number of noise samples of the voices before it
 	SeedStep        uint32 // 16007 to the number of noise samples of the voices of the other stages
 	InCells         []uint32
@@ -71,7 +72,7 @@ type wasmStageData struct {
 	// reverb states of the voices before it, at StageReverbAt, and in songs
 	// with sync values the offset of its first sync value among the values
 	// of a sample, at StageSyncAt.
-	StageRecordSize, StageReverbAt, StageSyncAt int
+	StageRecordSize, StageReverbAt, StageConvAt, StageSyncAt int
 }
 
 // StageTapeBytes is the size of a tape: StageRows rows of StageTapeCells
@@ -126,6 +127,8 @@ func unitCost(u *sointu.Unit) float64 {
 		return 80 * (1 + stereo)
 	case "reverb":
 		return 150
+	case "convolution":
+		return 100 * (1 + stereo)
 	case "compressor", "limiter", "softclip", "bufread":
 		return 20 * (1 + stereo)
 	}
@@ -220,6 +223,7 @@ func wasmStages(song *sointu.Song, features vm.FeatureSet, numStages int, cuts [
 	syncs := make([]int, len(patch)) // sync values of a voice
 	limiters := make([]int, len(patch))
 	reverbs := make([]int, len(patch))
+	convs := make([]int, len(patch)) // bytes of the convolution states of a voice
 	cost := make([]float64, len(patch))
 	stack := make([]int, len(patch))
 	for _, su := range units {
@@ -256,6 +260,11 @@ func wasmStages(song *sointu.Song, features vm.FeatureSet, numStages int, cuts [
 		case "spawn", "spcomb":
 			tlo, thi := target()
 			bind(fmt.Sprintf("%s of %q and its instrument", u.Type, patch[su.instr].Name), min(lo, tlo), max(hi, thi))
+		case "convolution":
+			convs[su.instr] += vm.NewConv(p).ConvStateBytes()
+			if buf, found := song.Buffers.Find(p["buffer"]); found && buf.Writable() {
+				share(fmt.Sprintf("buffer %q", buf.Name), lo, hi)
+			}
 		case "bufread", "bufwrite":
 			if buf, found := song.Buffers.Find(p["buffer"]); found && buf.Writable() {
 				share(fmt.Sprintf("buffer %q", buf.Name), lo, hi)
@@ -426,7 +435,7 @@ func wasmStages(song *sointu.Song, features vm.FeatureSet, numStages int, cuts [
 	stage := func(first, end int) wasmStage {
 		s := wasmStage{First: first, End: end,
 			Opcodes: starts[voiceInstr[first]][0], Operands: starts[voiceInstr[first]][1],
-			DelayLines: sum(delayLines, first), Otts: sum(otts, first), Limiters: sum(limiters, first), Reverbs: sum(reverbs, first),
+			DelayLines: sum(delayLines, first), Otts: sum(otts, first), Limiters: sum(limiters, first), Reverbs: sum(reverbs, first), Convs: sum(convs, first),
 			SeedInit: pow(sum(noise, first)), SeedStep: pow(sum(noise, numVoices) - sum(noise, end) + sum(noise, first)),
 			Cost: (voiceCost[end] - voiceCost[first]) / total, Syncs: sum(syncs, first),
 		}
@@ -466,6 +475,11 @@ func wasmStages(song *sointu.Song, features vm.FeatureSet, numStages int, cuts [
 		ret.StageReverbAt = ret.StageRecordSize
 		ret.StageRecordSize += 4
 	}
+	hasConvs := sum(convs, numVoices) > 0
+	if hasConvs {
+		ret.StageConvAt = ret.StageRecordSize
+		ret.StageRecordSize += 4
+	}
 	hasSyncs := rowSync || sum(syncs, numVoices) > 0
 	if hasSyncs {
 		ret.StageSyncAt = ret.StageRecordSize
@@ -478,6 +492,9 @@ func wasmStages(song *sointu.Song, features vm.FeatureSet, numStages int, cuts [
 			offsets[i], offsets[i+1], offsets[i+2])
 		if hasReverbs {
 			ret.StageTable = append(ret.StageTable, uint32(s.Reverbs))
+		}
+		if hasConvs {
+			ret.StageTable = append(ret.StageTable, uint32(s.Convs))
 		}
 		if hasSyncs {
 			ret.StageTable = append(ret.StageTable, uint32(4*s.Syncs))

@@ -8,7 +8,7 @@ import (
 
 // When the patch of a GoSynth changes (GoSynth.Update), the units that are
 // still there keep their state, in every voice: the state and the ports of
-// the unit, and its delay lines, ott, limiter and reverb states, which are
+// the unit, and its delay lines, ott, limiter, reverb and convolution states, which are
 // kept in tables in the order the units run. Only the units that are new, or of
 // another type than before, start from nothing. So a unit can be added,
 // removed, moved or changed while the song plays without the envelopes
@@ -34,7 +34,7 @@ type (
 		id                     int
 		typ                    string
 		delays, otts, limiters int // in each voice
-		reverbs                int
+		reverbs, convs         int
 	}
 
 	// instrLayout is an instrument as the synth runs it: its voices, its
@@ -69,6 +69,8 @@ func newSynthLayout(patch sointu.Patch) synthLayout {
 				k.limiters = 1
 			case "reverb":
 				k.reverbs = 1
+			case "convolution":
+				k.convs = 1
 			}
 			l.units = append(l.units, k)
 		}
@@ -344,4 +346,5 @@ func (s *GoSynth) carryState(old, cur synthLayout) {
 	s.otts = carryTable(s.otts, old, cur, func(k unitKey) int { return k.otts }, from)
 	s.limiters = carryTable(s.limiters, old, cur, func(k unitKey) int { return k.limiters }, from)
 	s.reverbs = carryTable(s.reverbs, old, cur, func(k unitKey) int { return k.reverbs }, from)
+	s.convs = carryTable(s.convs, old, cur, func(k unitKey) int { return k.convs }, from)
 }

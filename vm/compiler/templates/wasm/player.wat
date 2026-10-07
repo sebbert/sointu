@@ -83,7 +83,7 @@
 {{- end}}
 {{- end}}
 
-{{- if or (.HasOp "bufread") (.HasOp "bufwrite")}}
+{{- if or (.HasOp "bufread") (.HasOp "bufwrite") (.HasOp "convolution")}}
 {{- /*
 ;-------------------------------------------------------------------------------
 ;    Buffer headers, 6 i32s each: offset of the buffer's audio from su_buffers
@@ -163,6 +163,18 @@
 {{- .SetDataLabel "su_reverb_consts"}}
 {{- range .ReverbData}}
 {{- $.DataB .}}
+{{- end}}
+{{- end}}
+
+{{- if .ConvData}}
+{{- /*
+;-------------------------------------------------------------------------------
+;    The constant data of the convolution units, i32s: see wasmConvData
+;-------------------------------------------------------------------------------
+*/}}
+{{- .SetDataLabel "su_conv_consts"}}
+{{- range .ConvData}}
+{{- $.DataD .}}
 {{- end}}
 {{- end}}
 
@@ -276,12 +288,23 @@
 {{- .SetBlockLabel "su_reverb"}}
 {{- .Block (int (mul .ReverbState .Song.Patch.NumReverbs))}}
 {{- end}}
-{{- if or (.HasOp "bufread") (.HasOp "bufwrite")}}
+{{- if .HasOp "convolution"}}
+{{- /*
+;-------------------------------------------------------------------------------
+;    Three spectra that the convolution units work in, and their states, in
+;    the order the units run, voice by voice; see $su_op_convolution
+;-------------------------------------------------------------------------------
+*/}}
+{{- .Align}}
+{{- .SetBlockLabel "su_conv"}}
+{{- .Block .ConvBytes}}
+{{- end}}
+{{- if or (.HasOp "bufread") (.HasOp "bufwrite") (.HasOp "convolution")}}
 {{- .Align}}
 {{- .SetBlockLabel "su_buffers"}}
 {{- .Block .BufferBytes}}
 {{- end}}
-{{- if .SpectralTable}}
+{{- if .SpectralFFT}}
 {{- .Align}}
 {{- .SetBlockLabel "su_spectral"}}
 {{- .Block .SpectralBytes}}
@@ -369,6 +392,9 @@
 {{- end}}
 {{- if .HasOp "reverb"}}
 (global $reverbWRK (mut i32) (i32.const 0))
+{{- end}}
+{{- if .HasOp "convolution"}}
+(global $convWRK (mut i32) (i32.const 0))
 {{- end}}
 (global $globaltick (mut i32) (i32.const 0))
 (global $row (mut i32) (i32.const 0))
@@ -458,7 +484,7 @@
 {{- end}}
 {{- if  .Output16Bit }} (local $channel i32) {{- end }}
 {{- if .Buffers}} (local $k i32) {{- end }}
-{{- if and .Progressive (or .Buffers .SpectralTable)}}
+{{- if and .Progressive (or .Buffers .SpectralFFT)}}
     (if (i32.eqz (global.get $globaltick)) (then ;; the first call
 {{- end}}
 {{- range $i, $b := .Buffers}}
@@ -477,10 +503,10 @@
     end
 {{- end}}
 {{- end}}
-{{- if .SpectralTable}}
+{{- if .SpectralFFT}}
     (call $spectralInit)
 {{- end}}
-{{- if and .Progressive (or .Buffers .SpectralTable)}}
+{{- if and .Progressive (or .Buffers .SpectralFFT)}}
     ))
 {{- end}}
 {{- if .NumStages}}
@@ -541,6 +567,9 @@
 {{- if .HasOp "reverb"}}
                 (global.set $reverbWRK (i32.add (i32.const {{index .Labels "su_reverb"}}) (i32.mul (i32.load offset={{.StageReverbAt}} (global.get $stage)) (i32.const {{.ReverbState}}))))
 {{- end}}
+{{- if .HasOp "convolution"}}
+                (global.set $convWRK (i32.add (i32.const {{add (index .Labels "su_conv") (mul 3 .ConvSpectrum)}}) (i32.load offset={{.StageConvAt}} (global.get $stage))))
+{{- end}}
                 (call $stageIn)
                 (call $su_run_vm)
                 (call $stageOut)
@@ -568,6 +597,9 @@
 {{- end}}
 {{- if .HasOp "reverb"}}
                 (global.set $reverbWRK (i32.const {{index .Labels "su_reverb"}}))
+{{- end}}
+{{- if .HasOp "convolution"}}
+                (global.set $convWRK (i32.const {{add (index .Labels "su_conv") (mul 3 .ConvSpectrum)}}))
 {{- end}}
                 (call $su_run_vm)
                 {{- template "output_sound.wat" .}}

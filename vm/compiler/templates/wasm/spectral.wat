@@ -30,6 +30,8 @@
     (i32.eq (i32.sub (global.get $voice) (i32.const {{index .Labels "su_voices"}})) (i32.load offset=12 (local.get $u)))
 )
 {{- end}}
+{{- end}}
+{{- if .SpectralFFT}}
 
 ;; $spectralInit computes the tables at su_spectral + SpectralHann, like
 ;; spectralTables in vm/spectral.go: the Hann window of the largest spectrum
@@ -37,11 +39,13 @@
 ;; transforms of size half having half factors e^(-πik/half) at half-1+k, as
 ;; wr, wr and -wi, wi, for SIMD complex multiplication.
 (func $spectralInit (local $j i32) (local $half i32) (local $k i32) (local $a f32) (local $s f32) (local $p i32)
+{{- if .SpectralTable}}
     loop $window
         (local.set $s (call $sinTurns (f32.div (f32.convert_i32_u (local.get $j)) (f32.const {{mul 2 .SpectralMaxSize}}))))
         (f32.store offset={{add (index .Labels "su_spectral") .SpectralHann}} (i32.shl (local.get $j) (i32.const 2)) (f32.mul (local.get $s) (local.get $s)))
         (br_if $window (i32.lt_u (local.tee $j (i32.add (local.get $j) (i32.const 1))) (i32.const {{.SpectralMaxSize}})))
     end
+{{- end}}
     (local.set $half (i32.const 1))
     loop $stages
         (local.set $k (i32.const 0))
@@ -61,6 +65,8 @@
         (br_if $stages (i32.lt_u (local.tee $half (i32.shl (local.get $half) (i32.const 1))) (i32.const {{.SpectralMaxSize}})))
     end
 )
+{{- end}}
+{{- if .SpectralTable}}
 
 {{- if or (.HasOp "spcopy") (and (.HasOp "spcross") .SpectralStereo)}}
 
@@ -87,6 +93,8 @@
     (f32.load offset={{add (index .Labels "su_spectral") .SpectralHann}}
         (i32.shl (local.get $j) (i32.sub (i32.const {{add .SpectralMaxLog2 2}}) (local.get $log2n))))
 )
+{{- end}}
+{{- if .SpectralFFT}}
 
 ;; $fft transforms $n complex values at $x, interleaved, in place: X[k] is the
 ;; sum of x[j]·e^(-2πijk/n). $n is a power of 2. From the stage of size 2 on,

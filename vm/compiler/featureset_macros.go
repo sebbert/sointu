@@ -78,6 +78,16 @@ func (p *FeatureSetMacros) ReverbSteps() bool {
 	return p.SupportsParamValueOtherThan("reverb", "steps", sointu.ReverbSteps)
 }
 
+// ConvGain is true when a convolution unit of the song has a gain other than
+// 0 dB or a modulated one; otherwise the player leaves the gain out.
+func (p *FeatureSetMacros) ConvGain() bool { return p.set("convolution", "gain", 64) }
+
+// ConvDry is true when the convolution units of the song have the dry
+// parameter; otherwise the players leave the dry signal out.
+func (p *FeatureSetMacros) ConvDry() bool {
+	return vm.TransformsParam(p.FeatureSet, "convolution", "dry")
+}
+
 // EnvelopeCurve is true when the envelopes of the song have the curve
 // parameter; otherwise the players leave the curved envelope out.
 func (p *FeatureSetMacros) EnvelopeCurve() bool {
