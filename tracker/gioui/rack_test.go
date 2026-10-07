@@ -6,6 +6,7 @@ import (
 	"image/png"
 	"io"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -34,6 +35,13 @@ type rackTest struct {
 	router input.Router
 }
 
+// rackTestBuffers are the buffers of the song of a rackTest: one that is
+// written, and one with a sample (which is not decoded here).
+var rackTestBuffers = sointu.Buffers{
+	{ID: 1, Name: "response", Channels: 2, Frames: 88200},
+	{ID: 2, Name: "cabinet", Channels: 1, Sample: &sointu.AudioSample{FileName: "cabinet.wav", Data: sointu.Blob("RIFF")}},
+}
+
 // newRackTest returns a rackTest of a song with one instrument of the units.
 func newRackTest(t *testing.T, units ...sointu.Unit) *rackTest {
 	t.Helper()
@@ -44,7 +52,7 @@ func newRackTest(t *testing.T, units ...sointu.Unit) *rackTest {
 	}
 	song := sointu.Song{BPM: 100, RowsPerBeat: 4,
 		Score: sointu.Score{RowsPerPattern: 16, Length: 1, Tracks: []sointu.Track{{NumVoices: 1}}},
-		Patch: sointu.Patch{{Name: "test", NumVoices: 1, Units: units}}}
+		Patch: sointu.Patch{{Name: "test", NumVoices: 1, Units: units}}, Buffers: rackTestBuffers}
 	b, err := yaml.Marshal(song)
 	if err != nil {
 		t.Fatal(err)
@@ -295,4 +303,44 @@ func TestRailLaneUnfolded(t *testing.T) {
 		t.Errorf("unfolded, %v signals: rail width %v, folded %v", n, r.railWidth(), folded)
 	}
 	r.screenshot("rack-unfolded")
+}
+
+// The row of a convolution unit: its buffer as a menu, the start in the
+// buffer, the length and the predelay as times, and for a buffer that is
+// written, how fast it is read again and whether changes fade in; a sample
+// is read once and has neither.
+func TestConvolutionRow(t *testing.T) {
+	written, sample := sointu.MakeUnit("convolution"), sointu.MakeUnit("convolution")
+	written.Parameters["buffer"], written.Parameters["stereo"], written.Parameters["gain"] = 1, 1, 28
+	written.Parameters["follow"], written.Parameters["fade"], written.Parameters["predelay"] = 2, 1, 14
+	sample.Parameters["buffer"], sample.Parameters["length"], sample.Parameters["dry"] = 2, 40, 64
+	noise, write := sointu.MakeUnit("noise"), sointu.MakeUnit("bufwrite")
+	noise.Parameters["stereo"], write.Parameters["stereo"], write.Parameters["buffer"], write.Parameters["oneshot"] = 1, 1, 1, 1
+	r := newRackTest(t, append([]sointu.Unit{noise, write}, append(loadvals(2), written, sample)...)...)
+	r.settle()
+	names := func(row int) (ret []string) {
+		for x := range r.model.Params().RowWidth(row) {
+			if p := r.model.Params().Item(tracker.Point{X: x, Y: row}); p.Name() != "" {
+				ret = append(ret, p.Name())
+			}
+		}
+		return
+	}
+	if got, want := names(4), []string{"stereo", "gain", "buffer", "start", "length", "predelay", "follow", "fade", "dry"}; !slices.Equal(got, want) {
+		t.Errorf("the parameters of a unit with a written buffer: %v, want %v", got, want)
+	}
+	if got, want := names(5), []string{"stereo", "gain", "buffer", "start", "length", "predelay", "dry"}; !slices.Equal(got, want) {
+		t.Errorf("the parameters of a unit with a sample: %v, want %v", got, want)
+	}
+	for name, want := range map[string]string{"gain": "-22.5 dB", "buffer": "response", "length": "2.97 s (131072), the buffer has 2.00 s", "predelay": "20.3 ms", "follow": "4 ×"} {
+		if p, _ := r.param(4, name); p.Hint().Label != want {
+			t.Errorf("%s of the unit with a written buffer shows %q, want %q", name, p.Hint().Label, want)
+		}
+	}
+	for name, want := range map[string]string{"buffer": "cabinet", "length": "46.4 ms (2048)", "dry": "-6.02 dB"} {
+		if p, _ := r.param(5, name); p.Hint().Label != want {
+			t.Errorf("%s of the unit with a sample shows %q, want %q", name, p.Hint().Label, want)
+		}
+	}
+	r.screenshot("convolution_row")
 }

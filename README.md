@@ -449,6 +449,23 @@ with a reverb use this unit; the module preset Reverb and the Reverb FDN
 presets are the chains, for changing the network itself. See
 [FORK.md](FORK.md#reverb-unit).
 
+`convolution` convolves a signal with an impulse response read from an audio
+buffer, without latency: `length` frames of the `buffer` from `start`, 1.5 ms
+to 11.9 s. The response is a sample, or what a `bufwrite` unit wrote, so a
+song can make its own: a burst of noise with an envelope and a filter is a
+reverb, a few milliseconds of anything are a cabinet, a body or a filter. A
+mono unit uses the left channel of the buffer; a stereo unit convolves left
+with left and right with right. The output is the wet signal times `gain`,
+after `predelay`, plus the input times `dry`. The response of a sample is
+read when the song starts; a buffer that is written is read again while the
+song plays, its first 64 frames every sample, the frames up to 4096 within
+81 ms and the rest once in the time it lasts (`follow` reads 2, 4 or 8 times
+as fast), and with `fade` what changed fades in instead of stepping. A oneshot
+`bufwrite` that starts with the song is read just behind where it writes. The
+module preset Convolution reverb is such a reverb, with the buffer of its
+response; `examples/convolution.yml` uses it. See
+[FORK.md](FORK.md#convolution-unit).
+
 For patterns of units used again and again, e.g. a supersaw or a reverb, a
 song can have modules: named blocks of units with inputs, outputs and up to 8
 parameters. A `module` unit in an instrument, or in another module, stands for
@@ -482,7 +499,7 @@ channels (three aux pairs); a song that uses no channel above 7 compiles as
 before. See [FORK.md](FORK.md#output-channels).
 
 `bufread`, `bufwrite`, `spawn`, `arg`, `window`, `ott`, `limiter`, `softclip`,
-`width`, `ladder`, `reverb`, the spectral units,
+`width`, `ladder`, `reverb`, `convolution`, the spectral units,
 the mc units, bandlimited oscillators, curved envelopes and the output
 channels above 7 are WebAssembly only
 for now; envelopes with `curve` 0 compile for x86 as before.

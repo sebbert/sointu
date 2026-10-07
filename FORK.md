@@ -1,7 +1,7 @@
 # Changes in the sebbert-custom branch
 
 This branch of Sointu adds macOS and CLAP plugins, audio samples and buffers,
-granular synthesis, spectral processing, modules (reusable blocks of units),
+granular synthesis, spectral processing, convolution, modules (reusable blocks of units),
 a graphical parametric equalizer, up to 255 voices and 16 output channels
 (seven aux pairs), and an [MCP server](#mcp-server) through
 which Claude reads and changes the patch of a running tracker or plugin. Most of the new
@@ -76,6 +76,7 @@ All of these are Go and wasm only.
 | `width` | Stereo width: scales the side signal (0 mono, 64 as it is, 128 double), with `lowcut`, a high-pass on the side signal that makes the bass mono and costs nothing in songs that do not use it |
 | `ladder` | A low-pass of 24 dB per octave with resonance up to self-oscillation, like a Moog ladder: `frequency`, `resonance`, and `drive` into its saturator, up to 18 dB, that costs nothing in songs that do not use it |
 | `reverb` | The standard reverb as one unit: low cut, high cut, predelay, a diffuser and a feedback delay network of 8 lines, stereo in, wet out. Renders what the Reverb module preset renders, in a third of its bytes; more parameters set what the module fixes. See [reverb unit](#reverb-unit) |
+| `convolution` | Convolves the signal with an impulse response read from an audio buffer, a sample or what `bufwrite` units wrote, without latency: 1.5 ms to 11.9 s, mono or stereo, `gain`, `predelay`, `dry`. A written buffer is read again while playing (`follow`, `fade`). See [convolution unit](#convolution-unit) |
 | `mcspread`, `mcsum` | Spread a mono or stereo signal over a bus of 8 channels (replacing or adding), and sum it back (with `width`) |
 | `mcdelay`, `mcmix`, `mcfilter`, `mcloop`, `mcloopend` | Change a bus in place every sample: a delay line per channel (seeded lengths, modulation, note tracking, allpass, per-band decay), orthogonal mixes (Hadamard, Householder, seeded shuffle), one-pole filters, and a feedback loop. See [mc units](#mc-units) |
 
@@ -747,6 +748,273 @@ and a row of the test table (`TestReverbPartsOnlyWhenUsed`, 19 songs now).
 lengths (96 bytes of data less for each reverb, about 60 of code more) and
 dropping the clamp of the modulated lengths (12 bytes) would both end the
 exact match with the module.
+
+## convolution unit
+
+`convolution` convolves its input with an impulse response read from an
+audio buffer: a convolution reverb from a response that the song makes
+itself, a cabinet, a body or a resonator, early reflections, any fixed FIR
+filter. The code is `vm/convolution.go` and `templates/wasm/convolution.wat`.
+Go synth and wasm player only; x86 has a stub and the compiler refuses the
+unit for it.
+
+**Parameters.**
+
+| Parameter | Default | Sets |
+|---|---|---|
+| `stereo` | 0 | a mono unit uses the left channel of a stereo buffer; a stereo unit convolves left with left and right with right, or both with a mono buffer. There is no true stereo (left into right) |
+| `gain` | 64 (0 dB) | the level of the wet signal, ±40 dB like `dbgain`; can be modulated. The response is not normalized |
+| `buffer` | none | the audio buffer of the response, by ID, as for `bufread` |
+| `start` | 0 | the first frame of the response in the buffer |
+| `length` | 88 (2.97 s) | the frames of the response: 64·2^(v/8), from 64 (1.5 ms) to 524288 (11.9 s) in steps of 9 %. Frames beyond the valid frames of the buffer are silent |
+| `predelay` | 0 | delays the wet signal: 64 samples a step, up to 184 ms |
+| `follow` | 0 (1×) | how many blocks of each part of a written response are read again at a time: 1, 2, 4 or 8 |
+| `fade` | 0 | what a block read again changes fades in over the block instead of stepping |
+| `dry` | 0 (off) | the input times this is added to the output; can be modulated |
+
+**The algorithm** has no latency: the first sample of the output has the
+first frame of the response in it. The response is cut into four parts
+(Gardner's partitioned convolution, with fixed sizes):
+
+| Part of the response | How | Work |
+|---|---|---|
+| frames 0 to 64 | the sum of the last 64 input samples times those frames, every sample | 64 multiplications a sample |
+| 64 to 512 | FFTs of 128 frames, every 64 samples | up to 7 blocks |
+| 512 to 4096 | FFTs of 1024 frames, every 512 samples | up to 7 blocks |
+| 4096 to the end | FFTs of 8192 frames, every 4096 samples | a block for every 4096 frames |
+
+A part with blocks of B frames keeps the spectrum of each of its blocks of
+the response, and the spectra of the last blocks of the input, as many.
+Every B samples it transforms the last 2B input samples, multiplies the
+spectrum of the input p blocks ago with that of block p of the response,
+adds the products up and transforms the sum back: the second half of the
+result is its output for the next B samples. What a part of the response
+that starts at frame B does to the input is at least B samples late, so
+nothing is late. A response of 64 frames or less has no FFT at all, and the
+player of a song with only such units has none of that code; a part that a
+response does not reach does nothing.
+
+- The FFT is that of the spectral units (`fft`, `$fft`: complex, radix 2,
+  f32x4 in the player), with their twiddle tables, now also in songs with a
+  convolution unit and no spectral unit. A real FFT of half the size would
+  halve the work of the FFTs, for more code.
+- The spectra are stored as the real parts of bins 0 to B and then the
+  imaginary parts, so that the player multiplies and adds four bins at a
+  time without shuffling. The inverse transform is the forward one of the
+  conjugate.
+- The outputs of the parts are added into a ring of 16384 frames, `predelay`
+  frames ahead, which is all that the predelay costs.
+- Go synth and wasm player compute the same operations in the same order:
+  no sample differs.
+
+**Where the response comes from.** `length` frames of the buffer from
+`start`, counted from the beginning of the buffer, not from its oldest
+frame as `bufread` counts. A frame that the buffer has not got (beyond its
+end, or beyond what a oneshot `bufwrite` has written so far) is silent.
+
+- *A sample* is read once: when the song starts (in the tracker, when the
+  sample is decoded or the unit changes).
+- *A buffer that is written* is read again all the time, block by block:
+
+  | Part | Read again | Once around |
+  |---|---|---|
+  | frames 0 to 64 | every sample, from the buffer | no lag |
+  | 64 to 512 | a block every 64 samples | 448 samples, 10 ms |
+  | 512 to 4096 | a block every 512 samples | 3584 samples, 81 ms |
+  | 4096 to the end | a block every 4096 samples | the length of that part |
+
+  `follow` reads 2, 4 or 8 blocks of each part at a time: the tail of a 3 s
+  response is then replaced in 1.5, 0.75 or 0.37 s, for one FFT more per
+  block read.
+- *A oneshot `bufwrite` that starts with the song* (or any multiple of the
+  time once around later) is read just behind where it writes: block p of a
+  part is read in the sample after its last frame was written (with
+  `follow` 1×). Input from two blocks of 4096 frames on, 186 ms, is convolved
+  with the whole response as far as it is written; a note in the first
+  186 ms misses the parts of the response that were not read yet when it
+  passed. So a song can write a response of 3 s in its first 3 s and use it
+  from the start. Written at another time, the blocks are read in another
+  order than they are written, and the response is whole one time around
+  after its last frame.
+- *What a block read again changes.* The block is first computed with the
+  spectra as they were. Then the blocks of the response that are read again
+  get their new spectra, and what that changes in the output, the spectrum
+  of the input for each such block times the difference of its spectra,
+  transformed back, is added: at once, or with `fade` times a ramp from 0 to
+  1 over the block (1.5, 11.6 or 93 ms), after which the output is that of
+  the new response. Both cost the same, one FFT; only the ramp differs.
+- A new note of a oneshot `bufwrite` starts the buffer from nothing: the
+  blocks beyond what is written are silent when they are read again, so the
+  old response goes as the new one comes.
+
+Measured on a response that morphs fast, a decaying resonance moving two
+octaves up and down twice a second, with a 220 Hz sine as input, the energy
+above 3 kHz, where neither has anything, relative to the output:
+
+| Response | `follow` | without `fade` | with `fade` |
+|---|---|---|---|
+| 4096 frames | 1× | -23 dB | -49 dB |
+| 4096 frames | 8× | -34 dB | -51 dB |
+| 512 frames | 1× | -39 dB | -55 dB |
+| 512 frames | 8× | -55 dB | -55 dB |
+
+So a response that moves needs `fade`; one that is written once, or again
+with the same sound, does not. The lag stays: `fade` smooths each step, it
+does not make the steps come sooner.
+
+**Voices.** Each voice of the instrument has a convolution of its own, with
+its own copy of the spectra of the response, like the `reverb` unit. The
+state is 131 KB for a channel plus 16 bytes for each frame of the response
+after the first 64 (2.2 MB for 3 s mono, 17 MB for 11.9 s stereo), in a
+table of its own (`su_conv`, `$convWRK`, `GoSynth.convs`,
+`Patch.NumConvolutions()`), in the order the units run. It is memory, not
+data of the player.
+
+**Encoding.** Operands: `gain`, `dry` (the optional last transformed
+parameter: only in songs that use it, `optionalParams`), then the index of
+the unit in `Bytecode.Convs`; the stereo bit. A `Conv` is the buffer, the
+start, the length, the predelay, the channels, `follow` and `fade`; units
+with the same share it. `Bytecode.ConvStates` are the units of the states in
+the order they run. In the player a unit has 28 bytes of constants
+(`su_conv_consts`, `wasmConv` in `compiler.go`): the header of its buffer,
+start, length, the size of a channel of its state and the blocks of the
+three parts; then the predelay, `follow` and `fade`, each only in songs
+whose units use or differ in it. The buffers of the units get headers like
+those of `bufread`, and their samples are encoded with those that are played
+(`ffmpeg.PlayedBuffers`).
+
+**Size.** Bytes that the unit adds to the wasm player of a song without it
+(`TestConvolutionSizes`: an instrument writing the response, one convolved);
+gzip -9 of the whole file.
+
+| Song | Bytes | Code | Data | gzip |
+|---|---|---|---|---|
+| written buffer, 64 frames (no FFT) | +424 | +392 | +32 | +214 |
+| written buffer, 3 s | +2078 | +2046 | +32 | +1070 |
+| ... with `fade` | +2082 | +2050 | +32 | +1073 |
+| ... with `fade` and `follow` | +2123 | +2087 | +36 | +1102 |
+| ... with `fade`, `gain`, `dry`, `predelay` | +2154 | +2117 | +37 | +1124 |
+| ... stereo, with `fade` and `gain` | +2122 | +2090 | +32 | +1104 |
+| two units, one with `fade` | +2143 | +2072 | +71 | +1101 |
+| sample, 64 frames (no FFT) | +533 | +477 | +56 | +303 |
+| sample, 3 s | +2077 | +2021 | +56 | +1102 |
+| a sample and a written buffer, 3 s | +2258 | +2171 | +87 | +1170 |
+| written buffer, 3 s, in a song with spectral units | +1384 | +1352 | +32 | +657 |
+
+About 700 bytes of the 2 KB (0.4 KB gzipped) are the FFT, its tables and
+`$sinTurns`, which a song with spectral units has anyway. The rows with a
+sample include the import and the loop that fills the buffer, which a song
+with `bufread` has anyway. The length of the response costs nothing: it is
+a number.
+
+**Speed.** The time for a sample of a mono unit, on an Apple M3 Pro: a song
+of 32 s with the unit against the same song without it
+(`TestConvolutionSpeed`), the response in a written buffer unless noted.
+
+| Response | wasm player (node) | Go synth | of a core, Go |
+|---|---|---|---|
+| 64 frames | 128 ns | 154 ns | 0.7 % |
+| 512 frames | 167 ns | 226 ns | 1.0 % |
+| 4096 frames | 188 ns | 318 ns | 1.4 % |
+| 1 s | 259 ns | 432 ns | 1.9 % |
+| 3 s | 250 ns | 448 ns | 2.0 % |
+| 6 s | 272 ns | 494 ns | 2.2 % |
+| 12 s | 292 ns | 571 ns | 2.5 % |
+| 3 s, `follow` 8× | 452 ns | 886 ns | 3.9 % |
+| 3 s, stereo | 562 ns | 911 ns | 4.0 % |
+| 12 s, stereo, `follow` 8× | 1068 ns | 1988 ns | 8.8 % |
+| 3 s, not read again (as a sample) | 124 ns | 236 ns | 1.0 % |
+
+So beyond the first seconds, a second of response costs about 14 ns a
+sample in the Go synth and 5 ns in the player (0.06 % and 0.02 % of a core):
+the length hardly matters, as the long part works once in 4096 samples. Most
+of the rest is the FFTs, and for a written buffer reading its first 64
+frames every sample. The work of the long part comes at once, every 93 ms:
+at most the time of the unit for those 4096 samples, 1.8 ms for 3 s mono in
+the Go synth and 8 ms for 12 s stereo with `follow` 8×, which an audio
+device with a small buffer may not forgive (not tried on one). In the Go
+synth, setting the buffers or changing `buffer`, `start`, `length` or
+`stereo` computes the FFTs of the whole response at once (not timed).
+
+**Precision.** Against `scipy.signal.fftconvolve` in float64, a response of
+3 s of decaying noise and 6 s of noise: the largest difference is 111 dB
+below the peak. `TestConvolutionMatchesDirectSum` compares ten responses
+from 40 to 26909 frames, with starts, predelays, mono and stereo, with the
+convolution sum in float64: within 2·10⁻⁵ of the peak.
+
+**The Convolution reverb module preset** (`tracker/modules/Convolution_reverb.yml`,
+8 units): stereo in, wet out. It writes its own response: an `envelope`
+with a curve, under stereo `noise`, through a low-pass and a high-pass
+`filter`, into a stereo oneshot `bufwrite`; and a stereo `convolution` unit
+with `fade` reads that buffer. The instrument it is in needs a note as long
+as the decay, e.g. in the first row of the song: every note writes a new
+response, with other noise.
+
+| Parameter | Default | Sets |
+|---|---|---|
+| `decay` | 88 (2.1 s) | the time of the envelope, 0.20 to 5.9 s, and with it `length` of the unit |
+| `tone` | 110 | the low-pass of the response, as `frequency` of `filter` |
+| `lowcut` | 16 | its high-pass |
+| `gain` | 28 (-22.5 dB) | `gain` of the unit: the level of the reverb |
+| `predelay`, `dry` | 0 | those of the unit |
+
+The level is set by measurement: `examples/convolution.yml` is
+`examples/reverb_unit.yml` with this module in place of the `reverb` unit,
+and with `gain` 28 its reverb is as loud as that one's in the rows after
+the last note (-34.4 against -34.6 dB RMS), and 1.3 dB below it half a
+second later. Compiled for wasm the example is 5030 bytes (2743 gzipped),
+`examples/reverb_unit.yml` 3686 (2248).
+A longer decay is louder, 3 dB for twice the time, as the response has more
+energy. Left and right of the tail correlate by 0.08 (the `reverb` unit:
+-0.37). The response has no early reflections and no change of colour over
+time: it is noise under one envelope.
+
+**In the tracker.**
+
+- `buffer` is the menu of the audio buffers, `start` a time in the buffer,
+  `length` and `predelay` times. The hint of `length` tells the frames and,
+  when the buffer has less from `start`, how much it has. `follow` and
+  `fade` are not shown for a sample, which is not read again.
+- A warning names an instrument with a convolution unit without a buffer,
+  and tells when the convolution units of the song together take more than
+  an eighth of a processor core, estimated from the table above with the
+  voices of their instruments.
+- A preset that reads a response it writes itself brings its buffer: when a
+  `convolution` unit and a `bufwrite` unit of an instrument or a module
+  refer to a buffer that the song does not have, the song gets it
+  (`fixConvolutionBuffers`), stereo if the `bufwrite` is, as long as the
+  longest response of the unit (of a unit of a module: the longest that the
+  parameter of the module gives it), and loses it with the last unit that
+  uses it. Loaded into a song where the ID is taken, the units get an ID of
+  their own (`assignBuses`). Two module units of one module get a buffer
+  each when the song is compiled or played with `sointu-play`
+  (`Song.Expand`); in the tracker the second has no audio to write to and
+  should be silent (not tried).
+- The Buffers tab shows the response as it is written, like any written
+  buffer. The row of the unit has no plot of it.
+- The buffer that a unit reads and another instrument writes has to be on
+  the same thread, like that of `bufread`; the stages of the web runtime
+  keep such instruments together.
+
+**Tests.** `vm/convolution_internal_test.go` (against the sum; gain and dry;
+a response written from the first sample; a part changed while playing,
+with and without `fade` and `follow`; the first 64 frames following every
+sample; the blocks of each length; `BenchmarkConvolution`),
+`vm/compiler/wasm_convolution_test.go` (the wasm player renders 13 songs
+with written responses and 3 with samples exactly like the Go synth, and
+has the code of the parts each uses and no others; the example; stages; a
+song without the unit has nothing of it, and x86 refuses it; sizes and
+speed), `tracker/convolution_test.go` (the buffer of the preset, the
+warnings, the hints) and `TestConvolutionRow` in `tracker/gioui`
+(`SOINTU_TEST_SCREENSHOTS=<dir> go test ./tracker/gioui -run ConvolutionRow`).
+The songs of `tests/` and `examples/` that were there compile to the same
+bytes as before for wasm, 386 and amd64.
+
+**Not done.** True stereo. Normalizing the response. A plot of the response
+in the row of the unit. A real FFT. Spreading the work of the long part
+over its 4096 samples, which would need a longer first part. An instrument
+preset: the module preset is the reverb, to put between an `in` and an
+`out`. The player was not tried in a browser, only under node.
 
 ## Bandlimited oscillators
 
@@ -1938,6 +2206,7 @@ ways, and the templates test them:
 | spectral units | the first-voice check and the voice in the table; the loops over channels, the rings of `spifft` and the channels in the spectrum table (only with a stereo spectrum); low, high and tilt of `spfilter` (`$log2f`, `$powf`); freeze of `spblur`; each mode of `spphase` (`$rotate`, `$tablePhase`, `$randomPhase`); scale and shift of `spscale`; voices and intervals of `spcomb`. Operands: invert of `spgate`, mode of `spphase`, voices and intervals of `spcomb` |
 | `ott` | time, upward, downward, the right channel's powers |
 | `reverb` | the modulation of its lines; each filter of its input, and the test for it when only some units have it; the levels, widths and rate as constants of the unit instead of the code; the number of steps; allpasses in the diffuser, and plain delays; the second set of lines. See [reverb unit](#reverb-unit) |
+| `convolution` | the FFT parts (only with a response longer than 64 frames; the FFT and its tables are those of the spectral units); reading a written buffer again, several blocks at a time, and the ramp of `fade` or the test for it when only some units have it; reading a sample at the first sample; the loop over the channels; gain, predelay, and dry (an optional last parameter). See [convolution unit](#convolution-unit) |
 | `softclip`, `limiter`, `width`, `ladder`, `envelope` | drive and oversampling of `softclip`; drive of `limiter` and `ladder`, lowcut of `width`, curve of `envelope` (optional last parameters, `optionalParams`) |
 | `oscillator` | the corrections of each bandlimited waveform; the LFO code |
 | `aux`, `in` | the global ports of the channels above 7, 16 ports instead of 8, which move the voices by 32 bytes (see [Output channels](#output-channels)) |
@@ -2154,8 +2423,9 @@ differently in another order.
   multiplication.
 - Units with a state of their own are no obstacle either, also where the
   states are in a table in the order the units run (delay lines, `ott`,
-  `limiter`, `reverb`): a stage starts at the place of its first voice in
-  each table. A `reverb` unit can be modulated from an earlier stage like
+  `limiter`, `reverb`, `convolution`): a stage starts at the place of its
+  first voice in each table. A `convolution` unit and the instrument that
+  writes its buffer stay in one stage, like `bufread`. A `reverb` unit can be modulated from an earlier stage like
   any unit.
 
 It then picks the cuts that make the most expensive stage cheapest, from a
@@ -2448,6 +2718,14 @@ songs that need any of it for x86.
    operand byte after the transformed parameters; see
    [reverb unit](#reverb-unit) and `vm/reverb.go`. The x86 template has a
    stub; the compiler refuses the unit for x86.
+
+   `convolution` keeps its states in `su_conv`, walked with `$convWRK`,
+   and its constants in `su_conv_consts`, with the index of the unit's as
+   an operand byte after the transformed parameters, of which `dry` is only
+   there in songs that use it; it needs the buffers (3) and the FFT of the
+   spectral units (5). See [convolution unit](#convolution-unit) and
+   `vm/convolution.go`. The x86 template has a stub; the compiler refuses
+   the unit for x86.
 
 9. **Bandlimited oscillators.** Flags 0x04 with 0x40, 0x20 or 0x10 mean
    bandlimited, so the gate test becomes flags & 0x74 == 0x04. Keep the

@@ -47,9 +47,12 @@ The presets in UTIL (Global ...) are such buses and master chains; Global master
 ## Modules
 A module is a reusable block of units. A unit of the type module stands for its units (module: its name), with p1 to p8 setting the parameters of the module. Changing a module changes every use of it. The units of a module can bind their parameters to the module parameters (edit_units bind); a send to a module unit modulates the parameters bound to that port. Module units, and eq units, count with all the units they stand for.
 
+## Convolution
+convolution convolves the signal with an impulse response read from an audio buffer, without latency: a reverb from decaying noise, a cabinet or a body, any fixed filter. length is the part of the buffer used, from start. The response is a sample, or what a bufwrite unit with oneshot wrote while its note was held: the song then makes its own response, which takes as long to write as it lasts, and is read again while playing (follow: how fast, fade: changes fade in instead of stepping). The module preset Convolution reverb is noise with an envelope and filters into a buffer and a convolution unit reading it; its instrument needs a note as long as the decay, e.g. in the first row. The response is not normalized: decaying noise of 2 s is about +25 dB, so gain is far below 0 dB. It costs about 2 KB in the player (1 KB compressed), 0.4 KB with a response of 64 frames.
+
 ## Limits and costs
 - 63 units per instrument, counting what module and eq units stand for. 255 voices in all.
-- This is for 4k/64k intros: every unit, parameter value and instrument costs bytes in the compiled player (a unit is roughly 2 to 10 bytes of data, a new unit type costs its code once, about 50 to 1000 bytes). Prefer reusing unit types the song already has, and fewer instruments. Units marked go/wasm only (reverb, ott, limiter, softclip, width, ladder, spectral and mc units) cannot be compiled for x86, which is fine for the wasm player.
+- This is for 4k/64k intros: every unit, parameter value and instrument costs bytes in the compiled player (a unit is roughly 2 to 10 bytes of data, a new unit type costs its code once, about 50 to 1000 bytes). Prefer reusing unit types the song already has, and fewer instruments. Units marked go/wasm only (reverb, convolution, ott, limiter, softclip, width, ladder, spectral and mc units) cannot be compiled for x86, which is fine for the wasm player.
 - Disabled units cost nothing and are not played.
 
 ## Working with these tools

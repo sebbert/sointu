@@ -1,11 +1,14 @@
 package compiler_test
 
 import (
+	"bytes"
+	"compress/gzip"
 	"math"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vsariola/sointu"
 	"github.com/vsariola/sointu/ffmpeg"
@@ -336,5 +339,184 @@ func TestConvolutionStages(t *testing.T) {
 	song = convTestSong(20000, 1, false, conv(0, 40, sointu.ParamMap{"buffer": 7, "dry": 100}), conv(0, 66, nil), conv(0, 50, sointu.ParamMap{"buffer": 7, "dry": 100}))
 	if cuts := testStages(t, node, wat2wasm, song); len(cuts) != 1 || cuts[0] != 3 {
 		t.Errorf("the song with a written response can be cut at %v, want [3]", cuts)
+	}
+}
+
+// wasmSizes returns the bytes of a wasm file, of its data section, and of
+// the file compressed with gzip -9.
+func wasmSizes(t *testing.T, file string) (total, data, gz int) {
+	t.Helper()
+	b, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 8; i < len(b); {
+		id := b[i]
+		i++
+		size, shift := 0, 0
+		for {
+			c := b[i]
+			i++
+			size |= int(c&0x7f) << shift
+			shift += 7
+			if c < 0x80 {
+				break
+			}
+		}
+		if id == 11 {
+			data = size
+		}
+		i += size
+	}
+	var z bytes.Buffer
+	w, _ := gzip.NewWriterLevel(&z, gzip.BestCompression)
+	w.Write(b)
+	w.Close()
+	return len(b), data, z.Len()
+}
+
+// TestConvolutionSizes logs what the unit adds to the wasm player, for each
+// of its parts, against the same song without the unit (go test -v).
+func TestConvolutionSizes(t *testing.T) {
+	t.Parallel()
+	wat2wasm, err := exec.LookPath("wat2wasm")
+	if err != nil {
+		t.Skip("wat2wasm not found")
+	}
+	without := func(song sointu.Song) sointu.Song { // the units convolved, not convolved
+		for i := 1; i < len(song.Patch); i++ {
+			u := song.Patch[i].Units
+			song.Patch[i].Units = append(u[:3:3], u[4:]...)
+		}
+		return song
+	}
+	sizes := func(song sointu.Song, encoded map[int]compiler.EncodedBuffer) (int, int, int) {
+		file, _ := compileWasm(t, wat2wasm, song, encoded, nil)
+		return wasmSizes(t, file)
+	}
+	sample := func(units ...sointu.Unit) (sointu.Song, map[int]compiler.EncodedBuffer) {
+		song := convTestSong(20000, 1, false, units...)
+		song.Buffers = append(song.Buffers, sointu.Buffer{ID: 2, Name: "sample", Channels: 1, Sample: &sointu.AudioSample{}})
+		return song, map[int]compiler.EncodedBuffer{2: {Frames: 3000, Channels: 1}}
+	}
+	spectral := func(song sointu.Song) sointu.Song { // with spectral units, which have the FFT
+		u := song.Patch[1].Units
+		song.Buffers = append(song.Buffers, sointu.Buffer{ID: 9, Spectrum: true})
+		song.Patch[1].Units = append(u[:len(u)-1:len(u)-1],
+			sointu.Unit{Type: "spfft", Parameters: sointu.ParamMap{"stereo": 0, "size": 3, "buffer": 9}},
+			sointu.Unit{Type: "spifft", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128, "buffer": 9}}, u[len(u)-1])
+		return song
+	}
+	for _, c := range []struct {
+		name string
+		with func() (sointu.Song, map[int]compiler.EncodedBuffer)
+	}{
+		{"written, 64 frames (no FFT)", func() (sointu.Song, map[int]compiler.EncodedBuffer) {
+			return convTestSong(20000, 1, false, conv(0, 0, nil)), nil
+		}},
+		{"written, 3 s", func() (sointu.Song, map[int]compiler.EncodedBuffer) {
+			return convTestSong(20000, 1, false, conv(0, 88, nil)), nil
+		}},
+		{"written, 3 s, fade", func() (sointu.Song, map[int]compiler.EncodedBuffer) {
+			return convTestSong(20000, 1, false, conv(0, 88, sointu.ParamMap{"fade": 1})), nil
+		}},
+		{"written, 3 s, fade, follow", func() (sointu.Song, map[int]compiler.EncodedBuffer) {
+			return convTestSong(20000, 1, false, conv(0, 88, sointu.ParamMap{"fade": 1, "follow": 2})), nil
+		}},
+		{"written, 3 s, fade, gain, dry, predelay", func() (sointu.Song, map[int]compiler.EncodedBuffer) {
+			return convTestSong(20000, 1, false, conv(0, 88, sointu.ParamMap{"fade": 1, "gain": 28, "dry": 64, "predelay": 10})), nil
+		}},
+		{"written, 3 s, stereo, fade, gain", func() (sointu.Song, map[int]compiler.EncodedBuffer) {
+			return convTestSong(20000, 2, false, conv(1, 88, sointu.ParamMap{"fade": 1, "gain": 28})), nil
+		}},
+		{"two units: fade and not", func() (sointu.Song, map[int]compiler.EncodedBuffer) {
+			return convTestSong(20000, 1, false, conv(0, 88, sointu.ParamMap{"fade": 1}), conv(0, 70, nil)), nil
+		}},
+		{"sample, 64 frames (no FFT)", func() (sointu.Song, map[int]compiler.EncodedBuffer) {
+			return sample(conv(0, 0, sointu.ParamMap{"buffer": 2}))
+		}},
+		{"sample, 3 s", func() (sointu.Song, map[int]compiler.EncodedBuffer) {
+			return sample(conv(0, 88, sointu.ParamMap{"buffer": 2}))
+		}},
+		{"sample and written, 3 s", func() (sointu.Song, map[int]compiler.EncodedBuffer) {
+			return sample(conv(0, 88, sointu.ParamMap{"buffer": 2}), conv(0, 88, nil))
+		}},
+		{"written, 3 s, in a song with spectral units", func() (sointu.Song, map[int]compiler.EncodedBuffer) {
+			return spectral(convTestSong(20000, 1, false, conv(0, 88, nil))), nil
+		}},
+	} {
+		song, encoded := c.with()
+		total, data, gz := sizes(song, encoded)
+		song, encoded = c.with()
+		total0, data0, gz0 := sizes(without(song), encoded)
+		t.Logf("%-45s +%4d bytes (code +%4d, data +%3d), gzip +%4d   (%d -> %d, gzip %d -> %d)", c.name, total-total0, total-data-total0+data0, data-data0, gz-gz0, total0, total, gz0, gz)
+	}
+}
+
+// TestConvolutionSpeed logs the time that the wasm player under node and
+// the Go synth take for a sample of a convolution unit, for responses of
+// several lengths: a song of 32 s with the unit against the same song
+// without it. With SOINTU_TEST_LONG=1 (go test -v).
+func TestConvolutionSpeed(t *testing.T) {
+	if !longTests() {
+		t.Skip("set SOINTU_TEST_LONG=1 to measure")
+	}
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not found")
+	}
+	wat2wasm, err := exec.LookPath("wat2wasm")
+	if err != nil {
+		t.Skip("wat2wasm not found")
+	}
+	long := func(units ...sointu.Unit) sointu.Song {
+		song := convTestSong(530000, 2, false, units...)
+		song.Score.Length = 16
+		for i := range song.Score.Tracks {
+			tr := &song.Score.Tracks[i]
+			for len(tr.Order) < 16 {
+				tr.Order = append(tr.Order, tr.Order[len(tr.Order)-1])
+			}
+		}
+		return song
+	}
+	measure := func(song sointu.Song) (wasm, goSynth float64) {
+		samples := float64(song.Score.LengthInRows() * song.SamplesPerRow())
+		wasm, goSynth = math.Inf(1), math.Inf(1)
+		for range 3 {
+			start := time.Now()
+			renderWasm(t, node, wat2wasm, song, nil, nil, nil)
+			wasm = min(wasm, float64(time.Since(start).Nanoseconds())/samples)
+			start = time.Now()
+			if _, err := sointu.Play(vm.GoSynther{}, song, nil); err != nil {
+				t.Fatal(err)
+			}
+			goSynth = min(goSynth, float64(time.Since(start).Nanoseconds())/samples)
+		}
+		return
+	}
+	plain := long(conv(0, 0, nil))
+	plain.Patch[1].Units = append(plain.Patch[1].Units[:3:3], plain.Patch[1].Units[4:]...)
+	wasm0, go0 := measure(plain)
+	t.Logf("%-32s wasm %5.0f ns, Go %5.0f ns for a sample of the song", "without the unit", wasm0, go0)
+	for _, c := range []struct {
+		name string
+		unit sointu.Unit
+	}{
+		{"64 frames", conv(0, 0, nil)},
+		{"512 frames", conv(0, 24, nil)},
+		{"4096 frames", conv(0, 48, nil)},
+		{"1 s", conv(0, 75, nil)},
+		{"3 s", conv(0, 88, nil)},
+		{"6 s", conv(0, 96, nil)},
+		{"12 s", conv(0, 104, nil)},
+		{"3 s, fade", conv(0, 88, sointu.ParamMap{"fade": 1})},
+		{"3 s, follow 8", conv(0, 88, sointu.ParamMap{"follow": 3})},
+		{"3 s stereo", conv(1, 88, nil)},
+		{"12 s stereo, fade, follow 8", conv(1, 104, sointu.ParamMap{"fade": 1, "follow": 3})},
+		{"3 s, no buffer (not read again)", conv(0, 88, sointu.ParamMap{"buffer": 7})},
+	} {
+		wasm, goSynth := measure(long(c.unit))
+		t.Logf("%-32s wasm +%5.0f ns, Go +%5.0f ns for a sample: %.2f %% and %.2f %% of real time", c.name, wasm-wasm0, goSynth-go0, (wasm-wasm0)*44100/1e7, (goSynth-go0)*44100/1e7)
 	}
 }

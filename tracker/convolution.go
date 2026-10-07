@@ -24,8 +24,8 @@ func (c *convolutionLengthParameter) Hint(p *Parameter) ParameterHint {
 }
 
 // convolutionCost estimates the time that a convolution unit takes for a
-// sample of a channel in the Go synth, in nanoseconds, from BenchmarkConvolution
-// (Apple M3 Pro): the head, the FFTs of each level, a partition of the
+// sample of a channel in the Go synth, in nanoseconds, fitted to
+// BenchmarkConvolution and TestConvolutionSpeed on an Apple M3 Pro: the head, the FFTs of each level, a partition of the
 // largest blocks, and for a written buffer reading it again.
 func convolutionCost(length, follow int, written bool) float64 {
 	cost, tail := 50.0, 0
