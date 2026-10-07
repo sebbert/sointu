@@ -190,6 +190,11 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 		if unit.Type == "bufread" && unit.Parameters["loop"] == 0 && (up.Name == "loopstart" || up.Name == "looplength" || up.Name == "fade") {
 			continue // loop points only matter when looping
 		}
+		if unit.Type == "convolution" && (up.Name == "follow" || up.Name == "fade") {
+			if buf, found := m.d.Song.Buffers.Find(unit.Parameters["buffer"]); found && !buf.Writable() {
+				continue // a sample is read once: nothing to follow
+			}
+		}
 		if unit.Type == "mcdelay" && (unit.Parameters["allpass"] == 0 && up.Name == "apgain" || unit.Parameters["decay"] == 0 && (up.Name == "hfdecay" || up.Name == "lfdecay")) {
 			continue // the allpass coefficient and the band decays only matter when used
 		}
@@ -223,6 +228,16 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 				if sointu.WritesBus(unit.Type) {
 					vtable = busWriterParameter
 				}
+			}
+		}
+		if unit.Type == "convolution" {
+			switch up.Name {
+			case "buffer":
+				vtable = audioBufferParameter
+			case "start":
+				vtable = &bufferFrameParameter{}
+			case "length":
+				vtable = &convolutionLengthParameter{}
 			}
 		}
 		if unit.Type == "bufread" {

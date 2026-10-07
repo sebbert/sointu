@@ -1309,6 +1309,7 @@ func (r *Remote) RenderSource(ref string, dry bool, whatIf *RemoteWhatIf) (ret R
 		m.fixModules()
 		m.fixSpectrumBuffers()
 		m.fixBuses()
+		m.fixConvolutionBuffers()
 		known, _ := m.d.Song.WithoutUnknownUnits()
 		expanded, expansion := known.Expand()
 		if len(expansion.Problems) > 0 {

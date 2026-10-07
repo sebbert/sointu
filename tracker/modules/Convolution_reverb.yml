@@ -1,0 +1,47 @@
+modules:
+    - id: 1
+      name: Convolution reverb
+      comment: 'A reverb whose impulse response the module writes itself: stereo noise with a decaying envelope, filtered, written into a buffer while the note of the instrument is held, and the stereo input convolved with it. Stereo in, wet out (plus dry). The instrument needs a note as long as decay, e.g. in the first row of the song; every new note writes a new response. Uses the convolution unit: Go synth and wasm player only.'
+      inputs: 2
+      params:
+        - {name: decay, default: 88}
+        - {name: tone, default: 110}
+        - {name: lowcut, default: 16}
+        - {name: gain, default: 28}
+        - {name: predelay, default: 0}
+        - {name: dry, default: 0}
+      units:
+        - type: envelope
+          id: 1
+          parameters: {attack: 0, curve: 96, decay: 88, gain: 64, release: 88, stereo: 0, sustain: 0}
+          bind: {decay: {p: 1, min: 70, max: 96}}
+          comment: 'The decay of the response: the note starts it, and it falls to silence in the time of decay, fast first (curve)'
+        - type: push
+          id: 2
+          parameters: {stereo: 0}
+        - type: noise
+          id: 3
+          parameters: {gain: 128, shape: 64, stereo: 1}
+          comment: 'Noise, different left and right: a wide reverb'
+        - type: mulp
+          id: 4
+          parameters: {stereo: 1}
+        - type: filter
+          id: 5
+          parameters: {bandpass: 0, frequency: 110, highpass: 0, lowpass: 1, resonance: 128, stereo: 1}
+          bind: {frequency: 2}
+          comment: 'tone: the high cut of the response'
+        - type: filter
+          id: 6
+          parameters: {bandpass: 0, frequency: 16, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          bind: {frequency: 3}
+          comment: 'lowcut: the low cut of the response'
+        - type: bufwrite
+          id: 7
+          parameters: {buffer: 1, feedback: 0, oneshot: 1, pop: 1, stereo: 1}
+          comment: The response into its buffer, from the beginning, while the note is held
+        - type: convolution
+          id: 8
+          parameters: {buffer: 1, dry: 0, fade: 1, follow: 0, gain: 28, length: 85, predelay: 0, start: 0, stereo: 1}
+          bind: {dry: 6, gain: 4, length: {p: 1, min: 58, max: 97}, predelay: 5}
+          comment: 'The input convolved with the response, which is read again as it is written; length follows decay'

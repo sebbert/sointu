@@ -275,7 +275,7 @@ func (m *InstrModel) warnAboutCrossThreadSends() {
 				continue
 			}
 			var read []string
-			if unit.Type == "bufread" {
+			if sointu.ReadsAudioBuffer(unit.Type) {
 				read = []string{"buffer"}
 			} else if read = sointu.SpectrumBufferParams(unit.Type); read == nil {
 				read = sointu.BusParams(unit.Type)

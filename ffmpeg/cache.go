@@ -173,13 +173,14 @@ func (c *Cache) store(key Key, r Result) {
 }
 
 // PlayedBuffers returns the IDs of the buffers played by the enabled bufread
-// units of a song, also those of its modules.
+// units of a song and read by its convolution units, also those of its
+// modules.
 func PlayedBuffers(song *sointu.Song) map[int]bool {
 	played := map[int]bool{}
 	expanded, _ := song.Expand() // the units that the module units stand for
 	for _, instr := range expanded.Patch {
 		for _, u := range instr.Units {
-			if u.Type == "bufread" && !u.Disabled {
+			if sointu.ReadsAudioBuffer(u.Type) && !u.Disabled {
 				played[u.Parameters["buffer"]] = true
 			}
 		}

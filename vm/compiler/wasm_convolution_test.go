@@ -2,6 +2,7 @@ package compiler_test
 
 import (
 	"math"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/vsariola/sointu/ffmpeg"
 	"github.com/vsariola/sointu/vm"
 	"github.com/vsariola/sointu/vm/compiler"
+	"gopkg.in/yaml.v3"
 )
 
 // convTestSong is a song with an instrument that writes a burst of noise
@@ -254,5 +256,85 @@ func TestConvolutionOnlyWhenUsed(t *testing.T) {
 	}
 	if wat := strings.ToLower(files[".wat"]); strings.Contains(wat, "$conv") || strings.Contains(wat, "convolution") || strings.Contains(wat, "$fft") {
 		t.Errorf("a song without convolution units compiles to a player that mentions them")
+	}
+}
+
+// TestConvolutionExample checks that examples/convolution.yml has the
+// Convolution reverb module preset writing its own response, that its
+// reverb is heard after the notes end, and that the wasm player renders it
+// like the Go synth.
+func TestConvolutionExample(t *testing.T) {
+	t.Parallel()
+	data, err := os.ReadFile("../../examples/convolution.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var song sointu.Song
+	if err := yaml.Unmarshal(data, &song); err != nil {
+		t.Fatal(err)
+	}
+	preset, err := os.ReadFile("../../tracker/modules/Convolution_reverb.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(string(data), string(preset)) {
+		t.Errorf("the module of the example is not the module preset Convolution reverb")
+	}
+	want, err := sointu.Play(vm.GoSynther{}, song, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the last notes end in row 62; the reverb goes on, and has ended by
+	// the last pattern
+	row := song.SamplesPerRow()
+	rms := func(from, to int) float64 {
+		sum := 0.0
+		for _, s := range want[from*row : to*row] {
+			sum += float64(s[0])*float64(s[0]) + float64(s[1])*float64(s[1])
+		}
+		return 10 * math.Log10(sum/float64(2*(to-from)*row)+1e-30)
+	}
+	if tail := rms(66, 72); tail < -65 || tail > -45 {
+		t.Errorf("the reverb is at %.1f dB half a second after the last note", tail)
+	}
+	if end := rms(84, 96); end > -100 {
+		t.Errorf("the reverb is at %.1f dB in the last rows", end)
+	}
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not found")
+	}
+	wat2wasm, err := exec.LookPath("wat2wasm")
+	if err != nil {
+		t.Skip("wat2wasm not found")
+	}
+	compareWasmToGo(t, want, renderWasm(t, node, wat2wasm, song, nil, nil, nil))
+}
+
+// TestConvolutionStages renders songs with convolution units in stages:
+// the states of the units of a later stage come after those of the stages
+// before it, and a unit and the instrument that writes its response are
+// not cut apart.
+func TestConvolutionStages(t *testing.T) {
+	t.Parallel()
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not found")
+	}
+	wat2wasm, err := exec.LookPath("wat2wasm")
+	if err != nil {
+		t.Skip("wat2wasm not found")
+	}
+	// a missing buffer shares nothing: every instrument can be a stage
+	song := convTestSong(20000, 1, true,
+		conv(1, 40, sointu.ParamMap{"buffer": 7, "dry": 100}), conv(0, 66, sointu.ParamMap{"buffer": 7, "dry": 80}), conv(0, 0, sointu.ParamMap{"buffer": 7, "dry": 60}))
+	if cuts := testStages(t, node, wat2wasm, song); len(cuts) < 4 {
+		t.Errorf("the song without a response can be cut at %v", cuts)
+	}
+	// the written response binds its readers to the writer: the first
+	// instrument, so up to the last reader there is no cut
+	song = convTestSong(20000, 1, false, conv(0, 40, sointu.ParamMap{"buffer": 7, "dry": 100}), conv(0, 66, nil), conv(0, 50, sointu.ParamMap{"buffer": 7, "dry": 100}))
+	if cuts := testStages(t, node, wat2wasm, song); len(cuts) != 1 || cuts[0] != 3 {
+		t.Errorf("the song with a written response can be cut at %v, want [3]", cuts)
 	}
 }

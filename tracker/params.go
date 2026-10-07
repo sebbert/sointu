@@ -348,10 +348,11 @@ type (
 	// moduleParameter is the module of a module unit, and
 	// moduleArgParameter a parameter of the module (Parameter.index, from
 	// 1), which the unit sets
-	moduleParameter      struct{}
-	moduleArgParameter   struct{}
-	spawnRateParameter   struct{ namedParameter }
-	bufferFrameParameter struct{ namedParameter }
+	moduleParameter            struct{}
+	moduleArgParameter         struct{}
+	spawnRateParameter         struct{ namedParameter }
+	bufferFrameParameter       struct{ namedParameter }
+	convolutionLengthParameter struct{ namedParameter }
 
 	ParamYieldFunc func(param Parameter) bool
 
@@ -1060,7 +1061,7 @@ func (b *bufferFrameParameter) Range(p *Parameter) RangeInclusive {
 	frames := p.m.bufferFrames(p.unit.Parameters["buffer"])
 	v := p.unit.Parameters[p.up.Name]
 	r := RangeInclusive{Min: 0, Max: max(frames, v, 1)}
-	if p.up.Name == "start" || p.up.Name == "loopstart" { // negative counts back from the end
+	if p.unit.Type == "bufread" && (p.up.Name == "start" || p.up.Name == "loopstart") { // negative counts back from the end
 		r.Min = min(-frames, v)
 	}
 	return r

@@ -1,0 +1,124 @@
+bpm: 100
+rowsperbeat: 4
+score:
+    tracks:
+        - numvoices: 3
+          order: [0, 1, 0, 2, 3, 3]
+          patterns: [[57, 1, 64, 1, 69, 1, 72, 1, 76, 1, 1, 1, 0, 0, 0, 0], [53, 1, 60, 1, 65, 1, 69, 1, 72, 1, 1, 1, 0, 0, 0, 0], [55, 1, 62, 1, 67, 1, 71, 1, 74, 1, 1, 1, 1, 1, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]
+        - numvoices: 1
+          order: [0, 0, 0, 1, 2, 2]
+          patterns: [[0, 0, 0, 0, 60, 1, 0, 0, 0, 0, 0, 0, 60, 1, 0, 0], [0, 0, 0, 0, 60, 1, 0, 0, 0, 0, 0, 0, 60, 1, 60, 1], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]
+        - numvoices: 1
+          order: [0, 1, 1, 1, 1, 1]
+          patterns: [[60, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
+    rowsperpattern: 16
+    length: 6
+patch:
+    - name: pluck
+      numvoices: 3
+      units:
+        - type: envelope
+          id: 1
+          parameters: {attack: 0, curve: 96, decay: 60, gain: 128, release: 56, stereo: 0, sustain: 0}
+        - type: oscillator
+          id: 2
+          parameters: {bandlimit: 1, color: 8, detune: 64, gain: 96, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 1, unison: 1}
+        - type: mulp
+          id: 3
+          parameters: {stereo: 0}
+        - type: filter
+          id: 4
+          parameters: {frequency: 70, lowpass: 1, resonance: 100, stereo: 0}
+        - type: pan
+          id: 5
+          parameters: {panning: 56, stereo: 0}
+        - type: outaux
+          id: 6
+          parameters: {auxgain: 72, outgain: 64, stereo: 1}
+      comment: Plucked saw chords; auxgain sends them to the reverb
+    - name: snare
+      numvoices: 1
+      units:
+        - type: envelope
+          id: 11
+          parameters: {attack: 0, curve: 96, decay: 44, gain: 128, release: 44, stereo: 0, sustain: 0}
+        - type: noise
+          id: 12
+          parameters: {gain: 128, shape: 64, stereo: 0}
+        - type: mulp
+          id: 13
+          parameters: {stereo: 0}
+        - type: filter
+          id: 14
+          parameters: {bandpass: 1, frequency: 60, resonance: 70, stereo: 0}
+        - type: pan
+          id: 15
+          parameters: {panning: 72, stereo: 0}
+        - type: outaux
+          id: 16
+          parameters: {auxgain: 96, outgain: 72, stereo: 1}
+      comment: A short noise snare, mostly sent to the reverb
+    - name: reverb
+      numvoices: 1
+      units:
+        - type: in
+          id: 20
+          parameters: {channel: 2, stereo: 1}
+          comment: The aux signal the instruments send
+        - type: module
+          id: 21
+          parameters: {module: 1}
+          comment: 'The Convolution reverb module preset: it writes its impulse response while the note in the first row of the song is held, and convolves the aux signal with it'
+        - type: out
+          id: 43
+          parameters: {gain: 128, stereo: 1}
+      comment: 'A convolution reverb with an impulse response that the song makes itself: decaying noise. The note of this instrument in the first row writes it. Go synth and wasm player only.'
+buffers:
+    - {id: 1, name: Response 1, channels: 2, frames: 285870, auto: true}
+modules:
+    - id: 1
+      name: Convolution reverb
+      comment: 'A reverb whose impulse response the module writes itself: stereo noise with a decaying envelope, filtered, written into a buffer while the note of the instrument is held, and the stereo input convolved with it. Stereo in, wet out (plus dry). The instrument needs a note as long as decay, e.g. in the first row of the song; every new note writes a new response. Uses the convolution unit: Go synth and wasm player only.'
+      inputs: 2
+      params:
+        - {name: decay, default: 88}
+        - {name: tone, default: 110}
+        - {name: lowcut, default: 16}
+        - {name: gain, default: 28}
+        - {name: predelay, default: 0}
+        - {name: dry, default: 0}
+      units:
+        - type: envelope
+          id: 1
+          parameters: {attack: 0, curve: 96, decay: 88, gain: 64, release: 88, stereo: 0, sustain: 0}
+          bind: {decay: {p: 1, min: 70, max: 96}}
+          comment: 'The decay of the response: the note starts it, and it falls to silence in the time of decay, fast first (curve)'
+        - type: push
+          id: 2
+          parameters: {stereo: 0}
+        - type: noise
+          id: 3
+          parameters: {gain: 128, shape: 64, stereo: 1}
+          comment: 'Noise, different left and right: a wide reverb'
+        - type: mulp
+          id: 4
+          parameters: {stereo: 1}
+        - type: filter
+          id: 5
+          parameters: {bandpass: 0, frequency: 110, highpass: 0, lowpass: 1, resonance: 128, stereo: 1}
+          bind: {frequency: 2}
+          comment: 'tone: the high cut of the response'
+        - type: filter
+          id: 6
+          parameters: {bandpass: 0, frequency: 16, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          bind: {frequency: 3}
+          comment: 'lowcut: the low cut of the response'
+        - type: bufwrite
+          id: 7
+          parameters: {buffer: 1, feedback: 0, oneshot: 1, pop: 1, stereo: 1}
+          comment: The response into its buffer, from the beginning, while the note is held
+        - type: convolution
+          id: 8
+          parameters: {buffer: 1, dry: 0, fade: 1, follow: 0, gain: 28, length: 85, predelay: 0, start: 0, stereo: 1}
+          bind: {dry: 6, gain: 4, length: {p: 1, min: 58, max: 97}, predelay: 5}
+          comment: 'The input convolved with the response, which is read again as it is written; length follows decay'

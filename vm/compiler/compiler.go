@@ -557,7 +557,7 @@ func wasmSpectral(b *vm.Bytecode, f wasmUnitFeatures, convLog2 int) (ret wasmSpe
 	offset := 0
 	ret.SpectralFFT = len(b.SpectralUnits) > 0 || convLog2 > 0
 	ret.SpectralMaxLog2 = convLog2 // the FFTs of the convolution units use the tables and the scratch space
-	stride := 12 // of the spectrum table, in bytes
+	stride := 12                   // of the spectrum table, in bytes
 	if f.SpectralStereo {
 		stride = 16
 	}
