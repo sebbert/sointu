@@ -85,10 +85,10 @@ func TestAutomationBind(t *testing.T) {
 	if err := a.Bind(2, "gain", 5); err != nil || len(a.Lanes()) != 2 || a.Lanes()[1].Slot != 5 {
 		t.Errorf("binding slot 6: %v, %v", err, a.Lanes())
 	}
-	if err := a.SetPoints(5, sointu.AutomationCurve{{0, 1}, {4, 200}}); err == nil {
+	if err := a.SetPoints(5, sointu.AutomationCurve{{Row: 0, Value: 1}, {Row: 4, Value: 200}}); err == nil {
 		t.Error("a point out of range")
 	}
-	if err := a.SetPoints(5, sointu.AutomationCurve{{0, 1}, {4, -20.5}}); err != nil || len(a.Lanes()[1].Points) != 2 {
+	if err := a.SetPoints(5, sointu.AutomationCurve{{Row: 0, Value: 1}, {Row: 4, Value: -20.5}}); err != nil || len(a.Lanes()[1].Points) != 2 {
 		t.Errorf("SetPoints: %v", err)
 	}
 	m.History().Undo().Do()
@@ -209,5 +209,56 @@ func TestAutomationLiveAndRecording(t *testing.T) {
 	render2(64)
 	if out := render2(300); out[299] != 8.0/64 || p2.live[3] != 8 || m2.Automation().HostValues()[3] != 8 {
 		t.Errorf("restored: %v, live %v", out[299], p2.live[3])
+	}
+}
+
+func TestRemoteAutomation(t *testing.T) {
+	m, _, _, _ := automationModel(t)
+	r := (*Remote)(m)
+	undo := len(m.undoStack)
+	text, err := r.Call(func() (string, error) { return r.Automate(1, "value", 0, false) })
+	if err != nil || !strings.Contains(text, "A1 offsets value of unit 1") {
+		t.Fatalf("automate: %v\n%s", err, text)
+	}
+	if len(m.undoStack) != undo+1 {
+		t.Errorf("automate took %d undo steps", len(m.undoStack)-undo)
+	}
+	if text, err = r.SetAutomation(1, [][2]float64{{0, 0}, {8, 12.5}, {8, -3}}); err != nil || !strings.Contains(text, "3 points, rows 0 to 8, -3 to +12.5 steps") {
+		t.Fatalf("set_automation: %v\n%s", err, text)
+	}
+	if text := r.Song(); !strings.Contains(text, "A1 offsets #1 value (Lead: loadval value), 3 points") {
+		t.Errorf("get_song:\n%s", text)
+	}
+	if text, _ := r.Instrument("0", false); !strings.Contains(text, "value=64(A1 +0.0: ") {
+		t.Errorf("get_instrument:\n%s", text)
+	}
+	if text, err := r.Automation(1); err != nil || !strings.Contains(text, "[0, 0] [8, 12.5] [8, -3]") {
+		t.Errorf("get_automation: %v\n%s", err, text)
+	}
+	// refused without changing the song or the history
+	undo = len(m.undoStack)
+	for name, call := range map[string]func() (string, error){
+		"a parameter without a port": func() (string, error) { return r.Automate(2, "stereo", 0, false) },
+		"a missing unit":             func() (string, error) { return r.Automate(77, "gain", 0, false) },
+		"a lane that is there":       func() (string, error) { return r.Automate(1, "value", 0, false) },
+		"a slot that is not":         func() (string, error) { return r.Automate(2, "gain", 65, false) },
+		"points out of order":        func() (string, error) { return r.SetAutomation(1, [][2]float64{{4, 0}, {2, 1}}) },
+		"a missing lane":             func() (string, error) { return r.Automate(2, "gain", 0, true) },
+	} {
+		if _, err := call(); err == nil {
+			t.Errorf("%s: no error", name)
+		}
+	}
+	if len(m.undoStack) != undo || len(m.d.Song.Automation) != 1 || len(m.d.Song.Automation[0].Points) != 3 {
+		t.Errorf("refused calls changed the song: %v", m.d.Song.Automation)
+	}
+	// what the user changed
+	before := m.d.Song.Copy()
+	m.Automation().Bind(2, "gain", 9)
+	if lines := strings.Join(automationChanges(before.Automation, m.d.Song.Automation), "\n"); !strings.Contains(lines, "slot A10 added (#2 gain") {
+		t.Errorf("changes: %s", lines)
+	}
+	if _, err := r.Automate(1, "value", 0, true); err != nil || len(m.d.Song.Automation) != 1 {
+		t.Errorf("removing: %v, %v", err, m.d.Song.Automation)
 	}
 }

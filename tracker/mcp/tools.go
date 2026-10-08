@@ -107,6 +107,19 @@ type (
 	stepsArgs struct {
 		Steps int `json:"steps,omitempty" jsonschema:"how many steps, 1 if left out"`
 	}
+	automationArgs struct {
+		Slot int `json:"slot" jsonschema:"the automation slot, 1 to 64 (A1 to A64)"`
+	}
+	automateArgs struct {
+		Unit   int    `json:"unit" jsonschema:"the ID of a unit of an instrument"`
+		Param  string `json:"param" jsonschema:"the name of a parameter of the unit that a send can modulate, e.g. frequency; for a module unit p1 to p8"`
+		Slot   int    `json:"slot,omitempty" jsonschema:"the automation slot, 1 to 64; left out, the first free one. A slot that has a lane bound to something else is bound to this instead and keeps its points"`
+		Remove bool   `json:"remove,omitempty" jsonschema:"removes the lane of the parameter, with its points"`
+	}
+	setAutomationArgs struct {
+		Slot   int          `json:"slot" jsonschema:"the automation slot, 1 to 64"`
+		Points [][2]float64 `json:"points" jsonschema:"the points, each [row, offset]: the row of the song from 0, with a fraction, in order, and the offset of the parameter in its steps, -128 to 128. Linear between points; two points at one row are a step; none removes the points"`
+	}
 	renderNoteArgs struct {
 		Instrument string                   `json:"instrument" jsonschema:"the index of the instrument, from 0, or its name"`
 		Notes      []int                    `json:"notes,omitempty" jsonschema:"the notes to play at once, as the tracker and MIDI input number them: 60 is C-3 in the tracker, 130.8 Hz for an oscillator with transpose 64; 69 is A-3, 220 Hz; 36 is C-1. [60] if left out; at most as many notes as the instrument has voices"`
@@ -239,6 +252,16 @@ func Tools() []Tool {
 			func(r *tracker.Remote, a deleteModuleArgs) (string, error) { return r.DeleteModule(a.Module) }),
 		modelTool("set_bpm", "Sets the tempo of the song. In a plugin, the song follows the host's tempo again when that changes.", false,
 			func(r *tracker.Remote, a bpmArgs) (string, error) { return r.SetBPM(a.BPM) }),
+		modelTool("get_automation", "The points of the lane of an automation slot. get_song lists the lanes, and get_instrument marks automated parameters with their slot (A3 +0.0: ...).", true,
+			func(r *tracker.Remote, a automationArgs) (string, error) { return r.Automation(a.Slot) }),
+		modelTool("automate", "Binds an automation slot to a parameter of a unit, or removes that. A slot is a parameter of the plugin in the host (A1 to A64), which the user automates there; its value is added to the parameter, in steps of the parameter, on top of the value the unit has. When the user records in the plugin, the automation of the host becomes the points of the lane, which the compiled song plays. One step of the undo history.", false,
+			func(r *tracker.Remote, a automateArgs) (string, error) {
+				return r.Automate(a.Unit, a.Param, a.Slot, a.Remove)
+			}),
+		modelTool("set_automation", "Sets the points of the lane of an automation slot: how the offset of its parameter moves over the rows of the song, as the song plays it when it is played in the tracker and compiled (not while the host plays the plugin, which then gives the values itself). Replaces all points of the lane. One step of the undo history.", false,
+			func(r *tracker.Remote, a setAutomationArgs) (string, error) {
+				return r.SetAutomation(a.Slot, a.Points)
+			}),
 		modelTool("undo", "Undoes the last steps of the tracker's undo history: also changes that the user made by hand.", false,
 			func(r *tracker.Remote, a stepsArgs) (string, error) { return r.Undo(a.Steps) }),
 		modelTool("redo", "Redoes steps that were undone.", false,

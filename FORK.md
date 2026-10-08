@@ -3,7 +3,8 @@
 This branch of Sointu adds macOS and CLAP plugins, audio samples and buffers,
 granular synthesis, spectral processing, convolution, modules (reusable blocks of units),
 a graphical parametric equalizer, up to 255 voices and 16 output channels
-(seven aux pairs), and an [MCP server](#mcp-server) through
+(seven aux pairs), [automation](#automation) from the plugin host that the
+compiled song plays, and an [MCP server](#mcp-server) through
 which Claude reads and changes the patch of a running tracker or plugin. Most of the new
 synthesis features exist only in the Go synth and the WebAssembly player; the
 x86 players (`vm/compiler/templates/amd64-386`) and the native bridge were left
@@ -55,6 +56,8 @@ sounding the same (`addedParameters` in `patch.go`).
 - `Song.Modules`: reusable blocks of units, and `Unit.Bind` in their units.
   See [Modules](#modules).
 - `Unit.Bands`: the bands of an `eq` unit. See [eq](#eq).
+- `Song.Automation`: the lanes of the automation slots. See
+  [Automation](#automation).
 
 ## New units
 
@@ -66,6 +69,7 @@ All of these are Go and wasm only.
 | `bufwrite` | Writes into a buffer: a continuous ring buffer, or `oneshot` while the note is held. Several writers mix; `feedback`, `pop` |
 | `spawn` | Triggers voices of another instrument: at a `rate`, synced to the beat, or on a rising edge. Transpose, note length, up to 4 `args`, `steal` |
 | `arg` | Pushes a value passed by the `spawn` that triggered the voice |
+| `automation` | Pushes the value of the lane of an automation slot at the time of the song. The tracker puts one, with a send, before every parameter that a slot is bound to. See [Automation](#automation) |
 | `window` | A smoothstep window over the spawned note, for click-free grains |
 | `spfft`, `spifft`, `spcopy` | Spectral analysis and resynthesis (Hann, 4× overlap, 256 to 8192 samples, mono or stereo), copying spectra |
 | `spfilter`, `spcompress`, `spblur`, `spgate`, `spphase`, `spscale`, `spformant` | Change a spectrum in place: band cut and tilt, magnitudes pulled to their mean (with optional attack and release per bin), time smoothing and freeze, gate, phase dispersion/randomization/robot, bin scaling and shifting, formant shift |
@@ -1015,6 +1019,169 @@ in the row of the unit. A real FFT. Spreading the work of the long part
 over its 4096 samples, which would need a longer first part. An instrument
 preset: the module preset is the reverb, to put between an `in` and an
 `out`. The player was not tried in a browser, only under node.
+
+## Automation
+
+What is automated in the plugin host ends up in the compiled song. The
+plugins show the host 64 parameters, the automation slots A1 to A64. A slot
+is bound to a parameter of a unit and offsets it, in steps of that
+parameter, on top of the value that the unit has, which is never changed.
+While the host plays, its values move the Go synth at their sample; a
+recording in the plugin turns them into points of a lane in the song, with
+the notes; and the song plays the lanes when it is played in the tracker and
+when it is compiled. Go synth and wasm player only.
+
+Why slots, and why recording: a CLAP or VST2 plugin cannot read the
+automation lanes of its host. It is only given values while the host plays
+(`CLAP_EVENT_PARAM_VALUE`, sample accurate; VST2 `setParameter`, between
+blocks), as densely as the host likes. And the host keeps its lanes by the
+ID of a parameter, so the IDs must not depend on the patch: a parameter is a
+slot, whatever the slot is bound to.
+
+**In the song.** `Song.Automation`, optional, a lane for each slot in use:
+
+```yaml
+automation:
+    - slot: 0            # A1
+      unit: 4            # the ID of a unit of an instrument
+      param: frequency
+      points: [[0, 0], [32, 40], [48, 70], [48, 10], [64, 30]]
+```
+
+A point is a row of the song, from its start and with a fraction, and an
+offset in steps of the parameter, -128 to 128, with a fraction. Between two
+points the value is linear, before the first it is that of the first, after
+the last that of the last; two points at one row are a step. Rows, so the
+lanes follow the tempo with the score. Any parameter that a send can
+modulate can have a lane (`CanAutomate`), also `p1` to `p8` of a module
+unit; not the units inside a module. A lane without `unit` is bound to
+nothing and played only by `automation` units placed by hand.
+
+**Expansion.** `Song.Expand` puts two units before every unit that a lane is
+bound to: an `automation` unit with the slot, and a `send` with the amount
+1 to the port of the parameter. So the lane is added the way every
+modulation is, `value/128 + port`: no unit is needed to add it, and the send
+is the code that the player has anyway. A send to a module unit becomes
+sends to what is bound to that parameter of the module, as any send does
+(with the coarse scale of a scaled binding). After the modules are expanded,
+every `automation` unit, also those placed by hand in an instrument or a
+module, gets the points of the lane of its slot as `VarArgs`: the time in
+samples and the value in 1/128 steps of each. The two units count towards
+the 63 of the instrument. `Expansion.Problems` lists lanes bound to units
+that are missing or to parameters without a port, and slots with two lanes.
+
+**The unit.** `automation` has one parameter, `slot`, and pushes the value
+of the lane over 128. `Bytecode.Automation` is the table of the lanes, the
+same bytes in the Go synth and the wasm player (`su_automation`):
+
+```
+value            the value before the first record
+time, value      a record: the value reached that long after the record before
+...
+0                the end: the last value stays
+```
+
+Times are 16 bits in units of 16 samples (0.36 ms), never 0: a step takes
+one unit, a gap of more than 23.8 s gets a record on its way. Values are
+16 bits in 1/128 steps; when every value of the song is a whole step from
+-128 to 127 they are 8 bits in steps (`AutomationFine`). The operand of the
+unit is the offset of its lane, 2 bytes; units with the same slot and
+points share a lane. The state of the unit is the offset of its record and
+the sample at which the record before it was reached, in the unit: when a
+note clears it, the unit steps through its records up to the sample of the
+song again, so nothing is kept outside the voices and a stage of the
+pipeline needs nothing from the others. The value is
+`(v0 + (v1 - v0)·t/dt)·scale` in float32, the same operations in both
+synths: no sample differs. The time is the count of samples since the start
+of the song, so not for songs with the `speed` unit, whose rows have other
+lengths.
+
+**Conditional on use.** A lane without a point other than 0 adds exactly
+nothing and is not compiled (`Automation.Active`), so a slot that is bound
+but not recorded costs nothing. Songs without lanes compile to the same
+bytes as before, for wasm, 386 and amd64 (all songs of `tests` and
+`examples`, 1236 files, also with `-js` and `-js -stages 4`). x86 has a stub
+and the compiler refuses the unit.
+
+**Size.** Bytes of the wasm player of `examples/automation.yml`, against
+the same song without lanes (1842 bytes, 1144 gzipped;
+`TestAutomationSizes`):
+
+| Song | Total | Code | Data | gzip |
+|---|---|---|---|---|
+| 1 lane, 5 points, whole steps | +235 | +210 | +25 | +149 |
+| the same, in a song that has a `send` already | +170 | +147 | +23 | +108 |
+| 3 lanes, 9 points, whole steps | +267 | +213 | +54 | +174 |
+| 4 lanes, 16 points, one with fractions (16 bits) | +312 | +213 | +99 | +196 |
+| 1 lane, 64 points of a curve, 16 bits | +476 | +210 | +266 | +350 |
+| 1 lane, 64 points of a curve, whole steps | +412 | +210 | +202 | +269 |
+
+So 147 bytes of code once (63 more for the `send` in a song without one),
+about 10 bytes for each lane (two opcodes, five operands, the first value,
+the end) and 3 bytes for each point, 4 with 16 bits; gzipped about 2 and 3
+a point.
+
+**What 8 and 16 bits change.** Only the points are rounded; between them the
+value is a float, so a ramp is smooth either way. With whole steps a point
+is where the knob could be: within 0.5 step, which is 1.5 % of a filter
+frequency at 2 kHz and 6 % at 100 Hz, 0.13 dB of a gain at half level. What
+is lost is what is smaller than a step: `transpose` is a semitone a step,
+so a vibrato or a bend below half a semitone is gone, and so are fine moves
+of a detune, a delay time or a position in a buffer. What a host records
+has fractions, so it is 16 bits unless the points are rounded.
+
+**In the tracker and the plugins.**
+
+- Edit → Automate parameter binds the parameter under the cursor to the
+  first free slot, or removes its lane (`AutomationModel`). The hint of an
+  automated parameter starts with the slot and what the host gives it now:
+  `A3 +12.5: 686 Hz`. A lane goes with its unit when the unit is deleted.
+- The plugins have a parameter for each slot, -128 to 128 with the default
+  0, named by the slot and what it is bound to (`A3 Bass: filter
+  frequency`); CLAP rescans the names when they change, and takes the
+  modulation of the host (`CLAP_EVENT_PARAM_MOD`) on top of the value. In
+  VST2 the range is 0 to 1 with 0.5 in the middle, and a value takes effect
+  at the start of the next block. The vendored vst2 has `GetNameFunc`, and
+  24 bytes for the name of a parameter instead of 8.
+- A value of the host reaches the player with its frame, like a note
+  (`Player.Automate`), and the Go synth at that sample
+  (`sointu.Automator`), where it is reached in a ramp of 128 samples
+  against steps in the sound. It is not a change of the song: no undo step,
+  and the project of the host is not marked as changed. The values are
+  saved with the state of the plugin and restored.
+- While the song is played in the tracker, the `automation` units read
+  their lanes, at the row that is played, also after a loop or a jump;
+  otherwise they push the values of the host.
+- Recording (the record button of the plugin) records the values with the
+  notes, from the first note on, with the values that the slots had then.
+  The values of a slot are joined by lines, with a step where the slot was
+  left alone for more than 0.1 s, and reduced to the fewest points within
+  0.1 step of them (`Recording.Lanes`, `ReduceAutomation`: Ramer, Douglas
+  and Peucker). The lanes keep their bindings; slots that are bound to
+  nothing and were given values get a lane too.
+
+**Tests.** `automation_test.go` (expansion, also through a module and for
+units placed by hand, problems, YAML and JSON, reducing),
+`vm/automation_test.go` (the records, the values at their samples, a note
+triggered on the way, the song going back, a changed table, live values),
+`vm/compiler/wasm_automation_test.go` (the wasm player renders a song with
+four kinds of lanes and `examples/automation.yml` exactly like the Go synth,
+with 8 and 16 bits, in parts and cut into stages at every voice; lanes that
+add nothing compile to the player of the song without them for wasm, 386
+and amd64; x86 refuses; sizes), `tracker/automation_test.go` (binding and
+undo, the hint, a lane going with its unit, a live value at its frame,
+recording a ramp, a hold and a step, playing the lanes, a change of the
+tempo, the values saved and restored, the remote tools) and
+`cmd/plugin/plugin_test.go` (a value of the host at its frame at 44100 and
+48000 Hz, the modulation). **Not verified:** anything in a host. The
+plugins build; what Bitwig and Live send, and how they show the parameters,
+has not been seen.
+
+**Not done.** A list of the lanes and a plot of a lane in the tracker, and
+editing points there (the MCP tools read and set them); turning a knob in
+the tracker does not write automation in the host, as the knob is not the
+parameter; importing the envelopes of a Live set (`.als`) or MIDI
+controllers; lanes together with the `speed` unit; x86.
 
 ## Bandlimited oscillators
 
@@ -2068,6 +2235,7 @@ resolved; the instructions say so.
 | `add_instrument`, `edit_instrument`, `delete_instrument` | a preset or the default instrument, before or after an instrument, by default before the first bus; name, comment, voices, mute, solo, loading a preset |
 | `move_instrument` | before or after another instrument |
 | `add_module`, `edit_module`, `delete_module` | a module preset or an empty module; name, comment, inputs, parameters (added, named, defaults, deleted) |
+| `get_automation`, `automate`, `set_automation` | the points of the lane of an automation slot; binding a slot to a parameter of a unit, or removing that; setting the points. `get_song` lists the lanes, `get_instrument` marks automated parameters (`A3 +0.0: ...`), and the changes of the user list lanes added, removed, bound elsewhere and recorded |
 | `set_bpm`, `undo`, `redo` | undo and redo go through the same history as the user's |
 | `render_note` | renders notes of an instrument offline and measures them (below) |
 | `play_note` | plays a note in the running tracker, for the user to hear |
@@ -2202,6 +2370,7 @@ ways, and the templates test them:
 |---|---|
 | `bufread`, `bufwrite` | looping, crossfade, backwards in a loop, modulated and negative positions, edge fade, note tracking, pitch, channel mixes; one shot, ring, mixing writers, feedback, no pop |
 | mc units | the first-voice check and the voice in the table; `mcdelay` modulation (with its 16 constants), the clamp of its lengths, note tracking, allpass; gain of `mcspread` and `mcsum`, width of `mcsum`, feedback of `mcloop`, stereo lanes of `mcspread`, each `mcmix` type, the high-pass. Operands: add of `mcspread`, type of `mcmix` and `mcfilter`, flags of `mcdelay` |
+| `automation` | the unit and its table, only in songs with lanes that have a point other than 0; values of 8 bits when all are whole steps from -128 to 127, else of 16 |
 | `spawn`, `window` | each mode, arguments, stealing, note tracking, transpose, note length and the release loop, the test for a missing target; own length, note length and the clamp of a modulated shape of `window`. Operand: the flags of `spawn` |
 | spectral units | the first-voice check and the voice in the table; the loops over channels, the rings of `spifft` and the channels in the spectrum table (only with a stereo spectrum); low, high and tilt of `spfilter` (`$log2f`, `$powf`); freeze of `spblur`; each mode of `spphase` (`$rotate`, `$tablePhase`, `$randomPhase`); scale and shift of `spscale`; voices and intervals of `spcomb`. Operands: invert of `spgate`, mode of `spphase`, voices and intervals of `spcomb` |
 | `ott` | time, upward, downward, the right channel's powers |
@@ -2726,6 +2895,13 @@ songs that need any of it for x86.
    spectral units (5). See [convolution unit](#convolution-unit) and
    `vm/convolution.go`. The x86 template has a stub; the compiler refuses
    the unit for x86.
+
+   **Automation.** `su_op_automation` reads the table `su_automation`
+   (`Bytecode.Automation`, `vm/automation.go`) by the offset in its two
+   operand bytes, keeps the offset of its record and the sample of the
+   record before it in the first two cells of the unit, and needs the
+   count of samples since the start of the song (`$globaltick`). The x86
+   template has a stub; the compiler refuses the unit for x86.
 
 9. **Bandlimited oscillators.** Flags 0x04 with 0x40, 0x20 or 0x10 mean
    bandlimited, so the gate test becomes flags & 0x74 == 0x04. Keep the

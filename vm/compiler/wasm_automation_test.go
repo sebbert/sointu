@@ -2,6 +2,8 @@ package compiler_test
 
 import (
 	"maps"
+	"math"
+	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -9,6 +11,7 @@ import (
 
 	"github.com/vsariola/sointu"
 	"github.com/vsariola/sointu/vm/compiler"
+	"gopkg.in/yaml.v3"
 )
 
 // automationTestSong has lanes bound to the frequency of a filter, to the
@@ -181,5 +184,110 @@ func TestAutomationX86Refused(t *testing.T) {
 		if _, err := compileWat(t, arch, automationTestSong(false)); err == nil || !strings.Contains(err.Error(), "only supported when compiling for wasm") {
 			t.Errorf("compiling automation for %v: %v, want it refused", arch, err)
 		}
+	}
+}
+
+func exampleSong(t *testing.T, file string) sointu.Song {
+	t.Helper()
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var song sointu.Song
+	if err := yaml.Unmarshal(data, &song); err != nil {
+		t.Fatal(err)
+	}
+	return song
+}
+
+// TestAutomationExampleWasmMatchesGoSynth renders examples/automation.yml
+// in the wasm player and the Go synth.
+func TestAutomationExampleWasmMatchesGoSynth(t *testing.T) {
+	t.Parallel()
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not found")
+	}
+	wat2wasm, err := exec.LookPath("wat2wasm")
+	if err != nil {
+		t.Skip("wat2wasm not found")
+	}
+	song := exampleSong(t, "../../examples/automation.yml")
+	compareWasmToGo(t, playGo(t, song), renderWasm(t, node, wat2wasm, song, nil, nil, nil))
+}
+
+// TestAutomationSizes logs what automation adds to the wasm player of
+// examples/automation.yml, against the same song without lanes (go test -v).
+func TestAutomationSizes(t *testing.T) {
+	t.Parallel()
+	wat2wasm, err := exec.LookPath("wat2wasm")
+	if err != nil {
+		t.Skip("wat2wasm not found")
+	}
+	sizes := func(song sointu.Song) (int, int, int) {
+		file, _ := compileWasm(t, wat2wasm, song, nil, nil)
+		return wasmSizes(t, file)
+	}
+	song := exampleSong(t, "../../examples/automation.yml")
+	plain := song
+	plain.Automation = nil
+	t0, d0, g0 := sizes(plain)
+	t.Logf("%-52s %5d bytes, data %4d, gzip %4d", "without automation", t0, d0, g0)
+	log := func(name string, song sointu.Song) (int, int, int) {
+		tot, data, gz := sizes(song)
+		t.Logf("%-52s %+5d bytes: code %+4d, data %+4d, gzip %+4d", name, tot-t0, tot-t0-(data-d0), data-d0, gz-g0)
+		return tot, data, gz
+	}
+	one := song
+	one.Automation = song.Automation[:1]
+	log("1 lane, 5 points, whole steps (8 bits)", one)
+	whole := song
+	whole.Automation = append(song.Automation[:2:2], song.Automation[3])
+	log("3 lanes, 9 points, whole steps (8 bits)", whole)
+	log("4 lanes, 16 points, one with fractions (16 bits)", song)
+	// a song that has a send already has that code
+	lfo := plain
+	lfo.Patch = slices.Clone(plain.Patch)
+	lfo.Patch[0].Units = append(slices.Clone(plain.Patch[0].Units[:3]),
+		sointu.Unit{Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": 96}},
+		sointu.Unit{Type: "send", Parameters: sointu.ParamMap{"stereo": 0, "amount": 96, "target": 4, "port": 0, "sendpop": 1}})
+	lfo.Patch[0].Units = append(lfo.Patch[0].Units, plain.Patch[0].Units[3:]...)
+	t1, d1, g1 := sizes(lfo)
+	lfo.Automation = song.Automation[:1]
+	t2, d2, g2 := sizes(lfo)
+	t.Logf("%-52s %+5d bytes: code %+4d, data %+4d, gzip %+4d", "1 lane, 5 points, in a song with a send", t2-t1, t2-t1-(d2-d1), d2-d1, g2-g1)
+	// many points: a lane with a point every row, as a recording of a curve
+	// leaves it
+	many := one
+	curve := sointu.AutomationCurve{}
+	for row := 0; row < 64; row++ {
+		x := float64(row) / 64
+		curve = append(curve, sointu.AutomationPoint{Row: float64(row), Value: math.Round(128*60*x*x) / 128})
+	}
+	many.Automation = sointu.Automation{{Slot: 0, Unit: 4, Param: "frequency", Points: curve}}
+	log("1 lane, 64 points of a curve (16 bits)", many)
+	for i := range curve {
+		curve[i].Value = math.Round(curve[i].Value)
+	}
+	log("1 lane, 64 points of a curve, whole steps (8 bits)", many)
+}
+
+// TestAutomationProgressiveAndStages renders the automation in parts, and
+// cut into stages at every voice: a stage finds the place in its lanes by
+// the time, like a note triggered on the way.
+func TestAutomationProgressiveAndStages(t *testing.T) {
+	t.Parallel()
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not found")
+	}
+	wat2wasm, err := exec.LookPath("wat2wasm")
+	if err != nil {
+		t.Skip("wat2wasm not found")
+	}
+	song := automationTestSong(true)
+	runProgressive(t, node, wat2wasm, song, nil, nil, nil, nil)
+	if cuts := testStages(t, node, wat2wasm, song); len(cuts) != 4 {
+		t.Errorf("the song can be cut at %v, want before each of its voices", cuts)
 	}
 }
