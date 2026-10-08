@@ -44,6 +44,12 @@ type (
 		layout     synthLayout // of the patch, for the states of its units: see carry.go
 		taps       []tap       // where the signal is recorded: see tap.go; nil if nowhere
 		syncs      *[]float32
+		// the automation units: see automation.go
+		songTime        uint32 // the sample of the song rendered next
+		songPlaying     bool   // the units read their lanes, not the live values
+		automationEpoch uint32 // counts the changes of the table
+		live            [sointu.AutomationSlots]automationLive
+		liveRamps       bool // some live value is on its way
 	}
 
 	// GoSynther is a Synther implementation that can converts patches into
@@ -136,6 +142,7 @@ func (s GoSynther) Synth(patch sointu.Patch, bpm int) (sointu.Synth, error) {
 	}
 	ret := &GoSynth{bytecode: *bytecode, stack: make([]float32, 0, 4), delaylines: make([]delayline, patch.NumDelayLines()), otts: make([]ottState, patch.NumOtts()), limiters: make([]limiterState, patch.NumLimiters()), reverbs: make([]reverbState, patch.NumReverbs())}
 	ret.state.randSeed = 1
+	ret.songPlaying = true
 	ret.layout = newSynthLayout(patch)
 	ret.syncs = s.Syncs
 	ret.setSpectra(nil)
@@ -260,6 +267,7 @@ func (s *GoSynth) Update(patch sointu.Patch, bpm int) error {
 	}
 	old := s.bytecode
 	s.bytecode = *bytecode
+	s.automationEpoch++ // the automation units find their records anew
 	s.setSpectra(&old)
 	s.setMC(&old)
 	for len(s.delaylines) < patch.NumDelayLines() {
@@ -784,6 +792,9 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 			case opArg:
 				stack = append(stack, voice.args[operands[0]])
 				operands = operands[1:]
+			case opAutomation:
+				stack = append(stack, s.automation(unit, int(operands[0])|int(operands[1])<<8))
+				operands = operands[2:]
 			case opBufread:
 				var index byte
 				index, operands = operands[0], operands[1:]
@@ -928,6 +939,7 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 		samples++
 		renderTime++
 		s.state.globalTime++
+		s.stepAutomation()
 	}
 	s.stack = stack[:0]
 	return samples, renderTime, nil

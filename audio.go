@@ -92,6 +92,19 @@ type (
 		SetBuffers(buffers map[int]BufferAudio)
 	}
 
+	// Automator is implemented by Synths with automation units.
+	Automator interface {
+		// SetSongTime tells the synth the sample of the song that it
+		// renders next, counted from the start of the song, which is where
+		// the automation units read their lanes. A negative sample means
+		// that the song is not playing: the units then push the live
+		// values of their slots. Called between synth.Renders.
+		SetSongTime(sample int)
+		// SetAutomation sets the live value of a slot, in steps of a
+		// parameter. Called between synth.Renders.
+		SetAutomation(slot int, value float32)
+	}
+
 	// BufferWriter is implemented by Synths that write to buffers.
 	BufferWriter interface {
 		// WrittenBuffers returns the writable buffers with what has been
