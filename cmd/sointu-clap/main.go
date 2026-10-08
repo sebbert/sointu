@@ -12,6 +12,7 @@ package main
 #include <stdlib.h>
 
 void sointu_mark_dirty(uintptr_t plugin);
+void sointu_params_changed(uintptr_t plugin, bool values);
 */
 import "C"
 
@@ -54,7 +55,10 @@ func sointuVersion() *C.char {
 
 //export sointuNew
 func sointuNew(p C.uintptr_t) C.uintptr_t {
-	return C.uintptr_t(cgo.NewHandle(plugin.New("sointu-clap", func() { C.sointu_mark_dirty(p) })))
+	return C.uintptr_t(cgo.NewHandle(plugin.New("sointu-clap",
+		func() { C.sointu_mark_dirty(p) },
+		func(values bool) { C.sointu_params_changed(p, C.bool(values)) },
+	)))
 }
 
 //export sointuClose
@@ -66,6 +70,33 @@ func sointuClose(h C.uintptr_t) {
 //export sointuMIDI
 func sointuMIDI(h C.uintptr_t, time C.uint32_t, port C.int, d0, d1, d2 C.uint8_t) {
 	instance(h).MIDI(int(time), int(port), [3]byte{byte(d0), byte(d1), byte(d2)})
+}
+
+//export sointuParams
+func sointuParams() C.uint32_t { return plugin.NumParams }
+
+//export sointuParamRange
+func sointuParamRange() C.double { return plugin.ParamRange }
+
+// sointuParam handles a value, or with mod a modulation, that the host
+// gives a parameter time frames into the next block.
+//
+//export sointuParam
+func sointuParam(h C.uintptr_t, time C.uint32_t, id C.uint32_t, value C.double, mod C.bool) {
+	instance(h).Param(int(time), int(id), float64(value), bool(mod))
+}
+
+//export sointuParamValue
+func sointuParamValue(h C.uintptr_t, id C.uint32_t) C.double {
+	return C.double(instance(h).ParamValue(int(id)))
+}
+
+// sointuParamName returns the name of a parameter in memory allocated with
+// malloc, to be freed by the caller.
+//
+//export sointuParamName
+func sointuParamName(h C.uintptr_t, id C.uint32_t) *C.char {
+	return C.CString(instance(h).ParamName(int(id)))
 }
 
 // sointuSetSampleRate tells the instance the sample rate of the host and

@@ -543,6 +543,13 @@ func (p *Parameter) Hint() ParameterHint {
 		return ParameterHint{}
 	}
 	hint := p.vtable.Hint(p)
+	if p.m == nil {
+		return hint
+	}
+	if slot, ok := p.m.Automation().SlotOf(p); ok {
+		// a lane offsets it: the slot, and what the host gives it now
+		hint.Label = fmt.Sprintf("A%d %+.1f: %s", slot+1, p.m.Automation().Live(slot), hint.Label)
+	}
 	if name, ok := p.Bound(); ok {
 		// the module units set it; the value is the default of the module
 		hint.Label = "← " + name + ": " + hint.Label

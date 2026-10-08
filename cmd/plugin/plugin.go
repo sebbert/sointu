@@ -32,6 +32,11 @@ type (
 		// changed is true when the host has been told of changes that it has
 		// not saved yet
 		changed atomic.Bool
+		// paramNames are what the automation slots are bound to, and
+		// paramsChanged tells the host that they, or with values the
+		// values of the parameters, changed
+		paramNames    atomic.Pointer[[sointu.AutomationSlots]string]
+		paramsChanged func(values bool)
 	}
 
 	// output plays the player, whose synth runs at 44100 Hz, in the blocks
@@ -53,6 +58,14 @@ type (
 		rate          int
 		resampler     *resample.Resampler // nil at 44100 Hz
 		lastRateCheck time.Time
+		// the parameters of the plugin, one for each automation slot: the
+		// value and the modulation that the host last gave each, on the
+		// audio thread, and the values as float32 bits for other threads
+		paramValue, paramMod [sointu.AutomationSlots]float32
+		params               [sointu.AutomationSlots]atomic.Uint32
+		// restored are the values of a state that was loaded, for the
+		// audio thread to take as paramValue
+		restored atomic.Pointer[[sointu.AutomationSlots]float32]
 	}
 
 	// rateChange is a sample rate of the host and the resampler for it, nil
@@ -72,8 +85,10 @@ type (
 // New creates a plugin instance and opens its tracker window. name is used to
 // name the recovery file, e.g. "sointu-vsti". The song is saved in the host's
 // project; markDirty, if not nil, tells the host that the song changed, and is
-// called from the tracker's goroutine.
-func New(name string, markDirty func()) *Instance {
+// called from the tracker's goroutine. paramsChanged, if not nil, tells the
+// host that the names of the parameters changed, or with values their
+// values, from the same goroutine.
+func New(name string, markDirty func(), paramsChanged func(values bool)) *Instance {
 	recoveryFile := ""
 	if configDir, err := os.UserConfigDir(); err == nil {
 		randBytes := make([]byte, 16)
@@ -94,16 +109,18 @@ func New(name string, markDirty func()) *Instance {
 	// swapped/added etc.
 	model.Track().LinkInstrument().SetValue(false)
 	i := &Instance{
-		output:  output{player: player},
-		broker:  broker,
-		model:   model,
-		tracker: t,
-		mcp:     host,
+		output:        output{player: player},
+		broker:        broker,
+		model:         model,
+		tracker:       t,
+		mcp:           host,
+		paramsChanged: paramsChanged,
 	}
 	model.SetHostSavesState(func() {
 		if markDirty != nil && !i.changed.Swap(true) {
 			markDirty()
 		}
+		i.updateParamNames()
 	})
 	go t.Main()
 	return i
@@ -171,6 +188,70 @@ func (o *output) MIDI(delta, port int, data [3]byte) {
 	}
 }
 
+// NumParams is the number of parameters of the plugin: one for each
+// automation slot. ParamRange is how far each goes either way, in steps of
+// the parameter that the slot offsets; its default is 0.
+const (
+	NumParams  = sointu.AutomationSlots
+	ParamRange = sointu.AutomationRange
+)
+
+// Param handles a value that the host gives a parameter delta frames into
+// the next processed block, or with mod a modulation to add to its value.
+// Call from the audio thread, before Process, or when Process is not being
+// called.
+func (o *output) Param(delta, slot int, value float64, mod bool) {
+	if slot < 0 || slot >= NumParams || math.IsNaN(value) {
+		return
+	}
+	if mod {
+		o.paramMod[slot] = float32(value)
+	} else {
+		o.paramValue[slot] = float32(min(max(value, -ParamRange), ParamRange))
+		o.params[slot].Store(math.Float32bits(o.paramValue[slot]))
+	}
+	o.changeRate()
+	if o.resampler != nil {
+		delta = o.resampler.Need(max(delta, 0))
+	}
+	live := min(max(o.paramValue[slot]+o.paramMod[slot], -ParamRange), ParamRange)
+	o.player.Automate(int64(delta)+o.totalFrames, slot, live, o)
+}
+
+// ParamValue returns the value of a parameter, without the modulation. It
+// can be called from any thread.
+func (o *output) ParamValue(slot int) float64 {
+	if slot < 0 || slot >= NumParams {
+		return 0
+	}
+	return float64(math.Float32frombits(o.params[slot].Load()))
+}
+
+// ParamName returns the name of a parameter: the automation slot, and what
+// it is bound to. It can be called from any thread.
+func (i *Instance) ParamName(slot int) string {
+	if names := i.paramNames.Load(); names != nil && slot >= 0 && slot < NumParams && names[slot] != "" {
+		return fmt.Sprintf("A%d %s", slot+1, names[slot])
+	}
+	return fmt.Sprintf("A%d", slot+1)
+}
+
+// ParamText returns the value of a parameter as text: an offset in steps.
+func ParamText(value float64) string { return fmt.Sprintf("%+.2f", value) }
+
+// updateParamNames tells the host if the automation slots are bound to
+// something else than it was last told. Called from the tracker's goroutine.
+func (i *Instance) updateParamNames() {
+	names := i.model.Automation().SlotNames()
+	if old := i.paramNames.Load(); (old == nil && names == [NumParams]string{}) || (old != nil && *old == names) {
+		return
+	}
+	i.paramNames.Store(&names)
+	if i.paramsChanged != nil {
+		i.paramsChanged(false)
+	}
+}
+
 // Process renders the next block of stereo audio into left and right, which
 // must have the same length.
 func (o *output) Process(left, right []float32, host Host) {
@@ -181,6 +262,9 @@ func (o *output) Process(left, right []float32, host Host) {
 		o.lastRateCheck = time.Now()
 	}
 	o.changeRate()
+	if r := o.restored.Swap(nil); r != nil {
+		o.paramValue = *r
+	}
 	frames := len(left)
 	if o.resampler == nil {
 		if len(o.buf) < frames {
@@ -235,5 +319,17 @@ func (i *Instance) State() []byte {
 
 // SetState restores state returned by State.
 func (i *Instance) SetState(data []byte) {
-	tracker.TrySend(i.broker.ToModel, tracker.MsgToModel{Data: func() { i.tracker.History().UnmarshalRecovery(data) }})
+	tracker.TrySend(i.broker.ToModel, tracker.MsgToModel{Data: func() {
+		i.tracker.History().UnmarshalRecovery(data)
+		// the values of the parameters are saved with the song
+		values := i.model.Automation().HostValues()
+		for slot, v := range values {
+			i.params[slot].Store(math.Float32bits(v))
+		}
+		i.restored.Store(&values) // for the audio thread
+		i.updateParamNames()
+		if i.paramsChanged != nil {
+			i.paramsChanged(true)
+		}
+	}})
 }

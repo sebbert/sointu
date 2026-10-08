@@ -14,6 +14,18 @@ type (
 		Events               NoteEventList
 		StartFrame, EndFrame int64
 		State                RecordingState
+		// Automation are the values that the automation slots were given
+		// while recording, and Initial what they were when it started.
+		Automation []AutomationEvent
+		Initial    [sointu.AutomationSlots]float32
+	}
+
+	// AutomationEvent is a value given to an automation slot, in steps of a
+	// parameter, at a frame of the player.
+	AutomationEvent struct {
+		Frame int64
+		Slot  int
+		Value float32
 	}
 
 	RecordingState int
@@ -38,6 +50,14 @@ func (r *Recording) Record(ev NoteEvent, frame int64) {
 		r.State = RecordingStarted
 	}
 	r.Events = append(r.Events, ev)
+}
+
+// RecordAutomation records a value given to an automation slot. The
+// recording starts with the first note: what came before is in Initial.
+func (r *Recording) RecordAutomation(slot int, value float32, frame int64) {
+	if r.State == RecordingStarted {
+		r.Automation = append(r.Automation, AutomationEvent{Frame: frame, Slot: slot, Value: value})
+	}
 }
 
 func (r *Recording) Finish(frame int64, frameDeltas map[any]int64) {
@@ -185,4 +205,73 @@ func (recording *Recording) Score(patch sointu.Patch, rowsPerBeat, rowsPerPatter
 
 func frameToRow(BPM float64, rowsPerBeat int, frame int64) int {
 	return int(float64(frame)/44100/60*BPM*float64(rowsPerBeat) + 0.5)
+}
+
+// AutomationTolerance is how far the points of a recorded lane may be from
+// the values that were recorded, in steps of a parameter.
+const AutomationTolerance = 0.1
+
+// automationHold is the time in frames after which a slot that was given no
+// value is taken to have stayed where it was, so that its next value is a
+// step: hosts send the values along a ramp at least every block.
+const automationHold = 4410
+
+// Lanes returns the automation of the recording: the lanes with their
+// bindings and, in place of their points, what was recorded for their
+// slots; slots without a lane that were given values get one, bound to
+// nothing. The values that a slot was given are joined by lines, with a
+// step after a slot was left alone for a while, and reduced to the fewest
+// points within AutomationTolerance of them.
+func (r *Recording) Lanes(lanes sointu.Automation, rowsPerBeat int) sointu.Automation {
+	curves := make([]sointu.AutomationCurve, sointu.AutomationSlots)
+	last := make([]int64, sointu.AutomationSlots)
+	row := func(frame int64) float64 {
+		return float64(frame-r.StartFrame) / 44100 / 60 * r.BPM * float64(rowsPerBeat)
+	}
+	round := func(v float32) float64 { return math.Round(float64(v)*sointu.AutomationScale) / sointu.AutomationScale }
+	for slot, v := range r.Initial {
+		if v != 0 {
+			curves[slot] = sointu.AutomationCurve{{Row: 0, Value: round(v)}}
+		}
+		last[slot] = r.StartFrame
+	}
+	for _, e := range r.Automation {
+		if e.Slot < 0 || e.Slot >= len(curves) || e.Frame < r.StartFrame {
+			continue
+		}
+		c := curves[e.Slot]
+		if len(c) == 0 {
+			c = sointu.AutomationCurve{{Row: 0, Value: 0}}
+		}
+		if e.Frame-last[e.Slot] > automationHold {
+			c = append(c, sointu.AutomationPoint{Row: row(e.Frame), Value: c[len(c)-1].Value})
+		}
+		curves[e.Slot] = append(c, sointu.AutomationPoint{Row: row(e.Frame), Value: round(e.Value)})
+		last[e.Slot] = e.Frame
+	}
+	ret := lanes.Copy()
+	for i := range ret {
+		ret[i].Points = nil
+	}
+	for slot, c := range curves {
+		if len(c) == 0 {
+			continue
+		}
+		i, ok := ret.Find(slot)
+		if !ok {
+			i, ret = len(ret), append(ret, sointu.Lane{Slot: slot})
+		}
+		ret[i].Points = sointu.ReduceAutomation(c, AutomationTolerance)
+	}
+	// lanes that were bound to nothing and got no points are gone
+	out := ret[:0]
+	for _, l := range ret {
+		if l.Unit != 0 || len(l.Points) > 0 {
+			out = append(out, l)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

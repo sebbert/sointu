@@ -220,3 +220,57 @@ func TestSetSampleRate(t *testing.T) {
 		}
 	}
 }
+
+// TestParam checks that a value that the host gives a parameter moves the
+// parameter that its automation slot is bound to from the frame of the
+// event on, also when the host does not run at 44100 Hz, and that the
+// modulation of the host is added to it.
+func TestParam(t *testing.T) {
+	song := stepSong()
+	song.Patch[0].Units = []sointu.Unit{
+		{ID: 1, Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": 64}},
+		{ID: 2, Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
+	}
+	song.Automation = sointu.Automation{{Slot: 7, Unit: 1, Param: "value"}}
+	expanded, _ := song.Expand()
+	for _, rate := range []int{44100, 48000} {
+		broker := tracker.NewBroker()
+		player := tracker.NewPlayer(broker, vm.GoSynther{})
+		broker.ToPlayer <- expanded
+		o := &output{player: player}
+		o.SetSampleRate(float64(rate))
+		host := testHost{float64(rate)}
+		var left []float32
+		block := func(n int) {
+			l, r := make([]float32, n), make([]float32, n)
+			o.Process(l, r, host)
+			left = append(left, l...)
+		}
+		block(512)
+		o.Param(100, 7, 32, false) // at frame 612: to 32 steps, 0.5 at the output
+		o.Param(100, 8, 99, false) // another slot
+		o.Param(0, NumParams, 1, false)
+		block(512)
+		block(512)
+		o.Param(0, 7, 16, true) // at frame 1536: 16 steps of modulation more
+		block(512)
+		late := 0
+		if rate != 44100 {
+			late = resample.Latency(resample.SynthRate, rate)
+		}
+		at := crossing(left, 0.25) - float64(late)
+		ramp := 64 * float64(rate) / 44100 // half of the ramp of the synth
+		if math.Abs(at-(612+ramp)) > 2 {
+			t.Errorf("%d Hz: the value is half way at frame %.1f, want %.1f", rate, at, 612+ramp)
+		}
+		if got := left[1500]; math.Abs(float64(got)-0.5) > 1e-3 {
+			t.Errorf("%d Hz: frame 1500 is %v, want 0.5", rate, got)
+		}
+		if got := left[2047]; math.Abs(float64(got)-0.75) > 1e-3 {
+			t.Errorf("%d Hz: with the modulation, %v, want 0.75", rate, got)
+		}
+		if got := o.ParamValue(7); got != 32 {
+			t.Errorf("ParamValue = %v, want 32: the value without the modulation", got)
+		}
+	}
+}
