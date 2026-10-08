@@ -145,7 +145,7 @@ func (t *Tracker) Main() {
 		// a plugin host, e.g. a DAW, can put its own windows in front of the
 		// new window while it is loading the plugin, so raise the window on
 		// its first frame and once more a moment later
-		raised := false
+		raised, focused := false, false
 		onTop := t.preferences.Window.AlwaysOnTop
 		raiseAgain := time.After(500 * time.Millisecond)
 		acks := make(chan struct{})
@@ -191,6 +191,13 @@ func (t *Tracker) Main() {
 					acks <- struct{}{}
 					break F // this window is done, we need to create a new one
 				case app.ConfigEvent:
+					if e.Config.Focused && !focused {
+						// a plugin host can change the level of the window
+						// after it was created (it then floats although the
+						// setting is off), so set it again
+						w.Option(app.TopMost(onTop))
+					}
+					focused = e.Config.Focused
 					if !e.Config.Focused {
 						t.plotZoomModifier = false  // Alt is not released in another window
 						t.zoomScroll = zoomScroll{} // nor is Ctrl/Cmd
@@ -202,6 +209,7 @@ func (t *Tracker) Main() {
 					}
 					if !raised {
 						raised = true
+						w.Option(app.TopMost(onTop))
 						w.Perform(system.ActionRaise)
 					}
 					if titlePath != t.filePathString.Value() || changedSinceSave != t.Song().ChangedSinceSave() {
@@ -219,6 +227,7 @@ func (t *Tracker) Main() {
 				}
 				acks <- struct{}{}
 			case <-raiseAgain:
+				w.Option(app.TopMost(onTop))
 				w.Perform(system.ActionRaise)
 			case <-recoveryTicker.C:
 				t.History().SaveRecovery()
