@@ -1043,6 +1043,7 @@ slot, whatever the slot is bound to.
 ```yaml
 automation:
     - slot: 0            # A1
+      name: Bass cutoff  # what the host shows; optional
       unit: 4            # the ID of a unit of an instrument
       param: frequency
       points: [[0, 0], [32, 40], [48, 70], [48, 10], [64, 30]]
@@ -1138,7 +1139,11 @@ has fractions, so it is 16 bits unless the points are rounded.
   `A3 +12.5: 686 Hz`. A lane goes with its unit when the unit is deleted.
 - The plugins have a parameter for each slot, -128 to 128 with the default
   0, named by the slot and what it is bound to (`A3 Bass: filter
-  frequency`); CLAP rescans the names when they change, and takes the
+  frequency`), or by the `name` of its lane alone. With an automated
+  parameter under the cursor, the toolbar under the units has the slot and
+  a field for that name, which shows the name by the binding while it is
+  empty (at most 64 bytes, one line; a host that takes VST2 names as they
+  are specified shows 24). CLAP rescans the names when they change, and takes the
   modulation of the host (`CLAP_EVENT_PARAM_MOD`) on top of the value. In
   VST2 the range is 0 to 1 with 0.5 in the middle, and a value takes effect
   at the start of the next block. The vendored vst2 has `GetNameFunc`, and
@@ -1169,11 +1174,12 @@ four kinds of lanes and `examples/automation.yml` exactly like the Go synth,
 with 8 and 16 bits, in parts and cut into stages at every voice; lanes that
 add nothing compile to the player of the song without them for wasm, 386
 and amd64; x86 refuses; sizes), `tracker/automation_test.go` (binding and
-undo, the hint, a lane going with its unit, a live value at its frame,
+undo, the hint, naming a slot, a lane going with its unit, a live value at its frame,
 recording a ramp, a hold and a step, playing the lanes, a change of the
 tempo, the values saved and restored, the remote tools) and
 `cmd/plugin/plugin_test.go` (a value of the host at its frame at 44100 and
-48000 Hz, the modulation). **Not verified:** anything in a host. The
+48000 Hz, the modulation), and `tracker/gioui/automation_test.go` (the field
+for the name, laid out without a window). **Not verified:** anything in a host. The
 plugins build; what Bitwig and Live send, and how they show the parameters,
 has not been seen.
 
@@ -2235,7 +2241,7 @@ resolved; the instructions say so.
 | `add_instrument`, `edit_instrument`, `delete_instrument` | a preset or the default instrument, before or after an instrument, by default before the first bus; name, comment, voices, mute, solo, loading a preset |
 | `move_instrument` | before or after another instrument |
 | `add_module`, `edit_module`, `delete_module` | a module preset or an empty module; name, comment, inputs, parameters (added, named, defaults, deleted) |
-| `get_automation`, `automate`, `set_automation` | the points of the lane of an automation slot; binding a slot to a parameter of a unit, or removing that; setting the points. `get_song` lists the lanes, `get_instrument` marks automated parameters (`A3 +0.0: ...`), and the changes of the user list lanes added, removed, bound elsewhere and recorded |
+| `get_automation`, `automate`, `set_automation` | the points of the lane of an automation slot; binding a slot to a parameter of a unit, naming it for the host, or removing that; setting the points. `get_song` lists the lanes, `get_instrument` marks automated parameters (`A3 +0.0: ...`), and the changes of the user list lanes added, removed, bound elsewhere and recorded |
 | `set_bpm`, `undo`, `redo` | undo and redo go through the same history as the user's |
 | `render_note` | renders notes of an instrument offline and measures them (below) |
 | `play_note` | plays a note in the running tracker, for the user to hear |

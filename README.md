@@ -469,7 +469,8 @@ response; `examples/convolution.yml` uses it. See
 The plugins show their host 64 parameters, the automation slots. Edit →
 Automate parameter binds the parameter under the cursor to a slot, which then
 offsets it, in steps of the parameter, by what the host gives it; the value
-of the unit stays. Recording in the plugin records the automation of the
+of the unit stays. The host shows the slot by what it is bound to, or by the
+name typed into the field that the toolbar under the units then has. Recording in the plugin records the automation of the
 host with the notes, as a few points for each slot (`automation:` in the
 song), and the song plays them when it is played in the tracker and
 compiled: an `automation` unit and a send before each automated unit.

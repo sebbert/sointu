@@ -24,6 +24,9 @@ func (r *Remote) describeAutomation() string {
 	fmt.Fprintf(&b, "automation (slot A1 to A%d: a parameter of the plugin in the host, offsetting a parameter in steps):\n", sointu.AutomationSlots)
 	for _, l := range lanes {
 		fmt.Fprintf(&b, "  A%d ", l.Slot+1)
+		if l.Name != "" {
+			fmt.Fprintf(&b, "%q ", l.Name)
+		}
 		if l.Unit == 0 {
 			b.WriteString("bound to nothing (for automation units with that slot)")
 		} else {
@@ -68,8 +71,10 @@ func (r *Remote) Automation(slot int) (string, error) {
 
 // Automate binds an automation slot to a parameter of a unit of an
 // instrument, the first free one for slot 0, or with remove takes the lane
-// of the parameter away, with its points.
-func (r *Remote) Automate(unit int, param string, slot int, remove bool) (string, error) {
+// of the parameter away, with its points. With name, the slot gets the
+// name, which the host shows, also when the parameter has its lane already;
+// "" gives it back the name by what it is bound to.
+func (r *Remote) Automate(unit int, param string, slot int, remove bool, name *string) (string, error) {
 	return r.edit(PatchChange, func() (remoteFocus, string, error) {
 		m := (*Model)(r)
 		loc, err := r.findUnit(unit)
@@ -86,11 +91,26 @@ func (r *Remote) Automate(unit int, param string, slot int, remove bool) (string
 			}
 			return focus, fmt.Sprintf("removed the automation of %s of unit %d", param, unit), nil
 		}
+		i, bound := m.d.Song.Automation.FindParam(unit, param)
+		if bound && name != nil && (slot == 0 || slot-1 == m.d.Song.Automation[i].Slot) {
+			// the lane is there: naming it
+			s := m.d.Song.Automation[i].Slot
+			if err := m.Automation().Rename(s, *name); err != nil {
+				return focus, "", err
+			}
+			return focus, fmt.Sprintf("automation slot A%d is named %q in the host", s+1, m.Automation().HostNames()[s]), nil
+		}
 		if err := m.Automation().Bind(unit, param, slot-1); err != nil {
 			return focus, "", err
 		}
-		i, _ := m.d.Song.Automation.FindParam(unit, param)
-		return focus, fmt.Sprintf("automation slot A%d offsets %s of unit %d", m.d.Song.Automation[i].Slot+1, param, unit), nil
+		i, _ = m.d.Song.Automation.FindParam(unit, param)
+		s := m.d.Song.Automation[i].Slot
+		if name != nil {
+			if err := m.Automation().Rename(s, *name); err != nil {
+				return focus, "", err
+			}
+		}
+		return focus, fmt.Sprintf("automation slot A%d offsets %s of unit %d, named %q in the host", s+1, param, unit, m.Automation().HostNames()[s]), nil
 	})
 }
 
@@ -118,6 +138,8 @@ func automationChanges(old, now sointu.Automation) (lines []string) {
 		switch {
 		case !ok:
 			lines = append(lines, fmt.Sprintf("automation: slot A%d added (#%d %s, %d points)", l.Slot+1, l.Unit, l.Param, len(l.Points)))
+		case old[i].Name != l.Name:
+			lines = append(lines, fmt.Sprintf("automation: slot A%d is named %q (was %q)", l.Slot+1, l.Name, old[i].Name))
 		case old[i].Unit != l.Unit || old[i].Param != l.Param:
 			lines = append(lines, fmt.Sprintf("automation: slot A%d offsets #%d %s (was #%d %s)", l.Slot+1, l.Unit, l.Param, old[i].Unit, old[i].Param))
 		case !reflect.DeepEqual(old[i].Points, l.Points):

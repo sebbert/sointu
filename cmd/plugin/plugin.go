@@ -227,11 +227,12 @@ func (o *output) ParamValue(slot int) float64 {
 	return float64(math.Float32frombits(o.params[slot].Load()))
 }
 
-// ParamName returns the name of a parameter: the automation slot, and what
-// it is bound to. It can be called from any thread.
+// ParamName returns the name of a parameter: the name that the user gave
+// the automation slot, or else the slot and what it is bound to. It can be
+// called from any thread.
 func (i *Instance) ParamName(slot int) string {
 	if names := i.paramNames.Load(); names != nil && slot >= 0 && slot < NumParams && names[slot] != "" {
-		return fmt.Sprintf("A%d %s", slot+1, names[slot])
+		return names[slot]
 	}
 	return fmt.Sprintf("A%d", slot+1)
 }
@@ -242,7 +243,7 @@ func ParamText(value float64) string { return fmt.Sprintf("%+.2f", value) }
 // updateParamNames tells the host if the automation slots are bound to
 // something else than it was last told. Called from the tracker's goroutine.
 func (i *Instance) updateParamNames() {
-	names := i.model.Automation().SlotNames()
+	names := i.model.Automation().HostNames()
 	if old := i.paramNames.Load(); (old == nil && names == [NumParams]string{}) || (old != nil && *old == names) {
 		return
 	}

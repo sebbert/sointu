@@ -42,7 +42,11 @@ type (
 		DisableUnitBtn *Clickable
 		SelectTypeBtn  *Clickable
 		commentEditor  *Editor
-		caser          cases.Caser
+		// automationEditor edits the name of the automation slot of the
+		// parameter under the cursor
+		automationEditor *Editor
+		automationShown  bool // it was laid out in the last frame
+		caser            cases.Caser
 
 		makeModuleBtn   *Clickable
 		inlineModuleBtn *Clickable
@@ -76,18 +80,19 @@ type (
 
 func NewInstrumentEditor(m *tracker.Model) *InstrumentEditor {
 	ret := &InstrumentEditor{
-		dragList:       NewDragList(m.Unit().List(), layout.Vertical),
-		addUnitBtn:     new(Clickable),
-		searchEditor:   NewEditor(true, true, text.Start),
-		DeleteUnitBtn:  new(Clickable),
-		ClearUnitBtn:   new(Clickable),
-		DisableUnitBtn: new(Clickable),
-		CopyUnitBtn:    new(Clickable),
-		SelectTypeBtn:  new(Clickable),
-		commentEditor:  NewEditor(true, true, text.Start),
-		paramTable:     NewScrollTable(m.Params().Table(), m.Params().Columns(), m.Unit().List()),
-		searchList:     NewDragList(m.Unit().SearchResults(), layout.Vertical),
-		searching:      m.Unit().Searching(),
+		dragList:         NewDragList(m.Unit().List(), layout.Vertical),
+		addUnitBtn:       new(Clickable),
+		searchEditor:     NewEditor(true, true, text.Start),
+		DeleteUnitBtn:    new(Clickable),
+		ClearUnitBtn:     new(Clickable),
+		DisableUnitBtn:   new(Clickable),
+		CopyUnitBtn:      new(Clickable),
+		SelectTypeBtn:    new(Clickable),
+		commentEditor:    NewEditor(true, true, text.Start),
+		automationEditor: NewEditor(true, true, text.Start),
+		paramTable:       NewScrollTable(m.Params().Table(), m.Params().Columns(), m.Unit().List()),
+		searchList:       NewDragList(m.Unit().SearchResults(), layout.Vertical),
+		searching:        m.Unit().Searching(),
 
 		makeModuleBtn:   new(Clickable),
 		inlineModuleBtn: new(Clickable),
@@ -130,6 +135,9 @@ func (ie *InstrumentEditor) Tags(level int, yield TagYieldFunc) bool {
 		if row < len(ie.eqEditors) {
 			ret = ret && ie.eqEditors[row].Tags(level, yield)
 		}
+	}
+	if ie.automationShown { // last: it is only there for automated parameters
+		ret = ret && yield(level+1, &ie.automationEditor.widgetEditor)
 	}
 	return ret
 }
@@ -869,6 +877,30 @@ func (pe *InstrumentEditor) layoutFooter(gtx C) D {
 		}
 		return btn.Layout(gtx, IntMenuChild(binding, icons.ContentLink))
 	}
+	// the name of the automation slot of the parameter under the cursor, as
+	// the host shows it
+	automation := func(gtx C) D {
+		slot, ok := t.Automation().Slot()
+		pe.automationShown = ok
+		if !ok {
+			return D{}
+		}
+		name := t.Automation().Name()
+		for pe.automationEditor.Update(gtx, name) != EditorEventNone {
+			t.FocusPrev(gtx, false)
+		}
+		label := Label(t.Theme, &t.Theme.InstrumentEditor.UnitList.Comment, fmt.Sprintf("A%d", slot+1))
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(func(gtx C) D {
+				return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(4)}.Layout(gtx, label.Layout)
+			}),
+			layout.Rigid(func(gtx C) D {
+				gtx.Constraints.Min.X, gtx.Constraints.Max.X = gtx.Dp(120), gtx.Dp(220)
+				gtx.Constraints.Min.Y = 0
+				return pe.automationEditor.Layout(gtx, name, t.Theme, &t.Theme.InstrumentEditor.UnitComment, t.Automation().DefaultSlotName(slot))
+			}),
+		)
+	}
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(deleteUnitBtn.Layout),
 		layout.Rigid(clearUnitBtn.Layout),
@@ -877,6 +909,7 @@ func (pe *InstrumentEditor) layoutFooter(gtx C) D {
 		layout.Rigid(makeModuleBtn.Layout),
 		layout.Rigid(moduleBtns),
 		layout.Rigid(bind),
+		layout.Rigid(automation),
 		layout.Flexed(1, func(gtx C) D { return D{Size: gtx.Constraints.Min} }),
 		layout.Rigid(editing),
 		layout.Rigid(status),

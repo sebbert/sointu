@@ -3,6 +3,7 @@ package tracker
 import (
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/vsariola/sointu"
 )
@@ -189,10 +190,72 @@ func (m *AutomationModel) SetPoints(slot int, points sointu.AutomationCurve) err
 	return nil
 }
 
-// SlotName returns what the slot offsets, as a host shows it: the
-// instrument, the unit and the parameter, or "" for a slot that is bound to
-// nothing.
+// MaxAutomationName is the longest name of a slot, in bytes.
+const MaxAutomationName = 64
+
+// Name returns a String with the name of the lane of the parameter under
+// the cursor, which a plugin host shows for its slot: empty for the name by
+// what the slot is bound to (DefaultSlotName).
+func (m *AutomationModel) Name() String { return MakeString((*automationName)(m)) }
+
+type automationName AutomationModel
+
+func (v *automationName) lane() (int, bool) {
+	unit, param, ok := (*AutomationModel)(v).target()
+	if !ok {
+		return 0, false
+	}
+	return v.d.Song.Automation.FindParam(unit, param)
+}
+
+func (v *automationName) Value() string {
+	if i, ok := v.lane(); ok {
+		return v.d.Song.Automation[i].Name
+	}
+	return ""
+}
+
+func (v *automationName) SetValue(value string) bool {
+	i, ok := v.lane()
+	if !ok {
+		return false
+	}
+	return (*AutomationModel)(v).Rename(v.d.Song.Automation[i].Slot, value) == nil
+}
+
+// Rename names the slot, which must have a lane; "" gives it back the name
+// by what it is bound to.
+func (m *AutomationModel) Rename(slot int, name string) error {
+	i, ok := m.d.Song.Automation.Find(slot)
+	if !ok {
+		return fmt.Errorf("automation slot %d has no lane", slot+1)
+	}
+	name = strings.Join(strings.Fields(name), " ") // one line
+	if len(name) > MaxAutomationName {
+		return fmt.Errorf("the name of a slot is at most %d bytes", MaxAutomationName)
+	}
+	if m.d.Song.Automation[i].Name == name {
+		return nil
+	}
+	defer (*Model)(m).change("AutomationName", PatchChange, MinorChange)()
+	a := m.d.Song.Automation.Copy()
+	a[i].Name = name
+	m.d.Song.Automation = a
+	return nil
+}
+
+// SlotName returns the name of the slot, as a host shows it: the name of
+// its lane, or without one DefaultSlotName.
 func (m *AutomationModel) SlotName(slot int) string {
+	if k, ok := m.d.Song.Automation.Find(slot); ok && m.d.Song.Automation[k].Name != "" {
+		return m.d.Song.Automation[k].Name
+	}
+	return m.DefaultSlotName(slot)
+}
+
+// DefaultSlotName returns what the slot offsets: the instrument, the unit
+// and the parameter, or "" for a slot that is bound to nothing.
+func (m *AutomationModel) DefaultSlotName(slot int) string {
 	k, ok := m.d.Song.Automation.Find(slot)
 	if !ok || m.d.Song.Automation[k].Unit == 0 {
 		return ""
@@ -220,11 +283,38 @@ func (m *AutomationModel) SlotName(slot int) string {
 	return fmt.Sprintf("%s: %s %s", m.d.Song.Patch[i].Name, what, param)
 }
 
+// Slot returns the slot of the lane of the parameter under the cursor.
+func (m *AutomationModel) Slot() (slot int, ok bool) {
+	i, ok := (*automationName)(m).lane()
+	if !ok {
+		return 0, false
+	}
+	return m.d.Song.Automation[i].Slot, true
+}
+
 // SlotNames returns the SlotName of every slot.
 func (m *AutomationModel) SlotNames() (names [sointu.AutomationSlots]string) {
 	for _, l := range m.d.Song.Automation {
 		if l.Slot >= 0 && l.Slot < len(names) {
 			names[l.Slot] = m.SlotName(l.Slot)
+		}
+	}
+	return names
+}
+
+// HostNames returns the name of every slot as a plugin host shows it: the
+// name that the lane was given, or else the slot and what it is bound to,
+// e.g. "A3 Bass: filter frequency"; "" for a slot without a lane or bound to
+// nothing and not named.
+func (m *AutomationModel) HostNames() (names [sointu.AutomationSlots]string) {
+	for _, l := range m.d.Song.Automation {
+		if l.Slot < 0 || l.Slot >= len(names) {
+			continue
+		}
+		if l.Name != "" {
+			names[l.Slot] = l.Name
+		} else if d := m.DefaultSlotName(l.Slot); d != "" {
+			names[l.Slot] = fmt.Sprintf("A%d %s", l.Slot+1, d)
 		}
 	}
 	return names

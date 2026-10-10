@@ -35,8 +35,12 @@ type (
 	// The value is that of the points, linear between them, that of the
 	// first point before it and that of the last point after it; without
 	// points, 0.
+	//
+	// Name is what a plugin host shows for the slot; without one, the
+	// tracker names it by what it is bound to.
 	Lane struct {
 		Slot   int
+		Name   string          `yaml:",omitempty" json:",omitempty"`
 		Unit   int             `yaml:",omitempty" json:",omitempty"`
 		Param  string          `yaml:",omitempty" json:",omitempty"`
 		Points AutomationCurve `yaml:",flow,omitempty" json:",omitempty"`

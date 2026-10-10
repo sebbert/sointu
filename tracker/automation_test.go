@@ -7,6 +7,7 @@ import (
 
 	"github.com/vsariola/sointu"
 	"github.com/vsariola/sointu/vm"
+	"gopkg.in/yaml.v3"
 )
 
 // automationModel returns a model and a player with a song whose
@@ -216,7 +217,7 @@ func TestRemoteAutomation(t *testing.T) {
 	m, _, _, _ := automationModel(t)
 	r := (*Remote)(m)
 	undo := len(m.undoStack)
-	text, err := r.Call(func() (string, error) { return r.Automate(1, "value", 0, false) })
+	text, err := r.Call(func() (string, error) { return r.Automate(1, "value", 0, false, nil) })
 	if err != nil || !strings.Contains(text, "A1 offsets value of unit 1") {
 		t.Fatalf("automate: %v\n%s", err, text)
 	}
@@ -238,12 +239,12 @@ func TestRemoteAutomation(t *testing.T) {
 	// refused without changing the song or the history
 	undo = len(m.undoStack)
 	for name, call := range map[string]func() (string, error){
-		"a parameter without a port": func() (string, error) { return r.Automate(2, "stereo", 0, false) },
-		"a missing unit":             func() (string, error) { return r.Automate(77, "gain", 0, false) },
-		"a lane that is there":       func() (string, error) { return r.Automate(1, "value", 0, false) },
-		"a slot that is not":         func() (string, error) { return r.Automate(2, "gain", 65, false) },
+		"a parameter without a port": func() (string, error) { return r.Automate(2, "stereo", 0, false, nil) },
+		"a missing unit":             func() (string, error) { return r.Automate(77, "gain", 0, false, nil) },
+		"a lane that is there":       func() (string, error) { return r.Automate(1, "value", 0, false, nil) },
+		"a slot that is not":         func() (string, error) { return r.Automate(2, "gain", 65, false, nil) },
 		"points out of order":        func() (string, error) { return r.SetAutomation(1, [][2]float64{{4, 0}, {2, 1}}) },
-		"a missing lane":             func() (string, error) { return r.Automate(2, "gain", 0, true) },
+		"a missing lane":             func() (string, error) { return r.Automate(2, "gain", 0, true, nil) },
 	} {
 		if _, err := call(); err == nil {
 			t.Errorf("%s: no error", name)
@@ -258,7 +259,64 @@ func TestRemoteAutomation(t *testing.T) {
 	if lines := strings.Join(automationChanges(before.Automation, m.d.Song.Automation), "\n"); !strings.Contains(lines, "slot A10 added (#2 gain") {
 		t.Errorf("changes: %s", lines)
 	}
-	if _, err := r.Automate(1, "value", 0, true); err != nil || len(m.d.Song.Automation) != 1 {
+	if _, err := r.Automate(1, "value", 0, true, nil); err != nil || len(m.d.Song.Automation) != 1 {
 		t.Errorf("removing: %v, %v", err, m.d.Song.Automation)
+	}
+}
+
+func TestAutomationNames(t *testing.T) {
+	m, _, _, _ := automationModel(t)
+	a := m.Automation()
+	m.Params().SetCursor(Point{X: 1, Y: 0})
+	if a.Name().SetValue("x") {
+		t.Error("named a parameter without a lane")
+	}
+	if err := a.Bind(1, "value", 2); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.HostNames()[2]; got != "A3 Lead: loadval value" {
+		t.Errorf("the host's name: %q", got)
+	}
+	undo := len(m.undoStack)
+	if !a.Name().SetValue("  Bass\n cutoff ") || a.Name().Value() != "Bass cutoff" {
+		t.Errorf("the name: %q", a.Name().Value())
+	}
+	if got, def := a.HostNames()[2], a.DefaultSlotName(2); got != "Bass cutoff" || def != "Lead: loadval value" || a.SlotName(2) != "Bass cutoff" {
+		t.Errorf("named: host %q, default %q", got, def)
+	}
+	if len(m.undoStack) != undo+1 {
+		t.Errorf("naming took %d undo steps", len(m.undoStack)-undo)
+	}
+	if err := a.Rename(2, strings.Repeat("x", MaxAutomationName+1)); err == nil {
+		t.Error("a name that is too long")
+	}
+	if err := a.Rename(7, "x"); err == nil {
+		t.Error("named a slot without a lane")
+	}
+	// the name is saved, and survives a recording
+	data, err := yaml.Marshal(m.d.Song)
+	if err != nil || !strings.Contains(string(data), "name: Bass cutoff") {
+		t.Errorf("saved: %v\n%s", err, data)
+	}
+	rec := Recording{BPM: 120, State: RecordingFinished}
+	if lanes := rec.Lanes(m.d.Song.Automation, 4); len(lanes) != 1 || lanes[0].Name != "Bass cutoff" {
+		t.Errorf("after a recording: %v", lanes)
+	}
+	// through the remote tools: naming a lane that is there, and a new one
+	r := m.Remote()
+	name := "Cutoff"
+	if text, err := r.Automate(1, "value", 0, false, &name); err != nil || !strings.Contains(text, `A3 is named "Cutoff"`) {
+		t.Errorf("renaming: %v\n%s", err, text)
+	}
+	name = "Level"
+	if text, err := r.Automate(2, "gain", 0, false, &name); err != nil || !strings.Contains(text, `named "Level"`) || a.HostNames()[0] != "Level" {
+		t.Errorf("binding with a name: %v\n%s", err, text)
+	}
+	if text := r.Song(); !strings.Contains(text, `A3 "Cutoff" offsets #1 value`) {
+		t.Errorf("get_song:\n%s", text)
+	}
+	name = ""
+	if _, err := r.Automate(1, "value", 0, false, &name); err != nil || a.HostNames()[2] != "A3 Lead: loadval value" {
+		t.Errorf("clearing the name: %v, %q", err, a.HostNames()[2])
 	}
 }
