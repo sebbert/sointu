@@ -397,6 +397,10 @@
 (global $convWRK (mut i32) (i32.const 0))
 {{- end}}
 (global $globaltick (mut i32) (i32.const 0))
+{{- if .BufreadRing}}
+;; 1 while a bufread unit reads a full ring, whose frames are valid all around
+(global $bufring (mut i32) (i32.const 0))
+{{- end}}
 (global $row (mut i32) (i32.const 0))
 (global $pattern (mut i32) (i32.const 0))
 (global $sample (mut i32) (i32.const 0))

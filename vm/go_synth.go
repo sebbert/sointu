@@ -35,15 +35,19 @@ type (
 		convX      []float32 // scratch of the convolution units: see convScratch
 		convAcc    []float32
 		buffers    map[int]*synthBuffer
-		spectra    []spectrum
-		spectral   []spectralState // states of the spectral units
-		buses      []mcBus
-		mc         []mcState // states of the mc units
-		scratch    []float32
-		cpuLoad    sointu.CPULoad
-		layout     synthLayout // of the patch, for the states of its units: see carry.go
-		taps       []tap       // where the signal is recorded: see tap.go; nil if nowhere
-		syncs      *[]float32
+		// voiceBuffers are the copies of the buffers that the voices of an
+		// instrument each have one of, for the voices after the first, which
+		// has the buffer itself: see Bytecode.PerVoiceBuffers
+		voiceBuffers map[int][]*synthBuffer
+		spectra      []spectrum
+		spectral     []spectralState // states of the spectral units
+		buses        []mcBus
+		mc           []mcState // states of the mc units
+		scratch      []float32
+		cpuLoad      sointu.CPULoad
+		layout       synthLayout // of the patch, for the states of its units: see carry.go
+		taps         []tap       // where the signal is recorded: see tap.go; nil if nowhere
+		syncs        *[]float32
 	}
 
 	// GoSynther is a Synther implementation that can converts patches into
@@ -202,7 +206,36 @@ func (s *GoSynth) SetBuffers(buffers map[int]sointu.BufferAudio) {
 			s.buffers[id] = &synthBuffer{audio: b, filled: uint32(frames)}
 		}
 	}
+	s.makeVoiceBuffers()
 	s.loadConvs(true) // the impulse responses of the convolution units
+}
+
+// makeVoiceBuffers makes the copies of the buffers that the voices of an
+// instrument each have one of: empty, and kept when they are there already
+// and still fit.
+func (s *GoSynth) makeVoiceBuffers() {
+	old := s.voiceBuffers
+	s.voiceBuffers = nil
+	for _, pv := range s.bytecode.PerVoiceBuffers {
+		first := s.buffers[pv.BufferID]
+		if first == nil || !first.audio.Writable || pv.NumVoices < 2 {
+			continue
+		}
+		copies := make([]*synthBuffer, pv.NumVoices-1)
+		for i := range copies {
+			if i < len(old[pv.BufferID]) && len(old[pv.BufferID][i].audio.Data) == len(first.audio.Data) && old[pv.BufferID][i].audio.Channels == first.audio.Channels {
+				copies[i] = old[pv.BufferID][i]
+				continue
+			}
+			a := first.audio
+			a.Data, a.Head, a.Filled = make([]float32, len(first.audio.Data)), 0, 0
+			copies[i] = &synthBuffer{audio: a}
+		}
+		if s.voiceBuffers == nil {
+			s.voiceBuffers = map[int][]*synthBuffer{}
+		}
+		s.voiceBuffers[pv.BufferID] = copies
+	}
 }
 
 func (s *GoSynth) Playheads(dst []sointu.Playhead) []sointu.Playhead {
@@ -260,6 +293,7 @@ func (s *GoSynth) Update(patch sointu.Patch, bpm int) error {
 	}
 	old := s.bytecode
 	s.bytecode = *bytecode
+	s.makeVoiceBuffers()
 	s.setSpectra(&old)
 	s.setMC(&old)
 	for len(s.delaylines) < patch.NumDelayLines() {
@@ -702,7 +736,7 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 			case opBufwrite:
 				index := operands[0]
 				operands = operands[1:]
-				s.bufwrite(unit, voice, s.bytecode.BufferRegions[index], params[0], stereo, &stack)
+				s.bufwrite(unit, voice, int(s.bytecode.NumVoices-voicesRemaining), s.bytecode.BufferRegions[index], params[0], stereo, &stack)
 			case opSpawn:
 				first, count, flags := int(operands[0]), int(operands[1]), operands[2]
 				operands = operands[3:]
@@ -787,7 +821,7 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 			case opBufread:
 				var index byte
 				index, operands = operands[0], operands[1:]
-				s.bufread(unit, voice, s.bytecode.BufferRegions[index], params[0], params[1], params[2], params[3], stereo, &stack)
+				s.bufread(unit, voice, int(s.bytecode.NumVoices-voicesRemaining), s.bytecode.BufferRegions[index], params[0], params[1], params[2], params[3], stereo, &stack)
 				unit.ports[4], unit.ports[5], unit.ports[6] = 0, 0, 0
 			case opDelay:
 				pregain2 := params[0] * params[0]
@@ -933,18 +967,37 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 	return samples, renderTime, nil
 }
 
+// regionBuffer returns the buffer of a region for a voice: the copy of the
+// voice, if the voices of the instrument each have one.
+func (s *GoSynth) regionBuffer(r BufferRegion, voiceIndex int) *synthBuffer {
+	if r.Flags&BufferRegionPerVoice != 0 {
+		if i := voiceIndex - int(r.Flags>>BufferRegionFirstVoiceShift); i > 0 {
+			if copies := s.voiceBuffers[int(r.BufferID)]; i <= len(copies) {
+				return copies[i-1]
+			}
+			return nil
+		}
+	}
+	return s.buffers[int(r.BufferID)]
+}
+
 // bufread pushes the next frame of a buffer region on the stack. Positions
 // are in frames from the oldest valid frame of the buffer at the time the note
 // was triggered. unit.state holds, as bits, the integer part of the position
 // (signed) in state[0], the fraction in state[1], the oldest valid frame at
 // the trigger in state[2], 1 in state[3] once playback has started, 1 in
-// state[4] once the position has been in the loop and the filled length at the
-// trigger in state[5]; all are zeroed when a note is triggered. The modulations of start, loop start and loop length are in
-// unit.ports[4:7]. Voices that have never been triggered (note 0) are silent.
-// Matches $su_op_bufread in the wasm player.
-func (s *GoSynth) bufread(unit *unit, voice *voice, r BufferRegion, transpose, detune, gain, speed float32, stereo bool, stack *[]float32) {
-	buf := s.buffers[int(r.BufferID)]
-	if voice.note == 0 || buf == nil || buf.audio.Frames() == 0 {
+// state[4] once the position has been in the loop, the filled length at the
+// trigger in state[5] and, for the crossfade at the write head of a ring, 1
+// more than where the position was from the oldest frame in state[6]; all are
+// zeroed when a note is triggered. The modulations of start, loop start and
+// loop length are in unit.ports[4:7]. Voices that have never been triggered
+// (note 0) are silent, except for a tap, which reads the frame at start every
+// sample and has no state but what Playheads shows. Matches $su_op_bufread
+// in the wasm player.
+func (s *GoSynth) bufread(unit *unit, voice *voice, voiceIndex int, r BufferRegion, transpose, detune, gain, speed float32, stereo bool, stack *[]float32) {
+	buf := s.regionBuffer(r, voiceIndex)
+	tap := r.Flags&BufferRegionTap != 0
+	if voice.note == 0 && !tap || buf == nil || buf.audio.Frames() == 0 {
 		if stereo {
 			*stack = append(*stack, 0)
 		}
@@ -957,18 +1010,54 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, r BufferRegion, transpose, d
 	pos, frac := int32(math.Float32bits(unit.state[0])), unit.state[1]
 	base := math.Float32bits(unit.state[2])
 	inLoop := math.Float32bits(unit.state[4]) != 0
-	if math.Float32bits(unit.state[3]) == 0 {
+	// the start, and what a pitch timed start has more than whole frames
+	start, startFrac := int32(r.Start), float32(0)
+	if r.Flags&BufferRegionPitchTiming != 0 {
+		scaled := float32(start) / exp2f(float32(voice.note)*0.08333333)
+		whole := floor32(scaled)
+		start, startFrac = int32(whole), scaled-whole
+	}
+	if tap || math.Float32bits(unit.state[3]) == 0 {
 		base = oldest
 		unit.state[5] = math.Float32frombits(uint32(filled)) // for negative loop starts
-		start := int32(r.Start)
 		if start < 0 {
 			start += filled // from the newest frame
 		}
-		pos = bufreadFrames(start, unit.ports[4], filled, int32(capacity))
+		if tap {
+			// not held at the oldest frame: a tap further behind the write
+			// head than there are frames is silent, like a delay line that
+			// has not run for that long
+			pos = bufreadFrames(start+1, unit.ports[4], filled, int32(capacity)) - 1
+		} else {
+			pos = bufreadFrames(start, unit.ports[4], filled, int32(capacity))
+		}
 		// keep the fraction, so that small changes of the modulation do not
 		// jump whole frames
 		offset := float32(unit.ports[4] * float32(filled)) // rounded, not fused with the subtraction
-		frac = offset - float32(math.Floor(float64(offset)))
+		frac = float32(offset-float32(math.Floor(float64(offset)))) + startFrac
+		if frac >= 1 {
+			frac -= 1
+			pos++
+		}
+	}
+	ring := r.Flags&BufferRegionRingRead != 0 && r.EdgeFade > 0 && uint32(filled) == capacity
+	edge := min(r.EdgeFade, capacity/2)
+	if ring {
+		// a full ring is valid all around: the position wraps around its
+		// end, instead of the note ending there. When the position was near
+		// the newest frames a sample ago and is near the oldest ones now,
+		// or the other way round, the read head has crossed the write head:
+		// it goes on where the crossfade has brought the sound
+		pos = bufreadWrap(pos, capacity)
+		rel := ((base+uint32(pos))%capacity + capacity - oldest) % capacity
+		if prev := math.Float32bits(unit.state[6]); prev != 0 {
+			prev--
+			if prev > rel && prev-rel > capacity/2 {
+				pos = bufreadWrap(pos+int32(edge), capacity)
+			} else if rel > prev && rel-prev > capacity/2 {
+				pos = bufreadWrap(pos-int32(edge), capacity)
+			}
+		}
 	}
 	next := pos + 1
 	var loopStart, loopLength, loopEnd, fade int32
@@ -994,7 +1083,11 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, r BufferRegion, transpose, d
 			}
 		}
 	}
+	a := buf.audio
 	sample := func(frame int32, channel int) float32 {
+		if ring { // valid all around
+			frame = bufreadWrap(frame, capacity)
+		}
 		if frame < 0 || frame >= int32(capacity) {
 			return 0
 		}
@@ -1002,14 +1095,32 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, r BufferRegion, transpose, d
 		if (abs+capacity-oldest)%capacity >= uint32(filled) {
 			return 0
 		}
-		a := buf.audio
 		return a.Data[int(abs)*a.Channels+min(channel, a.Channels-1)]
 	}
-	// fade out near the edges of the valid frames
+	// the fade near the edges of the valid frames. In a full ring the edges
+	// meet at the write head, and the fade is a crossfade to the frames on
+	// the other side of it: cross frames from the position, at the gain
+	// crossGain
+	var cross int32
+	var crossGain float32
 	if r.EdgeFade > 0 && pos >= 0 && pos < int32(capacity) {
 		if rel := ((base+uint32(pos))%capacity + capacity - oldest) % capacity; rel < uint32(filled) {
-			d := min(rel, uint32(filled)-1-rel)
-			gain = float32(gain * min(float32(d)/float32(r.EdgeFade), 1))
+			toNewest := uint32(filled) - 1 - rel
+			d := min(rel, toNewest)
+			if ring {
+				unit.state[6] = math.Float32frombits(rel + 1)
+				w := min(float32(d)/float32(edge), 1)
+				if w < 1 {
+					cross = int32(capacity - edge)
+					if toNewest < rel {
+						cross = -cross
+					}
+					crossGain = float32(gain * float32(1-w))
+				}
+				gain = float32(gain * w)
+			} else {
+				gain = float32(gain * min(float32(d)/float32(r.EdgeFade), 1))
+			}
 		}
 	}
 	read := func(channel int) float32 {
@@ -1026,7 +1137,12 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, r BufferRegion, transpose, d
 			w := (float32(pos-(loopEnd-fade)) + frac) / float32(fade)
 			v += float32((c + float32((d-c)*frac) - v) * w)
 		}
-		return v * gain
+		v = float32(v * gain)
+		if cross != 0 {
+			c, d := sample(pos+cross, channel), sample(pos+cross+1, channel)
+			v += float32(float32(c+float32((d-c)*frac)) * crossGain)
+		}
+		return v
 	}
 	if stereo {
 		*stack = append(*stack, read(1), read(0)) // the left channel is on top
@@ -1034,6 +1150,12 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, r BufferRegion, transpose, d
 		*stack = append(*stack, (read(0)+read(1))*0.5)
 	} else {
 		*stack = append(*stack, read(0))
+	}
+	unit.state[0] = math.Float32frombits(uint32(pos))
+	unit.state[2] = math.Float32frombits(base)
+	unit.state[3] = math.Float32frombits(1)
+	if tap { // the position is read anew every sample
+		return
 	}
 	semitones := float32(64*(float32(transpose*2)-1)) + (float32(detune*2) - 1)
 	if r.Flags&BufferRegionNoteTracking != 0 {
@@ -1044,8 +1166,6 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, r BufferRegion, transpose, d
 	whole := float32(math.Floor(float64(frac)))
 	unit.state[0] = math.Float32frombits(uint32(pos + int32(whole)))
 	unit.state[1] = frac - whole
-	unit.state[2] = math.Float32frombits(base)
-	unit.state[3] = math.Float32frombits(1)
 	if inLoop {
 		unit.state[4] = math.Float32frombits(1)
 	}
@@ -1166,7 +1286,7 @@ func window(unit *unit, voice *voice, length, shape float32) float32 {
 // writes the frame and advances the head, and the others add to the frame.
 // unit.state[0] is 1 (as bits) once the note has started a one shot recording.
 // Matches $su_op_bufwrite in the wasm player.
-func (s *GoSynth) bufwrite(unit *unit, voice *voice, r BufferRegion, feedback float32, stereo bool, stack *[]float32) {
+func (s *GoSynth) bufwrite(unit *unit, voice *voice, voiceIndex int, r BufferRegion, feedback float32, stereo bool, stack *[]float32) {
 	l := len(*stack)
 	left, right := (*stack)[l-1], (*stack)[l-1] // the left channel is on top
 	if stereo {
@@ -1179,7 +1299,7 @@ func (s *GoSynth) bufwrite(unit *unit, voice *voice, r BufferRegion, feedback fl
 			*stack = (*stack)[:l-1]
 		}
 	}
-	buf := s.buffers[int(r.BufferID)]
+	buf := s.regionBuffer(r, voiceIndex)
 	if buf == nil || !buf.audio.Writable || buf.audio.Frames() == 0 {
 		return
 	}
@@ -1233,6 +1353,13 @@ func (s *GoSynth) bufwrite(unit *unit, voice *voice, r BufferRegion, feedback fl
 	} else {
 		buf.filled = buf.head
 	}
+}
+
+// bufreadWrap returns a position of a bufread unit in a full ring, which is
+// valid all around: within the capacity.
+func bufreadWrap(pos int32, capacity uint32) int32 {
+	c := int32(capacity)
+	return ((pos % c) + c) % c
 }
 
 // bufreadFrames returns a position of a bufread unit: frames shifted by the

@@ -708,8 +708,24 @@ var UnitTypes = map[string]UnitType{
 		// the newest one when the note was triggered. Modulating them shifts them by the valid length of the buffer
 		// times the modulation. start is read when the note is triggered.
 		// fade is the length of the crossfade at the end of the loop, and
-		// edgefade the length of the fade out near the edges of the valid
-		// frames, e.g. the write head of a buffer being written.
+		// edgefade the length of the fade near the edges of the valid
+		// frames. In a ring that bufwrite units have filled, the edges meet
+		// at the write head: there the fade is a crossfade to the frames on
+		// the other side of the head, and a read head that crosses the write
+		// head goes on where the crossfade has brought the sound, edgefade
+		// frames further.
+		//
+		// With mode tap, the unit is a tap of a delay line: it does not play
+		// from start on, but reads the frame at start every sample, counted
+		// from the buffer as it is then, so that a negative start stays that
+		// many frames behind the write head; modulating start moves the tap
+		// while it sounds, and the unit sounds without a note. speed, the
+		// pitch and the loop are not used.
+		//
+		// timing is what start, loopstart and looplength count: frames; with
+		// pitch, start is in frames at note 0 and is divided by 2^(note/12),
+		// like the times of the delay unit (10788 is one period of the
+		// note); with BPM, all three are in 48ths of a beat, like those too.
 		Params: []UnitParameter{
 			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "transpose", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
@@ -730,6 +746,8 @@ var UnitTypes = map[string]UnitType{
 			{Name: "looplength", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true, NoTransform: true},
 			{Name: "fade", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
 			{Name: "edgefade", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+			{Name: "mode", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"play", "tap"})},
+			{Name: "timing", MinValue: 0, MaxValue: 2, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"frames", "pitch", "BPM"})},
 		},
 		StackUse: stackUseSource,
 	},
@@ -743,12 +761,21 @@ var UnitTypes = map[string]UnitType{
 		// in the same frame, e.g. in the voices of an instrument, mix. The
 		// written frame is the old frame times feedback plus the signal. With
 		// pop 0, the signal stays on the stack.
+		//
+		// With buffer 0, the tracker gives the unit a buffer of its own, of
+		// length frames, which the bufread units after it with buffer 0
+		// read. With pervoice, every voice of the instrument has its own
+		// copy of the buffer, which the bufread units of that voice read,
+		// like the lines of a delay unit; the units of other instruments
+		// read that of the first voice.
 		Params: []UnitParameter{
 			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "feedback", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true},
 			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
 			{Name: "oneshot", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "pop", MinValue: 0, Default: 1, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "length", MinValue: 1, Default: BufwriteDefaultLength, MaxValue: BufwriteMaxLength, CanSet: true, CanModulate: false},
+			{Name: "pervoice", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
 		},
 		StackUse: func(u *Unit) StackUse {
 			ret := stackUseSink(u)
@@ -1341,12 +1368,19 @@ func stackUseEffect(u *Unit) StackUse {
 	return StackUse{Inputs: [][]int{{0}}, Modifies: []bool{true}, NumOutputs: 1}
 }
 
+// The length parameter of a bufwrite unit, in frames: of the buffer that the
+// tracker makes for a unit without one.
+const (
+	BufwriteDefaultLength = 44100
+	BufwriteMaxLength     = 60 * 44100
+)
+
 // addedParameters are parameters added to unit types after songs were saved
 // without them, with the values that keep those songs sounding the same. A
 // missing parameter is otherwise 0.
 var addedParameters = map[string]map[string]int{
 	"bufread":    {"speed": 128}, // forwards at the normal speed
-	"bufwrite":   {"pop": 1},
+	"bufwrite":   {"pop": 1, "length": BufwriteDefaultLength},
 	"oscillator": {"bandlimit": 0},            // naive waveforms
 	"spcompress": {"attack": 0, "release": 0}, // no smoothing
 	"envelope":   {"curve": 0},                // linear

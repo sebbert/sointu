@@ -190,6 +190,10 @@ type wasmBufferFeatures struct {
 	BufreadMonoMix      bool // a mono bufread plays a stereo buffer
 	BufreadMonoPlain    bool // a mono bufread plays a mono buffer
 	BufreadChannelClamp bool // a stereo bufread plays a mono buffer
+	BufreadTap          bool // a bufread is a tap
+	BufreadPitchTiming  bool // the start of a bufread follows the note
+	BufreadRing         bool // a bufread with an edge fade reads a buffer written as a ring: the fade is a crossfade
+	BufPerVoice         bool // the voices of an instrument each have a copy of a buffer
 
 	BufwriteNoPop     bool
 	BufwriteOneShot   bool
@@ -206,6 +210,12 @@ func bufferFeatures(song *sointu.Song, features vm.FeatureSet, b *vm.Bytecode, d
 	channels := map[int]uint32{}
 	for i, r := range b.BufferRegions {
 		channels[int(r.BufferID)] = data.Headers[data.Regions[i].Header/wasmBufferHeaderSize].Channels
+		if r.Flags&vm.BufferRegionWrite == 0 {
+			f.BufreadTap = f.BufreadTap || r.Flags&vm.BufferRegionTap != 0
+			f.BufreadPitchTiming = f.BufreadPitchTiming || r.Flags&vm.BufferRegionPitchTiming != 0
+			f.BufreadRing = f.BufreadRing || r.Flags&vm.BufferRegionRingRead != 0 && r.EdgeFade > 0
+		}
+		f.BufPerVoice = f.BufPerVoice || r.Flags&vm.BufferRegionPerVoice != 0
 	}
 	mod := func(unit, param string) bool { return features.SupportsModulation(unit, param) }
 	f.BufreadModStart = mod("bufread", "start")
@@ -747,7 +757,11 @@ func wasmMC(b *vm.Bytecode, features wasmUnitFeatures, delayMod bool) (ret wasmM
 // wasm player: a header for each buffer, and the audio of the buffers with
 // samples after each other in su_buffers.
 func (com *Compiler) wasmBuffers(song *sointu.Song, b *vm.Bytecode) (ret wasmBufferData, err error) {
-	index := map[uint32]int{} // buffer ID -> header index
+	index := map[uint32]int{}  // buffer ID -> header index
+	copies := map[uint32]int{} // buffer ID -> the voices after the first that have a copy of it
+	for _, pv := range b.PerVoiceBuffers {
+		copies[uint32(pv.BufferID)] = pv.NumVoices - 1
+	}
 	header := func(id uint32) (int, error) {
 		i, ok := index[id]
 		if ok {
@@ -783,6 +797,14 @@ func (com *Compiler) wasmBuffers(song *sointu.Song, b *vm.Bytecode) (ret wasmBuf
 			ret.BufferBytes += enc.Frames * enc.Channels * 4
 		}
 		ret.Headers = append(ret.Headers, header)
+		// the copies of the voices after the first, right after it
+		for range copies[id] {
+			if header.Capacity > 0 && header.Filled == 0 {
+				header.Offset = uint32(ret.BufferBytes)
+				ret.BufferBytes += int(header.Capacity * header.Channels * 4)
+			}
+			ret.Headers = append(ret.Headers, header)
+		}
 		return i, nil
 	}
 	for _, r := range b.BufferRegions {
