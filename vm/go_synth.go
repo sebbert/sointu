@@ -1271,9 +1271,15 @@ func crush(value, amount float32) float32 {
 
 // waveshape is the waveshaper of the wasm and x86 players, operation by
 // operation: value·(amount/(1+((2·amount-1)·|value|-amount))), value clipped
-// to [-1, 1] first.
+// to [-1, 1] first. A value of 0 stays 0: at amount 1 the shaper is the sign
+// of the value, and the formula would give 0·(1/0), a NaN, for the sample
+// where a waveform crosses zero exactly. The x86 players do not have this
+// check.
 func waveshape(value, amount float32) float32 {
 	value = clip(value)
+	if value == 0 {
+		return 0
+	}
 	absVal := value
 	if absVal < 0 {
 		absVal = -absVal

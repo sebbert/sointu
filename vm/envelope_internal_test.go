@@ -190,3 +190,20 @@ func TestEnvelopeCurveSlowStages(t *testing.T) {
 		}
 	}
 }
+
+// At amount 1 the waveshaper is the sign of its input, and its formula gives
+// 0·(1/0) for an input of 0: a NaN that an oscillator with shape 128 put out
+// in the sample where its waveform crossed zero exactly.
+func TestWaveshapeZero(t *testing.T) {
+	for _, amount := range []float32{0, 0.5, 1} {
+		if v := waveshape(0, amount); v != 0 {
+			t.Errorf("waveshape(0, %v) = %v, not 0", amount, v)
+		}
+	}
+	if v := waveshape(0.25, 1); v != 1 {
+		t.Errorf("waveshape(0.25, 1) = %v, not 1", v)
+	}
+	if v := waveshape(-0.25, 0.5); v != -0.25 {
+		t.Errorf("waveshape(-0.25, 0.5) = %v, not -0.25", v)
+	}
+}

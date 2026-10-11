@@ -196,10 +196,12 @@
 
 ;;-------------------------------------------------------------------------------
 ;; Waveshaper(x,a): "distorts" signal x by amount a
-;; Returns  x*a/(1-a+(2*a-1)*abs(x))
+;; Returns  x*a/(1-a+(2*a-1)*abs(x)), and 0 for x = 0: at a = 1 that would be
+;; 0*(1/0), a NaN
 ;;-------------------------------------------------------------------------------
 (func $waveshaper (param $signal f32) (param $amount f32) (result f32)
     (local.set $signal (call $clip (local.get $signal)))
+    (if (f32.eq (local.get $signal) (f32.const 0)) (then (return (f32.const 0))))
     (f32.mul
         (local.get $signal)
         (f32.div
