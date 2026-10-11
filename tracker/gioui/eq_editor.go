@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gioui.org/f32"
+	"gioui.org/gesture"
 	"gioui.org/io/event"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
@@ -40,8 +41,11 @@ const (
 	eqQDragDp = 60
 	// eqFineDrag is how much less a drag moves with Shift held
 	eqFineDrag = 0.2
-	// eqScrollDp is how far to scroll for a step of the Q
+	// eqScrollDp is how far to scroll, with Alt held, for a step of the Q
 	eqScrollDp = 20
+	// eqKnobDragDp is how far to drag a knob of the selected band from one
+	// end of its range to the other
+	eqKnobDragDp = 256
 	// eqCurveStep is the distance of the points of the curves, in pixels
 	eqCurveStep = 2
 	// eqEditorHeight is the height of the editor, plot and values, under
@@ -70,6 +74,8 @@ type (
 		qEditor      *DraftEditor
 		showSpectrum tracker.Bool
 		spectrumOn   bool
+		// the knobs of the selected band: its frequency, gain and Q
+		knobs [3]eqKnob
 
 		hovered bool // the pointer is over the plot
 		hover   int  // the band whose handle it is over, or -1
@@ -77,8 +83,8 @@ type (
 		// the last press, to tell a double click
 		pressTime time.Duration
 		pressPos  f32.Point
-		// scrolling changes the Q; the scrolling of half a second is one
-		// step of the undo history, and scrollRest what was too little
+		// scrolling with Alt held changes the Q; the scrolling of half a
+		// second is one step of the undo history
 		scrollUntil time.Time
 		scrolling   bool
 
@@ -98,6 +104,17 @@ type (
 		last   f32.Point
 		moved  f32.Point
 		q      float32
+	}
+
+	// eqKnob is a knob of the selected band: the band as it was when its
+	// drag began, and how far it was dragged since, as a part of its range.
+	eqKnob struct {
+		drag   gesture.Drag
+		tip    TipArea
+		active bool
+		start  sointu.EQBand
+		last   f32.Point
+		moved  float32
 	}
 
 	// eqGeometry maps frequencies and levels to the pixels of a plot of the
@@ -219,6 +236,67 @@ func eqDragged(g eqGeometry, start sointu.EQBand, moved f32.Point, q, qPx float3
 	return b
 }
 
+// The knobs of the selected band.
+const (
+	eqKnobFrequency = iota
+	eqKnobGain
+	eqKnobQ
+)
+
+// eqKnobRange returns the ends of the range of a knob, and whether it is
+// logarithmic.
+func eqKnobRange(which int) (lo, hi float64, log bool) {
+	switch which {
+	case eqKnobFrequency:
+		return sointu.EQMinFrequency, sointu.EQMaxFrequency, true
+	case eqKnobGain:
+		return -sointu.EQMaxGain, sointu.EQMaxGain, false
+	}
+	return sointu.EQMinQ, sointu.EQMaxQ, true
+}
+
+// eqKnobPosition returns where a knob of a band is, from 0 to 1, and the
+// position that its arc starts from: 0 dB for the gain, the Q of the type
+// for the Q.
+func eqKnobPosition(which int, b sointu.EQBand) (pos, neutral float32) {
+	lo, hi, log := eqKnobRange(which)
+	at := func(v float64) float32 {
+		if log {
+			return float32(min(max(math.Log(v/lo)/math.Log(hi/lo), 0), 1))
+		}
+		return float32(min(max((v-lo)/(hi-lo), 0), 1))
+	}
+	switch which {
+	case eqKnobFrequency:
+		return at(b.Frequency), 0
+	case eqKnobGain:
+		return at(b.Gain), at(0)
+	}
+	return at(b.Q), at(sointu.EQDefaultQ(b.Type))
+}
+
+// eqKnobDragged returns the band that dragging a knob gives: start, with
+// the knob moved by amount, a part of its range.
+func eqKnobDragged(which int, start sointu.EQBand, amount float32) sointu.EQBand {
+	lo, hi, log := eqKnobRange(which)
+	pos, _ := eqKnobPosition(which, start)
+	x := float64(min(max(pos+amount, 0), 1))
+	v := lo + x*(hi-lo)
+	if log {
+		v = lo * math.Pow(hi/lo, x)
+	}
+	b := start
+	switch which {
+	case eqKnobFrequency:
+		b.Frequency = v
+	case eqKnobGain:
+		b.Gain = v
+	default:
+		b.Q = v
+	}
+	return b
+}
+
 // update computes the curves anew if the eq, or the width of the plot,
 // changed.
 func (c *eqCurves) update(compiled *sointu.EQCompiled, version, width int) {
@@ -294,10 +372,11 @@ func (e *EQEditor) update(gtx C, t *Tracker, g eqGeometry, compiled *sointu.EQCo
 		e.endScroll(t)
 	}
 	hit := e.hitRadius(gtx)
-	// the plot takes the scrolling over a handle, and while it changes a Q;
-	// elsewhere, the rack under it scrolls
+	// the plot takes the scrolling only while Alt is held, which changes a
+	// Q; otherwise the rack under it scrolls. The range is set before the
+	// event arrives, so it follows the key, like the zooming of the plots
 	var scroll pointer.ScrollRange
-	if e.hover >= 0 || e.scrolling {
+	if t.plotZoomModifier && e.hovered {
 		scroll = pointer.ScrollRange{Min: -1e6, Max: 1e6}
 	}
 	for {
@@ -322,9 +401,17 @@ func (e *EQEditor) update(gtx C, t *Tracker, g eqGeometry, compiled *sointu.EQCo
 		case pointer.Enter, pointer.Move:
 			e.hovered = true
 			e.hover = eqHit(handles, pe.Position, hit, eq.Selected())
+			// in case the key event of Alt was missed
+			t.plotZoomModifier = pe.Modifiers.Contain(key.ModAlt)
 		case pointer.Leave:
 			e.hovered, e.hover = false, -1
 		case pointer.Scroll:
+			// with Alt: the Q of the band under the pointer, or of the
+			// selected one
+			t.plotZoomModifier = pe.Modifiers.Contain(key.ModAlt)
+			if !t.plotZoomModifier {
+				break
+			}
 			band := eqHit(handles, pe.Position, hit, eq.Selected())
 			if band < 0 {
 				band = eq.Selected()
@@ -610,7 +697,7 @@ func (e *EQEditor) layoutPlot(gtx C) D {
 
 	// how to use it
 	if (e.hovered || gtx.Focused(e)) && !e.small {
-		hint := "double-click: add, remove · drag: frequency, gain · alt+drag, scroll on a handle: Q · shift: fine · right-click: on/off"
+		hint := "double-click: add, remove · drag: frequency, gain · alt+drag, alt+scroll: Q · shift: fine · right-click: on/off"
 		if len(handles) == 0 {
 			hint = "double-click to add a band"
 		}
@@ -727,9 +814,108 @@ func drawEQSpectrum(gtx C, g eqGeometry, levels []float32, width float32, c colo
 	paint.FillShape(gtx.Ops, c, clip.Outline{Path: path.End()}.Op())
 }
 
+// layoutKnob lays out a knob of the selected band. Dragging it up or to the
+// right raises the value, a fifth as fast with Shift; the drag is one step
+// of the undo history. The right button sets the gain to 0 dB, or the Q to
+// that of the type of the band.
+func (e *EQEditor) layoutKnob(gtx C, which int, hint string) D {
+	t := TrackerFromContext(gtx)
+	eq := e.eq(t)
+	sel := eq.Selected()
+	band, has := eq.Band(sel)
+	if !has {
+		return D{}
+	}
+	k := &e.knobs[which]
+	enabled := which != eqKnobGain || sointu.EQHasGain(band.Type)
+	for {
+		p, ok := k.drag.Update(gtx.Metric, gtx.Source, gesture.Both)
+		if !ok {
+			break
+		}
+		switch p.Kind {
+		case pointer.Press:
+			k.active, k.start, k.last, k.moved = true, band, p.Position, 0
+			eq.BeginGesture()
+		case pointer.Drag:
+			if !k.active {
+				break
+			}
+			d := p.Position.Sub(k.last)
+			k.last = p.Position
+			amount := (d.X - d.Y) / float32(gtx.Dp(eqKnobDragDp))
+			if p.Modifiers.Contain(key.ModShift) {
+				amount *= eqFineDrag
+			}
+			k.moved += amount
+			if enabled {
+				eq.Set(sel, eqKnobDragged(which, k.start, k.moved))
+			}
+		case pointer.Release, pointer.Cancel:
+			if k.active {
+				k.active = false
+				eq.EndGesture()
+			}
+		}
+	}
+	for {
+		ev, ok := gtx.Event(pointer.Filter{Target: k, Kinds: pointer.Press})
+		if !ok {
+			break
+		}
+		if pe, ok := ev.(pointer.Event); ok && pe.Kind == pointer.Press && pe.Buttons == pointer.ButtonSecondary && enabled {
+			switch which {
+			case eqKnobGain:
+				band.Gain = 0
+				eq.Set(sel, band)
+			case eqKnobQ:
+				band.Q = 0 // that of the type
+				eq.Set(sel, band)
+			}
+		}
+	}
+	if b, ok := eq.Band(sel); ok {
+		band = b // as the events left it
+	}
+	style := &t.Theme.Knob
+	if !enabled || band.Disabled {
+		style = &t.Theme.DisabledKnob
+	}
+	draw := KnobWidget{Theme: t.Theme, Style: style}
+	d := gtx.Dp(style.Diameter)
+	knob := func(gtx C) D {
+		amount, middle := eqKnobPosition(which, band)
+		if !enabled {
+			amount, middle = 0, 0
+		}
+		sw := gtx.Dp(style.StrokeWidth)
+		pos, neg := max(amount, middle), min(amount, middle)
+		if middle > 0 {
+			draw.strokeKnobArc(gtx, style.Neg.Bg, sw, d, 0, neg)
+		}
+		if middle < 1 {
+			draw.strokeKnobArc(gtx, style.Pos.Bg, sw, d, pos, 1)
+		}
+		if pos > middle {
+			draw.strokeKnobArc(gtx, style.Pos.Color, sw, d, middle, pos)
+		}
+		if neg < middle {
+			draw.strokeKnobArc(gtx, style.Neg.Color, sw, d, neg, middle)
+		}
+		draw.strokeIndicator(gtx, amount)
+		defer clip.Rect(image.Rectangle{Max: image.Pt(d, d)}).Push(gtx.Ops).Pop()
+		event.Op(gtx.Ops, k)
+		k.drag.Add(gtx.Ops)
+		return D{Size: image.Pt(d, d)}
+	}
+	return layout.Inset{Right: 4}.Layout(gtx, func(gtx C) D {
+		return k.tip.Layout(gtx, Tooltip(t.Theme, hint), knob)
+	})
+}
+
 // layoutBand lays out the row under the plot: the selected band, its type,
-// whether it is on, its values as numbers, what it is compiled to, and the
-// number of units of the eq.
+// whether it is on, its values as knobs and as numbers, what it is compiled
+// to, and the number of units of the eq.
 func (e *EQEditor) layoutBand(gtx C) D {
 	t := TrackerFromContext(gtx)
 	eq := e.eq(t)
@@ -800,8 +986,17 @@ func (e *EQEditor) layoutBand(gtx C) D {
 			}
 			return onBtn.Layout(gtx)
 		}),
+		layout.Rigid(func(gtx C) D {
+			return e.layoutKnob(gtx, eqKnobFrequency, "Frequency: drag up or right, with Shift for fine")
+		}),
 		layout.Rigid(field(e.freqEditor, eq.Frequency(), 64, "Hz", "Hz")),
+		layout.Rigid(func(gtx C) D {
+			return e.layoutKnob(gtx, eqKnobGain, "Gain: drag up or right, with Shift for fine;\nthe right button sets 0 dB")
+		}),
 		layout.Rigid(field(e.gainEditor, eq.Gain(), 48, "dB", "dB")),
+		layout.Rigid(func(gtx C) D {
+			return e.layoutKnob(gtx, eqKnobQ, "Q: drag up or right, with Shift for fine;\nthe right button sets the Q of the type")
+		}),
 		layout.Rigid(field(e.qEditor, eq.Q(), 48, "Q", "Q")),
 		layout.Flexed(1, info),
 		layout.Rigid(total),

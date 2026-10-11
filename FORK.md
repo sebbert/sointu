@@ -1689,11 +1689,20 @@ no host was run with the plugins.
   the top. `examples/eq.yml` has three.
   - *Mouse.* Dragging a handle changes the frequency and the gain, or for a
     band without gain the frequency and the Q; with Shift a fifth as far;
-    with Alt the Q only (60 dp up doubles it). Scrolling over a handle
-    changes the Q of its band; elsewhere the scrolling is the rack's. A
+    with Alt the Q only (60 dp up doubles it). Scrolling over the plot
+    scrolls the rack; with Alt held it changes the Q of the band under the
+    pointer, or of the selected one (the plot takes the scroll only while
+    the key is held, `Tracker.plotZoomModifier`, like the plots that
+    zoom). A
     double click on empty space adds a band there and drags it: a bell, a
     low cut below 40 Hz, a `ladder` high cut above 12 kHz. A double click
     on a handle removes its band; the right button switches it on or off.
+  - *Knobs.* The row under the plot has a knob for the frequency, the gain
+    and the Q of the selected band, beside the numbers
+    (`EQEditor.layoutKnob`): dragging up or to the right goes through the
+    range in 256 dp, a fifth as fast with Shift, as one step of the undo
+    history; the right button sets the gain to 0 dB and the Q to that of
+    the type. The gain knob of a band without gain is greyed out.
   - *Keys*, with the focus on a plot, small or large (Tab, or a click):
     Left and Right
     select a band, Shift+Left and Shift+Right change its frequency by a

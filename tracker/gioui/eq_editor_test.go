@@ -576,16 +576,29 @@ func TestEQEditorPointer(t *testing.T) {
 	if b := r.band(1); !near(b.Q/cut.Q, 2, 0.01) || b.Gain != 0 || !near(b.Frequency/cut.Frequency, 1, 0.01) {
 		t.Errorf("a low cut dragged 60 pixels up: %+v from %+v", b, cut)
 	}
-	// scrolling over a handle changes the Q of its band: up for more. What
-	// is scrolled within half a second is one step of the undo history
+	// scrolling changes nothing without Alt: the rack around the editor
+	// scrolls. With Alt it changes the Q of the band under the pointer: up
+	// for more. What is scrolled within half a second is one step of the
+	// undo history
 	r.wait()
 	cut = r.band(1)
-	r.pointer(pointer.Move, 0, r.handle(1), 0) // the plot takes the scrolling over a handle
-	for range 3 {
-		r.pointer(pointer.Scroll, 0, r.handle(1), 0)
-	}
+	r.pointer(pointer.Move, 0, r.handle(1), 0)
 	scroll := func(y float32, mods key.Modifiers) {
 		r.router.Queue(pointer.Event{Kind: pointer.Scroll, Source: pointer.Mouse, Position: r.handle(1), Scroll: f32.Pt(0, y), Modifiers: mods, Time: r.clock})
+		r.frame()
+	}
+	undos := r.model.History().Undo().Enabled()
+	scroll(-40, 0)
+	scroll(-40, key.ModShift)
+	if b := r.band(1); b != cut || r.ed.scrolling || !undos {
+		t.Errorf("scrolling without Alt changed the band: %+v from %+v", b, cut)
+	}
+	r.pointer(pointer.Move, 0, r.handle(1), key.ModAlt) // Alt is held: the plot takes the scrolling
+	for range 3 {
+		r.pointer(pointer.Scroll, 0, r.handle(1), key.ModAlt)
+	}
+	scroll = func(y float32, mods key.Modifiers) {
+		r.router.Queue(pointer.Event{Kind: pointer.Scroll, Source: pointer.Mouse, Position: r.handle(1), Scroll: f32.Pt(0, y), Modifiers: mods | key.ModAlt, Time: r.clock})
 		r.frame()
 	}
 	scroll(-20, 0)
@@ -687,5 +700,103 @@ func TestEQEditorKeys(t *testing.T) {
 	r.key(key.NameDeleteForward, 0)
 	if eq.NumBands() != 1 || !near(r.band(0).Frequency, 106, 1) || eq.Selected() != 0 {
 		t.Errorf("deleted two bands: %d left, the first %+v, band %d selected", eq.NumBands(), r.band(0), eq.Selected()+1)
+	}
+}
+
+// The knobs of the selected band: dragging one up or right raises its value
+// over its range, a fifth as fast with Shift, as one step of the undo
+// history; the right button sets the gain to 0 dB and the Q to that of the
+// type; the gain knob of a band without gain does nothing.
+func TestEQKnobs(t *testing.T) {
+	bell := sointu.EQBand{Type: sointu.EQBell, Frequency: 1000, Gain: 6, Q: 2}
+	if pos, mid := eqKnobPosition(eqKnobGain, bell); !near(float64(pos), 0.625, 1e-6) || mid != 0.5 {
+		t.Errorf("the gain knob of +6 dB is at %v, from %v", pos, mid)
+	}
+	if pos, _ := eqKnobPosition(eqKnobFrequency, sointu.EQBand{Frequency: sointu.EQMaxFrequency}); pos != 1 {
+		t.Errorf("the frequency knob of the highest frequency is at %v", pos)
+	}
+	for which := range 3 {
+		if b := eqKnobDragged(which, bell, 0); !near(b.Frequency, 1000, 1e-3) || !near(b.Gain, 6, 1e-4) || !near(b.Q, 2, 1e-4) {
+			t.Errorf("knob %d dragged by nothing: %+v", which, b)
+		}
+	}
+	if b := eqKnobDragged(eqKnobGain, bell, 0.25); !near(b.Gain, 18, 1e-4) {
+		t.Errorf("the gain knob a quarter up from +6 dB: %v dB", b.Gain)
+	}
+	if b := eqKnobDragged(eqKnobQ, bell, 2); !near(b.Q, sointu.EQMaxQ, 1e-4) {
+		t.Errorf("the Q knob dragged beyond its range: %v", b.Q)
+	}
+
+	r := newEQTest(t, bell, sointu.EQBand{Type: sointu.EQLowCut, Frequency: 80})
+	// the knobs are in the row under the plot: find them by their tags
+	knob := func(which int) f32.Point {
+		t.Helper()
+		// the row is 36 high under the plot; the knobs follow the type
+		// button and the on button
+		for x := float32(0); x < float32(r.size.X); x += 4 {
+			p := f32.Pt(x, float32(r.size.Y)-18)
+			r.pointer(pointer.Press, pointer.ButtonPrimary, p, 0)
+			active := r.ed.knobs[which].active
+			r.pointer(pointer.Release, 0, p, 0)
+			r.wait()
+			if active {
+				return p.Add(f32.Pt(8, 0))
+			}
+		}
+		t.Fatalf("knob %d is not in the row", which)
+		return f32.Point{}
+	}
+	drag := func(which int, by f32.Point, mods key.Modifiers) {
+		p := knob(which)
+		r.pointer(pointer.Press, pointer.ButtonPrimary, p, 0)
+		for i := 1; i <= 4; i++ {
+			r.pointer(pointer.Move, pointer.ButtonPrimary, p.Add(by.Mul(float32(i)/4)), mods)
+		}
+		r.pointer(pointer.Release, 0, p.Add(by), 0)
+		r.wait()
+	}
+	undone := func(want sointu.EQBand) {
+		t.Helper()
+		r.model.History().Undo().Do()
+		if b := r.band(0); b != want {
+			t.Errorf("undoing a drag of a knob left %+v, not %+v", b, want)
+		}
+		r.model.History().Redo().Do()
+	}
+	drag(eqKnobGain, f32.Pt(0, -64), 0) // a quarter of the range up
+	if b := r.band(0); !near(b.Gain, 18, 0.05) || b.Frequency != 1000 || b.Q != 2 {
+		t.Errorf("the gain knob dragged a quarter up: %+v", b)
+	}
+	undone(bell)
+	was := r.band(0)
+	drag(eqKnobGain, f32.Pt(0, 64), key.ModShift) // a fifth of a quarter down
+	if b := r.band(0); !near(b.Gain, 18-48*0.05, 0.05) {
+		t.Errorf("the gain knob dragged a quarter down with Shift: %v dB from %v", b.Gain, was.Gain)
+	}
+	drag(eqKnobFrequency, f32.Pt(64, 0), 0)
+	if b := r.band(0); !near(b.Frequency/1000, math.Pow(sointu.EQMaxFrequency/sointu.EQMinFrequency, 0.25), 0.02) {
+		t.Errorf("the frequency knob dragged a quarter to the right: %v Hz", b.Frequency)
+	}
+	drag(eqKnobQ, f32.Pt(0, -64), 0)
+	if b := r.band(0); !near(b.Q/2, math.Pow(sointu.EQMaxQ/sointu.EQMinQ, 0.25), 0.02) {
+		t.Errorf("the Q knob dragged a quarter up: %v", b.Q)
+	}
+	// the right button
+	p := knob(eqKnobGain)
+	r.pointer(pointer.Press, pointer.ButtonSecondary, p, 0)
+	r.pointer(pointer.Release, 0, p, 0)
+	p = knob(eqKnobQ)
+	r.pointer(pointer.Press, pointer.ButtonSecondary, p, 0)
+	r.pointer(pointer.Release, 0, p, 0)
+	if b := r.band(0); b.Gain != 0 || !near(b.Q, sointu.EQDefaultQ(sointu.EQBell), 0.01) {
+		t.Errorf("the right button on the gain and Q knobs: %+v", b)
+	}
+	// a band without gain
+	r.model.EQ().SetSelected(1)
+	r.frame()
+	cut := r.band(1)
+	drag(eqKnobGain, f32.Pt(0, -64), 0)
+	if b := r.band(1); b != cut {
+		t.Errorf("the gain knob changed a low cut: %+v from %+v", b, cut)
 	}
 }
