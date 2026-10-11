@@ -1127,10 +1127,48 @@ func (b *bufferFrameParameter) Hint(p *Parameter) ParameterHint {
 	}
 	return ParameterHint{fmt.Sprintf("%s (%d)", formatDuration(v), v), true}
 }
+// Label names the position on the knob in what it counts: periods of the
+// note ("2p"), or a note length ("1/8D") or beats ("1.5b"); frames as they
+// are.
+func (b *bufferFrameParameter) Label(p *Parameter) string {
+	v := b.Value(p)
+	sign, abs := "", v
+	if v < 0 {
+		sign, abs = "-", -v
+	}
+	switch bufreadTiming(p) {
+	case 1:
+		return sign + trimFloat(float64(abs)/bufreadNotePeriod, 2) + "p"
+	case 2:
+		if name, ok := delayNoteName(abs, false); ok {
+			return sign + name
+		}
+		return sign + trimFloat(float64(abs)/48, 2) + "b"
+	}
+	return strconv.Itoa(v)
+}
+
+// bufreadPeriodGrid returns the k-th step of a start with pitch timing:
+// half periods of the note.
+func bufreadPeriodGrid(k int) int {
+	return int(math.Round(float64(k) * bufreadNotePeriod / 2))
+}
+
 func (b *bufferFrameParameter) RoundToGrid(p *Parameter, val int, up bool) int {
 	switch bufreadTiming(p) {
 	case 1:
-		return val
+		k := int(math.Floor(float64(val) * 2 / bufreadNotePeriod))
+		if up {
+			for bufreadPeriodGrid(k) <= val {
+				k++
+			}
+		} else {
+			k++
+			for bufreadPeriodGrid(k) >= val {
+				k--
+			}
+		}
+		return bufreadPeriodGrid(k)
 	case 2:
 		return roundToGrid(val, 12, up) // a sixteenth note
 	}

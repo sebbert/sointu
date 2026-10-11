@@ -79,6 +79,31 @@ func TestWriteBuffers(t *testing.T) {
 	if text, _ = r.Instrument("0", false); !strings.Contains(text, "start=-21576(2 periods of the note from end") {
 		t.Errorf("the start of a tap with pitch timing is not shown in periods:\n%s", text)
 	}
+	// and the knob names it so, and steps by half periods
+	start := func() Parameter {
+		for x := 0; x < m.Params().RowWidth(0); x++ {
+			if p := m.Params().Item(Point{x, 0}); p.Name() == "start" {
+				return p
+			}
+		}
+		t.Fatal("the bufread unit has no start")
+		return Parameter{}
+	}
+	if p := start(); p.Label() != "-2p" || p.vtable.RoundToGrid(&p, -21576, true) != -16182 || p.vtable.RoundToGrid(&p, -21576, false) != -26970 || p.vtable.RoundToGrid(&p, 100, true) != 5394 || p.vtable.RoundToGrid(&p, 5394, false) != 0 {
+		t.Errorf("pitch timing: label %q, steps %d %d %d %d", p.Label(), p.vtable.RoundToGrid(&p, -21576, true), p.vtable.RoundToGrid(&p, -21576, false), p.vtable.RoundToGrid(&p, 100, true), p.vtable.RoundToGrid(&p, 5394, false))
+	}
+	remoteStep(t, m, func() (string, error) {
+		return r.EditUnits([]RemoteUnitEdit{{Unit: units()[0].ID, Params: map[string]any{"timing": "BPM", "start": -36.0}}})
+	})
+	if p := start(); p.Label() != "-1/8D" {
+		t.Errorf("BPM timing: label %q", p.Label())
+	}
+	remoteStep(t, m, func() (string, error) {
+		return r.EditUnits([]RemoteUnitEdit{{Unit: units()[0].ID, Params: map[string]any{"start": -50.0}}})
+	})
+	if p := start(); p.Label() != "-1.04b" {
+		t.Errorf("BPM timing off the note lengths: label %q", p.Label())
+	}
 	// without its units, the buffer goes
 	var ids []int
 	for _, u := range units() {
