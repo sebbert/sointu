@@ -20,7 +20,7 @@ changes to the sound are fine, as long as both stay in sync.
 ## Build and plugins
 
 - `Makefile` builds all the tools and plugins, also in CI: `make`,
-  `make install-vst`, `make install-clap`.
+  `make install-vst`, `make install-clap`, `make install-au`.
 - A CLAP plugin (`cmd/sointu-clap`, `cmd/plugin` shared with the VST2) with 4
   note ports of 16 MIDI channels each: 64 MIDI channels.
 - The plugins follow the tempo of the host, one way: the song's tempo can be
@@ -49,6 +49,22 @@ changes to the sound are fine, as long as both stay in sync.
   second, it opens as before and cannot be closed (`plugin.NewHidden`). A
   window that was hidden opens again where the system puts new windows, not
   where it was. The VST2 plugin has no editor: its window always opens.
+- An Audio Unit (version 2) plugin for macOS (`cmd/sointu-au`,
+  `make install-au`, `sointu-au.component`), for hosts that load neither
+  CLAP nor a VST2 they like, e.g. Ableton Live: a music device `aumu` /
+  `Sntu` / `Vsar` with one stereo output and no parameters, written against
+  the system's C interface (`au_darwin.m`), with no SDK. MIDI on 16
+  channels; tempo from the host's callbacks; the song is in the class info
+  (`sointu-state`), so the host saves it with the project and in presets;
+  the latency of the resampler is reported. An edit is told to the host as
+  a change of the present preset, which is what Audio Units have for it.
+  The view that the host shows for the plugin is a label and a "Show
+  window" button: the tracker window opens when the host shows that view
+  and from the button, and the user can close it. A host that never asks
+  for the view gets the window after a second, as with CLAP.
+  Checked with a host of a few calls (format, render with the host's and
+  the unit's buffers, a note, class info there and back, the view).
+  **Not verified:** in a host, and with `auval`.
 - Vendored: Gio (`third_party/gio`, macOS plugin window and event loop fixes,
   `TopMost` on Windows and turning it off, `pointer.Event.Notch` for the
   notches of a mouse wheel on macOS),
