@@ -33,6 +33,22 @@ changes to the sound are fine, as long as both stay in sync.
 - The plugin window comes to the front when it opens. Edit → Keep window on
   top keeps it above other windows; the setting is saved in the user's
   `preferences.yml`.
+- The plugin window is the tracker's own, not embedded in a window of the
+  host. On macOS it floats above the windows of the host while the host (or
+  the helper process that the plugin runs in) is the application in front,
+  and goes behind when another application comes to the front
+  (`tracker/gioui/hostfront_darwin.go`, `window.go`): a helper process is
+  not among the applications to switch to, so a window behind the host's
+  could not be reached.
+- CLAP: the plugin has the `gui` extension, as a floating window
+  (`cmd/sointu-clap/clap.c`). A host that supports floating windows shows
+  and hides the window, e.g. with the button of the device, suggests its
+  title, and is told when the user closes it; the tracker then runs without
+  a window (`Tracker.runHidden`) until it is shown again. The window opens
+  when the host shows it; if the host has not created the gui within a
+  second, it opens as before and cannot be closed (`plugin.NewHidden`). A
+  window that was hidden opens again where the system puts new windows, not
+  where it was. The VST2 plugin has no editor: its window always opens.
 - Vendored: Gio (`third_party/gio`, macOS plugin window and event loop fixes,
   `TopMost` on Windows and turning it off, `pointer.Event.Notch` for the
   notches of a mouse wheel on macOS),

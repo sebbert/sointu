@@ -32,6 +32,8 @@ type (
 		// changed is true when the host has been told of changes that it has
 		// not saved yet
 		changed atomic.Bool
+		// managed is true once the host shows and hides the window
+		managed atomic.Bool
 	}
 
 	// output plays the player, whose synth runs at 44100 Hz, in the blocks
@@ -73,7 +75,45 @@ type (
 // name the recovery file, e.g. "sointu-vsti". The song is saved in the host's
 // project; markDirty, if not nil, tells the host that the song changed, and is
 // called from the tracker's goroutine.
-func New(name string, markDirty func()) *Instance {
+func New(name string, markDirty func()) *Instance { return newInstance(name, markDirty, false) }
+
+// windowFallback is how long an instance made with NewHidden waits for the
+// host to take over its window before it opens the window itself.
+const windowFallback = time.Second
+
+// NewHidden creates a plugin instance like New, for a host that may show and
+// hide the window (ManageWindow, ShowWindow, HideWindow): the window is not
+// opened until the host shows it. A host that has not taken the window over
+// within a second is taken not to: the window then opens as with New, so
+// that it is never out of reach.
+func NewHidden(name string, markDirty func()) *Instance {
+	i := newInstance(name, markDirty, true)
+	time.AfterFunc(windowFallback, func() {
+		if !i.managed.Load() {
+			i.tracker.ShowWindow()
+		}
+	})
+	return i
+}
+
+// ManageWindow tells that the host shows and hides the window from now on.
+// closed is called, from the tracker's goroutine, when the user closes the
+// window; the host can show it again.
+func (i *Instance) ManageWindow(closed func()) {
+	i.managed.Store(true)
+	i.tracker.HostManagesWindow(closed)
+}
+
+// ShowWindow opens the window, or raises it if it is open, and HideWindow
+// closes it; the instance plays on without one.
+func (i *Instance) ShowWindow() { i.tracker.ShowWindow() }
+func (i *Instance) HideWindow() { i.tracker.HideWindow() }
+
+// SetWindowTitle sets what the title of the window names besides the
+// tracker: what the host suggests, e.g. the name of the track.
+func (i *Instance) SetWindowTitle(title string) { i.tracker.SetWindowTitle(title) }
+
+func newInstance(name string, markDirty func(), hidden bool) *Instance {
 	recoveryFile := ""
 	if configDir, err := os.UserConfigDir(); err == nil {
 		randBytes := make([]byte, 16)
@@ -105,6 +145,9 @@ func New(name string, markDirty func()) *Instance {
 			markDirty()
 		}
 	})
+	if hidden {
+		t.StartHidden()
+	}
 	go t.Main()
 	return i
 }

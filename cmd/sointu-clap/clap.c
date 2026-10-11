@@ -16,7 +16,10 @@ typedef struct {
 	const clap_host_t *host;
 	const clap_host_state_t *host_state;
 	const clap_host_latency_t *host_latency;
-	atomic_bool dirty; // the song changed; tell the host on the main thread
+	const clap_host_gui_t *host_gui;
+	atomic_bool dirty;      // the song changed; tell the host on the main thread
+	atomic_bool gui_closed; // the user closed the window; tell the host likewise
+	bool gui_created;       // the host has created the gui: it shows and hides the window
 	uintptr_t handle;  // cgo.Handle of the Go instance
 	double sample_rate;
 	uint32_t latency; // of the resampler at sample_rate, in frames
@@ -157,12 +160,116 @@ static const clap_plugin_latency_t latency = {
 	.get = latency_get,
 };
 
+// gui: the tracker is a window of its own, which CLAP calls floating; it is
+// not embedded in a window of the host. A host that supports floating
+// windows shows and hides it, e.g. with the button of the device, and is
+// told when the user closes it. Until the host creates the gui, the window
+// is not its to manage: see plugin.NewHidden.
+
+#if defined(__APPLE__)
+#define SOINTU_WINDOW_API_OK(api) (strcmp((api), CLAP_WINDOW_API_COCOA) == 0)
+static const char *const window_api = CLAP_WINDOW_API_COCOA;
+#elif defined(_WIN32)
+#define SOINTU_WINDOW_API_OK(api) (strcmp((api), CLAP_WINDOW_API_WIN32) == 0)
+static const char *const window_api = CLAP_WINDOW_API_WIN32;
+#else
+#define SOINTU_WINDOW_API_OK(api) (strcmp((api), CLAP_WINDOW_API_X11) == 0 || strcmp((api), CLAP_WINDOW_API_WAYLAND) == 0)
+static const char *const window_api = CLAP_WINDOW_API_X11;
+#endif
+
+static bool gui_is_api_supported(const clap_plugin_t *plugin, const char *api, bool is_floating) {
+	return is_floating && api != NULL && SOINTU_WINDOW_API_OK(api);
+}
+
+static bool gui_get_preferred_api(const clap_plugin_t *plugin, const char **api, bool *is_floating) {
+	*api = window_api;
+	*is_floating = true;
+	return true;
+}
+
+static bool gui_create(const clap_plugin_t *plugin, const char *api, bool is_floating) {
+	sointu_plugin_t *p = self(plugin);
+	if (!gui_is_api_supported(plugin, api, is_floating))
+		return false;
+	if (!p->gui_created) {
+		p->gui_created = true;
+		sointuManageWindow(p->handle, (uintptr_t)p);
+	}
+	return true;
+}
+
+static void gui_destroy(const clap_plugin_t *plugin) {
+	sointu_plugin_t *p = self(plugin);
+	if (p->gui_created) {
+		p->gui_created = false;
+		sointuHideWindow(p->handle);
+	}
+}
+
+// the window has its own size and place, and is not a child of the host's
+
+static bool gui_set_scale(const clap_plugin_t *plugin, double scale) { return false; }
+
+static bool gui_get_size(const clap_plugin_t *plugin, uint32_t *width, uint32_t *height) { return false; }
+
+static bool gui_can_resize(const clap_plugin_t *plugin) { return false; }
+
+static bool gui_get_resize_hints(const clap_plugin_t *plugin, clap_gui_resize_hints_t *hints) { return false; }
+
+static bool gui_adjust_size(const clap_plugin_t *plugin, uint32_t *width, uint32_t *height) { return false; }
+
+static bool gui_set_size(const clap_plugin_t *plugin, uint32_t width, uint32_t height) { return false; }
+
+static bool gui_set_parent(const clap_plugin_t *plugin, const clap_window_t *window) { return false; }
+
+static bool gui_set_transient(const clap_plugin_t *plugin, const clap_window_t *window) { return false; }
+
+static void gui_suggest_title(const clap_plugin_t *plugin, const char *title) {
+	if (title != NULL)
+		sointuWindowTitle(self(plugin)->handle, (char *)title);
+}
+
+static bool gui_show(const clap_plugin_t *plugin) {
+	sointu_plugin_t *p = self(plugin);
+	if (!p->gui_created)
+		return false;
+	sointuShowWindow(p->handle);
+	return true;
+}
+
+static bool gui_hide(const clap_plugin_t *plugin) {
+	sointu_plugin_t *p = self(plugin);
+	if (!p->gui_created)
+		return false;
+	sointuHideWindow(p->handle);
+	return true;
+}
+
+static const clap_plugin_gui_t gui = {
+	.is_api_supported = gui_is_api_supported,
+	.get_preferred_api = gui_get_preferred_api,
+	.create = gui_create,
+	.destroy = gui_destroy,
+	.set_scale = gui_set_scale,
+	.get_size = gui_get_size,
+	.can_resize = gui_can_resize,
+	.get_resize_hints = gui_get_resize_hints,
+	.adjust_size = gui_adjust_size,
+	.set_size = gui_set_size,
+	.set_parent = gui_set_parent,
+	.set_transient = gui_set_transient,
+	.suggest_title = gui_suggest_title,
+	.show = gui_show,
+	.hide = gui_hide,
+};
+
 // plugin
 
 static bool plugin_init(const clap_plugin_t *plugin) {
 	sointu_plugin_t *p = self(plugin);
 	p->host_state = p->host->get_extension(p->host, CLAP_EXT_STATE);
 	p->host_latency = p->host->get_extension(p->host, CLAP_EXT_LATENCY);
+	p->host_gui = p->host->get_extension(p->host, CLAP_EXT_GUI);
 	p->handle = sointuNew((uintptr_t)p);
 	return true;
 }
@@ -172,6 +279,15 @@ static bool plugin_init(const clap_plugin_t *plugin) {
 void sointu_mark_dirty(uintptr_t plugin) {
 	sointu_plugin_t *p = (sointu_plugin_t *)plugin;
 	atomic_store(&p->dirty, true);
+	p->host->request_callback(p->host);
+}
+
+// sointu_window_closed tells the host that the user closed the window, which
+// the host can show again. Called from the tracker's goroutine; the host is
+// told on the main thread.
+void sointu_window_closed(uintptr_t plugin) {
+	sointu_plugin_t *p = (sointu_plugin_t *)plugin;
+	atomic_store(&p->gui_closed, true);
 	p->host->request_callback(p->host);
 }
 
@@ -256,6 +372,8 @@ static const void *plugin_get_extension(const clap_plugin_t *plugin, const char 
 		return &state;
 	if (strcmp(id, CLAP_EXT_LATENCY) == 0)
 		return &latency;
+	if (strcmp(id, CLAP_EXT_GUI) == 0)
+		return &gui;
 	return NULL;
 }
 
@@ -263,6 +381,8 @@ static void plugin_on_main_thread(const clap_plugin_t *plugin) {
 	sointu_plugin_t *p = self(plugin);
 	if (atomic_exchange(&p->dirty, false) && p->host_state != NULL)
 		p->host_state->mark_dirty(p->host);
+	if (atomic_exchange(&p->gui_closed, false) && p->host_gui != NULL)
+		p->host_gui->closed(p->host, false);
 }
 
 // factory

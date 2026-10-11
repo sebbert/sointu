@@ -64,6 +64,9 @@ type (
 
 		preferences Preferences
 
+		// window is what a plugin host does with the window: see window.go
+		window windowControl
+
 		// remoteControl lets a language model change the song: see
 		// SetRemoteControl
 		remoteControl RemoteControl
@@ -93,6 +96,7 @@ func NewTracker(model *tracker.Model) *Tracker {
 	t := &Tracker{
 		OctaveNumberInput: NewNumericUpDownState(),
 		InstrumentVoices:  NewNumericUpDownState(),
+		window:            windowControl{cmds: make(chan windowCmd, 16)},
 
 		TopHorizontalSplit:    &SplitState{Ratio: -.5},
 		BottomHorizontalSplit: &SplitState{Ratio: -.6},
@@ -138,15 +142,24 @@ func (t *Tracker) Main() {
 	changedSinceSave := false
 	globals := make(map[string]any, 1)
 	globals["Tracker"] = t
+	hostTitle := ""
+	t.watchHostFront()
+	defer t.unwatchHostFront()
 	for !t.Quitted() {
+		if t.window.hidden {
+			// a plugin host hid the window, or has not shown it yet: the
+			// model goes on without one
+			t.runHidden(recoveryTicker)
+			continue
+		}
 		w := t.newWindow()
-		w.Option(app.Title(titleFromPath(titlePath, changedSinceSave)))
+		w.Option(app.Title(t.windowTitle(titlePath, changedSinceSave)))
 		t.Explorer = explorer.NewExplorer(w)
 		// a plugin host, e.g. a DAW, can put its own windows in front of the
 		// new window while it is loading the plugin, so raise the window on
 		// its first frame and once more a moment later
 		raised, focused := false, false
-		onTop := t.preferences.Window.AlwaysOnTop
+		onTop := t.windowOnTop()
 		raiseAgain := time.After(500 * time.Millisecond)
 		acks := make(chan struct{})
 		events := make(chan event.Event)
@@ -188,6 +201,7 @@ func (t *Tracker) Main() {
 					if canQuit {
 						t.RequestQuit().Do()
 					}
+					t.windowDestroyed()
 					acks <- struct{}{}
 					break F // this window is done, we need to create a new one
 				case app.ConfigEvent:
@@ -203,8 +217,8 @@ func (t *Tracker) Main() {
 						t.zoomScroll = zoomScroll{} // nor is Ctrl/Cmd
 					}
 				case app.FrameEvent:
-					if onTop != t.preferences.Window.AlwaysOnTop {
-						onTop = t.preferences.Window.AlwaysOnTop
+					if onTop != t.windowOnTop() {
+						onTop = t.windowOnTop()
 						w.Option(app.TopMost(onTop))
 					}
 					if !raised {
@@ -212,10 +226,11 @@ func (t *Tracker) Main() {
 						w.Option(app.TopMost(onTop))
 						w.Perform(system.ActionRaise)
 					}
-					if titlePath != t.filePathString.Value() || changedSinceSave != t.Song().ChangedSinceSave() {
+					if titlePath != t.filePathString.Value() || changedSinceSave != t.Song().ChangedSinceSave() || hostTitle != t.window.title {
 						titlePath = t.filePathString.Value()
 						changedSinceSave = t.Song().ChangedSinceSave()
-						w.Option(app.Title(titleFromPath(titlePath, changedSinceSave)))
+						hostTitle = t.window.title
+						w.Option(app.Title(t.windowTitle(titlePath, changedSinceSave)))
 					}
 					gtx := app.NewContext(&ops, e)
 					gtx.Values = globals
@@ -224,8 +239,30 @@ func (t *Tracker) Main() {
 					if t.Quitted() {
 						w.Perform(system.ActionClose)
 					}
+				default:
+					t.platformEvent(e)
 				}
 				acks <- struct{}{}
+			case cmd := <-t.window.cmds:
+				switch t.windowCommand(cmd) {
+				case windowHide:
+					w.Perform(system.ActionClose)
+				case windowShow:
+					w.Option(app.TopMost(onTop))
+					w.Perform(system.ActionRaise)
+				}
+				w.Invalidate()
+			case front := <-t.window.hostFront:
+				// the host, or another application, came to the front: the
+				// window floats above the host only
+				t.window.front = front
+				if onTop != t.windowOnTop() {
+					onTop = t.windowOnTop()
+					w.Option(app.TopMost(onTop))
+				}
+				if !onTop {
+					t.sendWindowBack()
+				}
 			case <-raiseAgain:
 				w.Option(app.TopMost(onTop))
 				w.Perform(system.ActionRaise)
@@ -253,7 +290,7 @@ func (t *Tracker) newWindow() *app.Window {
 	if t.preferences.Window.Maximized {
 		w.Option(app.Maximized.Option())
 	}
-	w.Option(app.TopMost(t.preferences.Window.AlwaysOnTop))
+	w.Option(app.TopMost(t.windowOnTop()))
 	return w
 }
 
@@ -337,7 +374,12 @@ func (t *Tracker) Layout(gtx layout.Context) {
 	if at, ok := t.zoomScroll.Expires(); ok {
 		gtx.Execute(op.InvalidateCmd{At: at}) // to stop taking the scroll then
 	}
-	// if no-one else handled the note events, we handle them here
+	t.playMIDIMessages()
+}
+
+// playMIDIMessages plays the notes of the MIDI input that no one else
+// handled, in the selected instrument.
+func (t *Tracker) playMIDIMessages() {
 	for len(t.midiMsgs) > 0 {
 		ev := tracker.NoteEvent{
 			Timestamp: t.midiMsgs[0].Timestamp,
