@@ -344,3 +344,49 @@ func TestConvolutionRow(t *testing.T) {
 	}
 	r.screenshot("convolution_row")
 }
+
+// Scrolling scrolls the rack along both axes, wherever the pointer is over
+// its table: over cells, over the small plot of a folded eq unit, and over
+// the plot and the band row of an unfolded one. The lists of the rows and
+// of the columns both cover the table and are not each other's parents, so
+// the upper one has to let the scroll through.
+func TestRackScroll(t *testing.T) {
+	r := newEQRack(t)
+	r.size = image.Pt(500, 500) // smaller than the rack, both ways
+	r.settle()
+	table := r.tr.PatchPanel.instrEditor.paramTable
+	pos := func() (col, row int) {
+		c, w := table.ColTitleList.List.Position, table.RowTitleList.List.Position
+		return c.First*1000 + c.Offset, w.First*1000 + w.Offset
+	}
+	scroll := func(at, by f32.Point) {
+		r.router.Queue(pointer.Event{Kind: pointer.Scroll, Source: pointer.Mouse, Position: at, Scroll: by})
+		r.frame()
+		r.frame() // the lists move when they are laid out
+	}
+	for _, c := range []struct {
+		name string
+		at   f32.Point
+	}{
+		{"cells", f32.Pt(250, 30)},
+		{"the small plot of an eq unit", f32.Pt(300, 100)},
+		{"the plot of an unfolded eq unit", f32.Pt(300, 330)},
+		{"the band row of an unfolded eq unit", f32.Pt(300, 470)},
+	} {
+		r.router.Queue(pointer.Event{Kind: pointer.Move, Source: pointer.Mouse, Position: c.at})
+		r.frame()
+		col0, row0 := pos()
+		scroll(c.at, f32.Pt(30, 0))
+		if col, row := pos(); col == col0 || row != row0 {
+			t.Errorf("scrolling sideways over %s: columns %d to %d, rows %d to %d", c.name, col0, col, row0, row)
+		}
+		scroll(c.at, f32.Pt(0, 30))
+		if _, row := pos(); row == row0 {
+			t.Errorf("scrolling down over %s did not scroll the rows", c.name)
+		}
+		scroll(c.at, f32.Pt(-30, -30))
+		if col, row := pos(); col != col0 || row != row0 {
+			t.Errorf("scrolling back over %s: columns at %d, not %d; rows at %d, not %d", c.name, col, col0, row, row0)
+		}
+	}
+}

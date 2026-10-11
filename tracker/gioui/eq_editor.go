@@ -590,6 +590,9 @@ func (e *EQEditor) layoutPlot(gtx C) D {
 	if e.scrolling { // to end the step of the undo history
 		gtx.Execute(op.InvalidateCmd{At: e.scrollUntil.Add(time.Millisecond)})
 	}
+	// the scrolling that the plot does not take goes on to the lists of the
+	// rack under it, which are not its parents: see ScrollTableStyle.Layout
+	defer pointer.PassOp{}.Push(gtx.Ops).Pop()
 	defer clip.UniformRRect(image.Rectangle{Max: s}, gtx.Dp(4)).Push(gtx.Ops).Pop()
 	event.Op(gtx.Ops, e)
 	paint.Fill(gtx.Ops, t.Theme.UnitEditor.Preview)

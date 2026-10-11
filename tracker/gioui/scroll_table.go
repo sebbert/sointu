@@ -126,7 +126,15 @@ func (s ScrollTableStyle) Layout(gtx C, element func(gtx C, x, y int) D, colTitl
 
 	defer clip.Rect(image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Constraints.Max.Y)).Push(gtx.Ops).Pop()
 	s.layoutOffset(gtx, image.Pt(p.X, 0), func(gtx C) D { return s.ColTitleStyle.Layout(gtx, colTitle, colTitleBg) })
-	s.layoutOffset(gtx, image.Pt(0, p.Y), func(gtx C) D { return s.RowTitleStyle.Layout(gtx, rowTitle, rowTitleBg) })
+	// The two lists scroll the table, each along its axis, and both cover
+	// it. The router offers a scroll to the topmost handler under the
+	// pointer and its parents only, so the list of the rows, laid out over
+	// that of the columns, lets the pointer through to it: else scrolling
+	// sideways did nothing.
+	s.layoutOffset(gtx, image.Pt(0, p.Y), func(gtx C) D {
+		defer pointer.PassOp{}.Push(gtx.Ops).Pop()
+		return s.RowTitleStyle.Layout(gtx, rowTitle, rowTitleBg)
+	})
 	s.layoutOffset(gtx, p, func(gtx C) D {
 		s.layoutTable(gtx, element)
 		s.RowTitleStyle.LayoutScrollBar(gtx)
