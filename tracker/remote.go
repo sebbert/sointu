@@ -864,30 +864,94 @@ func (r *Remote) loadPreset(instr *sointu.Instrument, name string) error {
 // Call runs a tool call f on the model. When the song changed since the
 // previous call, by the user or by loading another, the answer starts by
 // saying so, with the changes: the caller's idea of the song is out of date.
+// It also tells the warnings and errors that the tracker showed the user
+// since the previous call, and those that the call itself caused.
 func (r *Remote) Call(f func() (string, error)) (string, error) {
 	m := (*Model)(r)
 	first, changes := m.remoteSeen == nil, r.Changes()
 	text, err := f()
 	seen := m.d.Song.Copy()
 	m.remoteSeen = &seen
-	if text == "" && err == nil && changes == "" { // get_changes
+	alerts := r.takeAlerts()
+	if text == "" && err == nil && changes == "" && alerts == "" { // get_changes
 		if first {
 			return "this is your first call since the tracker started: read the song (get_song)", nil
 		}
 		return "nothing changed since your previous call", nil
 	}
-	if changes == "" {
-		return text, err
+	var parts []string
+	if changes != "" {
+		parts = append(parts, "NOTE: the song changed in the tracker since your previous call (the user edits it too); what you read before is out of date:\n"+changes)
 	}
-	notice := "NOTE: the song changed in the tracker since your previous call (the user edits it too); what you read before is out of date:\n" + changes
+	if alerts != "" {
+		parts = append(parts, alerts)
+	}
 	if err != nil {
-		return "", fmt.Errorf("%s\n\n%w", notice, err)
+		if len(parts) == 0 {
+			return "", err
+		}
+		return "", fmt.Errorf("%s\n\n%w", strings.Join(parts, "\n\n"), err)
 	}
-	if text == "" {
-		return notice, nil
+	if text != "" {
+		parts = append(parts, text)
 	}
-	return notice + "\n\n" + text, nil
+	return strings.Join(parts, "\n\n"), nil
 }
+
+// takeAlerts returns the warnings and errors that the tracker showed the
+// user since it was last called, a line each, and forgets them.
+func (r *Remote) takeAlerts() string {
+	m := (*Model)(r)
+	if len(m.remoteAlerts) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("ALERTS: the tracker showed the user these since your previous call:")
+	for _, a := range m.remoteAlerts {
+		kind := "warning"
+		if a.Priority >= Error {
+			kind = "error"
+		}
+		fmt.Fprintf(&b, "\n%s: %s", kind, a.Message)
+	}
+	m.remoteAlerts = nil
+	return b.String()
+}
+
+// AddBuffer adds an empty audio buffer of the given length to the song, for
+// bufwrite units to record into and bufread units to play.
+func (r *Remote) AddBuffer(name string, seconds float64, channels int) (string, error) {
+	m := (*Model)(r)
+	return r.edit(BufferChange, func() (remoteFocus, string, error) {
+		focus := remoteFocus{instr: -1, module: -1}
+		if seconds == 0 {
+			seconds = 1
+		}
+		if channels == 0 {
+			channels = 1
+		}
+		if seconds < 0 || seconds > maxRemoteBufferSeconds {
+			return focus, "", fmt.Errorf("a buffer is up to %d seconds long", maxRemoteBufferSeconds)
+		}
+		if channels != 1 && channels != 2 {
+			return focus, "", errors.New("a buffer has 1 or 2 channels")
+		}
+		id := 1
+		for _, buf := range m.d.Song.Buffers {
+			id = max(id, buf.ID+1)
+		}
+		if name = strings.TrimSpace(name); name == "" {
+			name = fmt.Sprintf("Recording %d", id)
+		}
+		frames := max(int(math.Round(seconds*44100)), 1)
+		m.d.Song.Buffers = append(m.d.Song.Buffers, sointu.Buffer{ID: id, Name: name, Channels: channels, Frames: frames})
+		m.d.BufferIndex = len(m.d.Song.Buffers) - 1
+		return focus, fmt.Sprintf("added buffer %d %q: %.2f s, %d channels; set the buffer parameter of bufwrite and bufread units to %d", id, name, float64(frames)/44100, channels, id), nil
+	})
+}
+
+// maxRemoteBufferSeconds is the longest buffer that AddBuffer adds.
+const maxRemoteBufferSeconds = 60
 
 // AddInstrument adds an instrument: a preset, or the default instrument.
 // It goes before the instrument before names, after the one after names, or

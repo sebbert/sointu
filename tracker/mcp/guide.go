@@ -44,6 +44,10 @@ The presets in UTIL (Global ...) are such buses and master chains; Global master
 - Loading a preset into an instrument (edit_instrument preset) replaces all its units.
 - In the tracker, each instrument has tracks in the score; in the plugin the DAW sends the notes and the score does not matter.
 
+## Buffers and grains
+bufwrite records the signal into an audio buffer of the song (a ring: the newest frames replace the oldest; several writers, also the voices of one instrument, mix), bufread plays it: start counts frames from the oldest one, a negative start back from the newest; a send to start shifts it by a part of the buffer (amount 0.1: a tenth of its length). add_buffer makes the buffer and returns its ID for the buffer parameter; until a song has a buffer, that parameter and start only take 0.
+Grains: a spawn unit triggers voices of another instrument (instrument counts from 1 in the order of get_song: 2 is the instrument with index 1; check the name shown), at a rate, in sync with the beat, or on a rising edge of the top signal, each for length. It passes the args top signals to the voice, which reads them with arg: e.g. two noise units for a random position and pan. The grain instrument: window, arg, send to start of the bufread, bufread, mulp, pan, out. A spawn only fires while a note is held on its own instrument: in every voice of an instrument it spawns per held note; in an instrument of its own it needs a note from the score or the DAW on its MIDI channel. With notetracking 1 the grains take the note of the spawner, else note 60: the recorded pitch.
+
 ## Modules
 A module is a reusable block of units. A unit of the type module stands for its units (module: its name), with p1 to p8 setting the parameters of the module. Changing a module changes every use of it. The units of a module can bind their parameters to the module parameters (edit_units bind); a send to a module unit modulates the parameters bound to that port. Module units, and eq units, count with all the units they stand for.
 

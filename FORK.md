@@ -2068,6 +2068,7 @@ resolved; the instructions say so.
 | `add_instrument`, `edit_instrument`, `delete_instrument` | a preset or the default instrument, before or after an instrument, by default before the first bus; name, comment, voices, mute, solo, loading a preset |
 | `move_instrument` | before or after another instrument |
 | `add_module`, `edit_module`, `delete_module` | a module preset or an empty module; name, comment, inputs, parameters (added, named, defaults, deleted) |
+| `add_buffer` | an empty audio buffer (name, seconds, 1 or 2 channels) for `bufwrite` and `bufread` units; returns its ID |
 | `set_bpm`, `undo`, `redo` | undo and redo go through the same history as the user's |
 | `render_note` | renders notes of an instrument offline and measures them (below) |
 | `play_note` | plays a note in the running tracker, for the user to hear |
@@ -2098,6 +2099,17 @@ parameters), buffers by ID, the tempo, the score per track, the encoding
 presets. `get_changes` asks for them alone. The guide tells the model not to
 trust what it read earlier and to read an instrument right before changing
 it.
+
+**Alerts.** The warnings and errors that the tracker shows the user as
+notifications (`Alerts.AddAlert`: a stack left unbalanced, a module using
+itself, a sample that failed to import or encode, a file that failed to
+load, a fault of the synth) are kept for the model too (`Model.remoteAlerts`,
+the last 32, a named alert with the same message once). The next call
+starts its answer with "ALERTS: ..." and a line each, `warning:` or
+`error:`, and forgets them; those that the call itself causes come with its
+own answer, also when it fails. Info alerts, such as the "MCP: ..." one of
+each change, are not told. `get_changes` returns them when nothing else
+changed.
 
 **Measuring.** A model cannot hear; until now the sounds of this fork were
 tuned by rendering and measuring, by hand. `render_note` takes a copy of the

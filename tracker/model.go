@@ -104,6 +104,9 @@ type (
 		// remoteSeen is a copy of the song as the last Remote call left it,
 		// to tell the next one whether the user changed it in between
 		remoteSeen *sointu.Song
+		// remoteAlerts are the warnings and errors shown to the user since
+		// the last Remote call, for the next one to tell
+		remoteAlerts []Alert
 
 		prevUndoKind    string
 		undoSkipCounter int

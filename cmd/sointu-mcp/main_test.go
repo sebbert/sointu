@@ -88,7 +88,7 @@ func TestServerEndToEnd(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names[tool.Name] = tool
 	}
-	for _, want := range []string{"list_instances", "guide", "unit_types", "get_song", "edit_units", "render_note", "play_note", "add_module"} {
+	for _, want := range []string{"list_instances", "guide", "unit_types", "get_song", "edit_units", "render_note", "play_note", "add_module", "add_buffer"} {
 		if names[want] == nil {
 			t.Errorf("the tool %s is missing", want)
 		}
