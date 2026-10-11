@@ -518,6 +518,11 @@ func (w *window) Configure(options []Option) {
 		barTrans = C.YES
 		titleVis = C.NSWindowTitleHidden
 	}
+	// keep what was asked for: until the first draw reads the style of the
+	// window back (updateWindowMode), w.config.Decorated is still false, and
+	// an Option in between, e.g. TopMost on the first focus, would take the
+	// title bar away and leave Gio to draw its own
+	w.config.Decorated = cnf.Decorated
 	w.config.TopMost = cnf.TopMost
 	if cnf.TopMost {
 		C.setWindowLevel(window, C.NSFloatingWindowLevel)
