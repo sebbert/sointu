@@ -190,6 +190,12 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 		if unit.Type == "bufread" && unit.Parameters["loop"] == 0 && (up.Name == "loopstart" || up.Name == "looplength" || up.Name == "fade") {
 			continue // loop points only matter when looping
 		}
+		if unit.Type == "bufread" && unit.Parameters["mode"] == 1 {
+			switch up.Name { // a tap reads the frame at start: it has no pitch, speed, loop or edges
+			case "transpose", "detune", "speed", "notetracking", "loop", "loopstart", "looplength", "fade", "edgefade":
+				continue
+			}
+		}
 		if unit.Type == "convolution" && (up.Name == "follow" || up.Name == "fade") {
 			if buf, found := m.d.Song.Buffers.Find(unit.Parameters["buffer"]); found && !buf.Writable() {
 				continue // a sample is read once: nothing to follow
@@ -213,6 +219,9 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 		}
 		if unit.Type == "bufwrite" && up.Name == "buffer" {
 			vtable = audioBufferParameter
+		}
+		if unit.Type == "bufwrite" && up.Name == "length" {
+			vtable = &bufwriteLengthParameter{}
 		}
 		for j, name := range sointu.SpectrumBufferParams(unit.Type) {
 			if up.Name == name {

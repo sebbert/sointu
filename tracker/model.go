@@ -381,6 +381,7 @@ func (m *Model) change(kind string, t ChangeType, severity ChangeSeverity) func(
 				m.fixModules()
 				m.fixSpectrumBuffers()
 				m.fixBuses()
+				m.fixWriteBuffers()
 				m.fixConvolutionBuffers()
 				m.d.InstrIndex = clamp(m.d.InstrIndex, 0, len(m.d.Song.Patch)-1)
 				m.d.InstrIndex2 = clamp(m.d.InstrIndex2, 0, len(m.d.Song.Patch)-1)

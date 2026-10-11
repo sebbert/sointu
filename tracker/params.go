@@ -352,6 +352,7 @@ type (
 	moduleArgParameter         struct{}
 	spawnRateParameter         struct{ namedParameter }
 	bufferFrameParameter       struct{ namedParameter }
+	bufwriteLengthParameter    struct{ namedParameter }
 	convolutionLengthParameter struct{ namedParameter }
 
 	ParamYieldFunc func(param Parameter) bool
@@ -1057,24 +1058,102 @@ func (b *spawnRateParameter) Hint(p *Parameter) ParameterHint {
 // bufferFrameParameter vtable: a position in frames in the buffer played by a
 // bufread unit, limited to the length of the buffer and shown in seconds.
 
+// bufreadTiming returns what a position of a bufread unit counts: 0 frames,
+// 1 frames at note 0, shorter by half for every octave of the note (start
+// only), 2 48ths of a beat.
+func bufreadTiming(p *Parameter) int {
+	if p.unit.Type != "bufread" {
+		return 0
+	}
+	switch t := p.unit.Parameters["timing"]; {
+	case t == 2 && (p.up.Name == "start" || p.up.Name == "loopstart" || p.up.Name == "looplength"):
+		return 2
+	case t == 1 && p.up.Name == "start":
+		return 1
+	}
+	return 0
+}
+
+// bufreadPitchRange is how many times the length of the buffer a start with
+// pitch timing can be: at note 72, it is 64 times shorter.
+const bufreadPitchRange = 64
+
 func (b *bufferFrameParameter) Range(p *Parameter) RangeInclusive {
 	frames := p.m.bufferFrames(p.unit.Parameters["buffer"])
 	v := p.unit.Parameters[p.up.Name]
+	if frames == 0 && p.unit.Type == "bufread" {
+		// no buffer yet, e.g. a unit that is given the buffer of the
+		// bufwrite unit next to it when the change is done: any position
+		return RangeInclusive{Min: p.up.MinValue, Max: p.up.MaxValue}
+	}
+	switch bufreadTiming(p) {
+	case 1:
+		frames *= bufreadPitchRange
+	case 2: // as many 48ths of a beat as the buffer is long, at this tempo
+		frames = int(int64(frames) * 48 * int64(max(p.m.d.Song.BPM, 1)) / (44100 * 60))
+	}
+	if v < 0 {
+		v = -v
+	}
 	r := RangeInclusive{Min: 0, Max: max(frames, v, 1)}
 	if p.unit.Type == "bufread" && (p.up.Name == "start" || p.up.Name == "loopstart") { // negative counts back from the end
-		r.Min = min(-frames, v)
+		r.Min = -r.Max
 	}
 	return r
 }
 func (b *bufferFrameParameter) Hint(p *Parameter) ParameterHint {
 	v := b.Value(p)
+	from := ""
+	if v < 0 {
+		from = " from end"
+	}
+	switch bufreadTiming(p) {
+	case 1: // 10788 frames at note 0 are a period of the note
+		return ParameterHint{fmt.Sprintf("%s periods of the note%s (%d)", trimFloat(math.Abs(float64(v))/bufreadNotePeriod, 3), from, v), true}
+	case 2:
+		abs := v
+		if abs < 0 {
+			abs = -abs
+		}
+		text := fmt.Sprintf("%s beats", trimFloat(float64(abs)/48, 3))
+		if name, ok := delayNoteName(abs, true); ok {
+			text = name + ": " + text
+		}
+		frames := vm.BPMFrames(abs, p.m.d.Song.BPM)
+		return ParameterHint{fmt.Sprintf("%s, %s%s (%d)", text, formatDuration(frames), from, v), true}
+	}
 	if v < 0 {
 		return ParameterHint{fmt.Sprintf("%s from end (%d)", formatDuration(-v), v), true}
 	}
 	return ParameterHint{fmt.Sprintf("%s (%d)", formatDuration(v), v), true}
 }
 func (b *bufferFrameParameter) RoundToGrid(p *Parameter, val int, up bool) int {
+	switch bufreadTiming(p) {
+	case 1:
+		return val
+	case 2:
+		return roundToGrid(val, 12, up) // a sixteenth note
+	}
 	return roundToGrid(val, 441, up) // 10 ms
+}
+
+// bufreadNotePeriod is a period of the note in frames at note 0, as a start
+// with pitch timing counts them: a period of the oscillator at note 0.
+const bufreadNotePeriod = 1 / 0.000092696138
+
+// bufwriteLengthParameter vtable: the length of the buffer that the tracker
+// made for a bufwrite unit, in frames, shown in seconds. A buffer that the
+// user made has its own length.
+
+func (b *bufwriteLengthParameter) Hint(p *Parameter) ParameterHint {
+	v := b.Value(p)
+	if !p.m.ownBuffer(p.unit) {
+		return ParameterHint{"not used: the buffer has its own length", false}
+	}
+	return ParameterHint{fmt.Sprintf("%s (%d)", formatDuration(v), v), true}
+}
+func (b *bufwriteLengthParameter) RoundToGrid(p *Parameter, val int, up bool) int {
+	return roundToGrid(val, 4410, up) // 100 ms
 }
 
 // Bound returns the name of the parameter of the module that the parameter

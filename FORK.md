@@ -78,8 +78,8 @@ All of these are Go and wasm only.
 
 | Unit | What it does |
 |---|---|
-| `bufread` | Plays a buffer: note tracking, looping with crossfade, modulatable start/loop points, negative start counting back from the newest frame, `speed` (-1 to 1), edge fade |
-| `bufwrite` | Writes into a buffer: a continuous ring buffer, or `oneshot` while the note is held. Several writers mix; `feedback`, `pop` |
+| `bufread` | Plays a buffer: note tracking, looping with crossfade, modulatable start/loop points, negative start counting back from the newest frame, `speed` (-1 to 1), edge fade, which in a full ring is a crossfade across the write head. With `mode` tap it is a tap of a delay line: it reads the frame at `start` every sample. `timing` counts the positions in frames, in frames at note 0 (pitch) or in 48ths of a beat (BPM). See [Buffers as delay lines](#buffers-as-delay-lines) |
+| `bufwrite` | Writes into a buffer: a continuous ring buffer, or `oneshot` while the note is held. Several writers mix; `feedback`, `pop`. Without a buffer, it gets one of its own, `length` frames long; with `pervoice`, every voice has a copy of it |
 | `spawn` | Triggers voices of another instrument: at a `rate`, synced to the beat, or on a rising edge. Transpose, note length, up to 4 `args`, `steal` |
 | `arg` | Pushes a value passed by the `spawn` that triggered the voice |
 | `window` | A smoothstep window over the spawned note, for click-free grains |
@@ -1995,6 +1995,68 @@ no host was run with the plugins.
   (every preset and both songs render in the wasm player exactly as in the
   Go synth; the long song takes most of two minutes and runs only with
   `SOINTU_TEST_LONG=1`, see [Tests](#tests)).
+
+
+## Buffers as delay lines
+
+A `bufwrite` unit and `bufread` units make what the `delay` unit does, in
+parts: the write head of a ring is the input of a delay line, and a tap
+reads it some time later. Go synth and wasm player, which render the same
+(`vm/compiler/wasm_buffeatures_test.go`).
+
+- **Tap** (`bufread` `mode` tap). A play head starts at `start` when its
+  note is triggered and goes on from there at its speed; a tap reads the
+  frame at `start` every sample, counted from the ring as it is then. A
+  negative `start` is that many frames behind the write head: -1 is the
+  frame written last, so a tap before the `bufwrite` unit in the same voice
+  is a delay of that many samples, and the two with a gain between them a
+  feedback loop. The tap is interpolated, follows a modulation of `start`
+  while it sounds (a chorus or flanger; the modulation is in parts of the
+  length of the buffer, as for a play head) and sounds without a note, as
+  in a bus instrument. A tap further behind the write head than the ring
+  has frames is silent, like a delay line that has not run that long.
+  Transpose, detune, speed, note tracking, the loop and the edge fade are
+  not used, and not shown.
+- **Timing** (`bufread` `timing`). frames: as before. pitch: `start` is in
+  frames at note 0 and divided by 2^(note/12), like a pitch tracked delay
+  time: 10788 is one period of the note, and parts of frames count, which
+  the delay unit rounds. BPM: `start`, `loopstart` and `looplength` are in
+  48ths of a beat, like the delay times: 48 is a quarter note, 36 a dotted
+  eighth. They are made frames when the patch is compiled
+  (`vm.BPMFrames`), so the tempo costs nothing while playing. The tracker
+  shows the values as what they count.
+- **Crossfade at the write head** (`edgefade`). `edgefade` fades a play head
+  near the edges of the valid frames. In a ring that is full the edges meet
+  at the write head, and a play head that the write head overtakes (any
+  speed below 1) or that overtakes it used to fade out and in again. There
+  the fade is now a crossfade: within `edgefade` frames of the write head,
+  the frames on the other side of it are mixed in with the weight that the
+  fade takes away, and when the heads cross, the play head goes on
+  `edgefade` frames further, where the crossfade has brought the sound. In
+  such a ring the position also wraps around the end, instead of the note
+  ending after one round. Samples, one shot recordings and rings that are
+  not full yet have edges, and fade as before. This changes how songs with
+  an edge fade on a ring sound.
+- **A buffer of its own** (`bufwrite` without a buffer). The tracker gives a
+  `bufwrite` unit with buffer 0 a buffer (`Model.fixWriteBuffers`,
+  `Buffer.Auto`), as long as its `length` parameter and stereo if the unit
+  is, and deletes it when no unit refers to it anymore. A `bufread` unit
+  with buffer 0 gets the buffer of the nearest `bufwrite` unit before it
+  among its units, or else after it. A buffer that the user made keeps its
+  own length.
+- **A copy per voice** (`bufwrite` `pervoice`). All voices of an instrument
+  share a buffer and mix into it. With `pervoice`, every voice has its own
+  copy, which the `bufread` units of that voice read: the lines of a delay
+  unit, e.g. a plucked string per note with a pitch timed tap. Units of
+  other instruments read the copy of the first voice, which is also the one
+  the Buffers tab shows; the others are in the synth alone, are empty again
+  after a change of the buffer's size, and cost the length of the buffer
+  each.
+
+What the `delay` unit has and this does not: its damping is a one-pole
+low-pass, the `filter` unit a two-pole one; its eight lines per channel
+would be eight buffers and loops, more than the 63 units of an instrument
+for a reverb; and it runs in the x86 players.
 
 ## MCP server
 

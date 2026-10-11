@@ -343,7 +343,7 @@ func remoteInt(name string, value any) (int, error) {
 // paramOrder sorts the parameters that decide which others a unit has, and
 // what their values mean, before those.
 func paramOrder(name string) int {
-	return slices.Index([]string{"port", "delaylines", "stereo", "type", "target", "module"}, name)
+	return slices.Index([]string{"port", "delaylines", "stereo", "type", "target", "module", "buffer", "mode", "timing"}, name)
 }
 
 // setParams sets parameters of a unit by their names. newIDs are the IDs of
@@ -1373,6 +1373,7 @@ func (r *Remote) RenderSource(ref string, dry bool, whatIf *RemoteWhatIf) (ret R
 		m.fixModules()
 		m.fixSpectrumBuffers()
 		m.fixBuses()
+		m.fixWriteBuffers()
 		m.fixConvolutionBuffers()
 		known, _ := m.d.Song.WithoutUnknownUnits()
 		expanded, expansion := known.Expand()
