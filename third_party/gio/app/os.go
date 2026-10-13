@@ -22,6 +22,10 @@ import (
 // longer match the window.
 var errOutOfDate = errors.New("app: GPU surface out of date")
 
+// errNoFrame is returned by a context that has nothing to draw into yet:
+// the frame is left out, and the context asks for another when it has.
+var errNoFrame = errors.New("app: no frame to draw into yet")
+
 // Config describes a Window configuration.
 type Config struct {
 	// Size is the window dimensions (Width, Height).
@@ -311,12 +315,16 @@ func (e *eventLoop) Run(f func()) {
 var MinFrameInterval time.Duration
 
 // PresentAsync makes a window show its frames on its own, not with the
-// transaction of the main thread and not in step with the display: getting
-// the next frame to draw into then does not wait, on the main thread, for
-// the frame before to be shown. That is for a program that shares the main
-// thread, e.g. a plugin in its host; the cost is that the content can lag
-// behind the frame of the window while it is resized. Set it before the
-// first window is made. Only macOS has it.
+// transaction of the main thread and not in step with the display, and get
+// what it draws the next frame into ahead of time, off the main thread: the
+// main thread then does not wait for it. A frame that comes before there is
+// something to draw into is left out and drawn when there is. Waiting is
+// what a window does that was just brought to the front: it is only shown
+// when the main thread is done, so the wait ends when it gives up, after a
+// second. That is for a program that shares the main thread, e.g. a plugin
+// in its host; the cost is that the content can lag behind the frame of the
+// window while it is resized. Set it before the first window is made. Only
+// macOS has it.
 var PresentAsync bool
 
 // FlushEvents delivers pending events to the client.

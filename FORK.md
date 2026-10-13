@@ -63,7 +63,13 @@ changes to the sound are fine, as long as both stay in sync.
   `tracker/gioui/framerate_plugin.go`): with the fix above alone, a second
   sample of Live still had the main thread waiting for the next drawable
   two thirds of the time, with the window in view. The tracker on its own
-  draws as before. **Not verified** in a host.
+  draws as before. With that, a third sample still had the wait, and the
+  window came a second after it was switched to: a window that was just
+  brought to the front is only shown when the main thread is done, so a
+  frame drawn then waits for a drawable until the wait gives up. So the
+  drawable of the next frame is got ahead of time, off the main thread
+  (`mtlContext.fetch`), and a frame that comes before it is left out and
+  drawn when it has come (`errNoFrame`). **Not verified** in a host.
 - CLAP: the plugin has the `gui` extension, as a floating window
   (`cmd/sointu-clap/clap.c`). A host that supports floating windows shows
   and hides the window, e.g. with the button of the device, suggests its

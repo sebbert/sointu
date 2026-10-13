@@ -181,6 +181,11 @@ func (w *Window) validateAndProcess(size image.Point, sync bool, frame *op.Ops, 
 		if w.gpu != nil {
 			if err := w.frame(frame, size); err != nil {
 				w.ctx.Unlock()
+				if errors.Is(err, errNoFrame) {
+					// Nothing to draw into yet: leave the frame out.
+					w.queue.Frame(frame)
+					return nil
+				}
 				if errors.Is(err, errOutOfDate) {
 					// GPU surface needs refreshing.
 					sync = true
