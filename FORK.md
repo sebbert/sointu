@@ -50,6 +50,13 @@ changes to the sound are fine, as long as both stay in sync.
   (before, 3 seconds for every plugin removed with its window open), and
   Gio delivers nothing to a window after its `DestroyEvent`, where the main
   thread could wait for good.
+- A window that is wholly behind others is not drawn (Gio,
+  `windowDidChangeOcclusionState`), and is drawn again when it shows.
+  Drawing it waited up to a second per frame, on the main thread, for a
+  drawable that does not come back while the window is not shown: in a
+  sample of Ableton Live the main thread spent 3.6 of 10 seconds in
+  `[CAMetalLayer nextDrawable]`, and switching to the window took a second
+  or two.
 - CLAP: the plugin has the `gui` extension, as a floating window
   (`cmd/sointu-clap/clap.c`). A host that supports floating windows shows
   and hides the window, e.g. with the button of the device, suggests its

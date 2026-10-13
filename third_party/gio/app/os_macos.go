@@ -372,6 +372,9 @@ type window struct {
 	w           *callbacks
 	anim        bool
 	displayLink *displayLink
+	// occluded is set while nothing of the window is to be seen, e.g.
+	// behind another window: it is then not drawn.
+	occluded bool
 	// redraw is a single entry channel for making sure only one
 	// display link redraw request is in flight.
 	redraw      chan struct{}
@@ -593,7 +596,7 @@ func (w *window) SetInputHint(_ key.InputHint) {}
 func (w *window) SetAnimating(anim bool) {
 	w.anim = anim
 	window := C.windowForView(w.view)
-	if w.anim && window != 0 && C.isMiniaturized(window) == 0 {
+	if w.anim && !w.occluded && window != 0 && C.isMiniaturized(window) == 0 {
 		w.displayLink.Start()
 	} else {
 		w.displayLink.Stop()
@@ -772,6 +775,17 @@ func gio_onFocus(h C.uintptr_t, focus C.int) {
 	w.SetCursor(w.cursor)
 	w.config.Focused = focus == 1
 	w.ProcessEvent(ConfigEvent{Config: w.config})
+}
+
+//export gio_onOcclusion
+func gio_onOcclusion(h C.uintptr_t, visible C.int) {
+	w := windowFor(h)
+	w.occluded = visible == 0
+	w.SetAnimating(w.anim)
+	if !w.occluded {
+		// what was to be drawn in the meantime
+		C.setNeedsDisplay(w.view)
+	}
 }
 
 //export gio_onChangeScreen
@@ -966,7 +980,7 @@ func (w *window) draw() {
 		w.SetAnimating(w.anim)
 	}
 	sz := w.config.Size
-	if sz.X == 0 || sz.Y == 0 {
+	if sz.X == 0 || sz.Y == 0 || w.occluded {
 		return
 	}
 	cfg := configFor(w.scale)
