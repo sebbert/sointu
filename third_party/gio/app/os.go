@@ -6,6 +6,7 @@ import (
 	"errors"
 	"image"
 	"image/color"
+	"time"
 
 	"gioui.org/io/event"
 	"gioui.org/io/key"
@@ -300,6 +301,23 @@ func (e *eventLoop) Run(f func()) {
 	e.driverFuncs <- f
 	e.wakeup()
 }
+
+// MinFrameInterval is the least time between two frames of a window, or 0
+// for as many frames as the display shows. A frame is drawn on the main
+// thread and waits there for the display to take the frame before; a
+// program that shares the main thread, e.g. a plugin in its host, leaves
+// more of it to the others with fewer frames. Set it before the first
+// window is made. Only macOS has it.
+var MinFrameInterval time.Duration
+
+// PresentAsync makes a window show its frames on its own, not with the
+// transaction of the main thread and not in step with the display: getting
+// the next frame to draw into then does not wait, on the main thread, for
+// the frame before to be shown. That is for a program that shares the main
+// thread, e.g. a plugin in its host; the cost is that the content can lag
+// behind the frame of the window while it is resized. Set it before the
+// first window is made. Only macOS has it.
+var PresentAsync bool
 
 // FlushEvents delivers pending events to the client.
 func (e *eventLoop) FlushEvents() {

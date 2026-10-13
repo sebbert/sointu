@@ -57,6 +57,13 @@ changes to the sound are fine, as long as both stay in sync.
   sample of Ableton Live the main thread spent 3.6 of 10 seconds in
   `[CAMetalLayer nextDrawable]`, and switching to the window took a second
   or two.
+- A plugin shows its frames on its own, not with the transaction of the
+  main thread and not in step with the display (`app.PresentAsync`, added
+  to Gio), and draws at most 30 of them a second (`app.MinFrameInterval`;
+  `tracker/gioui/framerate_plugin.go`): with the fix above alone, a second
+  sample of Live still had the main thread waiting for the next drawable
+  two thirds of the time, with the window in view. The tracker on its own
+  draws as before. **Not verified** in a host.
 - CLAP: the plugin has the `gui` extension, as a floating window
   (`cmd/sointu-clap/clap.c`). A host that supports floating windows shows
   and hides the window, e.g. with the button of the device, suggests its

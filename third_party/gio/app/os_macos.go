@@ -375,6 +375,10 @@ type window struct {
 	// occluded is set while nothing of the window is to be seen, e.g.
 	// behind another window: it is then not drawn.
 	occluded bool
+	// lastFrame is when the last frame was drawn, and frameWaits is set
+	// while a frame waits for MinFrameInterval to pass since then.
+	lastFrame  time.Time
+	frameWaits bool
 	// redraw is a single entry channel for making sure only one
 	// display link redraw request is in flight.
 	redraw      chan struct{}
@@ -983,6 +987,20 @@ func (w *window) draw() {
 	if sz.X == 0 || sz.Y == 0 || w.occluded {
 		return
 	}
+	if wait := MinFrameInterval - time.Since(w.lastFrame); wait > 0 {
+		// too soon after the last frame: draw when the time has passed
+		if !w.frameWaits {
+			w.frameWaits = true
+			time.AfterFunc(wait, func() {
+				w.runOnMain(func() {
+					w.frameWaits = false
+					C.setNeedsDisplay(w.view)
+				})
+			})
+		}
+		return
+	}
+	w.lastFrame = time.Now()
 	cfg := configFor(w.scale)
 	w.ProcessEvent(frameEvent{
 		FrameEvent: FrameEvent{
@@ -1102,7 +1120,7 @@ func newWindow(win *callbacks, options []Option) {
 
 func (w *window) init(customRenderer bool) error {
 	presentWithTrans := 1
-	if customRenderer {
+	if customRenderer || PresentAsync {
 		presentWithTrans = 0
 	}
 	view := C.gio_createView(C.int(presentWithTrans))

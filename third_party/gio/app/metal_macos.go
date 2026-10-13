@@ -18,6 +18,9 @@ CALayer *gio_layerFactory(BOOL presentWithTrans) {
 		l.autoresizingMask = kCALayerHeightSizable|kCALayerWidthSizable;
 		l.needsDisplayOnBoundsChange = YES;
 		l.presentsWithTransaction = presentWithTrans;
+		// A layer that does not present with the transaction is one that
+		// must not wait: see PresentAsync.
+		l.displaySyncEnabled = presentWithTrans;
 		return l;
 	}
 }
