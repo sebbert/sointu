@@ -50,6 +50,13 @@ changes to the sound are fine, as long as both stay in sync.
   (before, 3 seconds for every plugin removed with its window open), and
   Gio delivers nothing to a window after its `DestroyEvent`, where the main
   thread could wait for good.
+  The loop of the tracker does not wait for the thread of the window when
+  it closes, hides, shows or raises the window outside the answer to an
+  event (`windowDo`): that thread could be waiting to hand over an event
+  that only the loop takes, e.g. that the window was closed, and then
+  neither went on. That was the hang on removing a plugin; a test host
+  that removes the Audio Unit with its window open hung every time, and
+  does not now.
 - A window that is wholly behind others is not drawn (Gio,
   `windowDidChangeOcclusionState`), and is drawn again when it shows.
   Drawing it waited up to a second per frame, on the main thread, for a

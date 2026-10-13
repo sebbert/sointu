@@ -194,7 +194,7 @@ func (t *Tracker) Main() {
 				w.Invalidate()
 			case <-t.Broker().CloseGUI:
 				t.ForceQuit().Do()
-				w.Perform(system.ActionClose)
+				windowDo(func() { w.Perform(system.ActionClose) })
 			case e := <-events:
 				switch e := e.(type) {
 				case app.DestroyEvent:
@@ -246,10 +246,13 @@ func (t *Tracker) Main() {
 			case cmd := <-t.window.cmds:
 				switch t.windowCommand(cmd) {
 				case windowHide:
-					w.Perform(system.ActionClose)
+					windowDo(func() { w.Perform(system.ActionClose) })
 				case windowShow:
-					w.Option(app.TopMost(onTop))
-					w.Perform(system.ActionRaise)
+					top := onTop
+					windowDo(func() {
+						w.Option(app.TopMost(top))
+						w.Perform(system.ActionRaise)
+					})
 				}
 				w.Invalidate()
 			case front := <-t.window.hostFront:
@@ -258,14 +261,18 @@ func (t *Tracker) Main() {
 				t.window.front = front
 				if onTop != t.windowOnTop() {
 					onTop = t.windowOnTop()
-					w.Option(app.TopMost(onTop))
+					top := onTop
+					windowDo(func() { w.Option(app.TopMost(top)) })
 				}
 				if !onTop {
 					t.sendWindowBack()
 				}
 			case <-raiseAgain:
-				w.Option(app.TopMost(onTop))
-				w.Perform(system.ActionRaise)
+				top := onTop
+				windowDo(func() {
+					w.Option(app.TopMost(top))
+					w.Perform(system.ActionRaise)
+				})
 			case <-recoveryTicker.C:
 				t.History().SaveRecovery()
 			}
@@ -275,6 +282,15 @@ func (t *Tracker) Main() {
 	t.History().SaveRecovery()
 	close(t.Broker().FinishedGUI)
 }
+
+// windowDo does something to the window that is not the answer to one of
+// its events: an option or an action, which wait for the thread of the
+// window. That thread may itself wait to hand over an event, e.g. that the
+// window was closed, which only the loop of the tracker takes: the loop
+// must go on, so f runs beside it. In the answer to an event the thread of
+// the window is known to be there for it, and options and actions are
+// called as they are.
+func windowDo(f func()) { go f() }
 
 func TrackerFromContext(gtx C) *Tracker {
 	t, ok := gtx.Values["Tracker"]
