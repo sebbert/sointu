@@ -40,6 +40,16 @@ changes to the sound are fine, as long as both stay in sync.
   (`tracker/gioui/hostfront_darwin.go`, `window.go`): a helper process is
   not among the applications to switch to, so a window behind the host's
   could not be reached.
+  In a host that loads its plugins in its own process (e.g. Ableton Live
+  with the Audio Unit) the window does not float: it is one of the windows
+  of the host, and the system's switching between the windows of an
+  application reaches it.
+- Removing a plugin does not hold the host up: `Instance.Close` does not
+  wait for the tracker on the main thread of macOS, where the window that
+  the tracker waits to close can only close once `Close` has returned
+  (before, 3 seconds for every plugin removed with its window open), and
+  Gio delivers nothing to a window after its `DestroyEvent`, where the main
+  thread could wait for good.
 - CLAP: the plugin has the `gui` extension, as a floating window
   (`cmd/sointu-clap/clap.c`). A host that supports floating windows shows
   and hides the window, e.g. with the button of the device, suggests its

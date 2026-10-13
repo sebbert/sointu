@@ -34,6 +34,8 @@ type (
 		changed atomic.Bool
 		// managed is true once the host shows and hides the window
 		managed atomic.Bool
+		// closed is true from Close on: the host is not told anything more
+		closed atomic.Bool
 	}
 
 	// output plays the player, whose synth runs at 44100 Hz, in the blocks
@@ -89,7 +91,7 @@ const windowFallback = time.Second
 func NewHidden(name string, markDirty func()) *Instance {
 	i := newInstance(name, markDirty, true)
 	time.AfterFunc(windowFallback, func() {
-		if !i.managed.Load() {
+		if !i.managed.Load() && !i.closed.Load() {
 			i.tracker.ShowWindow()
 		}
 	})
@@ -101,7 +103,11 @@ func NewHidden(name string, markDirty func()) *Instance {
 // window; the host can show it again.
 func (i *Instance) ManageWindow(closed func()) {
 	i.managed.Store(true)
-	i.tracker.HostManagesWindow(closed)
+	i.tracker.HostManagesWindow(func() {
+		if !i.closed.Load() {
+			closed()
+		}
+	})
 }
 
 // ShowWindow opens the window, or raises it if it is open, and HideWindow
@@ -141,7 +147,7 @@ func newInstance(name string, markDirty func(), hidden bool) *Instance {
 		mcp:     host,
 	}
 	model.SetHostSavesState(func() {
-		if markDirty != nil && !i.changed.Swap(true) {
+		if markDirty != nil && !i.closed.Load() && !i.changed.Swap(true) {
 			markDirty()
 		}
 	})
@@ -257,12 +263,20 @@ func (o *output) Process(left, right []float32, host Host) {
 	o.totalFrames += int64(need)
 }
 
-// Close closes the tracker window and waits for it to finish.
+// Close closes the tracker window and waits for it to finish, where it can:
+// on the thread that the window is closed on, the main thread of macOS, the
+// window cannot close while Close waits there, and the tracker would only
+// finish when Close gave up, with the host standing still until then. Hosts
+// close their plugins on that thread. The tracker then finishes on its own,
+// a moment after Close; the host is told nothing more from Close on.
 func (i *Instance) Close() {
+	i.closed.Store(true)
 	i.mcp.Close()
 	tracker.TrySend(i.broker.CloseGUI, struct{}{})
 	i.model.Close()
-	tracker.TimeoutReceive(i.broker.FinishedGUI, 3*time.Second)
+	if !onWindowThread() {
+		tracker.TimeoutReceive(i.broker.FinishedGUI, 3*time.Second)
+	}
 }
 
 // State returns the current song and settings, or nil on failure.

@@ -300,6 +300,10 @@ func (w *Window) Option(opts ...Option) {
 		return
 	}
 	w.Run(func() {
+		if w.driver == nil {
+			// The window was destroyed while this waited for its turn.
+			return
+		}
 		cnf := Config{Decorated: w.decorations.enabled}
 		for _, opt := range opts {
 			opt(w.metric, &cnf)
@@ -874,6 +878,10 @@ func (w *Window) Perform(actions system.Action) {
 		return
 	}
 	w.Run(func() {
+		if w.driver == nil {
+			// The window was destroyed while this waited for its turn.
+			return
+		}
 		w.driver.Perform(actions)
 	})
 }

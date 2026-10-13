@@ -44,6 +44,13 @@ static int isHost(NSRunningApplication *app) {
 	return 0;
 }
 
+// isApplication tells if this process is an application of its own, with
+// its windows among those that the user switches between: a host that loads
+// its plugins itself. A helper process of a host is not.
+static int isApplication(void) {
+	return [NSRunningApplication currentApplication].activationPolicy == NSApplicationActivationPolicyRegular;
+}
+
 static int hostIsFront(void) {
 	return isHost([NSWorkspace sharedWorkspace].frontmostApplication);
 }
@@ -102,8 +109,13 @@ func sointuHostFront(front C.int) {
 }
 
 // watchHostFront makes the window float above the host while the host is
-// the application in front: see window.go.
+// the application in front: see window.go. In a host that loads its plugins
+// itself the window is one of the windows of the host, which the user
+// switches between like its others: it does not float.
 func (t *Tracker) watchHostFront() {
+	if C.isApplication() != 0 {
+		return
+	}
 	c := make(chan bool, 1)
 	hostFrontWatchers.Lock()
 	hostFrontWatchers.chans[t] = c

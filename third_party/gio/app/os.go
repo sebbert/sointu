@@ -314,6 +314,11 @@ func (e *eventLoop) FlushEvents() {
 			break
 		}
 		e.deliverEvent(evt)
+		if e.destroyed {
+			// Whatever came up while the DestroyEvent waited for the
+			// client, e.g. a wakeup, has no one to go to.
+			break
+		}
 	}
 }
 
