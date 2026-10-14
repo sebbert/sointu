@@ -109,6 +109,9 @@ func TestBufreadTiming(t *testing.T) {
 	checkLeft(t, renderPatch(t, tap, ring, map[int]byte{0: 12}, 2), []float32{0.55, 0.55})
 	// note 24: 1.25 frames
 	checkLeft(t, renderPatch(t, tap, ring, map[int]byte{0: 24}, 2), []float32{0.675, 0.675})
+	// transpose and detune tune the delay: note 12 an octave up is note 24
+	tuned := sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{{Type: "bufread", Parameters: readParams(sointu.ParamMap{"start": -5, "mode": 1, "timing": 1, "transpose": 76})}, outUnit}}}
+	checkLeft(t, renderPatch(t, tuned, ring, map[int]byte{0: 12}, 2), []float32{0.675, 0.675})
 	// a play head starts there too
 	play := sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{{Type: "bufread", Parameters: readParams(sointu.ParamMap{"start": -5, "timing": 1})}, outUnit}}}
 	checkLeft(t, renderPatch(t, play, map[int]sointu.BufferAudio{1: ramp(8, 1, 0.1)}, map[int]byte{0: 12}, 2), []float32{0.55, 0.65})

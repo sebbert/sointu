@@ -196,9 +196,13 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 			continue // loop points only matter when looping
 		}
 		if unit.Type == "bufread" && unit.Parameters["mode"] == 1 {
-			switch up.Name { // a tap reads the frame at start: it has no pitch, speed, loop or edges
-			case "transpose", "detune", "speed", "notetracking", "loop", "loopstart", "looplength", "fade", "edgefade":
+			switch up.Name { // a tap reads the frame at start: it has no speed, loop or edges
+			case "speed", "notetracking", "loop", "loopstart", "looplength", "fade", "edgefade":
 				continue
+			case "transpose", "detune": // they tune a delay that follows the note
+				if unit.Parameters["timing"] != 1 {
+					continue
+				}
 			}
 		}
 		if unit.Type == "convolution" && (up.Name == "follow" || up.Name == "fade") {

@@ -674,9 +674,18 @@
 {{- if .BufreadPitchTiming}}
         (local.set $sf (f32.const 0))
         (if (i32.and (i32.load offset=24 (local.get $r)) (i32.const 64)) (then ;; in frames at note 0
+            (local.set $semitones (f32.convert_i32_u (i32.load (global.get $voice))))
+{{- if and .BufreadPitch .BufreadTap}}
+            (if (local.get $tap) (then ;; transpose and detune tune the delay
+                (local.set $semitones (f32.add (local.get $semitones) (f32.add
+                    (f32.mul (call $inputSigned (i32.const {{.InputNumber "bufread" "transpose"}})) (f32.const 64))
+                    (call $inputSigned (i32.const {{.InputNumber "bufread" "detune"}}))
+                )))
+            ))
+{{- end}}
             (local.set $sf (f32.div
                 (f32.convert_i32_s (local.get $start))
-                (call $pow2 (f32.mul (f32.convert_i32_u (i32.load (global.get $voice))) (f32.const 0.08333333)))
+                (call $pow2 (f32.mul (local.get $semitones) (f32.const 0.08333333)))
             ))
             (local.set $start (i32.trunc_f32_s (f32.floor (local.get $sf))))
             (local.set $sf (f32.sub (local.get $sf) (f32.floor (local.get $sf))))

@@ -631,10 +631,22 @@ func (n *namedParameter) Type(p *Parameter) ParameterType {
 	if p.unit.Type == "send" && p.up.Name == "target" {
 		return IDParameter
 	}
+	if p.up.MinValue == 0 && p.up.MaxValue == 1 && p.up.DisplayFunc != nil {
+		return ChoiceParameter // two named values, e.g. play and tap
+	}
 	if p.up.MinValue >= -1 && p.up.MaxValue <= 1 {
 		return BoolParameter
 	}
 	return IntegerParameter
+}
+
+// StringOf names a value of a ChoiceParameter as the unit type displays it.
+func (n *namedParameter) StringOf(p *Parameter, value int) string {
+	if p.up != nil && p.up.DisplayFunc != nil {
+		s, _ := p.up.DisplayFunc(value)
+		return s
+	}
+	return strconv.Itoa(value)
 }
 func (n *namedParameter) Name(p *Parameter) string {
 	if p.up.Name == "notetracking" {
@@ -1099,17 +1111,37 @@ func (b *bufferFrameParameter) Range(p *Parameter) RangeInclusive {
 	if p.unit.Type == "bufread" && (p.up.Name == "start" || p.up.Name == "loopstart") { // negative counts back from the end
 		r.Min = -r.Max
 	}
+	if bufreadTapDelay(p) { // a tap reads behind the write head: -1 is the newest frame
+		r.Max = -1
+	}
 	return r
+}
+
+// bufreadTapDelay tells if the parameter is the start of a bufread tap. That
+// is shown as the delay behind the write head: named delay, without the sign
+// of the negative value that is stored, and its knob turns the other way.
+func bufreadTapDelay(p *Parameter) bool {
+	return p.unit.Type == "bufread" && p.up != nil && p.up.Name == "start" && p.unit.Parameters["mode"] == 1
+}
+
+func (b *bufferFrameParameter) Name(p *Parameter) string {
+	if bufreadTapDelay(p) {
+		return "delay"
+	}
+	return b.namedParameter.Name(p)
 }
 func (b *bufferFrameParameter) Hint(p *Parameter) ParameterHint {
 	v := b.Value(p)
 	from := ""
 	if v < 0 {
 		from = " from end"
+		if bufreadTapDelay(p) {
+			from = " behind the write head"
+		}
 	}
 	switch bufreadTiming(p) {
 	case 1: // 10788 frames at note 0 are a period of the note
-		return ParameterHint{fmt.Sprintf("%s periods of the note%s (%d)", trimFloat(math.Abs(float64(v))/bufreadNotePeriod, 3), from, v), true}
+		return ParameterHint{fmt.Sprintf("%s of the note%s (%d)", plural(trimFloat(math.Abs(float64(v))/bufreadNotePeriod, 3), "period"), from, v), true}
 	case 2:
 		abs := v
 		if abs < 0 {
@@ -1123,7 +1155,7 @@ func (b *bufferFrameParameter) Hint(p *Parameter) ParameterHint {
 		return ParameterHint{fmt.Sprintf("%s, %s%s (%d)", text, formatDuration(frames), from, v), true}
 	}
 	if v < 0 {
-		return ParameterHint{fmt.Sprintf("%s from end (%d)", formatDuration(-v), v), true}
+		return ParameterHint{fmt.Sprintf("%s%s (%d)", formatDuration(-v), from, v), true}
 	}
 	return ParameterHint{fmt.Sprintf("%s (%d)", formatDuration(v), v), true}
 }
@@ -1136,6 +1168,9 @@ func (b *bufferFrameParameter) Label(p *Parameter) string {
 	sign, abs := "", v
 	if v < 0 {
 		sign, abs = "-", -v
+	}
+	if bufreadTapDelay(p) {
+		sign = "" // the delay
 	}
 	switch bufreadTiming(p) {
 	case 1:
@@ -1151,7 +1186,7 @@ func (b *bufferFrameParameter) Label(p *Parameter) string {
 		}
 		return sign + trimFloat(float64(abs)/48, 2) + "b"
 	}
-	return strconv.Itoa(v)
+	return sign + strconv.Itoa(abs)
 }
 
 // bufreadPeriodGrid returns the k-th step of a start with pitch timing:

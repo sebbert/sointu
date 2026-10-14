@@ -70,38 +70,38 @@ func TestWriteBuffers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(text, "start=-36(1/8 dotted: 0.75 beats") || !strings.Contains(text, "from end") {
+	if !strings.Contains(text, "start=-36(1/8 dotted: 0.75 beats") || !strings.Contains(text, "behind the write head") {
 		t.Errorf("the start of a tap with BPM timing is not shown in beats:\n%s", text)
 	}
 	remoteStep(t, m, func() (string, error) {
 		return r.EditUnits([]RemoteUnitEdit{{Unit: units()[0].ID, Params: map[string]any{"timing": "pitch", "start": -21576.0}}})
 	})
-	if text, _ = r.Instrument("0", false); !strings.Contains(text, "start=-21576(2 periods of the note from end") {
+	if text, _ = r.Instrument("0", false); !strings.Contains(text, "start=-21576(2 periods of the note behind the write head") {
 		t.Errorf("the start of a tap with pitch timing is not shown in periods:\n%s", text)
 	}
 	// and the knob names it so, and steps by half periods
 	start := func() Parameter {
 		for x := 0; x < m.Params().RowWidth(0); x++ {
-			if p := m.Params().Item(Point{x, 0}); p.Name() == "start" {
+			if p := m.Params().Item(Point{x, 0}); p.up != nil && p.up.Name == "start" {
 				return p
 			}
 		}
 		t.Fatal("the bufread unit has no start")
 		return Parameter{}
 	}
-	if p := start(); p.Label() != "-2p" || p.vtable.RoundToGrid(&p, -21576, true) != -16182 || p.vtable.RoundToGrid(&p, -21576, false) != -26970 || p.vtable.RoundToGrid(&p, 100, true) != 5394 || p.vtable.RoundToGrid(&p, 5394, false) != 0 {
+	if p := start(); p.Label() != "2p" || p.vtable.RoundToGrid(&p, -21576, true) != -16182 || p.vtable.RoundToGrid(&p, -21576, false) != -26970 || p.vtable.RoundToGrid(&p, 100, true) != 5394 || p.vtable.RoundToGrid(&p, 5394, false) != 0 {
 		t.Errorf("pitch timing: label %q, steps %d %d %d %d", p.Label(), p.vtable.RoundToGrid(&p, -21576, true), p.vtable.RoundToGrid(&p, -21576, false), p.vtable.RoundToGrid(&p, 100, true), p.vtable.RoundToGrid(&p, 5394, false))
 	}
 	remoteStep(t, m, func() (string, error) {
 		return r.EditUnits([]RemoteUnitEdit{{Unit: units()[0].ID, Params: map[string]any{"timing": "BPM", "start": -36.0}}})
 	})
-	if p := start(); p.Label() != "-1/8D" {
-		t.Errorf("BPM timing: label %q", p.Label())
+	if p := start(); p.Label() != "1/8D" || p.Name() != "delay" {
+		t.Errorf("BPM timing: label %q, name %q", p.Label(), p.Name())
 	}
 	remoteStep(t, m, func() (string, error) {
 		return r.EditUnits([]RemoteUnitEdit{{Unit: units()[0].ID, Params: map[string]any{"start": -50.0}}})
 	})
-	if p := start(); p.Label() != "-1.04b" {
+	if p := start(); p.Label() != "1.04b" {
 		t.Errorf("BPM timing off the note lengths: label %q", p.Label())
 	}
 	// the knob moves over the grid: note lengths, or parts and multiples of
@@ -110,13 +110,13 @@ func TestWriteBuffers(t *testing.T) {
 		p := start()
 		return p.vtable.(parameterStepper).Step(&p, delta, large)
 	}
-	if a, b, c := step(1, false), step(-1, false), step(1, true); a != -48 || b != -64 || c != -48 {
-		t.Errorf("BPM timing from -50: steps to %d, %d and %d, not -48, -64 and -48", a, b, c)
+	if a, b, c := step(1, false), step(-1, false), step(1, true); a != -64 || b != -48 || c != -96 {
+		t.Errorf("BPM timing from -50: steps to %d, %d and %d, not -64, -48 and -96", a, b, c)
 	}
 	remoteStep(t, m, func() (string, error) {
 		return r.EditUnits([]RemoteUnitEdit{{Unit: units()[0].ID, Params: map[string]any{"timing": "pitch", "start": -21576.0}}})
 	})
-	if a, b, c, d := step(1, false), step(-1, false), step(1, true), step(-1, true); a != -16182 || b != -32364 || c != -10788 || d != -32364 {
+	if a, b, c, d := step(1, false), step(-1, false), step(1, true), step(-1, true); a != -32364 || b != -16182 || c != -32364 || d != -10788 {
 		t.Errorf("pitch timing from -2p: steps to %d, %d, %d and %d", a, b, c, d)
 	}
 	p := start()
@@ -125,20 +125,37 @@ func TestWriteBuffers(t *testing.T) {
 	if v := p.Dragged(-21576, 0.4/n); v != -21576 {
 		t.Errorf("a drag of less than half a step moves the start to %d", v)
 	}
-	if v := p.Dragged(-21576, 6/n); v != -3596 {
+	if v := p.Dragged(-21576, -6/n); v != -3596 {
 		t.Errorf("a drag of six steps from -2p moves the start to %d, not -1/3p", v)
 	}
 	remoteStep(t, m, func() (string, error) {
 		return r.EditUnits([]RemoteUnitEdit{{Unit: units()[0].ID, Params: map[string]any{"start": -3596.0}}})
 	})
-	if p := start(); p.Label() != "-1/3p" {
+	if p := start(); p.Label() != "1/3p" {
 		t.Errorf("a third of a period is labelled %q", p.Label())
 	}
 	m.setGridFree(&units()[0], true)
-	if a := step(1, false); a != -3595 {
+	if a := step(-1, false); a != -3595 {
 		t.Errorf("a free start steps to %d, not -3595", a)
 	}
 	m.setGridFree(&units()[0], false)
+	// the mode is a choice by name, and a tap timed by pitch keeps transpose
+	// and detune, which tune it
+	shown := map[string]Parameter{}
+	for x := 0; x < m.Params().RowWidth(0); x++ {
+		if p := m.Params().Item(Point{x, 0}); p.up != nil {
+			shown[p.up.Name] = p
+		}
+	}
+	if p := shown["mode"]; p.Type() != ChoiceParameter || (parameterInt{p}).StringOf(1) != "tap" {
+		t.Errorf("mode: type %v, value 1 named %q", p.Type(), (parameterInt{p}).StringOf(1))
+	}
+	if _, ok := shown["transpose"]; !ok {
+		t.Error("a tap timed by pitch has no transpose")
+	}
+	if _, ok := shown["speed"]; ok {
+		t.Error("a tap shows its speed")
+	}
 	// without its units, the buffer goes
 	var ids []int
 	for _, u := range units() {

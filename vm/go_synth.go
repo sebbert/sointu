@@ -1013,7 +1013,11 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, voiceIndex int, r BufferRegi
 	// the start, and what a pitch timed start has more than whole frames
 	start, startFrac := int32(r.Start), float32(0)
 	if r.Flags&BufferRegionPitchTiming != 0 {
-		scaled := float32(start) / exp2f(float32(voice.note)*0.08333333)
+		note := float32(voice.note)
+		if tap { // transpose and detune tune the delay
+			note += float32(64*(float32(transpose*2)-1)) + (float32(detune*2) - 1)
+		}
+		scaled := float32(start) / exp2f(float32(note*0.08333333))
 		whole := floor32(scaled)
 		start, startFrac = int32(whole), scaled-whole
 	}

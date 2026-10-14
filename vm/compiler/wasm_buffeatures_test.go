@@ -152,6 +152,8 @@ var bufFeatureCases = []bufFeatureCase{
 	{name: "tap of its own writer", writers: []sointu.ParamMap{{}}, selfTap: sointu.ParamMap{"start": -1}, readers: []sointu.ParamMap{{}}, has: []string{bufTap}},
 	{name: "tap with pitch timing", writers: []sointu.ParamMap{{}}, readers: []sointu.ParamMap{{"mode": 1, "start": -40000, "timing": 1}}, has: []string{bufTap, bufTiming}},
 	{name: "tap with pitch timing, modulated", writers: []sointu.ParamMap{{}}, readers: []sointu.ParamMap{{"mode": 1, "start": -40001, "timing": 1}}, mods: map[int]int{4: 67}, has: []string{bufTap, bufTiming, bufMod}},
+	{name: "tap with pitch timing, transposed and detuned", writers: []sointu.ParamMap{{}}, readers: []sointu.ParamMap{{"mode": 1, "start": -40000, "timing": 1, "transpose": 71, "detune": 50}}, has: []string{bufTap, bufTiming}},
+	{name: "tap with pitch timing, detune modulated", writers: []sointu.ParamMap{{}}, readers: []sointu.ParamMap{{"mode": 1, "start": -40001, "timing": 1, "detune": 70}}, mods: map[int]int{1: 80}, has: []string{bufTap, bufTiming}},
 	{name: "play head with pitch timing", writers: []sointu.ParamMap{{}}, readers: []sointu.ParamMap{{"start": -90001, "timing": 1}}, has: []string{bufTiming}, not: []string{bufTap}},
 	{name: "tap with BPM timing", writers: []sointu.ParamMap{{}}, readers: []sointu.ParamMap{{"mode": 1, "start": -6, "timing": 2}}, has: []string{bufTap}, not: []string{bufTiming}},
 	{name: "loop with BPM timing", writers: []sointu.ParamMap{{}}, readers: []sointu.ParamMap{{"start": 1, "loop": 1, "loopstart": 2, "looplength": 3, "timing": 2}}, has: []string{bufLoop}, not: []string{bufTiming, bufTap}},

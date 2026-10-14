@@ -58,11 +58,12 @@ func bufreadGrid(p *Parameter) (*delayGrid, bool) {
 		return nil, false
 	}
 	r := p.Range()
+	limit := max(r.Max, -r.Min)
 	var mags, coarse []int // positive values, ascending
 	if timing == 1 {
 		for _, periods := range bufreadPeriods {
 			v := bufreadPeriodFrames(periods)
-			if v > r.Max {
+			if v > limit {
 				break
 			}
 			mags = append(mags, v)
@@ -71,7 +72,7 @@ func bufreadGrid(p *Parameter) (*delayGrid, bool) {
 			}
 		}
 	} else {
-		for v := 1; v <= delayBPMMax && v <= r.Max; v++ {
+		for v := 1; v <= delayBPMMax && v <= limit; v++ {
 			if _, _, variant, ok := delayNoteLength(v); ok {
 				mags = append(mags, v)
 				if variant == delayStraight {
@@ -79,14 +80,20 @@ func bufreadGrid(p *Parameter) (*delayGrid, bool) {
 				}
 			}
 		}
-		for v, n := delayBPMMax+192, 0; v <= r.Max && n < bufreadBeatGridMax; v, n = v+192, n+1 {
+		for v, n := delayBPMMax+192, 0; v <= limit && n < bufreadBeatGridMax; v, n = v+192, n+1 {
 			mags = append(mags, v) // whole bars of four beats
 			coarse = append(coarse, v)
 		}
 	}
 	g := &delayGrid{
-		values: signedGrid(mags, r.Min < 0),
-		coarse: signedGrid(coarse, r.Min < 0),
+		values: signedGrid(mags, r),
+		coarse: signedGrid(coarse, r),
+	}
+	if len(g.values) == 0 { // a range shorter than the shortest grid value
+		g.values = []int{r.Max}
+	}
+	if len(g.coarse) == 0 {
+		g.coarse = g.values
 	}
 	g.knots = slices.Clone(g.values)
 	if g.knots[0] > r.Min {
@@ -98,16 +105,23 @@ func bufreadGrid(p *Parameter) (*delayGrid, bool) {
 	return g, true
 }
 
-// signedGrid returns 0 and the values, and their negatives if negative.
-func signedGrid(values []int, negative bool) []int {
+// signedGrid returns the values, their negatives and 0, those in the range.
+func signedGrid(values []int, r RangeInclusive) []int {
 	ret := make([]int, 0, 2*len(values)+1)
-	if negative {
-		for _, v := range slices.Backward(values) {
+	for _, v := range slices.Backward(values) {
+		if -v >= r.Min {
 			ret = append(ret, -v)
 		}
 	}
-	ret = append(ret, 0)
-	return append(ret, values...)
+	if r.Min <= 0 && r.Max >= 0 {
+		ret = append(ret, 0)
+	}
+	for _, v := range values {
+		if v <= r.Max {
+			ret = append(ret, v)
+		}
+	}
+	return ret
 }
 
 // bufreadOffGrid tells if a position of the bufread unit that has a grid is
@@ -132,6 +146,9 @@ func (m *Model) bufreadOffGrid(unit *sointu.Unit) bool {
 // frames move by single values, or to the next grid value with large.
 func (b *bufferFrameParameter) Step(p *Parameter, delta int, large bool) int {
 	val := b.Value(p)
+	if bufreadTapDelay(p) { // up is a longer delay
+		delta = -delta
+	}
 	if g, ok := bufreadGrid(p); ok && !p.m.gridFree[p.unit.ID] {
 		if large {
 			return stepOnGrid(g.coarse, val, delta)
@@ -145,14 +162,23 @@ func (b *bufferFrameParameter) Step(p *Parameter, delta int, large bool) int {
 }
 
 func (b *bufferFrameParameter) Position(p *Parameter, value int) float32 {
+	var pos float32
 	if g, ok := bufreadGrid(p); ok {
-		return g.position(value)
+		pos = g.position(value)
+	} else {
+		r := p.Range()
+		pos = min(max(float32(value-r.Min)/float32(max(r.Max-r.Min, 1)), 0), 1)
 	}
-	r := p.Range()
-	return float32(value-r.Min) / float32(max(r.Max-r.Min, 1))
+	if bufreadTapDelay(p) { // a longer delay further round
+		return 1 - pos
+	}
+	return pos
 }
 
 func (b *bufferFrameParameter) Dragged(p *Parameter, start int, amount float32) int {
+	if bufreadTapDelay(p) {
+		amount = -amount
+	}
 	if g, ok := bufreadGrid(p); ok {
 		return g.dragged(start, amount, p.m.gridFree[p.unit.ID])
 	}
