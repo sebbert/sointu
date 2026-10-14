@@ -1,0 +1,28 @@
+modules:
+    - id: 1
+      name: Comb filter
+      comment: 'A feedback comb filter tuned to the note: the stereo signal plus itself one period of the note ago, fed back through a low-pass, which puts peaks on the note and its harmonics. Put it in an instrument that plays notes, after its oscillators; in a bus there is no note, and only tune moves the pitch (from note 0, 4 Hz). Each voice has its own line. Uses bufread and bufwrite: Go synth and wasm player only.'
+      inputs: 2
+      params:
+        - {name: tune, default: 64}
+        - {name: fine, default: 64}
+        - {name: feedback, default: 96}
+        - {name: tone, default: 96}
+      units:
+        - type: bufread
+          id: 1
+          parameters: {buffer: 0, detune: 64, gain: 93, mode: 1, start: -10788, stereo: 1, timing: 1, transpose: 64}
+          bind: {detune: 2, gain: {p: 3, min: 0, max: 124}, transpose: 1}
+          comment: 'The signal one period of the note ago. tune in semitones and fine (one semitone) move the peaks; feedback is how much comes round each time, up to 97 %: higher rings longer and sharper'
+        - type: ladder
+          id: 2
+          parameters: {drive: 0, frequency: 112, resonance: 0, stereo: 1}
+          bind: {frequency: {p: 4, min: 64, max: 128}}
+          comment: 'tone: the high cut in the loop, 4.5 to 19 kHz, which makes the high peaks fainter. A ladder without resonance, which never raises the level, so that the loop does not grow. It delays the loop a little, so the peaks of high notes are a little flat when damp is low'
+        - type: addp
+          id: 3
+          parameters: {stereo: 1}
+        - type: bufwrite
+          id: 4
+          parameters: {buffer: 0, feedback: 0, length: 22050, oneshot: 0, pervoice: 1, pop: 0, stereo: 1}
+          comment: 'Into the line, 0.5 s long; the signal stays on the stack'

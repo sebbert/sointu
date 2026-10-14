@@ -1000,7 +1000,7 @@ func TestBuiltinModulePresetsCanonical(t *testing.T) {
 	m.modulePresetPath = t.TempDir()
 	m.loadModulePresets()
 	keys := builtinModuleKeys(t, m)
-	want := map[string]int{"Reverb": 23, "Ducker": 3, "Sidechain": 4, "Ping pong delay": 10, "Ducking reverb": 4, "Ducking delay": 13, "Convolution reverb": 8}
+	want := map[string]int{"Reverb": 23, "Ducker": 3, "Sidechain": 4, "Ping pong delay": 10, "Ducking reverb": 4, "Ducking delay": 13, "Convolution reverb": 8, "Plucked string": 9, "Comb filter": 4}
 	for i := range m.modulePresets {
 		p := &m.modulePresets[i]
 		if p.file != "" {
@@ -1041,7 +1041,7 @@ func TestBuiltinModulePresetsCanonical(t *testing.T) {
 		}
 		delete(want, p.name)
 		index := len(mods) - 1
-		if out, err := mods.Outputs(index); out != 2 || err != nil || last.Inputs < 2 {
+		if out, err := mods.Outputs(index); out != 2 || err != nil || last.Inputs == 1 { // an effect, stereo, or a source
 			t.Errorf("%s: %d inputs, %d outputs, %v", p.name, last.Inputs, out, err)
 		}
 		var instr []sointu.Unit
@@ -1175,7 +1175,7 @@ func TestDuckingPresets(t *testing.T) {
 	for i := presets.Range().Min; i <= presets.Range().Max; i++ {
 		presets.SetValue(i)
 	}
-	if got := names(); got != "Convolution reverb, Ducker, Ducking delay, Ducking reverb, Ping pong delay, Reverb, Sidechain" {
+	if got := names(); got != "Comb filter, Convolution reverb, Ducker, Ducking delay, Ducking reverb, Ping pong delay, Plucked string, Reverb, Sidechain" {
 		t.Errorf("the modules after adding every module preset: %s", got)
 	}
 }

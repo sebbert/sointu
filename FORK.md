@@ -2119,6 +2119,29 @@ low-pass, the `filter` unit a two-pole one; its eight lines per channel
 would be eight buffers and loops, more than the 63 units of an instrument
 for a reverb; and it runs in the x86 players.
 
+**A tap in the tracker.** `mode` shows as a choice of play and tap, as
+every parameter of two named values now does (before, a switch). The start
+of a tap is shown as `delay`: the frames behind the write head, without
+the sign of the negative value that is stored; its range ends at -1, and
+its knob, arrows and grid turn the other way, up being a longer delay. With
+pitch timing, `transpose` and `detune` stay shown and tune the delay: the
+start is divided by 2^((note + transpose + detune)/12), in the Go synth
+and the wasm player alike; with other timings, and in play mode, they do
+as before.
+
+**Module presets with a tap.** `Plucked string` (9 units, no inputs): a
+noise burst (`burst`, high cut `pick`) into a pitch timed tap one period
+long, tuned by `tune` and `fine`, round a `ladder` low-pass (`tone`, 4.5
+to 19 kHz) with the loop gain `decay` (0.94 to 1), a voice its own line.
+`Comb filter` (4 units, stereo): the same loop on its input, `feedback`
+up to 97 %. The loop filter is a ladder without resonance, which never
+raises the level: the `filter` unit peaks about 1.25 dB at its cutoff even
+at its least resonance, and a loop that gives back nearly all it gets
+grows without end through it. The ladder delays the loop, so high notes
+are flat when `tone` is low: C5 12 cents at the default, 32 at `tone` 64;
+the decay is per round of the loop, so high notes ring shorter (at the
+defaults, C1 3 s, C3 2 s, C5 0.2 s to -60 dB).
+
 ## MCP server
 
 A language model, e.g. Claude in Claude Code, can read and change the patch
