@@ -99,12 +99,12 @@ func delayOffGrid(unit *sointu.Unit) bool {
 	return slices.ContainsFunc(unit.VarArgs, func(v int) bool { return !g.contains(v) })
 }
 
-// setDelayFree sets if the delay times of the delay unit are edited freely.
-func (m *Model) setDelayFree(unit *sointu.Unit, free bool) {
-	if m.delayFree == nil {
-		m.delayFree = make(map[int]bool)
+// setGridFree sets if the delay times of the delay unit are edited freely.
+func (m *Model) setGridFree(unit *sointu.Unit, free bool) {
+	if m.gridFree == nil {
+		m.gridFree = make(map[int]bool)
 	}
-	m.delayFree[unit.ID] = free
+	m.gridFree[unit.ID] = free
 }
 
 func (g *delayGrid) contains(value int) bool {
@@ -249,7 +249,7 @@ func plural(amount, unit string) string {
 // delayTimeParameter methods for the grid. See params.go for the rest of the
 // vtable.
 
-func (d *delayTimeParameter) free(p *Parameter) bool { return p.m.delayFree[p.unit.ID] }
+func (d *delayTimeParameter) free(p *Parameter) bool { return p.m.gridFree[p.unit.ID] }
 
 // Type makes the delay time a choice among the note lengths when it follows
 // the tempo, unless it is free. Otherwise it is a knob, which moves over the
@@ -395,19 +395,20 @@ func (d *delayTimeParameter) Hint(p *Parameter) ParameterHint {
 	return ParameterHint{text, true}
 }
 
-// delayFreeParameter vtable: whether the delay times of a delay unit can take
-// any value, instead of the values of their grid. It is a setting of the
-// tracker, not of the song: the times are stored the same either way. See
-// updateParams for how it starts.
+// delayFreeParameter vtable: whether the delay times of a delay unit, or the
+// positions of a bufread unit timed by pitch or tempo, can take any value,
+// instead of the values of their grid. It is a setting of the tracker, not of
+// the song: the values are stored the same either way. See updateParams for
+// how it starts.
 
 func (d *delayFreeParameter) Value(p *Parameter) int {
-	if p.m.delayFree[p.unit.ID] {
+	if p.m.gridFree[p.unit.ID] {
 		return 1
 	}
 	return 0
 }
 func (d *delayFreeParameter) SetValue(p *Parameter, v int) bool {
-	p.m.setDelayFree(p.unit, v == 1)
+	p.m.setGridFree(p.unit, v == 1)
 	return true
 }
 func (d *delayFreeParameter) Range(p *Parameter) RangeInclusive {
@@ -420,6 +421,12 @@ func (d *delayFreeParameter) Reset(p *Parameter)                             { d
 func (d *delayFreeParameter) Hint(p *Parameter) ParameterHint {
 	if d.Value(p) == 1 {
 		return ParameterHint{"any value", true}
+	}
+	if p.unit.Type == "bufread" {
+		if p.unit.Parameters["timing"] == 1 {
+			return ParameterHint{"periods of the note", true}
+		}
+		return ParameterHint{"note lengths", true}
 	}
 	switch p.unit.Parameters["notetracking"] {
 	case delayPitch:

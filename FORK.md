@@ -2077,7 +2077,15 @@ reads it some time later. Go synth and wasm player, which render the same
   48ths of a beat, like the delay times: 48 is a quarter note, 36 a dotted
   eighth. They are made frames when the patch is compiled
   (`vm.BPMFrames`), so the tempo costs nothing while playing. The tracker
-  shows the values as what they count.
+  shows the values as what they count, and edits them on a grid like the
+  delay times (`tracker/bufreadgrid.go`): with pitch timing ±1/4, 1/3, 1/2,
+  2/3, 3/4, 1, 1.5, 2 … 16 periods, then 1.5·2^k and 2^k; with BPM timing
+  the note lengths of the delay, then whole bars. A drag and the arrows move
+  from one grid value to the next, a large step between whole periods,
+  straight notes and bars. The `free` switch that the unit has then (a
+  setting of the tracker, kept with that of the delay units in
+  `Model.gridFree`) takes any value; a unit starts free if a position is
+  off the grid when it is first seen.
 - **Crossfade at the write head** (`edgefade`). `edgefade` fades a play head
   near the edges of the valid frames. In a ring that is full the edges meet
   at the write head, and a play head that the write head overtakes (any

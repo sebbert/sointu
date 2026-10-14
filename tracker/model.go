@@ -56,10 +56,10 @@ type (
 
 		trackerHidden bool
 
-		// delayFree tells, by the ID of every delay unit, if its delay
-		// times are edited freely instead of on a grid; see
-		// delayFreeParameter
-		delayFree map[int]bool
+		// gridFree tells, by the ID of every delay unit, if its delay
+		// times are edited freely instead of on a grid, and of every
+		// bufread unit, if its positions are; see delayFreeParameter
+		gridFree map[int]bool
 
 		// spectra are the latest spectra of the sources in spectrumWatch,
 		// which the player reports while the GUI asks for them, last at

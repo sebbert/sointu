@@ -841,7 +841,7 @@ func (r *reverbParameter) SetValue(p *Parameter, v int) bool {
 	p.unit.Parameters["notetracking"] = 0
 	p.unit.VarArgs = make([]int, len(entry.varArgs))
 	copy(p.unit.VarArgs, entry.varArgs)
-	p.m.setDelayFree(p.unit, delayOffGrid(p.unit)) // the times of the presets are not whole milliseconds
+	p.m.setGridFree(p.unit, delayOffGrid(p.unit)) // the times of the presets are not whole milliseconds
 	return true
 }
 func (r *reverbParameter) Range(p *Parameter) RangeInclusive {
@@ -1127,6 +1127,7 @@ func (b *bufferFrameParameter) Hint(p *Parameter) ParameterHint {
 	}
 	return ParameterHint{fmt.Sprintf("%s (%d)", formatDuration(v), v), true}
 }
+
 // Label names the position on the knob in what it counts: periods of the
 // note ("2p"), or a note length ("1/8D") or beats ("1.5b"); frames as they
 // are.
@@ -1138,6 +1139,11 @@ func (b *bufferFrameParameter) Label(p *Parameter) string {
 	}
 	switch bufreadTiming(p) {
 	case 1:
+		for _, f := range bufreadPeriodFractions {
+			if abs == bufreadPeriodFrames(f.periods) {
+				return sign + f.name + "p"
+			}
+		}
 		return sign + trimFloat(float64(abs)/bufreadNotePeriod, 2) + "p"
 	case 2:
 		if name, ok := delayNoteName(abs, false); ok {

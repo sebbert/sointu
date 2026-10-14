@@ -104,6 +104,41 @@ func TestWriteBuffers(t *testing.T) {
 	if p := start(); p.Label() != "-1.04b" {
 		t.Errorf("BPM timing off the note lengths: label %q", p.Label())
 	}
+	// the knob moves over the grid: note lengths, or parts and multiples of
+	// a period, unless the unit is free
+	step := func(delta int, large bool) int {
+		p := start()
+		return p.vtable.(parameterStepper).Step(&p, delta, large)
+	}
+	if a, b, c := step(1, false), step(-1, false), step(1, true); a != -48 || b != -64 || c != -48 {
+		t.Errorf("BPM timing from -50: steps to %d, %d and %d, not -48, -64 and -48", a, b, c)
+	}
+	remoteStep(t, m, func() (string, error) {
+		return r.EditUnits([]RemoteUnitEdit{{Unit: units()[0].ID, Params: map[string]any{"timing": "pitch", "start": -21576.0}}})
+	})
+	if a, b, c, d := step(1, false), step(-1, false), step(1, true), step(-1, true); a != -16182 || b != -32364 || c != -10788 || d != -32364 {
+		t.Errorf("pitch timing from -2p: steps to %d, %d, %d and %d", a, b, c, d)
+	}
+	p := start()
+	g, _ := bufreadGrid(&p)
+	n := float32(len(g.knots) - 1)
+	if v := p.Dragged(-21576, 0.4/n); v != -21576 {
+		t.Errorf("a drag of less than half a step moves the start to %d", v)
+	}
+	if v := p.Dragged(-21576, 6/n); v != -3596 {
+		t.Errorf("a drag of six steps from -2p moves the start to %d, not -1/3p", v)
+	}
+	remoteStep(t, m, func() (string, error) {
+		return r.EditUnits([]RemoteUnitEdit{{Unit: units()[0].ID, Params: map[string]any{"start": -3596.0}}})
+	})
+	if p := start(); p.Label() != "-1/3p" {
+		t.Errorf("a third of a period is labelled %q", p.Label())
+	}
+	m.setGridFree(&units()[0], true)
+	if a := step(1, false); a != -3595 {
+		t.Errorf("a free start steps to %d, not -3595", a)
+	}
+	m.setGridFree(&units()[0], false)
 	// without its units, the buffer goes
 	var ids []int
 	for _, u := range units() {
