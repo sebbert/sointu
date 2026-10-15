@@ -1,7 +1,7 @@
 modules:
     - id: 1
       name: Plucked string
-      comment: 'A Karplus-Strong string: a short burst of noise into a delay line one period of the note long, which feeds back through a low-pass. Mono, panned to stereo. Each voice has its own line, so the instrument can have several voices. The decay is per round of the loop: low notes ring longer than high ones. Uses bufread and bufwrite: Go synth and wasm player only.'
+      comment: 'A Karplus-Strong string: a short burst of noise, or one cycle of a sine at the note, into a delay line one period of the note long, which feeds back through a low-pass. Mono, panned to stereo. Each voice has its own line, so the instrument can have several voices. The decay is per round of the loop: low notes ring longer than high ones. Uses bufread, bufwrite and a window timed by pitch: Go synth and wasm player only.'
       inputs: 0
       params:
         - {name: tune, default: 64}
@@ -10,6 +10,7 @@ modules:
         - {name: tone, default: 96}
         - {name: burst, default: 45}
         - {name: pick, default: 112}
+        - {name: cycle, default: 0}
       units:
         - type: envelope
           id: 1
@@ -19,9 +20,28 @@ modules:
         - type: noise
           id: 2
           parameters: {gain: 128, shape: 64, stereo: 0}
+          bind: {gain: {p: 7, min: 128, max: 0}}
+          comment: 'cycle: the noise fades out as the sine cycle fades in'
         - type: mulp
           id: 3
           parameters: {stereo: 0}
+        - type: oscillator
+          id: 10
+          parameters: {color: 64, detune: 64, gain: 0, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+          bind: {detune: 2, gain: 7, transpose: 1}
+          comment: 'cycle: a sine at the pitch of the string, from phase 0 at the note; a pluck that is all fundamental, rounder and more like a drum than the noise'
+        - type: window
+          id: 11
+          parameters: {detune: 64, length: 0, shape: 0, time: 10788, timing: 1, transpose: 64}
+          bind: {detune: 2, transpose: 1}
+          comment: 'One period of the string: one whole cycle of the sine, which starts and ends at 0'
+        - type: mulp
+          id: 12
+          parameters: {stereo: 0}
+        - type: addp
+          id: 13
+          parameters: {stereo: 0}
+          comment: The noise burst plus the sine cycle
         - type: filter
           id: 4
           parameters: {bandpass: 0, frequency: 112, highpass: 0, lowpass: 1, resonance: 128, stereo: 0}

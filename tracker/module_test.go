@@ -1000,7 +1000,7 @@ func TestBuiltinModulePresetsCanonical(t *testing.T) {
 	m.modulePresetPath = t.TempDir()
 	m.loadModulePresets()
 	keys := builtinModuleKeys(t, m)
-	want := map[string]int{"Reverb": 23, "Ducker": 3, "Sidechain": 4, "Ping pong delay": 10, "Ducking reverb": 4, "Ducking delay": 13, "Convolution reverb": 8, "Plucked string": 9, "Comb filter": 4}
+	want := map[string]int{"Reverb": 23, "Ducker": 3, "Sidechain": 4, "Ping pong delay": 10, "Ducking reverb": 4, "Ducking delay": 13, "Convolution reverb": 8, "Plucked string": 13, "Comb filter": 4}
 	for i := range m.modulePresets {
 		p := &m.modulePresets[i]
 		if p.file != "" {

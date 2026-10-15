@@ -2129,8 +2129,10 @@ start is divided by 2^((note + transpose + detune)/12), in the Go synth
 and the wasm player alike; with other timings, and in play mode, they do
 as before.
 
-**Module presets with a tap.** `Plucked string` (9 units, no inputs): a
-noise burst (`burst`, high cut `pick`) into a pitch timed tap one period
+**Module presets with a tap.** `Plucked string` (13 units, no inputs): a
+noise burst (`burst`, high cut `pick`), or with `cycle` one cycle of a sine
+at the note (a window of one period, tuned with the string), crossfaded,
+into a pitch timed tap one period
 long, tuned by `tune` and `fine`, round a `ladder` low-pass (`tone`, 4.5
 to 19 kHz) with the loop gain `decay` (0.94 to 1), a voice its own line.
 `Comb filter` (4 units, stereo): the same loop on its input, `feedback`
