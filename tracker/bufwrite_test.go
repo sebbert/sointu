@@ -90,10 +90,44 @@ func TestPlayerKeepsWrittenBuffers(t *testing.T) {
 		t.Errorf("after a new synth: filled %d, want 20", f.Filled)
 	}
 
+	// a panic clears what has been recorded, also when the synth comes back
+	p.synth.Trigger(0, 60)
+	p.Process(out, NullPlayerProcessContext{})
+	TrySend(broker.ToPlayer, any(PanicMsg{true}))
+	p.Process(out, NullPlayerProcessContext{})
+	if f := p.status.BufferFills[0]; f.Filled != 0 || audio[1].Data[0] != 0 {
+		t.Errorf("after a panic: filled %d, first frame %v, want 0 and 0", f.Filled, audio[1].Data[0])
+	}
+	TrySend(broker.ToPlayer, any(PanicMsg{false}))
+	p.Process(out, NullPlayerProcessContext{})
+	if f := p.status.BufferFills[0]; f.Filled != 0 {
+		t.Errorf("after the panic: filled %d, want 0", f.Filled)
+	}
+
 	// new audio, e.g. after clearing: starts empty
 	TrySend(broker.ToPlayer, any(BufferAudioMsg{Audio: map[int]sointu.BufferAudio{1: buf.NewAudio()}}))
 	p.Process(out, NullPlayerProcessContext{})
 	if f := p.status.BufferFills[0]; f.Filled != 0 {
 		t.Errorf("after new audio: filled %d, want 0", f.Filled)
+	}
+}
+
+// A panic drops the spectra the model shows: the synth that made them is
+// gone.
+func TestPanicClearsSpectra(t *testing.T) {
+	broker := NewBroker()
+	m := NewModel(broker, []sointu.Synther{vm.GoSynther{}}, NullMIDIContext{}, "")
+	defer m.Close()
+	src := SpectrumSource{Buffer: 1}
+	m.spectra = map[SpectrumSource]SpectrumMsg{src: {Source: src, Size: 4, Magnitudes: []float32{1, 1, 1}}}
+	m.setPanic(true)
+	if len(m.spectra) != 0 {
+		t.Error("a panic kept the spectra")
+	}
+	m.spectra[src] = SpectrumMsg{Source: src}
+	m.setPanic(false)
+	m.ProcessMsg(MsgToModel{HasPanicPlayerStatus: true, Panic: true})
+	if len(m.spectra) != 0 {
+		t.Error("the player's panic kept the spectra")
 	}
 }

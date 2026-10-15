@@ -2113,6 +2113,10 @@ reads it some time later. Go synth and wasm player, which render the same
   the Buffers tab shows; the others are in the synth alone, are empty again
   after a change of the buffer's size, and cost the length of the buffer
   each.
+- **Panic clears them.** What `bufwrite` units recorded survives a new
+  synth (after an edit of the patch), but not a panic: the player clears
+  the writable buffers and their reported fill, as after a NaN, and the
+  model drops the spectra it shows, which the next synth reports afresh.
 
 What the `delay` unit has and this does not: its damping is a one-pole
 low-pass, the `filter` unit a two-pole one; its eight lines per channel

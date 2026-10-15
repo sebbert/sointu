@@ -436,6 +436,9 @@ func (m *Model) ProcessMsg(msg MsgToModel) {
 			}))
 		}
 		m.panic = msg.Panic
+		if m.panic {
+			clear(m.spectra) // the synth is gone, and its spectra with it
+		}
 	}
 	if msg.HasDetectorResult {
 		m.detectorResult = msg.DetectorResult

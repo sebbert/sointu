@@ -257,6 +257,7 @@ func (p *Player) clearWrittenBuffers() {
 			p.buffers[id] = b
 		}
 	}
+	clear(p.status.BufferFills[:])
 }
 
 // sameData reports whether a and b are the same slice.
@@ -326,7 +327,10 @@ loop:
 			switch m := msg.(type) {
 			case PanicMsg:
 				if m.bool {
+					// silence: the new synth starts with what has been
+					// recorded cleared, as its delays, spectra and voices
 					p.destroySynth()
+					p.clearWrittenBuffers()
 				} else {
 					p.compileOrUpdateSynth()
 				}

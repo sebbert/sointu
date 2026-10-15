@@ -158,6 +158,9 @@ func (t *playIsLooping) SetValue(val bool) {
 func (m *Model) setPanic(val bool) {
 	if m.panic != val {
 		m.panic = val
+		if val {
+			clear(m.spectra)
+		}
 		TrySend(m.broker.ToPlayer, any(PanicMsg{val}))
 	}
 }
