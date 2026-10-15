@@ -135,7 +135,7 @@ All of these are Go and wasm only.
 | `bufwrite` | Writes into a buffer: a continuous ring buffer, or `oneshot` while the note is held. Several writers mix; `feedback`, `pop`. Without a buffer, it gets one of its own, `length` frames long; with `pervoice`, every voice has a copy of it |
 | `spawn` | Triggers voices of another instrument: at a `rate`, synced to the beat, or on a rising edge. Transpose, note length, up to 4 `args`, `steal` |
 | `arg` | Pushes a value passed by the `spawn` that triggered the voice |
-| `window` | A smoothstep window over the spawned note, for click-free grains |
+| `window` | A smoothstep window over the spawned note, for click-free grains; timed by pitch, whole cycles of an oscillator |
 | `spfft`, `spifft`, `spcopy` | Spectral analysis and resynthesis (Hann, 4× overlap, 256 to 8192 samples, mono or stereo), copying spectra |
 | `spfilter`, `spcompress`, `spblur`, `spgate`, `spphase`, `spscale`, `spformant` | Change a spectrum in place: band cut and tilt, magnitudes pulled to their mean (with optional attack and release per bin), time smoothing and freeze, gate, phase dispersion/randomization/robot, bin scaling and shifting, formant shift |
 | `spcross`, `spcomb` | Cross-synthesis/vocoder with another spectrum; resonances at the harmonics of up to 8 notes held in another instrument |
@@ -2141,6 +2141,21 @@ grows without end through it. The ladder delays the loop, so high notes
 are flat when `tone` is low: C5 12 cents at the default, 32 at `tone` 64;
 the decay is per round of the loop, so high notes ring shorter (at the
 defaults, C1 3 s, C3 2 s, C5 0.2 s to -60 dB).
+
+**A window of periods.** `window` has `timing` like `bufread`: frames
+(as before, `length`), pitch or BPM. Timed, its length is `time`, shown as
+`length` on the grid of a `bufread` position with the `free` switch: with
+pitch, in frames at note 0 (10788 is one period), divided by
+2^((note + transpose + detune)/12); with BPM, in 48ths of a beat. A trigger
+clears the voice, so an oscillator starts every note at its `phase`: a
+window of N periods with shape 0 cuts N whole cycles out of it, e.g. one
+cycle of a sine as the exciter of a pluck or a drum. The length is taken
+when the note starts, so modulating the pitch afterwards does not move the
+end. Windows timed in frames are encoded as before; when one is timed, the
+window units get the time as a four byte operand (0 for those in frames,
+the frames at note 0 negated with pitch, the frames with BPM). Go synth
+and wasm player; the tracker gives windows from before timing `time`,
+`transpose` and `detune` of a new unit.
 
 ## MCP server
 

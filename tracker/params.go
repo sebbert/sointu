@@ -352,6 +352,7 @@ type (
 	moduleArgParameter         struct{}
 	spawnRateParameter         struct{ namedParameter }
 	bufferFrameParameter       struct{ namedParameter }
+	windowTimeParameter        struct{ bufferFrameParameter }
 	bufwriteLengthParameter    struct{ namedParameter }
 	convolutionLengthParameter struct{ namedParameter }
 
@@ -1070,10 +1071,13 @@ func (b *spawnRateParameter) Hint(p *Parameter) ParameterHint {
 // bufferFrameParameter vtable: a position in frames in the buffer played by a
 // bufread unit, limited to the length of the buffer and shown in seconds.
 
-// bufreadTiming returns what a position of a bufread unit counts: 0 frames,
-// 1 frames at note 0, shorter by half for every octave of the note (start
-// only), 2 48ths of a beat.
+// bufreadTiming returns what a position of a bufread unit, or the time of a
+// window unit, counts: 0 frames, 1 frames at note 0, shorter by half for
+// every octave of the note (start only), 2 48ths of a beat.
 func bufreadTiming(p *Parameter) int {
+	if p.unit.Type == "window" && p.up != nil && p.up.Name == "time" {
+		return p.unit.Parameters["timing"]
+	}
 	if p.unit.Type != "bufread" {
 		return 0
 	}
@@ -1219,6 +1223,23 @@ func (b *bufferFrameParameter) RoundToGrid(p *Parameter, val int, up bool) int {
 // bufreadNotePeriod is a period of the note in frames at note 0, as a start
 // with pitch timing counts them: a period of the oscillator at note 0.
 const bufreadNotePeriod = 1 / 0.000092696138
+
+// windowTimeParameter vtable: the length of a window unit timed by pitch or
+// tempo, edited on the grid of a bufread position: parts and multiples of a
+// period, or note lengths and bars, up to 64 periods or bars.
+
+// windowTimeMax is the most periods or bars on the knob of the time of a
+// window unit.
+const windowTimeMax = 64
+
+func (w *windowTimeParameter) Range(p *Parameter) RangeInclusive {
+	limit := bufreadPeriodFrames(windowTimeMax)
+	if p.unit.Parameters["timing"] == 2 {
+		limit = windowTimeMax * 192 // bars of four beats
+	}
+	return RangeInclusive{Min: 1, Max: max(limit, p.unit.Parameters["time"])}
+}
+func (w *windowTimeParameter) Name(p *Parameter) string { return "length" }
 
 // bufwriteLengthParameter vtable: the length of the buffer that the tracker
 // made for a bufwrite unit, in frames, shown in seconds. A buffer that the

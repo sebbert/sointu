@@ -437,6 +437,16 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 			case "window":
 				b.op(opcode)
 				b.defOperands(unit)
+				if WindowTimeOperand(featureSet) {
+					time := int32(0)
+					switch p["timing"] {
+					case 1:
+						time = -int32(max(p["time"], 1))
+					case 2:
+						time = int32(max(BPMFrames(p["time"], b.BPM), 1))
+					}
+					b.operand(int(time), int(time>>8), int(time>>16), int(time>>24))
+				}
 			case "arg":
 				b.op(opcode)
 				b.operand(min(max(p["index"], 0), sointu.MaxSpawnArgs-1))

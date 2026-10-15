@@ -544,10 +544,16 @@
 ;;   WINDOW opcode: push a window over the note of the voice
 ;;-------------------------------------------------------------------------------
 ;;   WRK[0] is the number of frames since the note was triggered. Length 0
-;;   takes the length of the spawned note from offset 32 of the voice.
-;;   Matches window in vm/go_synth.go.
+;;   takes the length of the spawned note from offset 32 of the voice. With
+;;   the time operand (an i32: 0 in frames, negated frames at note 0 with
+;;   pitch timing, frames with BPM timing), WRK[1] is the length of a timed
+;;   window, taken when the note starts. Matches window in vm/go_synth.go.
 ;;-------------------------------------------------------------------------------
-(func $su_op_window (param $stereo i32) (local $age i32) (local $frames f32) (local $t f32) (local $half f32) (local $d f32) (local $x f32)
+(func $su_op_window (param $stereo i32) (local $age i32) (local $frames f32) (local $t f32) (local $half f32) (local $d f32) (local $x f32){{if .WindowTimeOperand}} (local $time i32){{end}}
+{{- if .WindowTimeOperand}}
+    (local.set $time (i32.load (global.get $VAL)))
+    (global.set $VAL (i32.add (global.get $VAL) (i32.const 4)))
+{{- end}}
     (if (i32.eqz (i32.load (global.get $voice))) (then
         (call $push (f32.const 0))
         return
@@ -565,6 +571,32 @@
 {{- if .WindowNoteLength}}
     ))
 {{- end}}
+{{- end}}
+{{- if .WindowTimeOperand}}
+    (if (local.get $time) (then
+        (if (i32.eqz (local.get $age)) (then
+            (local.set $frames (f32.convert_i32_s (local.get $time)))
+{{- if .WindowPitchTiming}}
+            (if (i32.lt_s (local.get $time) (i32.const 0)) (then ;; periods of the note, as a bufread tap counts them
+                (local.set $frames (f32.div
+                    (f32.convert_i32_s (i32.sub (i32.const 0) (local.get $time)))
+                    (call $pow2 (f32.mul
+                        (f32.add
+                            (f32.convert_i32_u (i32.load (global.get $voice)))
+                            (f32.add
+                                (f32.mul (call $inputSigned (i32.const {{.InputNumber "window" "transpose"}})) (f32.const 64))
+                                (call $inputSigned (i32.const {{.InputNumber "window" "detune"}}))
+                            )
+                        )
+                        (f32.const 0.08333333)
+                    ))
+                ))
+            ))
+{{- end}}
+            (f32.store offset=4 (global.get $WRK) (f32.max (local.get $frames) (f32.const 1)))
+        ))
+        (local.set $frames (f32.load offset=4 (global.get $WRK)))
+    ))
 {{- end}}
 {{- if .WindowNoteLength}}
     (if (f32.eq (local.get $frames) (f32.const 0)) (then

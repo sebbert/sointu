@@ -814,7 +814,9 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 				}
 				operands = operands[1:]
 			case opWindow:
-				stack = append(stack, window(unit, voice, params[0], params[1]))
+				time := int32(uint32(operands[0]) | uint32(operands[1])<<8 | uint32(operands[2])<<16 | uint32(operands[3])<<24)
+				operands = operands[4:]
+				stack = append(stack, window(unit, voice, params[0], params[1], params[2], params[3], time))
 			case opArg:
 				stack = append(stack, voice.args[operands[0]])
 				operands = operands[1:]
@@ -1255,16 +1257,28 @@ func lengthFrames(length float32) float32 {
 }
 
 // window implements the window unit. unit.state[0] is the number of frames
-// since the note was triggered, as bits. Matches $su_op_window in the wasm
-// player.
-func window(unit *unit, voice *voice, length, shape float32) float32 {
+// since the note was triggered, as bits, and unit.state[1] the length of a
+// window timed by pitch or tempo, taken when the note starts. time is 0 for a
+// window timed in frames, the frames at note 0 negated with pitch timing, or
+// the frames with BPM timing. Matches $su_op_window in the wasm player.
+func window(unit *unit, voice *voice, length, shape, transpose, detune float32, time int32) float32 {
 	if voice.note == 0 {
 		return 0
 	}
 	age := math.Float32bits(unit.state[0])
 	unit.state[0] = math.Float32frombits(age + 1)
 	frames := float32(voice.length) // the length of the spawned note
-	if length > 0 {
+	if time != 0 {
+		if age == 0 {
+			f := float32(time)
+			if time < 0 { // whole periods of the note, as a bufread tap counts them
+				note := float32(voice.note) + (float32(64*(float32(transpose*2)-1)) + (float32(detune*2) - 1))
+				f = float32(-time) / exp2f(float32(note*0.08333333))
+			}
+			unit.state[1] = max(f, 1)
+		}
+		frames = unit.state[1]
+	} else if length > 0 {
 		frames = max(lengthFrames(length), 1)
 	}
 	if frames == 0 {

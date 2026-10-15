@@ -111,7 +111,7 @@ func (m *Model) buildInstrumentTitles() {
 
 func (m *Model) updateParams() {
 	for id := range m.gridFree { // forget the units that are gone
-		if u := m.d.Song.FindUnit(id); u == nil || u.Type != "delay" && u.Type != "bufread" {
+		if u := m.d.Song.FindUnit(id); u == nil || u.Type != "delay" && u.Type != "bufread" && u.Type != "window" {
 			delete(m.gridFree, id)
 		}
 	}
@@ -126,6 +126,15 @@ func (m *Model) updateParams() {
 			case "delay":
 				m.setGridFree(unit, delayOffGrid(unit))
 			case "bufread":
+				m.setGridFree(unit, m.bufreadOffGrid(unit))
+			case "window":
+				// windows from before timing have no time, transpose or
+				// detune: give them those of a new unit
+				for _, up := range sointu.UnitTypes["window"].Params {
+					if _, ok := unit.Parameters[up.Name]; !ok && unit.Parameters != nil && (up.Name == "time" || up.Name == "transpose" || up.Name == "detune") {
+						unit.Parameters[up.Name] = up.Default
+					}
+				}
 				m.setGridFree(unit, m.bufreadOffGrid(unit))
 			}
 		}
@@ -205,6 +214,22 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 				}
 			}
 		}
+		if unit.Type == "window" {
+			switch timing := unit.Parameters["timing"]; up.Name {
+			case "length": // the length in frames, or that of the spawned note
+				if timing != 0 {
+					continue
+				}
+			case "time":
+				if timing == 0 {
+					continue
+				}
+			case "transpose", "detune": // they tune a window that holds periods of the note
+				if timing != 1 {
+					continue
+				}
+			}
+		}
 		if unit.Type == "convolution" && (up.Name == "follow" || up.Name == "fade") {
 			if buf, found := m.d.Song.Buffers.Find(unit.Parameters["buffer"]); found && !buf.Writable() {
 				continue // a sample is read once: nothing to follow
@@ -266,9 +291,12 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 				vtable = &bufferFrameParameter{}
 			}
 		}
+		if unit.Type == "window" && up.Name == "time" {
+			vtable = &windowTimeParameter{}
+		}
 		ret = append(ret, Parameter{m: m, unit: unit, up: &unitType.Params[i], vtable: vtable, port: q})
 	}
-	if unit.Type == "bufread" && unit.Parameters["timing"] != 0 {
+	if (unit.Type == "bufread" || unit.Type == "window") && unit.Parameters["timing"] != 0 {
 		ret = append(ret, Parameter{m: m, unit: unit, vtable: &delayFreeParameter{}})
 	}
 	if unit.Type == "oscillator" && unit.Parameters["type"] == sointu.Sample {

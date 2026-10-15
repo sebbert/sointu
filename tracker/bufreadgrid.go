@@ -7,6 +7,8 @@ import (
 	"github.com/vsariola/sointu"
 )
 
+// The time of a window unit timed by pitch or tempo has the same grid.
+//
 // The positions of a bufread unit that count periods of the note (start, with
 // pitch timing) or 48ths of a beat (start, loopstart and looplength, with BPM
 // timing) are edited on a grid, like the delay times, unless the unit is set
@@ -124,16 +126,20 @@ func signedGrid(values []int, r RangeInclusive) []int {
 	return ret
 }
 
-// bufreadOffGrid tells if a position of the bufread unit that has a grid is
-// not on it.
+// bufreadOffGrid tells if a position of the bufread unit, or the time of the
+// window unit, that has a grid is not on it.
 func (m *Model) bufreadOffGrid(unit *sointu.Unit) bool {
-	for i, up := range sointu.UnitTypes["bufread"].Params {
-		switch up.Name {
-		case "start", "loopstart", "looplength":
+	for i, up := range sointu.UnitTypes[unit.Type].Params {
+		var vtable parameterVtable
+		switch {
+		case unit.Type == "bufread" && (up.Name == "start" || up.Name == "loopstart" || up.Name == "looplength"):
+			vtable = &bufferFrameParameter{}
+		case unit.Type == "window" && up.Name == "time":
+			vtable = &windowTimeParameter{}
 		default:
 			continue
 		}
-		p := Parameter{m: m, unit: unit, up: &sointu.UnitTypes["bufread"].Params[i], vtable: &bufferFrameParameter{}}
+		p := Parameter{m: m, unit: unit, up: &sointu.UnitTypes[unit.Type].Params[i], vtable: vtable}
 		if g, ok := bufreadGrid(&p); ok && !g.contains(unit.Parameters[up.Name]) {
 			return true
 		}

@@ -728,13 +728,7 @@ var UnitTypes = map[string]UnitType{
 		// note); with BPM, all three are in 48ths of a beat, like those too.
 		Params: []UnitParameter{
 			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
-			{Name: "transpose", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
-				relvalue := v - 64
-				if relvalue%12 == 0 {
-					return strconv.Itoa(relvalue / 12), "oct"
-				}
-				return strconv.Itoa(relvalue), "st"
-			}},
+			{Name: "transpose", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: transposeDisplay},
 			{Name: "detune", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return formatFloat(float64(v-64) / 64), "st" }},
 			{Name: "gain", MinValue: 0, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
 			{Name: "speed", MinValue: 0, Neutral: 64, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return formatFloat(float64(v)/64 - 1), "x" }},
@@ -1008,9 +1002,20 @@ var UnitTypes = map[string]UnitType{
 		// notes without a length get no window (1). shape is how much of the
 		// window is spent rising and falling, with smoothstep curves; 0 is a
 		// rectangle. Never triggered voices push 0.
+		//
+		// With timing pitch or BPM, time is the length instead, counted like
+		// the start of a bufread unit: with pitch, in frames at note 0,
+		// divided by 2^(note/12) (10788 is one period of the note, so that
+		// the window holds whole cycles of an oscillator that starts with
+		// the note), with transpose and detune added to the note; with BPM,
+		// in 48ths of a beat. The length is taken when the note starts.
 		Params: []UnitParameter{
+			{Name: "timing", MinValue: 0, MaxValue: 2, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"frames", "pitch", "BPM"})},
 			{Name: "length", MinValue: 0, Default: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: windowLengthDisplay},
+			{Name: "time", MinValue: 1, Default: 10788, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
 			{Name: "shape", MinValue: 0, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v * 100 / 128), "%" }},
+			{Name: "transpose", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: transposeDisplay},
+			{Name: "detune", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return formatFloat(float64(v-64) / 64), "st" }},
 		},
 		StackUse: stackUseSource,
 	},
@@ -1510,6 +1515,15 @@ func spawnLengthDisplay(v int) (string, string) {
 		return "hold", ""
 	}
 	return lengthDisplay(v)
+}
+
+// transposeDisplay shows a transpose in octaves or semitones.
+func transposeDisplay(v int) (string, string) {
+	relvalue := v - 64
+	if relvalue%12 == 0 {
+		return strconv.Itoa(relvalue / 12), "oct"
+	}
+	return strconv.Itoa(relvalue), "st"
 }
 
 func windowLengthDisplay(v int) (string, string) {

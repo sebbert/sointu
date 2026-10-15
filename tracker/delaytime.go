@@ -396,7 +396,8 @@ func (d *delayTimeParameter) Hint(p *Parameter) ParameterHint {
 }
 
 // delayFreeParameter vtable: whether the delay times of a delay unit, or the
-// positions of a bufread unit timed by pitch or tempo, can take any value,
+// positions of a bufread unit or the length of a window unit timed by pitch
+// or tempo, can take any value,
 // instead of the values of their grid. It is a setting of the tracker, not of
 // the song: the values are stored the same either way. See updateParams for
 // how it starts.
@@ -422,7 +423,7 @@ func (d *delayFreeParameter) Hint(p *Parameter) ParameterHint {
 	if d.Value(p) == 1 {
 		return ParameterHint{"any value", true}
 	}
-	if p.unit.Type == "bufread" {
+	if p.unit.Type == "bufread" || p.unit.Type == "window" {
 		if p.unit.Parameters["timing"] == 1 {
 			return ParameterHint{"periods of the note", true}
 		}
