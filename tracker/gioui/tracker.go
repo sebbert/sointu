@@ -133,6 +133,7 @@ func NewTracker(model *tracker.Model) *Tracker {
 		})
 	}
 	model.Browser().SetLastFolder(t.preferences.Browser.LastFolder)
+	model.Browser().AutoPreview().SetValue(t.preferences.Browser.AutoPreview)
 	return t
 }
 

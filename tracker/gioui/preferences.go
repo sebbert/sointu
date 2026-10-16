@@ -25,6 +25,8 @@ type (
 	BrowserPreferences struct {
 		// Shown shows the sample browser
 		Shown bool
+		// AutoPreview plays a file when it is selected
+		AutoPreview bool
 		// LastFolder is the folder of the file last loaded into a buffer,
 		// where the browser starts
 		LastFolder string `yaml:",omitempty"`
@@ -180,6 +182,21 @@ func (t *showBrowser) SetValue(val bool) {
 		t.Browser().Stop()
 	}
 	if err := WriteCustomConfig("preferences.yml", val, "browser", "shown"); err != nil {
+		(*Tracker)(t).Alerts().Add(fmt.Sprintf("Could not save preferences: %v", err), tracker.Error)
+	}
+}
+
+// AutoPreview toggles playing a file of the sample browser when it is
+// selected, and saves it in the custom preferences.
+func (t *Tracker) AutoPreview() tracker.Bool { return tracker.MakeBool((*autoPreview)(t)) }
+
+type autoPreview Tracker
+
+func (t *autoPreview) Value() bool { return t.Browser().AutoPreview().Value() }
+func (t *autoPreview) SetValue(val bool) {
+	t.Browser().AutoPreview().SetValue(val)
+	t.preferences.Browser.AutoPreview = val
+	if err := WriteCustomConfig("preferences.yml", val, "browser", "autopreview"); err != nil {
 		(*Tracker)(t).Alerts().Add(fmt.Sprintf("Could not save preferences: %v", err), tracker.Error)
 	}
 }

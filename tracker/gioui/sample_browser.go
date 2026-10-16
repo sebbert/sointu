@@ -29,6 +29,8 @@ type SampleBrowser struct {
 	rootMenu   *MenuState
 	parentBtn  *Clickable
 	refreshBtn *Clickable
+	autoBtn    *Clickable
+	playBtn    *Clickable
 }
 
 func NewSampleBrowser(m *tracker.Model) *SampleBrowser {
@@ -38,6 +40,8 @@ func NewSampleBrowser(m *tracker.Model) *SampleBrowser {
 		rootMenu:   new(MenuState),
 		parentBtn:  new(Clickable),
 		refreshBtn: new(Clickable),
+		autoBtn:    new(Clickable),
+		playBtn:    new(Clickable),
 	}
 }
 
@@ -123,8 +127,13 @@ func (sb *SampleBrowser) Layout(gtx C) D {
 			WithTip(b.Root() + "\nChoose the folder to browse")
 		parentBtn := ActionIconBtn(b.Parent(), th, sb.parentBtn, icons.NavigationArrowUpward, "Browse the folder above (Backspace)")
 		refreshBtn := ActionIconBtn(b.Refresh(), th, sb.refreshBtn, icons.NavigationRefresh, "Read the folders again")
+		autoBtn := ToggleIconBtn(tr.AutoPreview(), th, sb.autoBtn, icons.AVRepeat, icons.AVRepeatOne,
+			"Play a file when it is selected", "Do not play a file when it is selected,\nonly with the play button")
+		playBtn := ActionIconBtn(b.PlaySelected(), th, sb.playBtn, icons.AVPlayArrow, "Play the selected file")
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Flexed(1, func(gtx C) D { return rootBtn.Layout(gtx, roots...) }),
+			layout.Rigid(playBtn.Layout),
+			layout.Rigid(autoBtn.Layout),
 			layout.Rigid(parentBtn.Layout),
 			layout.Rigid(refreshBtn.Layout),
 		)

@@ -241,3 +241,27 @@ func TestBrowserLoadsIntoSelectedBuffer(t *testing.T) {
 		t.Errorf("second buffer %s, want k1.wav", got)
 	}
 }
+
+func TestBrowserWithoutAutoPreview(t *testing.T) {
+	m, broker, calls := newBrowserTestModel(t)
+	b := m.Browser()
+	b.SetRoot(browserTree(t))
+	b.List().SetSelected(2) // A.flac
+	nextPreview(t, m, broker)
+	b.AutoPreview().SetValue(false)
+	if p := nextPreview(t, m, broker); p.Audio.Frames() != 0 {
+		t.Fatalf("turning AutoPreview off did not stop the preview: %+v", p.Audio)
+	}
+	b.List().SetSelected(3) // b.wav: not played
+	if len(*calls) != 1 || m.browser.previewing != "" {
+		t.Fatalf("b.wav was decoded or played without AutoPreview: %v", *calls)
+	}
+	b.PlaySelected().Do()
+	if p := nextPreview(t, m, broker); p.Audio.Data[0] != 2 {
+		t.Fatalf("got %+v, want b.wav played by PlaySelected", p.Audio)
+	}
+	b.List().SetSelected(2) // leaving the file stops it
+	if p := nextPreview(t, m, broker); p.Audio.Frames() != 0 {
+		t.Fatalf("leaving b.wav did not stop its preview: %+v", p.Audio)
+	}
+}

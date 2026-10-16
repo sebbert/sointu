@@ -35,6 +35,9 @@ type (
 		// previewing is the file whose preview is decoding or playing
 		previewing string
 		status     string // what the preview of the selected file is doing
+		// manual turns off playing a file when it is selected: it plays by
+		// PlaySelected only
+		manual bool
 		cache      []browserDecoded
 	}
 
@@ -352,14 +355,45 @@ func (m *BrowserModel) Stop() {
 }
 
 // selectionChanged previews the selected file, or stops the preview if a
-// folder or nothing is selected.
+// folder or nothing is selected, or AutoPreview is off.
 func (m *BrowserModel) selectionChanged() {
 	e, ok := m.Selected()
-	if !ok || e.Dir {
+	if !ok || e.Dir || m.browser.manual {
 		m.Stop()
 		return
 	}
 	m.preview(e.Path)
+}
+
+// AutoPreview returns a Bool for playing a file when it is selected. When it
+// is off, a file plays by PlaySelected only; turning it off stops the
+// preview.
+func (m *BrowserModel) AutoPreview() Bool { return MakeBool((*browserAutoPreview)(m)) }
+
+type browserAutoPreview BrowserModel
+
+func (v *browserAutoPreview) Value() bool { return !v.browser.manual }
+func (v *browserAutoPreview) SetValue(value bool) {
+	v.browser.manual = !value
+	if !value {
+		(*BrowserModel)(v).Stop()
+	}
+}
+
+// PlaySelected returns an Action to play the selected file from its start,
+// whether AutoPreview is on or not.
+func (m *BrowserModel) PlaySelected() Action { return MakeAction((*browserPlay)(m)) }
+
+type browserPlay BrowserModel
+
+func (m *browserPlay) Enabled() bool {
+	e, ok := (*BrowserModel)(m).Selected()
+	return ok && !e.Dir
+}
+func (m *browserPlay) Do() {
+	if e, ok := (*BrowserModel)(m).Selected(); ok && !e.Dir {
+		(*BrowserModel)(m).preview(e.Path)
+	}
 }
 
 func (m *BrowserModel) cancelDecode() {

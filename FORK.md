@@ -1464,7 +1464,8 @@ no host was run with the plugins.
   and the audio files that the loader reads, folders first, hidden files
   left out. Up and down move through the rows, and a selected file plays at
   once, its first 30 s in stereo, as the preview of a buffer plays; a
-  folder, Escape or hiding the panel stops it. Right expands a folder, or
+  folder, Escape or hiding the panel stops it. With the switch of the
+  header off (`browser.autopreview`) a file plays only by the play button. Right expands a folder, or
   goes into it; left collapses it, or goes to the folder above, which at the
   top becomes the root (Backspace too). Enter or a double click loads the
   file into the buffer that was selected, as Replace does, one undo step,
