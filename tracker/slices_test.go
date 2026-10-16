@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 	"io"
 	"math"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -220,6 +222,18 @@ func TestImportCuePoints(t *testing.T) {
 	binary.LittleEndian.PutUint32(wav[4:], uint32(len(wav)-8))
 	undos := len(m.undoStack)
 	m.Buffer().Import(io.NopCloser(bytes.NewReader(wav)), false)
+	importCuePoints(t, m, broker, undos)
+	// the same from a file, as the browser and drops load it
+	path := filepath.Join(t.TempDir(), "break.wav")
+	os.WriteFile(path, wav, 0o644)
+	m.d.Song.Buffers = nil
+	undos = len(m.undoStack)
+	m.Buffer().ImportFiles([]string{path}, false)
+	importCuePoints(t, m, broker, undos)
+}
+
+func importCuePoints(t *testing.T, m *Model, broker *Broker, undos int) {
+	t.Helper()
 	deadline := time.After(10 * time.Second)
 	for len(m.d.Song.Buffers) == 0 {
 		select {

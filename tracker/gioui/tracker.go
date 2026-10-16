@@ -132,6 +132,8 @@ func NewTracker(model *tracker.Model) *Tracker {
 			Duration: 10 * time.Second,
 		})
 	}
+	model.Browser().SetLastFolder(t.preferences.Browser.LastFolder)
+	model.Browser().AutoPreview().SetValue(t.preferences.Browser.AutoPreview)
 	return t
 }
 
@@ -216,6 +218,8 @@ func (t *Tracker) Main() {
 						t.plotZoomModifier = false  // Alt is not released in another window
 						t.zoomScroll = zoomScroll{} // nor is Ctrl/Cmd
 					}
+				case app.FileDropEvent:
+					t.dropFiles(e)
 				case app.FrameEvent:
 					if onTop != t.windowOnTop() {
 						onTop = t.windowOnTop()
@@ -391,6 +395,7 @@ func (t *Tracker) Layout(gtx layout.Context) {
 		gtx.Execute(op.InvalidateCmd{At: at}) // to stop taking the scroll then
 	}
 	t.playMIDIMessages()
+	t.saveBrowserFolder()
 }
 
 // playMIDIMessages plays the notes of the MIDI input that no one else

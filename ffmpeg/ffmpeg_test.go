@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/vsariola/sointu"
@@ -188,5 +190,23 @@ func TestBuiltinPresets(t *testing.T) {
 				t.Fatalf("Decode failed: %v", err)
 			}
 		})
+	}
+}
+
+func TestDecodeFile(t *testing.T) {
+	f := find(t)
+	path := filepath.Join(t.TempDir(), "a file.wav")
+	if err := os.WriteFile(path, wav(1, 44100), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	audio, err := f.DecodeFile(path, 2, 0.5)
+	if err != nil {
+		t.Fatalf("DecodeFile failed: %v", err)
+	}
+	if audio.Channels != 2 || audio.Frames() != 22050 {
+		t.Errorf("got %d channels and %d frames, want 2 and 22050", audio.Channels, audio.Frames())
+	}
+	if _, err := f.DecodeFile(filepath.Join(t.TempDir(), "missing.wav"), 2, 1); err == nil {
+		t.Error("DecodeFile of a missing file did not fail")
 	}
 }

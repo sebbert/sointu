@@ -35,25 +35,32 @@ type (
 	}
 
 	// tapKey is what a watch watches: the signal before or after the unit
-	// with the given ID, as it is played, for one purpose.
+	// with the given ID, as it is played, for one purpose: of the eq
+	// editor, or with Analysis, of the analysis panel of the unit, inside
+	// the module unit Call (see analysisKey).
 	tapKey struct {
-		Unit  int
-		After bool
+		Unit     int
+		After    bool
+		Call     int
+		Analysis bool
 	}
 
 	tapWatch struct {
 		point    sointu.TapPoint
 		asked    time.Time
 		spectrum *tapSpectrum
+		scope    *tapScope
 	}
 
 	// tapSpectrum is the spectrum of the signal of a tap, smoothed over
-	// time.
+	// time: levels of the louder channel, and channels of each, the second
+	// only of a stereo signal.
 	tapSpectrum struct {
 		analyzer specAnalyzer
 		stereo   bool
 		windows  int // analyzed so far
 		levels   []float32
+		channels [2][]float32
 	}
 )
 
@@ -136,6 +143,9 @@ func (m *Model) tapped(e TapAudio) {
 		if w.point == e.Point && w.spectrum != nil {
 			w.spectrum.write(*e.Buffer)
 		}
+		if w.point == e.Point && w.scope != nil {
+			w.scope.write(*e.Buffer)
+		}
 	}
 	if ended {
 		m.sendTaps()
@@ -168,11 +178,15 @@ func (t *tapSpectrum) write(buf sointu.AudioBuffer) {
 		}
 		t.windows++
 		t.levels = t.levels[:0]
+		t.channels[0], t.channels[1] = t.channels[0][:0], t.channels[1][:0]
+		db := func(p float64) float32 { return float32(10 * math.Log10(p+1e-30)) }
 		for i, p := range power {
+			t.channels[0] = append(t.channels[0], db(float64(p)))
 			if t.stereo {
+				t.channels[1] = append(t.channels[1], db(float64(a.temp.power[1][i])))
 				p = max(p, a.temp.power[1][i])
 			}
-			t.levels = append(t.levels, float32(10*math.Log10(float64(p)+1e-30)))
+			t.levels = append(t.levels, db(float64(p)))
 		}
 	})
 }

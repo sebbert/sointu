@@ -566,3 +566,63 @@ func TestModulePortsAndSendToPorts(t *testing.T) {
 		t.Errorf("a popping send to nothing became %+v", out)
 	}
 }
+
+// TestExpandSpans checks where the units of module units end up: of module
+// units of an instrument and of their copies in modules, also after sends to
+// module units became several units and eq units became their units.
+func TestExpandSpans(t *testing.T) {
+	inner := sointu.Module{ID: 1, Inputs: 1, Params: []sointu.ModuleParam{{Name: "gain"}}, Units: []sointu.Unit{
+		bound(unit("gain", 0, map[string]int{"gain": 64}), map[string]int{"gain": 1}),
+		unit("gain", 0, nil),
+	}}
+	outer := sointu.Module{ID: 2, Params: []sointu.ModuleParam{{Name: "a"}, {Name: "level"}}, Units: []sointu.Unit{
+		unit("noise", 0, nil),
+		bound(call(3, 1, 5), map[string]int{"p1": 2}),
+		bound(unit("filter", 0, nil), map[string]int{"frequency": 2}),
+	}}
+	eq := unit("eq", 0, map[string]int{"stereo": 0, "gain": 64})
+	eq.Bands = []sointu.EQBand{{Type: sointu.EQLowCut, Frequency: 80}, {Type: sointu.EQBell, Frequency: 1000, Gain: 3, Q: 1}}
+	lfo := unit("oscillator", 0, map[string]int{"lfo": 1})
+	s := song(sointu.Modules{inner, outer}, eq, lfo, unit("send", 8, map[string]int{"target": 9, "port": 1, "sendpop": 1}),
+		call(9, 2, 0, 33), call(10, 1, 1), unit("out", 0, nil))
+	got, exp := s.Expand()
+	noProblems(t, exp)
+	u := got.Patch[0].Units
+	n := -1 // the oscillator, after the units of the eq
+	for i := range u {
+		if u[i].Type == "oscillator" {
+			n = i
+			break
+		}
+	}
+	want := map[string]string{"send": "send send", "9": "noise gain gain filter", "10": "gain gain"}
+	span := func(id int) string {
+		sp, ok := exp.Spans[id]
+		if !ok || sp.Instrument != 0 {
+			return "none"
+		}
+		return summary(u[sp.First : sp.First+sp.Count])
+	}
+	if got := span(8); got != want["send"] || exp.Spans[8].First != n+1 {
+		t.Errorf("the send to the module unit became %q at %d", got, exp.Spans[8].First)
+	}
+	if got := span(9); got != want["9"] {
+		t.Errorf("the outer module unit is %q", got)
+	}
+	if got := span(10); got != want["10"] {
+		t.Errorf("the module unit after it is %q", got)
+	}
+	// the copy of the module unit inside the outer module
+	copies := 0
+	for id, e := range exp.Units {
+		if e.Body == 3 && e.Module == 2 {
+			copies++
+			if got := span(id); got != "gain gain" || exp.Spans[id].First != exp.Spans[9].First+1 {
+				t.Errorf("the module unit in the module is %q at %d", got, exp.Spans[id].First)
+			}
+		}
+	}
+	if copies != 1 {
+		t.Errorf("%d copies of the module unit in the module", copies)
+	}
+}

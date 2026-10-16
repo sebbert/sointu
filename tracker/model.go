@@ -88,6 +88,16 @@ type (
 		// taps are the watches of the signal at units: see taps.go
 		taps map[tapKey]*tapWatch
 
+		// analysis are the open analysis panels of units, and lastVoices
+		// the voice of each instrument that played the last note, from 1:
+		// see analysis.go
+		analysis   map[analysisKey]*analysisState
+		lastVoices []int
+
+		// cycles are the cycles of the oscillator units shown in the rack,
+		// by their parameters: see OscillatorCycle
+		cycles map[cycleKey][]float32
+
 		// modulePresets are the module presets: first those of the user,
 		// userModulePresets of them, read from modulePresetPath or, if it is
 		// empty, from the user's configuration directory; then those that
@@ -163,6 +173,7 @@ type (
 
 		buffers        bufferState
 		defaultPresets sointu.EncodingPresets
+		browser        browserState
 
 		presetData presetData
 	}
@@ -289,6 +300,8 @@ func NewModel(broker *Broker, synthers []sointu.Synther, midiContext MIDIContext
 }
 
 func (m *Model) Close() {
+	m.Browser().cancelDecode()
+	m.Browser().stopWatching()
 	TrySend(m.broker.CloseDetector, struct{}{})
 	TrySend(m.broker.CloseSpecAn, struct{}{})
 	TrySend(m.broker.CloseMIDIHandler, struct{}{})
@@ -454,6 +467,7 @@ func (m *Model) ProcessMsg(msg MsgToModel) {
 	}
 	if msg.TriggerChannel > 0 {
 		m.Scope().trigger(msg.TriggerChannel)
+		m.triggered(msg.TriggerChannel-1, msg.TriggerVoice)
 	}
 	if msg.Reset {
 		m.Scope().reset()

@@ -106,7 +106,11 @@ changes to the sound are fine, as long as both stay in sync.
   **Not verified:** in a host, and with `auval`.
 - Vendored: Gio (`third_party/gio`, macOS plugin window and event loop fixes,
   `TopMost` on Windows and turning it off, `pointer.Event.Notch` for the
-  notches of a mouse wheel on macOS),
+  notches of a mouse wheel on macOS, `app.FileDropEvent` for files dropped
+  from the Finder: the view of a window, also of the plugin's, is a
+  dragging destination of file URLs, and a drop is a window event of the
+  paths, the position, the modifiers held and the pointer handlers there
+  (`input.Router.TargetsAt`); other platforms send none),
   vst2 (`third_party/vst2`, `Host.UpdateDisplay`), CLAP headers.
 
 ## Song format
@@ -1468,8 +1472,8 @@ starts like a unit added.
 
 `sointu.Tapper` (`vm/tap.go`): the Go synth, and the multithread synth
 around it, can record the signal at any place of the patch, for whatever
-shows it. It is meant for meters on every unit; so far the eq editor uses
-it.
+shows it. It is meant for meters on every unit; so far the eq editor and
+the analysis panels of the rack (see [Tracker](#tracker)) use it.
 
 - A place is a `TapPoint{Instrument, Unit, Voice}`: before the unit with
   that index among the units of the instrument, as the patch that the synth
@@ -1506,17 +1510,17 @@ In the tracker (`tracker/taps.go`):
 4. A watch that was not asked for in a second ends; with the last one the
    player sets no taps, and the synth records nothing.
 
-A meter on every unit would be this with other watches: a unit of an
-instrument is at `TapPoint{instrument, index}` (after it: index + 1), a unit
-of a module at the place of its copy (`Model.playedUnit` finds the copy;
-its index in `Model.expanded` is the place), and a `tapWatch` would get a
-level, or a ring of frames for an oscilloscope, next to `spectrum`, filled
-in `Model.tapped`. Whether the signal there is mono or stereo is what
-`derivedInstrument.rails` knows. What is not there yet: a tap is the top of
-the stack, so for a unit that puts nothing on the stack (`send`, `out`,
-`pop`) it is the signal below; one place per watch, so every unit of a rack
-is as many taps, each compared with every unit run, which a table by unit
-would make cheap; the native synth and the compiled players have no taps.
+The analysis panels find the place after any unit with
+`Model.analysisPoint`: after the units it stands for in the expanded song,
+by `Expansion.EQs` for an eq unit, `Expansion.Spans` for a module unit (and
+a send to one, which becomes several sends), else the index of its ID (of
+its copy, for an inner unit) in `Model.expanded`. A `tapWatch` of a panel
+has a `tapScope` (a ring of frames, `RingBuffer` as the oscilloscope of the
+song) next to `spectrum`, whose `channels` are the spectrum of each
+channel. A meter on every unit would be the same with a level. What is not
+there yet: one place per watch, so every unit of a rack is as many taps,
+each compared with every unit run, which a table by unit would make cheap;
+the native synth and the compiled players have no taps.
 
 Tests: `vm/tap_test.go` (before and after a unit, one voice and all, stereo,
 the multithread synth, disabled units, after an update, the render as
@@ -1637,10 +1641,106 @@ no host was run with the plugins.
   writable buffers for recording (length, clear, fit to recording), a
   waveform with the write head and where `bufread` notes play, and live
   spectra of spectrum buffers.
+- **Sample browser:** a panel at the right of the Buffers tab
+  (`sample_browser.go`, `tracker/browser.go`), shown and hidden by a button
+  of the tab (`browser.shown` in `preferences.yml`): a tree of the folders
+  and the audio files that the loader reads, folders first, hidden files
+  left out. Up and down move through the rows, and a selected file plays at
+  once, its first 30 s in stereo, as the preview of a buffer plays; a
+  folder, Escape or hiding the panel stops it. With the switch of the
+  header off (`browser.autopreview`) a file plays only by the play button. Right expands a folder, or
+  goes into it; left collapses it, or goes to the folder above, which at the
+  top becomes the root (Backspace too). Enter or a double click loads the
+  file into the buffer that was selected, as Replace does, one undo step,
+  or as a new buffer if there are none or it is a spectrum or a bus. The
+  roots offered: the home folder, the last folder (of the file last loaded
+  into a buffer, by the browser, the dialog or a drop; `browser.lastfolder`,
+  where the browser starts) and the folder of the song; a button opens the
+  folder panel of the system (macOS only, `folderpicker_darwin.go`; it
+  floats, as the plugin window does).
+  ffmpeg decodes a preview on a goroutine, reading the file in place
+  (`FFmpeg.DecodeFile`, to a pipe); selecting another file kills it, and a
+  late result is dropped by its number. The last 8 decodes are kept, each
+  with the time and size of its file: a file that changed is decoded again.
+  The folders shown, the root and the expanded ones, are watched: a
+  goroutine stats them every second, and when one has changed (a file was
+  added, removed or renamed in it) they are read again. No fsnotify: a
+  poll of a few folders costs nothing and works on every platform. A
+  preview of the browser and one of a buffer share the player's preview:
+  one stops the other.
+- **Drag and drop:** audio files dropped onto the window from the Finder
+  (macOS only, `app.FileDropEvent`; `filedrop.go`) onto the properties of
+  the Buffers tab replace the sample of the selected buffer with the first
+  and add the rest; dropped onto the list of the buffers, or anywhere else,
+  they become new buffers in their order, and the Buffers tab shows. What
+  is under the drop is what a press there would reach in the last frame
+  (`FileDropEvent.Targets`). Other files are left out with an alert; a
+  folder dropped alone becomes the root of the browser. In the plugin
+  window too, which is the same Gio window.
 - **Plots:** zoom with Alt+scroll, pan by dragging or horizontal scrolling,
   Alt+drag to zoom y, double-click or right-click to reset, bounded zoom out.
 - **Units:** spawn targets follow instruments when they move or are pasted;
   new spectral units pick up the spectrum above them.
+- **Oscillator cycle:** an oscillator shows one cycle of its waveform after
+  its parameters, 3 cells wide (`tracker.OscillatorInlineCells`; the comment
+  follows it): its type, color, shape, phase, gain, unison voices, gate
+  pattern and bandlimit, as played (for an inner unit, with the values of
+  its bound parameters), without modulation, from -1 to 1 or its peak, with
+  a line at 0. `vm.OscillatorCycle` computes it with the waveform functions
+  of the Go synth (`oscillatorWave`, `oscillatorGate`, `oscillatorFlags`),
+  512 points, as if a cycle were 512 samples for the corrections of
+  bandlimit. Left out: the detune of the unison voices and channels, which
+  over one cycle are all but in phase, and the smoothing of a gate, which
+  only a slow gate does not hide. An LFO shows the same cycle. A sample
+  oscillator shows nothing. The model keeps the cycles by the parameters
+  they depend on (`UnitModel.OscillatorCycle`), and the rack the plot as
+  recorded ops (`cycleView`), drawn again only when the cycle or its size
+  changes.
+- **Analysis panel:** every unit with an ID can show a panel under its row
+  in the rack, as wide as the rack and 200 dp high, with an oscilloscope
+  and a spectrum of the signal after the unit, as the synth plays it (see
+  [Taps](#taps)), both channels of a stereo signal. The chart button at
+  the top left of the cell after the parameters of the row (after the plot
+  of an eq or an oscillator, where the comment starts) or Ctrl/Cmd+Alt+A
+  (`AnalysisToggle`) on the selected unit opens and closes it. Under an
+  unfolded eq unit it is under the editor. The rows after it move down,
+  the rail runs past it, and when it does not fit as it opens, the rack
+  scrolls the row to the top.
+  - *Signal.* After the unit: after all the units it stands for (a module
+    unit's, an eq unit's). A unit that leaves nothing on the stack (`out`,
+    a popping `send`, `pop`) shows the signal before it instead, and the
+    panel says so. The synth records the top two signals of the stack; it
+    is stereo for a unit with `stereo` on, a `pan`, or a module unit with
+    two outputs, else only the first is shown. A disabled unit is not
+    played and shows nothing.
+  - *Voices.* A menu in the panel chooses: all the voices of the instrument
+    summed (the default), the voice of the last note (`Last note`; as the
+    player gives notes to voices, `MsgToModel.TriggerVoice`: notes that
+    `spawn` units start in the synth are not followed), or one voice.
+  - *Oscilloscope.* As long as the oscilloscope of the song (its length in
+    beats, with the same beat lines); it restarts at the left at every note
+    of the instrument and wraps. Zoom and pan as the other plots.
+  - *Spectrum.* 2048 bins of 10.8 Hz, each new window counting a quarter
+    (as the spectra of the eq editor), on the scale of the spectrum of the
+    song.
+  - *Cost.* Nothing in the song and nothing in the exported player: the
+    open panels are a setting of the tracker, by unit ID (and for an inner
+    unit the module unit it is in), not saved and not undone. The synth
+    records only where a panel is laid out; closing one stops its tap at
+    once, and one not drawn for a second (scrolled out of view, another
+    instrument shown) stops too. No analysis unit is needed: every place
+    between two units is after a unit, or before the first.
+  - `tracker/analysis.go` (`UnitModel.AnalysisOf`, `analysisPoint`,
+    `AnalysisVoice`), `tracker/gioui/analysis_panel.go`; the plot data of
+    the oscilloscope and spectrum of the song are shared
+    (`scopeData`, `beatTicks`, `spectrumCurve`). Tests:
+    `tracker/analysis_test.go` (places, stereo, the sine in the
+    oscilloscope and the spectrum, the pan in two channels, the last note's
+    voice, closing, inside a module), `TestExpandSpans`,
+    `TestAnalysisPanelInRack` and `TestOscillatorCycleRow` (headless
+    renders: `SOINTU_TEST_SCREENSHOTS=<dir> go test ./tracker/gioui -run
+    'AnalysisPanel|OscillatorCycle'`), `vm/oscillator_test.go` (the cycle
+    against the synth).
 - **Buses:** `mcspread` gets a new bus, and new mc units the bus of the mc
   unit above them; buses the tracker created are deleted with their last
   unit. An instrument loaded from a preset or file gets its own buses when
@@ -2415,7 +2515,8 @@ a WAV file (`cue ` chunk, `dwSampleOffset`; names from `LIST adtl labl` are
 read but not kept) and the markers of an AIFF file (`MARK`), scaled from
 the file's rate to 44100 Hz; a marker at 0 is dropped. ffmpeg drops these
 chunks, so the file is read before it is converted. The import and its
-markers are one undo step. The loop points of a WAV `smpl` chunk are a loop,
+markers are one undo step, from the import button, the sample browser and
+drops alike. The loop points of a WAV `smpl` chunk are a loop,
 not slices, and are not read. The beats of an ACID loop (`acid` chunk, not
 a one shot) are read, and not used yet. REX files (.rex, .rx2, .rcy) are not
 read: their audio is in Propellerhead's compressed format, which ffmpeg does

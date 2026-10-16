@@ -197,6 +197,18 @@ func (f *FFmpeg) Decode(data []byte, channels int) (sointu.BufferAudio, error) {
 	return sointu.BufferAudio{Channels: channels, Data: bytesToFloats(raw)}, nil
 }
 
+// DecodeFile decodes at most the first seconds of the first audio stream of
+// a file, as Decode does, reading it where it is and writing to a pipe: for
+// previews, which need no temporary files.
+func (f *FFmpeg) DecodeFile(path string, channels int, seconds float64) (sointu.BufferAudio, error) {
+	raw, err := f.run(f.Path, "-hide_banner", "-nostdin", "-loglevel", "error", "-i", path, "-map", "0:a:0",
+		"-t", fmt.Sprint(seconds), "-c:a", "pcm_f32le", "-ac", fmt.Sprint(channels), "-ar", "44100", "-f", "f32le", "pipe:1")
+	if err != nil {
+		return sointu.BufferAudio{}, err
+	}
+	return sointu.BufferAudio{Channels: channels, Data: bytesToFloats(raw)}, nil
+}
+
 // convert runs ffmpeg on the first audio stream of data, writing the given
 // format with the given output arguments. Input and output go through
 // temporary files, as some formats need seeking.

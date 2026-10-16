@@ -69,6 +69,7 @@ type (
 		DetectorResult    DetectorResult
 
 		TriggerChannel int  // note: 0 = no trigger, 1 = first channel, etc.
+		TriggerVoice   int  // the voice of the instrument that the note plays, from 1
 		Reset          bool // true: playing started, so should reset the detector and the scope cursor
 
 		Data any // TODO: consider using a sum type here, for a bit more type safety. See: https://www.jerf.org/iri/post/2917/

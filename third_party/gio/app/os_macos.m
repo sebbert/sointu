@@ -225,6 +225,31 @@ static void handleMouse(GioView *view, NSEvent *event, int typ, CGFloat dx, CGFl
 - (void)dealloc {
 	gio_onDestroy(self.handle);
 }
+// The view is the destination of files dragged onto the window, e.g. from
+// the Finder: see FileDropEvent.
+static NSDictionary *fileURLsOnly(void) {
+	return @{NSPasteboardURLReadingFileURLsOnlyKey: @YES};
+}
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
+	BOOL files = [[sender draggingPasteboard] canReadObjectForClasses:@[[NSURL class]] options:fileURLsOnly()];
+	return files ? NSDragOperationCopy : NSDragOperationNone;
+}
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender {
+	return [self draggingEntered:sender];
+}
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
+	NSArray<NSURL *> *urls = [[sender draggingPasteboard] readObjectsForClasses:@[[NSURL class]] options:fileURLsOnly()];
+	if (urls.count == 0) {
+		return NO;
+	}
+	NSMutableArray<NSString *> *paths = [NSMutableArray arrayWithCapacity:urls.count];
+	for (NSURL *url in urls) {
+		[paths addObject:url.path];
+	}
+	NSPoint p = [self convertPoint:[sender draggingLocation] fromView:nil];
+	gio_onFileDrop(self.handle, (__bridge CFTypeRef)paths, p.x, self.bounds.size.height - p.y, [NSEvent modifierFlags]);
+	return YES;
+}
 - (BOOL) becomeFirstResponder {
 	gio_onFocus(self.handle, 1);
 	return [super becomeFirstResponder];
@@ -408,6 +433,7 @@ CFTypeRef gio_createView(int presentWithTrans) {
 		view.presentWithTrans = presentWithTrans ? YES : NO;
 		view.wantsLayer = YES;
 		view.layerContentsRedrawPolicy = NSViewLayerContentsRedrawDuringViewResize;
+		[view registerForDraggedTypes:@[NSPasteboardTypeFileURL]];
 
 		[[NSNotificationCenter defaultCenter] addObserver:view
 												 selector:@selector(applicationWillUnhide:)
