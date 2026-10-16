@@ -1,6 +1,9 @@
 package tracker
 
 import (
+	"bytes"
+	"encoding/binary"
+	"io"
 	"math"
 	"slices"
 	"strings"
@@ -197,5 +200,39 @@ func TestRemoteSlices(t *testing.T) {
 	}
 	if p := s["looplength"]; p.Label() != "50%" {
 		t.Errorf("the loop length of a sliced unit: %q", p.Label())
+	}
+}
+
+// An imported WAV file with cue points gets them as slice markers, in the
+// one undo step of the import.
+func TestImportCuePoints(t *testing.T) {
+	m, broker := newBufferTestModel(t)
+	wav := testWav(make([]int16, 2000))
+	cue := []byte("cue ")
+	cue = binary.LittleEndian.AppendUint32(cue, 4+2*24)
+	cue = binary.LittleEndian.AppendUint32(cue, 2)
+	for i, f := range []uint32{500, 1500} {
+		for _, v := range []uint32{uint32(i + 1), f, 0x61746164, 0, 0, f} {
+			cue = binary.LittleEndian.AppendUint32(cue, v)
+		}
+	}
+	wav = append(wav, cue...)
+	binary.LittleEndian.PutUint32(wav[4:], uint32(len(wav)-8))
+	undos := len(m.undoStack)
+	m.Buffer().Import(io.NopCloser(bytes.NewReader(wav)), false)
+	deadline := time.After(10 * time.Second)
+	for len(m.d.Song.Buffers) == 0 {
+		select {
+		case msg := <-broker.ToModel:
+			m.ProcessMsg(msg)
+		case <-deadline:
+			t.Fatal("timed out")
+		}
+	}
+	if got := m.d.Song.Buffers[0].Slices; !slices.Equal(got, []int{500, 1500}) {
+		t.Errorf("the imported markers: %v", got)
+	}
+	if len(m.undoStack) != undos+1 {
+		t.Errorf("the import made %d undo steps", len(m.undoStack)-undos)
 	}
 }

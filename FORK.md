@@ -2408,6 +2408,19 @@ frames before the first frame of the window that reaches a quarter of its
 peak. Marker edits are undoable. A sample replaced by an import loses its
 markers.
 
+**Markers in the file.** An imported WAV or AIFF file brings its markers
+as slice markers (`samplemarkers`, `tracker.FileSlices`), as ReCycle,
+sample editors and sample packs mark the slices of loops: the cue points of
+a WAV file (`cue ` chunk, `dwSampleOffset`; names from `LIST adtl labl` are
+read but not kept) and the markers of an AIFF file (`MARK`), scaled from
+the file's rate to 44100 Hz; a marker at 0 is dropped. ffmpeg drops these
+chunks, so the file is read before it is converted. The import and its
+markers are one undo step. The loop points of a WAV `smpl` chunk are a loop,
+not slices, and are not read. The beats of an ACID loop (`acid` chunk, not
+a one shot) are read, and not used yet. REX files (.rex, .rx2, .rcy) are not
+read: their audio is in Propellerhead's compressed format, which ffmpeg does
+not decode.
+
 **Sample editing** (samples, not recordings): Crop (keep the selection),
 Delete (the selection), Trim silence (the ends below a level, -60 dB by
 default, of any channel), Fade in and Fade out at the ends (length in ms,

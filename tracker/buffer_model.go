@@ -132,7 +132,9 @@ func (m *BufferModel) Import(r io.ReadCloser, replace bool) {
 				(*Model)(m).Alerts().Add(fmt.Sprintf("Error importing %s: %v", fileName, err), Error)
 				return
 			}
+			defer m.change("ImportBuffer")() // one step with the markers
 			m.addImported(fileName, stored, min(max(channels, 1), 2), replace)
+			m.setFileSlices(data)
 		}})
 	}()
 }

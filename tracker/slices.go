@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/vsariola/sointu"
+	"github.com/vsariola/sointu/samplemarkers"
 )
 
 // sliceTools are the settings of the slice and sample editing tools of the
@@ -280,3 +281,21 @@ func detectOnsets(frame func(i int) float32, n, sensitivity int) []int {
 }
 
 func abs32(v float32) float32 { return float32(math.Abs(float64(v))) }
+
+// FileSlices returns the slice markers that an imported audio file carries:
+// the cue points of a WAV file or the markers of an AIFF file, at 44100 Hz.
+func FileSlices(data []byte) []int {
+	info, _ := samplemarkers.Read(data)
+	return info.Slices()
+}
+
+// setFileSlices gives the selected buffer, a sample just imported from the
+// file data, the slice markers of the file, if it has any. Call it within
+// the change of the import.
+func (m *BufferModel) setFileSlices(data []byte) {
+	if markers := FileSlices(data); len(markers) > 0 {
+		if buf := m.selected(); buf != nil {
+			buf.Slices = sointu.CleanSlices(markers, 0)
+		}
+	}
+}
