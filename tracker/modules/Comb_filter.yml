@@ -11,7 +11,7 @@ modules:
       units:
         - type: bufread
           id: 1
-          parameters: {buffer: 0, detune: 64, gain: 93, mode: 1, start: -10788, stereo: 1, timing: 1, transpose: 64}
+          parameters: {buffer: 0, detune: 64, gain: 93, mode: 3, note: 0, start: -10788, stereo: 1, timing: 1, transpose: 64}
           bind: {detune: 2, gain: {p: 3, min: 0, max: 124}, transpose: 1}
           comment: 'The signal one period of the note ago. tune in semitones and fine (one semitone) move the peaks; feedback is how much comes round each time, up to 97 %: higher rings longer and sharper'
         - type: ladder

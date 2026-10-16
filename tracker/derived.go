@@ -204,22 +204,30 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 		if unit.Type == "send" && up.Name == "port" {
 			continue
 		}
-		if unit.Type == "bufread" && unit.Parameters["loop"] == 0 && (up.Name == "loopstart" || up.Name == "looplength" || up.Name == "fade") {
-			continue // loop points only matter when looping
-		}
-		if unit.Type == "bufread" && (unit.Parameters["slices"] == 0 || unit.Parameters["mode"] == 1) && (up.Name == "slice" || up.Name == "sliceend") {
-			continue // the slice only matters when playing slices
-		}
-		if unit.Type == "bufread" && unit.Parameters["slices"] == 2 && unit.Parameters["mode"] != 1 && up.Name == "notetracking" {
-			continue // the note picks the slice, and the pitch does not follow it
-		}
-		if unit.Type == "bufread" && unit.Parameters["mode"] == 1 {
-			switch up.Name { // a tap reads the frame at start: it has no speed, loop, edges or slices
-			case "speed", "notetracking", "loop", "loopstart", "looplength", "fade", "edgefade", "slices":
-				continue
-			case "transpose", "detune": // they tune a delay that follows the note
-				if unit.Parameters["timing"] != 1 {
+		if unit.Type == "bufread" {
+			mode := unit.Parameters["mode"]
+			switch up.Name {
+			case "loopstart", "looplength": // only matter when looping
+				if mode != sointu.BufreadLoop && mode != sointu.BufreadPingPong {
 					continue
+				}
+			case "loopfade": // the turns of a ping-pong loop need no crossfade
+				if mode != sointu.BufreadLoop {
+					continue
+				}
+			case "slice": // only matters when playing slices
+				if !sointu.BufreadSliced(*unit) {
+					continue
+				}
+			}
+			if mode == sointu.BufreadTap {
+				switch up.Name { // a tap reads the frame at start: it has no note, speed, edges or slices
+				case "note", "speed", "edgefade", "slices":
+					continue
+				case "transpose", "detune": // they tune a delay that follows the note
+					if unit.Parameters["timing"] != 1 {
+						continue
+					}
 				}
 			}
 		}
@@ -296,7 +304,7 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 			switch up.Name {
 			case "buffer":
 				vtable = audioBufferParameter
-			case "start", "loopstart", "looplength", "fade", "edgefade":
+			case "start", "loopstart", "looplength", "loopfade", "edgefade":
 				vtable = &bufferFrameParameter{}
 				if bufreadSliced(unit) && (up.Name == "loopstart" || up.Name == "looplength") {
 					vtable = &sliceLoopParameter{}

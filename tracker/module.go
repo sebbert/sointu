@@ -290,17 +290,20 @@ func (m *Model) addModule() int {
 // Modules in files and on the clipboard
 
 type (
-	// unitClipboard is units on the clipboard, with the modules they use
+	// unitClipboard is units on the clipboard, with the modules and the
+	// samples they use
 	unitClipboard struct {
-		Units   []sointu.Unit
-		Modules sointu.Modules `yaml:",omitempty"`
+		Units         []sointu.Unit
+		Modules       sointu.Modules `yaml:",omitempty"`
+		presetSamples `yaml:",inline"`
 	}
 
 	// instrumentFile is an instrument in a file or a preset, with the
-	// modules that its units use
+	// modules and the samples that its units use
 	instrumentFile struct {
 		sointu.Instrument `yaml:",inline"`
 		Modules           sointu.Modules `yaml:",omitempty" json:",omitempty"`
+		presetSamples     `yaml:",inline"`
 	}
 )
 
@@ -583,10 +586,16 @@ func (v *moduleList) Marshal(r Range) ([]byte, error) {
 			all = append(all, mod.Copy())
 		}
 	}
-	return yaml.Marshal(struct{ Modules sointu.Modules }{all})
+	return yaml.Marshal(struct {
+		Modules       sointu.Modules
+		presetSamples `yaml:",inline"` // the samples they read
+	}{all, (*Model)(v).samplesUsedBy(all)})
 }
 func (v *moduleList) Unmarshal(data []byte) (r Range, err error) {
-	var pasted struct{ Modules sointu.Modules }
+	var pasted struct {
+		Modules       sointu.Modules
+		presetSamples `yaml:",inline"`
+	}
 	if err := yaml.Unmarshal(data, &pasted); err != nil {
 		return Range{}, fmt.Errorf("moduleList.Unmarshal: %v", err)
 	}
@@ -594,7 +603,7 @@ func (v *moduleList) Unmarshal(data []byte) (r Range, err error) {
 		return Range{}, errors.New("moduleList.Unmarshal: no modules")
 	}
 	n := len(v.d.Song.Modules)
-	(*Model)(v).importModules(pasted.Modules)
+	(*Model)(v).importModules((*Model)(v).importSamples(pasted.presetSamples, pasted.Modules))
 	if len(v.d.Song.Modules) == n {
 		return Range{}, errors.New("moduleList.Unmarshal: the song already has the modules")
 	}
@@ -847,6 +856,9 @@ func (v moduleParamDefault) Range() RangeInclusive {
 func (v moduleParamDefault) StringOf(value int) string {
 	if p, ok := v.Param(v.k); ok && p.DisplayFunc != nil {
 		s, unit := p.DisplayFunc(value)
+		if unit == "" {
+			return s
+		}
 		return s + " " + unit
 	}
 	return strconv.Itoa(value)

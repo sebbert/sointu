@@ -26,6 +26,7 @@ type (
 		root     string
 		rootErr  error // why the root could not be read
 		entries  []BrowserEntry
+		filter   string // see Filter
 		expanded map[string]bool
 		selected int
 		// lastFolder is the folder of the file last loaded into a buffer,
@@ -43,7 +44,8 @@ type (
 		manual bool
 		cache  []browserDecoded
 		// watched is read by the watcher, which runs while there is a root
-		watched     atomic.Pointer[browserWatch]
+		// (behind a pointer, as the model is copied by value in places)
+		watched     *atomic.Pointer[browserWatch]
 		watchCancel context.CancelFunc
 	}
 
@@ -193,11 +195,68 @@ func (m *BrowserModel) refresh() {
 	if err := m.appendDir(b.root, 0); err != nil {
 		b.rootErr = err
 	}
+	m.watch() // the folders hidden by the filter too
+	b.entries = filterEntries(b.entries, b.filter)
 	if i := slices.IndexFunc(b.entries, func(e BrowserEntry) bool { return e.Path == selected }); i >= 0 {
 		b.selected = i
+	} else if selected != "" && b.filter != "" {
+		// the filter hid the selected row
+		b.selected = 0
+		m.Stop()
 	}
 	b.selected = min(max(b.selected, 0), len(b.entries)-1)
-	m.watch()
+}
+
+// filterEntries keeps the rows whose names contain filter, ignoring case,
+// the rows inside a folder that does, and the folders that the rows kept are
+// in. An empty filter keeps all.
+func filterEntries(entries []BrowserEntry, filter string) []BrowserEntry {
+	filter = strings.ToLower(strings.TrimSpace(filter))
+	if filter == "" {
+		return entries
+	}
+	keep := make([]bool, len(entries))
+	matchDepth := -1 // the depth of the matching folder the row is in, or -1
+	for i, e := range entries {
+		if matchDepth >= 0 && e.Depth <= matchDepth {
+			matchDepth = -1
+		}
+		if !strings.Contains(strings.ToLower(e.Name), filter) && matchDepth < 0 {
+			continue
+		}
+		keep[i] = true
+		if e.Dir && matchDepth < 0 {
+			matchDepth = e.Depth
+		}
+		for j, d := i-1, e.Depth; j >= 0 && d > 0; j-- { // the folders it is in
+			if entries[j].Depth < d {
+				keep[j], d = true, entries[j].Depth
+			}
+		}
+	}
+	ret := entries[:0]
+	for i, e := range entries {
+		if keep[i] {
+			ret = append(ret, e)
+		}
+	}
+	return ret
+}
+
+// Filter returns a String for the filter of the rows: only the files and
+// folders whose names contain it are listed, among those of the root and the
+// expanded folders, and the folders they are in.
+func (m *BrowserModel) Filter() String { return MakeString((*browserFilter)(m)) }
+
+type browserFilter BrowserModel
+
+func (v *browserFilter) Value() string { return v.browser.filter }
+func (v *browserFilter) SetValue(value string) bool {
+	if value != v.browser.filter {
+		v.browser.filter = value
+		(*BrowserModel)(v).refresh()
+	}
+	return true
 }
 
 // browserWatchInterval is how often the watcher looks at the folders shown.
@@ -224,10 +283,14 @@ func (m *BrowserModel) watch() {
 			w[e.Path] = stampOf(e.Path)
 		}
 	}
+	if b.watched == nil {
+		b.watched = new(atomic.Pointer[browserWatch])
+	}
 	b.watched.Store(&w)
 	if b.watchCancel != nil {
 		return
 	}
+	watched := b.watched
 	ctx, cancel := context.WithCancel(context.Background())
 	b.watchCancel = cancel
 	go func() {
@@ -240,7 +303,7 @@ func (m *BrowserModel) watch() {
 				return
 			case <-ticker.C:
 			}
-			w := b.watched.Load()
+			w := watched.Load()
 			if w == told {
 				continue
 			}
@@ -248,7 +311,7 @@ func (m *BrowserModel) watch() {
 				if stampOf(dir) != stamp {
 					told = w
 					TrySend(m.broker.ToModel, MsgToModel{Data: func() {
-						if b.watched.Load() == w {
+						if watched.Load() == w {
 							m.refresh()
 						}
 					}})
@@ -628,12 +691,11 @@ func (m *BufferModel) ImportFiles(paths []string, replace bool) {
 		f, findErr := ffmpeg.Find("")
 		for i, path := range files {
 			name := filepath.Base(path)
-			var stored []byte
+			var data, stored []byte
 			var channels int
 			var meta importMeta
 			err := findErr
 			if err == nil {
-				var data []byte
 				if data, err = os.ReadFile(path); err == nil {
 					stored, channels, meta, err = importSample(f, name, data)
 				}

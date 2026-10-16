@@ -854,7 +854,7 @@ func (r *Remote) loadPreset(instr *sointu.Instrument, name string) error {
 		return err
 	}
 	loaded := p.instr.Copy()
-	m.importModules(p.modules, loaded.Units)
+	m.importModules(m.importSamples(p.samples, p.modules, loaded.Units), loaded.Units)
 	m.assignUnitIDs(loaded.Units)
 	m.assignBuses(loaded.Units)
 	instr.Name, instr.Comment, instr.Units = loaded.Name, loaded.Comment, loaded.Units
@@ -1189,7 +1189,7 @@ func (r *Remote) AddModule(name, presetName string, inputs int) (string, error) 
 			if i < 0 {
 				return focus, "", fmt.Errorf("no module preset %q: see the presets tool", presetName)
 			}
-			mods := m.modulePresets[i].modules
+			mods := m.importSamples(m.modulePresets[i].samples, m.modulePresets[i].modules)
 			ids := m.importModules(mods)
 			index, ok := m.d.Song.Modules.Find(ids[mods[len(mods)-1].ID])
 			if !ok {

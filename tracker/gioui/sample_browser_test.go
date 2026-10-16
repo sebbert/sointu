@@ -110,6 +110,9 @@ func TestSampleBrowserLayout(t *testing.T) {
 	b.Right()
 	b.Right()
 	frame("2-expanded")
+	b.Filter().SetValue("kick")
+	frame("2-filtered")
+	b.Filter().SetValue("")
 	tr.dropFiles(app.FileDropEvent{Paths: []string{filepath.Join(samples, "Bass")}})
 	if b.Root() != filepath.Join(samples, "Bass") {
 		t.Errorf("a dropped folder did not become the root: %q", b.Root())

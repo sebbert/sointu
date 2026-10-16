@@ -214,6 +214,11 @@ const (
 	// BufferRegionSliceStop is set in BufferRegion.Flags for sliced bufread
 	// units that are silent outside their slice.
 	BufferRegionSliceStop = 2048
+	// BufferRegionPingPong is set in BufferRegion.Flags, with
+	// BufferRegionLoop, for bufread units whose loop plays forwards and
+	// backwards in turn: to its last frame, back to its start, and so on.
+	// There is no crossfade at the turns.
+	BufferRegionPingPong = 4096
 	// BufferRegionSliceShift is where the slice parameter is in
 	// BufferRegion.Flags, for BufferRegionSliced: 7 bits.
 	BufferRegionSliceShift = 24
@@ -829,7 +834,8 @@ func (b *bytecodeBuilder) scanBuffers(patch sointu.Patch) {
 func (b *bytecodeBuilder) getBufferRegionIndex(unit sointu.Unit, firstVoice int) int {
 	p := unit.Parameters
 	start, loopStart, loopLength := p["start"], p["loopstart"], p["looplength"]
-	sliced := unit.Type == "bufread" && p["slices"] != 0 && p["mode"] != 1
+	sliced := sointu.BufreadSliced(unit)
+	tap := p["mode"] == sointu.BufreadTap
 	if unit.Type == "bufread" && p["timing"] == 2 { // in 48ths of a beat
 		start = BPMFrames(start, b.BPM)
 		if !sliced { // else in parts of the slice
@@ -838,9 +844,13 @@ func (b *bytecodeBuilder) getBufferRegionIndex(unit sointu.Unit, firstVoice int)
 	}
 	r := BufferRegion{BufferID: uint32(p["buffer"]), Start: uint32(int32(start)), EdgeFade: uint32(max(p["edgefade"], 0))}
 	// loop points as int32 too; a negative loop start counts from the end
-	if p["loop"] == 1 && p["mode"] != 1 {
-		r.LoopStart, r.LoopLength, r.Fade = uint32(int32(loopStart)), uint32(loopLength), uint32(p["fade"])
+	if mode := p["mode"]; mode == sointu.BufreadLoop || mode == sointu.BufreadPingPong {
+		r.LoopStart, r.LoopLength, r.Fade = uint32(int32(loopStart)), uint32(loopLength), uint32(p["loopfade"])
 		r.Flags |= BufferRegionLoop
+		if mode == sointu.BufreadPingPong { // the turns need no crossfade
+			r.Fade = 0
+			r.Flags |= BufferRegionPingPong
+		}
 	}
 	if unit.Type == "bufwrite" {
 		r = BufferRegion{BufferID: uint32(p["buffer"]), Flags: BufferRegionWrite}
@@ -851,10 +861,11 @@ func (b *bytecodeBuilder) getBufferRegionIndex(unit sointu.Unit, firstVoice int)
 			r.Flags |= BufferRegionNoPop
 		}
 	} else {
-		if p["mode"] == 1 {
+		note := p["note"]
+		if tap {
 			r.Flags |= BufferRegionTap
 			r.EdgeFade = 0 // a tap does not get to the edges
-		} else if p["notetracking"] == 1 && !(sliced && p["slices"] == 2) { // the note picks the slice
+		} else if note == sointu.BufreadNotePitch || note == sointu.BufreadNoteSlicePitch {
 			r.Flags |= BufferRegionNoteTracking
 		}
 		if p["timing"] == 1 {
@@ -862,10 +873,10 @@ func (b *bytecodeBuilder) getBufferRegionIndex(unit sointu.Unit, firstVoice int)
 		}
 		if sliced {
 			r.Flags |= BufferRegionSliced | uint32(min(max(p["slice"], 0), sointu.BufreadMaxSlice))<<BufferRegionSliceShift
-			if p["slices"] == 2 {
+			if note == sointu.BufreadNoteSlice || note == sointu.BufreadNoteSlicePitch {
 				r.Flags |= BufferRegionSliceNote
 			}
-			if p["sliceend"] == 1 {
+			if p["slices"] == sointu.BufreadSlicesStop {
 				r.Flags |= BufferRegionSliceStop
 			}
 		} else if b.ringBuffers[p["buffer"]] {

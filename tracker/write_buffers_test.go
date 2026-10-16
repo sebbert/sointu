@@ -41,7 +41,7 @@ func TestWriteBuffers(t *testing.T) {
 			t.Errorf("a bufread unit plays buffer %d, not %d", u.Parameters["buffer"], buf.ID)
 		}
 	}
-	if u := units()[0]; u.Parameters["start"] != -22050 || u.Parameters["mode"] != 1 {
+	if u := units()[0]; u.Parameters["start"] != -22050 || u.Parameters["mode"] != sointu.BufreadTap {
 		t.Errorf("the tap: %v", u.Parameters)
 	}
 	// the buffer follows the unit
@@ -147,8 +147,8 @@ func TestWriteBuffers(t *testing.T) {
 			shown[p.up.Name] = p
 		}
 	}
-	if p := shown["mode"]; p.Type() != ChoiceParameter || (parameterInt{p}).StringOf(1) != "tap" {
-		t.Errorf("mode: type %v, value 1 named %q", p.Type(), (parameterInt{p}).StringOf(1))
+	if p := shown["mode"]; p.Type() != ChoiceParameter || (parameterInt{p}).StringOf(sointu.BufreadTap) != "tap" {
+		t.Errorf("mode: type %v, tap named %q", p.Type(), (parameterInt{p}).StringOf(sointu.BufreadTap))
 	}
 	if _, ok := shown["transpose"]; !ok {
 		t.Error("a tap timed by pitch has no transpose")

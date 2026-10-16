@@ -489,12 +489,15 @@ func (m Modules) Param(index, k int) (ret UnitParameter, ok bool) {
 			}
 		} else {
 			ret.MinValue, ret.MaxValue, ret.Neutral, ret.DisplayFunc = p.MinValue, p.MaxValue, p.Neutral, p.DisplayFunc
+			ret.Choice = p.Choice
 		}
 	}
 	if t, n, ok := splitDisplay(mp.Display); ok {
 		for _, p := range UnitTypes[t].Params {
 			if p.Name == n {
+				// the names of a choice only fit its range
 				ret.DisplayFunc = p.DisplayFunc
+				ret.Choice = p.Choice && ret.MinValue == p.MinValue && ret.MaxValue == p.MaxValue
 			}
 		}
 	}

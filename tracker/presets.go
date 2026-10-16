@@ -164,7 +164,8 @@ func (m *presetResultList) SetSelected(i int) {
 		m.d.Song.Patch = append(m.d.Song.Patch, defaultInstrument.Copy())
 	}
 	newInstr := m.presetData.cache.results[i].instr.Copy()
-	(*Model)(m).importModules(m.presetData.cache.results[i].modules, newInstr.Units)
+	mods := (*Model)(m).importSamples(m.presetData.cache.results[i].samples, m.presetData.cache.results[i].modules, newInstr.Units)
+	(*Model)(m).importModules(mods, newInstr.Units)
 	(*Model)(m).assignUnitIDs(newInstr.Units)
 	(*Model)(m).assignBuses(newInstr.Units)
 	m.d.Song.Patch[m.d.InstrIndex].Name = newInstr.Name // only copy the relevant fields to preserve the  user defined values e.g. NumVoices and MIDI configuration
@@ -227,7 +228,9 @@ func (m *overwriteUserPreset) Do() {
 	fileName := filepath.Join(userPresetsDir, name+".yml")
 	os.MkdirAll(userPresetsDir, 0755)
 	// with the modules that its units use
-	data, err := yaml.Marshal(&instrumentFile{Instrument: instr, Modules: (*Model)(m).modulesUsedBy(instr.Units)})
+	file := instrumentFile{Instrument: instr, Modules: (*Model)(m).modulesUsedBy(instr.Units)}
+	file.presetSamples = (*Model)(m).samplesUsedBy(file.Modules, instr.Units) // and the samples
+	data, err := yaml.Marshal(&file)
 	if err != nil {
 		return
 	}
@@ -290,6 +293,7 @@ type (
 		needsGmDls bool
 		instr      sointu.Instrument
 		modules    sointu.Modules // the modules that the units of instr use
+		samples    presetSamples  // the samples that they read
 	}
 
 	presetCache struct {
@@ -415,6 +419,7 @@ func (m *presetData) loadPresetsFromFs(fsys fs.FS, userDefined bool, seenDir map
 				user:       userDefined,
 				instr:      instr,
 				modules:    file.Modules,
+				samples:    file.presetSamples,
 				needsGmDls: checkNeedsGmDls(instr),
 			}
 			if dir != "" {

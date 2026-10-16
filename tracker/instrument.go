@@ -470,6 +470,7 @@ func (m *InstrModel) Write(w io.WriteCloser) bool {
 		instr2.Name = "" // don't save the instrument name to a file; we'll replace the instruments name with the filename when loading from a file
 	}
 	file := instrumentFile{Instrument: instr2, Modules: (*Model)(m).modulesUsedBy(instr.Units)} // with the modules its units use
+	file.presetSamples = (*Model)(m).samplesUsedBy(file.Modules, instr.Units)                   // and the samples
 	if extension == ".json" {
 		contents, err = json.Marshal(file)
 	} else {
@@ -534,7 +535,8 @@ success:
 	for len(m.d.Song.Patch) <= m.d.InstrIndex {
 		m.d.Song.Patch = append(m.d.Song.Patch, defaultInstrument.Copy())
 	}
-	(*Model)(m).importModules(file.Modules, instrument.Units)
+	mods := (*Model)(m).importSamples(file.presetSamples, file.Modules, instrument.Units)
+	(*Model)(m).importModules(mods, instrument.Units)
 	(*Model)(m).assignUnitIDs(instrument.Units)
 	(*Model)(m).assignBuses(instrument.Units)
 	m.d.Song.Patch[m.d.InstrIndex].Name = instrument.Name // only copy the relevant fields to preserve the user defined values e.g. NumVoices and MIDI configuration

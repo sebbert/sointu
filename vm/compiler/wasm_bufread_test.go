@@ -115,15 +115,15 @@ func bufreadTestSong() sointu.Song {
 		}},
 		Patch: sointu.Patch{
 			{Name: "mono", NumVoices: 1, Units: []sointu.Unit{
-				{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 70, "gain": 100, "speed": 128, "buffer": 1, "notetracking": 1}},
+				{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 70, "gain": 100, "speed": 128, "buffer": 1, "note": 1}},
 				{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
 			}},
 			{Name: "stereo loop", NumVoices: 1, Units: []sointu.Unit{
-				{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 1, "transpose": 70, "detune": 64, "gain": 128, "speed": 128, "buffer": 2, "notetracking": 1, "start": 500, "loop": 1, "loopstart": 1000, "looplength": 3000}},
+				{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 1, "transpose": 70, "detune": 64, "gain": 128, "speed": 128, "buffer": 2, "note": 1, "start": 500, "mode": 1, "loopstart": 1000, "looplength": 3000}},
 				{Type: "out", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128}},
 			}},
 			{Name: "missing", NumVoices: 1, Units: []sointu.Unit{
-				{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 99, "notetracking": 0}},
+				{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 99, "note": 0}},
 				{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
 			}},
 			{Name: "modulated loop", NumVoices: 1, Units: []sointu.Unit{
@@ -137,7 +137,7 @@ func bufreadTestSong() sointu.Song {
 				{Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": 90}},
 				{Type: "send", Parameters: sointu.ParamMap{"stereo": 0, "amount": 70, "target": 100, "port": 5, "sendpop": 0}},
 				{Type: "send", Parameters: sointu.ParamMap{"stereo": 0, "amount": 40, "target": 100, "port": 6, "sendpop": 1}},
-				{ID: 100, Type: "bufread", Parameters: sointu.ParamMap{"stereo": 1, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 1, "notetracking": 1, "start": 100, "loop": 1, "loopstart": 2000, "looplength": 4000, "fade": 1500}},
+				{ID: 100, Type: "bufread", Parameters: sointu.ParamMap{"stereo": 1, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 1, "note": 1, "start": 100, "mode": 1, "loopstart": 2000, "looplength": 4000, "loopfade": 1500}},
 				{Type: "out", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128}},
 			}},
 		},
@@ -307,11 +307,11 @@ func TestBufreadWasmInBrowser(t *testing.T) {
 				}},
 				Patch: sointu.Patch{
 					{NumVoices: 1, Units: []sointu.Unit{
-						{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 64, "speed": 128, "buffer": 1, "notetracking": 1}},
+						{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 64, "speed": 128, "buffer": 1, "note": 1}},
 						{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
 					}},
 					{NumVoices: 1, Units: []sointu.Unit{
-						{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 1, "transpose": 64, "detune": 64, "gain": 64, "speed": 128, "buffer": 2, "notetracking": 1, "loop": 1, "loopstart": 1000, "looplength": 5000}},
+						{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 1, "transpose": 64, "detune": 64, "gain": 64, "speed": 128, "buffer": 2, "note": 1, "mode": 1, "loopstart": 1000, "looplength": 5000}},
 						{Type: "out", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128}},
 					}},
 				},

@@ -12,6 +12,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
+	"gioui.org/text"
 	"gioui.org/unit"
 	"github.com/vsariola/sointu/tracker"
 	"golang.org/x/exp/shiny/materialdesign/icons"
@@ -32,6 +33,7 @@ type SampleBrowser struct {
 	autoBtn    *Clickable
 	playBtn    *Clickable
 	folderBtn  *Clickable
+	filter     *Editor
 }
 
 func NewSampleBrowser(m *tracker.Model) *SampleBrowser {
@@ -44,11 +46,12 @@ func NewSampleBrowser(m *tracker.Model) *SampleBrowser {
 		autoBtn:    new(Clickable),
 		playBtn:    new(Clickable),
 		folderBtn:  new(Clickable),
+		filter:     NewEditor(true, true, text.Start),
 	}
 }
 
 func (sb *SampleBrowser) Tags(level int, yield TagYieldFunc) bool {
-	return yield(level, sb.list) && sb.rootMenu.Tags(level+1, yield)
+	return yield(level, sb.list) && yield(level+1, &sb.filter.widgetEditor) && sb.rootMenu.Tags(level+1, yield)
 }
 
 // startRoot returns the folder that the browser shows first: the last
@@ -96,6 +99,14 @@ func (sb *SampleBrowser) update(gtx C, b *tracker.BrowserModel) {
 			b.Up()
 		}
 		sb.list.EnsureVisible(sb.list.TrackerList.Selected())
+	}
+	// Enter goes from the filter to the rows, Escape also clears it
+	switch sb.filter.Update(gtx, b.Filter()) {
+	case EditorEventSubmit:
+		sb.list.Focus()
+	case EditorEventCancel:
+		b.Filter().SetValue("")
+		sb.list.Focus()
 	}
 	for sb.folderBtn.Clicked(gtx) {
 		sb.chooseFolder(TrackerFromContext(gtx))
@@ -167,6 +178,14 @@ func (sb *SampleBrowser) Layout(gtx C) D {
 		)
 	}
 
+	filter := func(gtx C) D {
+		return layout.Inset{Left: 4, Right: 4, Bottom: 4}.Layout(gtx, func(gtx C) D {
+			return layoutField(gtx, th, func(gtx C) D {
+				return sb.filter.Layout(gtx, b.Filter(), th, &th.InstrumentEditor.InstrumentComment, "Filter")
+			})
+		})
+	}
+
 	entries := b.Entries()
 	elem := func(gtx C, i int) D {
 		gtx.Constraints.Min.X = gtx.Constraints.Max.X
@@ -212,6 +231,8 @@ func (sb *SampleBrowser) Layout(gtx C) D {
 		switch {
 		case b.RootErr() != nil:
 			text = b.RootErr().Error()
+		case text == "" && len(entries) == 0 && b.Filter().Value() != "":
+			text = "Nothing here matches the filter"
 		case text == "" && len(entries) == 0:
 			text = "No folders or audio files here"
 		case text == "":
@@ -226,6 +247,7 @@ func (sb *SampleBrowser) Layout(gtx C) D {
 	return Surface{Height: 5, Focus: tr.PatchPanel.TreeFocused(gtx)}.Layout(gtx, func(gtx C) D {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(header),
+			layout.Rigid(filter),
 			layout.Flexed(1, func(gtx C) D {
 				defer op.Offset(image.Point{}).Push(gtx.Ops).Pop()
 				return list(gtx)

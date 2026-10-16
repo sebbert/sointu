@@ -172,7 +172,7 @@ func TestRemoteSlices(t *testing.T) {
 	}
 	first := m.d.Song.Patch[0].Units[0].ID
 	remoteStep(t, m, func() (string, error) {
-		return r.AddUnits("", "", 0, first, []RemoteNewUnit{{Type: "bufread", Params: map[string]any{"buffer": 1, "loop": 1}}})
+		return r.AddUnits("", "", 0, first, []RemoteNewUnit{{Type: "bufread", Params: map[string]any{"buffer": 1, "mode": "loop"}}})
 	})
 	shown := func() map[string]Parameter {
 		ret := map[string]Parameter{}
@@ -189,20 +189,37 @@ func TestRemoteSlices(t *testing.T) {
 	}
 	func() {
 		defer m.change("test", PatchChange, MajorChange)()
-		m.d.Song.Patch[0].Units[0].Parameters["slices"] = 2
+		m.d.Song.Patch[0].Units[0].Parameters["slices"] = sointu.BufreadSlicesStop
+		m.d.Song.Patch[0].Units[0].Parameters["note"] = sointu.BufreadNoteSlice
 		m.d.Song.Patch[0].Units[0].Parameters["looplength"] = 64
 	}()
 	s = shown()
-	for _, name := range []string{"slice", "sliceend"} {
-		if _, ok := s[name]; !ok {
-			t.Errorf("%s is not shown with slices note", name)
+	if _, ok := s["slice"]; !ok {
+		t.Error("slice is not shown with slices on")
+	}
+	if p, ok := s["note"]; !ok || p.Type() != ChoiceParameter || (parameterInt{p}).StringOf(p.Value()) != "slice" {
+		t.Errorf("note: shown %v, type %v, value %d", ok, p.Type(), p.Value())
+	}
+	if p := s["slice"]; !strings.HasPrefix(p.Hint().Label, "C-3 plays slice") {
+		t.Errorf("the slice with note slice: %q", p.Hint().Label)
+	}
+	for _, name := range []string{"mode", "note", "timing", "slices"} { // menus, not knobs
+		if p := s[name]; p.Type() != ChoiceParameter {
+			t.Errorf("%s has type %v, want ChoiceParameter", name, p.Type())
 		}
 	}
-	if _, ok := s["notetracking"]; ok {
-		t.Error("notetracking is shown with slices note")
+	if _, ok := s["loopfade"]; !ok {
+		t.Error("loopfade is not shown with mode loop")
 	}
 	if p := s["looplength"]; p.Label() != "50%" {
 		t.Errorf("the loop length of a sliced unit: %q", p.Label())
+	}
+	func() {
+		defer m.change("test", PatchChange, MajorChange)()
+		m.d.Song.Patch[0].Units[0].Parameters["mode"] = sointu.BufreadPingPong
+	}()
+	if _, ok := shown()["loopfade"]; ok {
+		t.Error("loopfade is shown with mode ping-pong")
 	}
 }
 

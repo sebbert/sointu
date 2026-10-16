@@ -392,7 +392,8 @@ func (v *unitList) Marshal(r Range) ([]byte, error) {
 	if _, ok := m.scopeModule(); !ok {
 		units = withoutBindings(units)
 	}
-	ret, err := yaml.Marshal(unitClipboard{Units: units, Modules: m.modulesUsedBy(units)})
+	mods := m.modulesUsedBy(units)
+	ret, err := yaml.Marshal(unitClipboard{Units: units, Modules: mods, presetSamples: m.samplesUsedBy(mods, units)})
 	if err != nil {
 		return nil, fmt.Errorf("UnitListView.marshal: %v", err)
 	}
@@ -412,7 +413,8 @@ func (v *unitList) Unmarshal(data []byte) (r Range, err error) {
 	if len(pastedUnits.Units) == 0 {
 		return Range{}, errors.New("UnitListView.unmarshal: no units")
 	}
-	m.importModules(pastedUnits.Modules, pastedUnits.Units)
+	mods := m.importSamples(pastedUnits.presetSamples, pastedUnits.Modules, pastedUnits.Units)
+	m.importModules(mods, pastedUnits.Units)
 	list = m.unitsPtr() // importing modules may have moved them
 	for i := range pastedUnits.Units {
 		if u := &pastedUnits.Units[i]; u.Type == "module" && m.wouldUseItself(u.Parameters["module"]) {
