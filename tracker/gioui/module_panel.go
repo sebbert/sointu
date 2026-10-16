@@ -40,6 +40,8 @@ type (
 		name          *Editor
 		def, min, max *NumericUpDownState
 		bind, del     *Clickable
+		defBtn        *Clickable // the default of a choice, in a menu
+		defMenu       *MenuState
 	}
 )
 
@@ -60,13 +62,22 @@ func NewModulePanel(m *tracker.Model) *ModulePanel {
 			name: NewEditor(true, true, text.Start),
 			def:  NewNumericUpDownState(), min: NewNumericUpDownState(), max: NewNumericUpDownState(),
 			bind: new(Clickable), del: new(Clickable),
+			defBtn: new(Clickable), defMenu: new(MenuState),
 		}
 	}
 	return ret
 }
 
 func (mp *ModulePanel) Tags(level int, yield TagYieldFunc) bool {
-	return yield(level, mp.list) && yield(level+1, &mp.nameEditor.widgetEditor) && mp.presetsMenu.Tags(level+1, yield)
+	if !(yield(level, mp.list) && yield(level+1, &mp.nameEditor.widgetEditor) && mp.presetsMenu.Tags(level+1, yield)) {
+		return false
+	}
+	for i := range mp.params {
+		if !mp.params[i].defMenu.Tags(level+1, yield) {
+			return false
+		}
+	}
+	return true
 }
 
 func (mp *ModulePanel) update(gtx C, t *Tracker) {
@@ -314,7 +325,14 @@ func (mp *ModulePanel) layoutParam(gtx C, t *Tracker, k int) D {
 	if typ, name, ok := m.ParamSource(k); ok {
 		source = fmt.Sprintf("like %s of %s", name, typ)
 	}
-	defUpDown := NumUpDown(def, t.Theme, row.def, fmt.Sprintf("The value of new module units: %s\n(%s)", def.String(), source))
+	defTip := fmt.Sprintf("The value of new module units: %s\n(%s)", def.String(), source)
+	defUpDown := NumUpDown(def, t.Theme, row.def, defTip)
+	defWidget := defUpDown.Layout
+	if p, ok := m.Param(k); ok && p.Choice {
+		btn := MenuBtn(row.defMenu, row.defBtn, def.String()).WithTip(defTip).
+			WithBtnStyle(&t.Theme.UnitEditor.Choice).WithPopupStyle(&t.Theme.Popup.ContextMenu)
+		defWidget = func(gtx C) D { return btn.Layout(gtx, IntMenuChild(def, icons.NavigationCheck)) }
+	}
 	// the range of the binding of the parameter under the cursor, if it is
 	// bound to this parameter
 	minUpDown := NumUpDown(m.BindingAt(k, false), t.Theme, row.min, "The value that the parameter under the\ncursor gets when a module unit sets\nthis parameter to its lowest value")
@@ -341,7 +359,7 @@ func (mp *ModulePanel) layoutParam(gtx C, t *Tracker, k int) D {
 					layout.Rigid(delBtn.Layout),
 				)
 			}),
-			layout.Rigid(func(gtx C) D { return mp.row(gtx, t, "Default", defUpDown.Layout) }),
+			layout.Rigid(func(gtx C) D { return mp.row(gtx, t, "Default", defWidget) }),
 			layout.Rigid(func(gtx C) D {
 				gtx.Constraints.Min.X = gtx.Constraints.Max.X
 				if !bound {

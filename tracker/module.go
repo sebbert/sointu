@@ -847,6 +847,9 @@ func (v moduleParamDefault) Range() RangeInclusive {
 func (v moduleParamDefault) StringOf(value int) string {
 	if p, ok := v.Param(v.k); ok && p.DisplayFunc != nil {
 		s, unit := p.DisplayFunc(value)
+		if unit == "" {
+			return s
+		}
 		return s + " " + unit
 	}
 	return strconv.Itoa(value)

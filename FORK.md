@@ -1784,7 +1784,9 @@ no host was run with the plugins.
   parameters, and sends can target them. Each parameter looks and works
   like the parameter bound to it: a menu of the buffers, spectra or buses, of
   the instruments for a spawn target, of note lengths for a delay time
-  following the tempo, a switch, or a knob with the same scale and labels.
+  following the tempo, of the values of a choice (also through a module
+  unit of another module, and the default on the Modules tab), a switch, or
+  a knob with the same scale and labels.
   With a scaled binding it is a knob from 0 to 128, labelled with the value
   that the bound parameter gets.
   The buttons under the rack make a module of the selected units (Ctrl+G;
@@ -2632,6 +2634,34 @@ bytes, measured on 11 songs of every old combination; two get smaller,
 because code that could not run is left out: a tap with a hidden loop on
 (the loop code) and slices note with `notetracking` 1 (the note tracking
 code). The bundled modules and `examples/granular.yml` are converted.
+
+### Choices are menus
+
+A parameter whose values are names, not amounts, is a menu in the unit
+editor instead of a knob: `UnitParameter.Choice`, which the tracker
+alone reads (`ChoiceParameter`); the song files and the synths are the
+same. Before, only the choices of two values were menus. They are:
+
+| Unit | Parameter | Values |
+|---|---|---|
+| delay | `notetracking` (tracking) | fixed, pitch, BPM |
+| reverb | `bypass` | none, lowcut, highcut, low+highcut, predelay, lowcut+pre, highcut+pre, all |
+| aux, in | `channel` | the channel pairs |
+| oscillator | `type` | sine, trisaw, pulse, gate, sample |
+| bufread | `mode`, `note`, `timing`, `slices` | see above |
+| spphase | `mode` | disperse, random, robot |
+| spawn | `mode` | rate, edge, sync |
+| window | `timing` | frames, pitch, BPM |
+| mcmix | `type` | hadamard, householder, shuffle |
+| mcfilter | `type` | lowpass, highpass |
+
+A module parameter is a choice when the first parameter bound to it is
+and the binding is not scaled (`Modules.Param`), also when that is a
+parameter of a module unit; with a display override (`Display`) only
+when the ranges are the same. A module unit then shows a menu, and the
+Modules tab offers the default in a menu. A test checks that every
+parameter with named values is a choice (`TestEveryChoiceIsAChoice`).
+Numbers stay knobs: `unison`, a send's `port`, `slot`, `steps`.
 
 ## MCP server
 
