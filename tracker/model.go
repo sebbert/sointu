@@ -83,6 +83,10 @@ type (
 		// taps are the watches of the signal at units: see taps.go
 		taps map[tapKey]*tapWatch
 
+		// cycles are the cycles of the oscillator units shown in the rack,
+		// by their parameters: see OscillatorCycle
+		cycles map[cycleKey][]float32
+
 		// modulePresets are the module presets: first those of the user,
 		// userModulePresets of them, read from modulePresetPath or, if it is
 		// empty, from the user's configuration directory; then those that

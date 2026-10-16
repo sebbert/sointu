@@ -66,9 +66,10 @@ type (
 		previews  []Clickable // of the units' buffers, by unit
 		railLane  RailLane
 
-		eqEditors      []*EQEditor // of the eq units, by row
-		eqShown        []int       // the rows whose eq editors were laid out
-		rackHeight     int         // in pixels, as last laid out
+		eqEditors      []*EQEditor  // of the eq units, by row
+		cycles         []*cycleView // the plots of the cycles of the oscillators, by row
+		eqShown        []int        // the rows whose eq editors were laid out
+		rackHeight     int          // in pixels, as last laid out
 		expandEQHint   string
 		collapseEQHint string
 	}
@@ -454,10 +455,7 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 		colP, rowP := pe.paramTable.ColTitleList.List.Position, pe.paramTable.RowTitleList.List.Position
 		paramStyle.Origin = image.Pt(rowTitleWidth+(x-colP.First)*cellWidth-colP.Offset, pe.rowTop(gtx, y)-rowP.Offset)
 		paramStyle.Layout(gtx)
-		commentX := t.Model.Params().RowWidth(y)
-		if t.EQAt(y).Active() && !t.Unit().EQExpanded(y) { // after the small plot
-			commentX += tracker.EQInlineCells
-		}
+		commentX := t.Model.Params().RowWidth(y) + t.Unit().InlineCells(y) // after the small plot
 		if x == commentX {
 			if y == cursor.Y {
 				return layout.W.Layout(gtx, func(gtx C) D {
@@ -494,6 +492,9 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 		if t.EQAt(y).Active() {
 			pe.layoutEQ(gtx, y)
 			return
+		}
+		if cycle := t.Unit().OscillatorCycle(y); cycle != nil {
+			pe.layoutOscillatorCycle(gtx, y, cycle)
 		}
 		if !t.preferences.Rack.BufferPreviews {
 			return
@@ -560,16 +561,8 @@ func (pe *InstrumentEditor) layoutEQ(gtx C, y int) {
 		ed.Layout(gtx)
 		return
 	}
-	// the cursor stays on the parameters: a click on the small plot puts it
-	// in a cell under it
+	pe.keepCursorOnParams(gtx, y)
 	w := t.Params().RowWidth(y)
-	if c, c2 := t.Params().Cursor(), t.Params().Cursor2(); c.Y == y && c.X >= w && w > 0 {
-		c.X = w - 1
-		t.Params().SetCursor(c)
-		if c2.Y == y {
-			t.Params().SetCursor2(c)
-		}
-	}
 	colP := pe.paramTable.ColTitleList.List.Position
 	inset := gtx.Dp(4)
 	x := (w-colP.First)*cellWidth - colP.Offset
@@ -580,6 +573,21 @@ func (pe *InstrumentEditor) layoutEQ(gtx C, y int) {
 	defer op.Offset(image.Pt(x+inset, inset)).Push(gtx.Ops).Pop()
 	gtx.Constraints = layout.Exact(size)
 	ed.LayoutSmall(gtx)
+}
+
+// keepCursorOnParams keeps the cursor of the rack on the parameters of row
+// y, which has a plot after them: a click on the plot puts it in a cell
+// under it.
+func (pe *InstrumentEditor) keepCursorOnParams(gtx C, y int) {
+	t := TrackerFromContext(gtx)
+	w := t.Params().RowWidth(y)
+	if c, c2 := t.Params().Cursor(), t.Params().Cursor2(); c.Y == y && c.X >= w && w > 0 {
+		c.X = w - 1
+		t.Params().SetCursor(c)
+		if c2.Y == y {
+			t.Params().SetCursor2(c)
+		}
+	}
 }
 
 // railWidth returns the width of the signal rails of the rack, in pixels: see

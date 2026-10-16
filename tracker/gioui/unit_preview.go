@@ -2,6 +2,7 @@ package gioui
 
 import (
 	"image"
+	"image/color"
 	"math"
 
 	"gioui.org/op"
@@ -109,4 +110,77 @@ func (pe *InstrumentEditor) layoutBusPreview(gtx C, y, id int) {
 	}
 	gtx.Constraints.Min, gtx.Constraints.Max = s, s
 	click.Layout(gtx, func(gtx C) D { return D{Size: s} })
+}
+
+// cycleView is the plot of the cycle of an oscillator unit in its row of the
+// rack, recorded once, and again only when the cycle or its size changes.
+type cycleView struct {
+	ops   op.Ops
+	call  op.CallOp
+	cycle *float32 // the first point of the cycle drawn: the model keeps a cycle until the parameters change
+	size  image.Point
+	color color.NRGBA
+}
+
+// layoutOscillatorCycle draws, after the parameters of the oscillator unit on
+// row y, one cycle of its waveform (see tracker.UnitModel.OscillatorCycle),
+// from -1 to 1 or the peak of the cycle, with a line at 0.
+func (pe *InstrumentEditor) layoutOscillatorCycle(gtx C, y int, cycle []float32) {
+	t := TrackerFromContext(gtx)
+	pe.keepCursorOnParams(gtx, y)
+	cellWidth := gtx.Dp(t.Theme.UnitEditor.Width)
+	inset := gtx.Dp(4)
+	colP := pe.paramTable.ColTitleList.List.Position
+	x := (t.Params().RowWidth(y)-colP.First)*cellWidth - colP.Offset
+	s := image.Pt(tracker.OscillatorInlineCells*cellWidth-2*inset, gtx.Constraints.Max.Y-2*inset)
+	if s.X <= 8 || s.Y <= 8 {
+		return
+	}
+	for len(pe.cycles) <= y {
+		pe.cycles = append(pe.cycles, &cycleView{})
+	}
+	v := pe.cycles[y]
+	style := t.Theme.Plot
+	if v.cycle != &cycle[0] || v.size != s || v.color != style.CurveColors[0] {
+		v.cycle, v.size, v.color = &cycle[0], s, style.CurveColors[0]
+		v.ops.Reset()
+		rec := op.Record(&v.ops)
+		drawCycle(gtx, &v.ops, s, cycle, t.Theme)
+		v.call = rec.Stop()
+	}
+	defer op.Offset(image.Pt(x+inset, inset)).Push(gtx.Ops).Pop()
+	v.call.Add(gtx.Ops)
+}
+
+// drawCycle draws a cycle of an oscillator into ops, over an area of size s.
+func drawCycle(gtx C, ops *op.Ops, s image.Point, cycle []float32, th *Theme) {
+	gtx.Ops = ops
+	defer clip.UniformRRect(image.Rectangle{Max: s}, gtx.Dp(4)).Push(gtx.Ops).Pop()
+	paint.Fill(gtx.Ops, th.UnitEditor.Preview)
+	peak := float32(1)
+	for _, v := range cycle {
+		peak = max(peak, float32(math.Abs(float64(v))))
+	}
+	peak *= 1.05
+	paint.ColorOp{Color: th.Plot.LimitColor}.Add(gtx.Ops)
+	fillRect(gtx, clip.Rect{Min: image.Pt(0, s.Y/2), Max: image.Pt(s.X, s.Y/2+1)})
+	drawPlotCurves(gtx, th.Plot.CurveColors, s, plotRange{0, 1}, plotRange{-peak, peak}, cycleData(cycle), 1)
+}
+
+// cycleData returns the points of a cycle as plot data from 0 to 1, each
+// range reaching to the point after it, so that the curve is connected.
+func cycleData(cycle []float32) PlotDataFunc {
+	n := len(cycle)
+	return func(chn int, xr plotRange) (plotRange, bool) {
+		i1 := max(int(xr.a*float32(n)), 0)
+		i2 := min(int(xr.b*float32(n))+1, n-1)
+		if chn != 0 || i1 > i2 {
+			return plotRange{}, false
+		}
+		lo, hi := cycle[i1], cycle[i1]
+		for _, v := range cycle[i1 : i2+1] {
+			lo, hi = min(lo, v), max(hi, v)
+		}
+		return plotRange{-hi, -lo}, true
+	}
 }
