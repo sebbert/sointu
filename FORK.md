@@ -2527,8 +2527,23 @@ tempo (positions in 15360ths of a quarter note), mixed where slices
 overlap, as long as the loop; the slice starts become the markers, and the
 audio is stored as FLAC like an edited sample. The song and the players
 never need the library. Builds without it refuse REX files, also in the
-browser's preview. Not done yet: the binding to the library, which waits
-for the SDK.
+browser's preview.
+
+`make REX=1` builds the tracker and the plugins with it (macOS): it
+downloads the REX SDK 1.9.2 into `.rexsdk/` (ignored by git; `REXSDK=...`
+uses an SDK unpacked elsewhere), compiles the SDK's `REX.c`, which loads
+the library at run time, through cgo (`rex/rex_sdk.go`, tag `rex`), and
+puts `REX Shared Library.bundle` next to `out/sointu-track` and into
+`Contents/Frameworks` of each plugin bundle, as the SDK asks (a plugin
+must not take the library from its host), with the SDK's license beside
+it. The library is looked for in `$SOINTU_REX_DIR`, then next to the
+binary the code is in, then in `../Frameworks` and `../Resources` of it.
+The SDK's license allows using it, not publishing it or builds with it:
+such builds are for yourself, and no SDK file is in the repository. Tested
+with the SDK's test loops (`SOINTU_REX_SDK=<sdk> go test -tags rex ./rex`
+with `CGO_CFLAGS=-I<sdk>`): 10 slices each, mono and stereo, REX2 and
+.rcy. The rendered audio is as long as the loop or, when the last slice
+rings on past it, as long as that slice.
 
 **Sample editing** (samples, not recordings): Crop (keep the selection),
 Delete (the selection), Trim silence (the ends below a level, -60 dB by
