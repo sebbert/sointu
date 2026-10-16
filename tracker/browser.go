@@ -42,7 +42,8 @@ type (
 		manual bool
 		cache  []browserDecoded
 		// watched is read by the watcher, which runs while there is a root
-		watched     atomic.Pointer[browserWatch]
+		// (behind a pointer, as the model is copied by value in places)
+		watched     *atomic.Pointer[browserWatch]
 		watchCancel context.CancelFunc
 	}
 
@@ -223,10 +224,14 @@ func (m *BrowserModel) watch() {
 			w[e.Path] = stampOf(e.Path)
 		}
 	}
+	if b.watched == nil {
+		b.watched = new(atomic.Pointer[browserWatch])
+	}
 	b.watched.Store(&w)
 	if b.watchCancel != nil {
 		return
 	}
+	watched := b.watched
 	ctx, cancel := context.WithCancel(context.Background())
 	b.watchCancel = cancel
 	go func() {
@@ -239,7 +244,7 @@ func (m *BrowserModel) watch() {
 				return
 			case <-ticker.C:
 			}
-			w := b.watched.Load()
+			w := watched.Load()
 			if w == told {
 				continue
 			}
@@ -247,7 +252,7 @@ func (m *BrowserModel) watch() {
 				if stampOf(dir) != stamp {
 					told = w
 					TrySend(m.broker.ToModel, MsgToModel{Data: func() {
-						if b.watched.Load() == w {
+						if watched.Load() == w {
 							m.refresh()
 						}
 					}})
@@ -603,11 +608,10 @@ func (m *BufferModel) ImportFiles(paths []string, replace bool) {
 		f, findErr := ffmpeg.Find("")
 		for i, path := range files {
 			name := filepath.Base(path)
-			var stored []byte
+			var data, stored []byte // data is the file as it is, before ffmpeg
 			var channels int
 			err := findErr
 			if err == nil {
-				var data []byte
 				if data, err = os.ReadFile(path); err == nil {
 					stored, channels, err = f.Import(data)
 				}
@@ -622,6 +626,7 @@ func (m *BufferModel) ImportFiles(paths []string, replace bool) {
 					return
 				}
 				m.addImported(name, stored, min(max(channels, 1), 2), id)
+				_ = data // for what reads the original file, e.g. its markers
 			}})
 			if findErr != nil {
 				return // without ffmpeg, the others fail the same
