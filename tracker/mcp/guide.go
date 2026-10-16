@@ -23,6 +23,9 @@ Whole numbers, mostly 0 to 128; 64 is often neutral (transpose, detune, panning,
 ## Sends: modulation
 A send adds the top signal times (amount-64)/64 to a parameter of another unit (target: the unit ID, port: the name of the parameter). The port only exists while the send runs: it modulates around the value the parameter has. An LFO is an oscillator with lfo=1, then a send with sendpop=1. A send can target a unit of another instrument; voice picks the voice of the target (0: the same voice, for sends within the instrument).
 
+## Automation
+A plugin shows its host 64 parameters, the automation slots A1 to A64. automate binds a slot to a parameter of a unit that a send can modulate: the slot then offsets the parameter, in steps of the parameter (-128 to 128), on top of the value the unit has, which stays. get_instrument marks such a parameter (A3 +0.0: ...), get_song lists the lanes. The host shows a slot by what it is bound to (A3 Bass: filter frequency), or by the name given with automate. The user automates the slot in the host; recording in the plugin turns that into the points of the lane (rows of the song, linear between points), with the notes. The song plays the points when it is played in the tracker and when it is compiled; set_automation writes them directly. Each lane with points costs bytes in the compiled song: about 6, and 3 to 4 for each point. Go synth and wasm player only.
+
 ## Notes and voices
 Notes are numbered as in the tracker, and as MIDI input arrives in the plugin; the tracker names them by their frequency: 60 is C-3 (130.8 Hz for an oscillator with transpose 64), 69 is A-3 (220 Hz), 36 is C-1 (32.7 Hz). So note 60 from a MIDI keyboard, its C4 key, plays C3 unless the instrument transposes. render_note names the pitch it measures the same way. An instrument with N voices plays N notes at once; each voice has its own state. In the plugin, MIDI channels trigger instruments.
 

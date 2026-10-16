@@ -4,14 +4,16 @@
 // host-independent is forwarded to the Go side in main.go.
 //
 // The unit is a music device ('aumu') with no input and one stereo output,
-// of 32-bit float, non-interleaved. It has no parameters; the song is its
-// class info.
+// of 32-bit float, non-interleaved. Its parameters are the automation slots;
+// the song is its class info.
 
 #import <AudioToolbox/AudioToolbox.h>
 #import <AudioUnit/AUCocoaUIView.h>
 #import <Cocoa/Cocoa.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -28,6 +30,8 @@
 #define MAX_LISTENERS 64
 #define MAX_NOTIFY 16
 #define DEFAULT_MAX_FRAMES 1156
+#define MAX_PARAMS 64 // at least sointuParams()
+#define RAMP_STEP 32  // frames between the values of a ramp of the host
 
 typedef struct {
 	AudioUnitPropertyID id;
@@ -53,6 +57,11 @@ typedef struct sointu_au {
 	AURenderCallbackStruct notify[MAX_NOTIFY];
 	int notify_count;
 	float *buffers[2]; // for a host that renders without buffers of its own
+	// the values of the parameters that the host set last, and which of them
+	// go to the instance at the next render: SetParameter can be called from
+	// any thread, the instance takes them on the audio thread
+	_Atomic float values[MAX_PARAMS];
+	_Atomic uint64_t pending;
 } sointu_au_t;
 
 // The units that are open. A view, and a change told on the main thread, can
@@ -74,10 +83,19 @@ static void show_window(sointu_au_t *p) {
 	pthread_mutex_unlock(&open_lock);
 }
 
-static void property_changed(sointu_au_t *p, AudioUnitPropertyID id, AudioUnitScope scope) {
+static void element_changed(sointu_au_t *p, AudioUnitPropertyID id, AudioUnitScope scope, AudioUnitElement elem) {
 	for (int i = 0; i < p->listener_count; i++)
 		if (p->listeners[i].id == id)
-			p->listeners[i].proc(p->listeners[i].user, p->instance, id, scope, 0);
+			p->listeners[i].proc(p->listeners[i].user, p->instance, id, scope, elem);
+}
+
+static void property_changed(sointu_au_t *p, AudioUnitPropertyID id, AudioUnitScope scope) {
+	element_changed(p, id, scope, 0);
+}
+
+static UInt32 num_params(void) {
+	UInt32 n = sointuParams();
+	return n < MAX_PARAMS ? n : MAX_PARAMS;
 }
 
 // sointu_mark_dirty tells the host that the song changed. Audio Units have
@@ -91,6 +109,33 @@ void sointu_mark_dirty(uintptr_t plugin) {
 		pthread_mutex_unlock(&open_lock);
 		if (open)
 			property_changed(p, kAudioUnitProperty_PresentPreset, kAudioUnitScope_Global);
+	});
+}
+
+// sointu_params_changed tells the host that the names of the parameters
+// changed, or with values their values, which a loaded state set. Called from
+// any thread; the host is told on the main thread.
+void sointu_params_changed(uintptr_t plugin, bool values) {
+	sointu_au_t *p = (sointu_au_t *)plugin;
+	if (values)
+		for (UInt32 i = 0; i < num_params(); i++)
+			atomic_store(&p->values[i], (float)sointuParamValue(p->handle, i));
+	dispatch_async(dispatch_get_main_queue(), ^{
+		pthread_mutex_lock(&open_lock);
+		bool open = is_open(p);
+		pthread_mutex_unlock(&open_lock);
+		if (!open)
+			return;
+		if (!values) {
+			property_changed(p, kAudioUnitProperty_ParameterList, kAudioUnitScope_Global);
+			for (UInt32 i = 0; i < num_params(); i++)
+				element_changed(p, kAudioUnitProperty_ParameterInfo, kAudioUnitScope_Global, i);
+			return;
+		}
+		for (UInt32 i = 0; i < num_params(); i++) {
+			AudioUnitParameter param = {.mAudioUnit = p->instance, .mParameterID = i, .mScope = kAudioUnitScope_Global, .mElement = 0};
+			AUParameterListenerNotify(NULL, NULL, &param);
+		}
 	});
 }
 
@@ -169,9 +214,14 @@ static OSStatus property_info(AudioUnitPropertyID id, AudioUnitScope scope, Audi
 		*writable = true;
 		return output_element(scope, elem);
 	case kAudioUnitProperty_ParameterList:
-		*size = 0;
+		*size = scope == kAudioUnitScope_Global ? num_params() * sizeof(AudioUnitParameterID) : 0;
 		global = false;
 		break;
+	case kAudioUnitProperty_ParameterInfo:
+		*size = sizeof(AudioUnitParameterInfo);
+		if (scope != kAudioUnitScope_Global)
+			return kAudioUnitErr_InvalidScope;
+		return elem < num_params() ? noErr : kAudioUnitErr_InvalidParameter;
 	case kAudioUnitProperty_ElementCount:
 		*size = sizeof(UInt32);
 		global = false;
@@ -226,6 +276,24 @@ static void stream_format(sointu_au_t *p, AudioStreamBasicDescription *f) {
 	f->mBytesPerFrame = sizeof(Float32);
 	f->mChannelsPerFrame = 2;
 	f->mBitsPerChannel = 32;
+}
+
+// parameter_info describes a parameter: an offset of what its slot is bound
+// to, in steps, named by the slot or the name that the user gave it.
+static void parameter_info(sointu_au_t *p, AudioUnitParameterID id, AudioUnitParameterInfo *info) {
+	memset(info, 0, sizeof(*info));
+	char *name = sointuParamName(p->handle, id);
+	snprintf(info->name, sizeof(info->name), "%s", name);
+	// the caller releases the name
+	info->cfNameString = CFStringCreateWithCString(NULL, name, kCFStringEncodingUTF8);
+	free(name);
+	info->unit = kAudioUnitParameterUnit_Generic;
+	info->minValue = -sointuParamRange();
+	info->maxValue = sointuParamRange();
+	info->defaultValue = 0;
+	info->flags = kAudioUnitParameterFlag_IsReadable | kAudioUnitParameterFlag_IsWritable | kAudioUnitParameterFlag_IsHighResolution;
+	if (info->cfNameString != NULL)
+		info->flags |= kAudioUnitParameterFlag_HasCFNameString | kAudioUnitParameterFlag_CFNameRelease;
 }
 
 static void set_number(CFMutableDictionaryRef dict, CFStringRef key, SInt32 value) {
@@ -326,6 +394,11 @@ static OSStatus au_get_property(void *self, AudioUnitPropertyID id, AudioUnitSco
 		stream_format(p, outData);
 		break;
 	case kAudioUnitProperty_ParameterList:
+		for (UInt32 i = 0; i < size / sizeof(AudioUnitParameterID); i++)
+			((AudioUnitParameterID *)outData)[i] = i;
+		break;
+	case kAudioUnitProperty_ParameterInfo:
+		parameter_info(p, elem, outData);
 		break;
 	case kAudioUnitProperty_ElementCount:
 		*(UInt32 *)outData = scope == kAudioUnitScope_Input ? 0 : 1;
@@ -462,18 +535,73 @@ static OSStatus au_remove_property_listener_with_user_data(void *self, AudioUnit
 	return noErr;
 }
 
-// parameters: there are none
+// parameters: one for each automation slot, global, with the number of the
+// slot as its id. A value set with SetParameter goes to the instance at the
+// start of the next render; ScheduleParameters, which the host calls on the
+// render thread before the render, gives the values with their frames.
+
+static OSStatus parameter(AudioUnitParameterID id, AudioUnitScope scope) {
+	if (scope != kAudioUnitScope_Global)
+		return kAudioUnitErr_InvalidScope;
+	return id < num_params() ? noErr : kAudioUnitErr_InvalidParameter;
+}
 
 static OSStatus au_get_parameter(void *self, AudioUnitParameterID id, AudioUnitScope scope, AudioUnitElement elem, AudioUnitParameterValue *value) {
-	return kAudioUnitErr_InvalidParameter;
+	sointu_au_t *p = self;
+	OSStatus err = parameter(id, scope);
+	if (err != noErr)
+		return err;
+	if (value == NULL)
+		return kAudio_ParamError;
+	*value = atomic_load(&p->values[id]);
+	return noErr;
 }
 
 static OSStatus au_set_parameter(void *self, AudioUnitParameterID id, AudioUnitScope scope, AudioUnitElement elem, AudioUnitParameterValue value, UInt32 offset) {
-	return kAudioUnitErr_InvalidParameter;
+	sointu_au_t *p = self;
+	OSStatus err = parameter(id, scope);
+	if (err != noErr)
+		return err;
+	atomic_store(&p->values[id], value);
+	atomic_fetch_or(&p->pending, (uint64_t)1 << id);
+	return noErr;
+}
+
+static void schedule(sointu_au_t *p, AudioUnitParameterID id, UInt32 offset, float value) {
+	atomic_store(&p->values[id], value);
+	sointuParam(p->handle, offset, id, value, false);
 }
 
 static OSStatus au_schedule_parameters(void *self, const AudioUnitParameterEvent *events, UInt32 count) {
-	return count == 0 ? noErr : kAudioUnitErr_InvalidParameter;
+	sointu_au_t *p = self;
+	for (UInt32 i = 0; i < count; i++) {
+		const AudioUnitParameterEvent *ev = &events[i];
+		OSStatus err = parameter(ev->parameter, ev->scope);
+		if (err != noErr)
+			return err;
+		if (ev->eventType == kParameterEvent_Immediate) {
+			schedule(p, ev->parameter, ev->eventValues.immediate.bufferOffset, ev->eventValues.immediate.value);
+			continue;
+		}
+		// a ramp in steps, which the synth ramps between, ending on its last
+		// frame: the host gives a ramp for each render, and a frame after
+		// the render would move the frames of the plugin's events
+		UInt32 start = ev->eventValues.ramp.startBufferOffset, frames = ev->eventValues.ramp.durationInFrames;
+		float from = ev->eventValues.ramp.startValue, to = ev->eventValues.ramp.endValue;
+		for (UInt32 t = 0; t + 1 < frames; t += RAMP_STEP)
+			schedule(p, ev->parameter, start + t, from + (to - from) * t / frames);
+		schedule(p, ev->parameter, start + (frames > 0 ? frames - 1 : 0), to);
+	}
+	return noErr;
+}
+
+// set_pending gives the instance the values that SetParameter set since the
+// last render. Called on the render thread.
+static void set_pending(sointu_au_t *p) {
+	uint64_t pending = atomic_exchange(&p->pending, 0);
+	for (UInt32 i = 0; pending != 0; i++, pending >>= 1)
+		if (pending & 1)
+			sointuParam(p->handle, 0, i, atomic_load(&p->values[i]), false);
 }
 
 // rendering
@@ -563,6 +691,7 @@ static OSStatus render(sointu_au_t *p, AudioUnitRenderActionFlags flags, const A
 		io->mBuffers[i].mDataByteSize = bytes;
 	}
 	render_notify(p, flags | kAudioUnitRenderAction_PreRender, time, bus, frames, io);
+	set_pending(p);
 	Float64 beat = 0, tempo = 0;
 	bool has_tempo = p->host.beatAndTempoProc != NULL &&
 		p->host.beatAndTempoProc(p->host.hostUserData, &beat, &tempo) == noErr && tempo > 0;

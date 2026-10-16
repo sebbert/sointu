@@ -17,7 +17,7 @@ import (
 // goOnlyUnits are the unit types that only the Go synth and the wasm player
 // have: a song using them cannot be compiled for x86.
 var goOnlyUnits = map[string]bool{
-	"bufread": true, "bufwrite": true, "spawn": true, "arg": true, "window": true,
+	"bufread": true, "bufwrite": true, "spawn": true, "arg": true, "automation": true, "window": true,
 	"spfft": true, "spifft": true, "spcopy": true, "spfilter": true, "spcompress": true, "spblur": true,
 	"spgate": true, "spphase": true, "spscale": true, "spformant": true, "spcross": true, "spcomb": true,
 	"ott": true, "limiter": true, "softclip": true, "width": true, "ladder": true, "reverb": true, "convolution": true,
@@ -29,6 +29,7 @@ var unitDescriptions = map[string]string{
 	"add":         "adds the top signal to the one below it, and keeps both",
 	"addp":        "adds the two top signals into one",
 	"arg":         "pushes a value passed by the spawn unit that triggered the voice",
+	"automation":  "pushes the value of the lane of an automation slot at the time of the song, in steps over 128: a send with amount 128 offsets a parameter by it. The automate tool puts one before a unit by itself",
 	"aux":         "adds the signal to an output channel (left, right or an aux channel), times gain, and pops it",
 	"belleq":      "a bell: raises or lowers the frequencies around frequency by gain, as wide as bandwidth",
 	"bufread":     "plays an audio buffer: a sample, or what bufwrite units recorded",
@@ -265,6 +266,7 @@ func (r *Remote) Song() string {
 			fmt.Fprintf(&b, "  %d %q: %s\n", buf.ID, buf.Name, kind)
 		}
 	}
+	b.WriteString(r.describeAutomation())
 	b.WriteString(r.problems())
 	b.WriteString(r.Selection(false))
 	return strings.TrimRight(b.String(), "\n")

@@ -106,6 +106,14 @@ type (
 		// the order the units run, voice by voice.
 		Convs      []Conv
 		ConvStates []int
+
+		// Automation is the table of the lanes of the automation units,
+		// whose operand is the offset of their lane in it, and
+		// AutomationFine whether its values are 16 bits: see automation.go.
+		// AutomationSlot has the slot of a lane at its offset.
+		Automation     []byte
+		AutomationFine bool
+		AutomationSlot []byte
 	}
 
 	// Spectrum is a spectrum buffer: the ID of the buffer, the base 2
@@ -241,6 +249,9 @@ type bytecodeBuilder struct {
 	delayIndices    [][]int
 	unitNo          int
 	featureSet      FeatureSet
+	// automationOffsets are the offsets of the lanes of the automation
+	// units in Automation, by automationKey
+	automationOffsets map[string]int
 	Bytecode
 }
 
@@ -250,6 +261,9 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 	}
 	b := newBytecodeBuilder(patch, bpm)
 	b.featureSet = featureSet
+	if err := b.buildAutomation(patch); err != nil {
+		return nil, err
+	}
 	b.scanBuffers(patch)
 	for instrIndex, instr := range patch {
 		if instr.NumVoices < 1 {
@@ -465,6 +479,11 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 			case "arg":
 				b.op(opcode)
 				b.operand(min(max(p["index"], 0), sointu.MaxSpawnArgs-1))
+			case "automation":
+				// operand: the offset of its lane in Automation
+				offset := b.automationOffsets[automationKey(unit)]
+				b.op(opcode)
+				b.operand(offset&255, offset>>8)
 			case "aux", "in":
 				b.op(opcode + p["stereo"])
 				b.defOperands(unit)
@@ -616,15 +635,16 @@ func newBytecodeBuilder(patch sointu.Patch, bpm int) *bytecodeBuilder {
 		delayTimesU16[i] = uint16(d)
 	}
 	c := bytecodeBuilder{
-		spectrumSizes:   spectrumSizes(patch),
-		Bytecode:        Bytecode{PolyphonyBitmask: polyphonyBitmask, Polyphony: polyphony, WideVoices: numVoices > MAX_VOICES_NARROW, NumVoices: uint32(numVoices), DelayTimes: delayTimesU16, BPM: bpm},
-		sampleOffsetMap: map[SampleOffset]int{},
-		bufferRegionMap: map[BufferRegion]int{},
-		globalAddrs:     map[int]int{},
-		globalFixups:    map[int]([]int){},
-		localAddrs:      map[int]int{},
-		localFixups:     map[int]([]int){},
-		delayIndices:    delayIndices}
+		spectrumSizes:     spectrumSizes(patch),
+		Bytecode:          Bytecode{PolyphonyBitmask: polyphonyBitmask, Polyphony: polyphony, WideVoices: numVoices > MAX_VOICES_NARROW, NumVoices: uint32(numVoices), DelayTimes: delayTimesU16, BPM: bpm},
+		sampleOffsetMap:   map[SampleOffset]int{},
+		bufferRegionMap:   map[BufferRegion]int{},
+		globalAddrs:       map[int]int{},
+		globalFixups:      map[int]([]int){},
+		localAddrs:        map[int]int{},
+		localFixups:       map[int]([]int){},
+		automationOffsets: map[string]int{},
+		delayIndices:      delayIndices}
 	return &c
 }
 

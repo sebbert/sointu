@@ -1012,6 +1012,19 @@ var UnitTypes = map[string]UnitType{
 		},
 		StackUse: stackUseSource,
 	},
+	"automation": {
+		// automation pushes the value of the lane of its slot (see Lane) at
+		// the time of the song, in steps of a parameter over 128: a send
+		// with the amount 1 offsets a parameter by it. In a tracker or a
+		// plugin, while the song is not playing, it pushes the value that
+		// the host last gave the slot. Song.Expand puts one before every
+		// unit that a lane is bound to and gives the unit the points of the
+		// lane as VarArgs: time in samples and value in 1/128 steps of each.
+		Params: []UnitParameter{
+			{Name: "slot", MinValue: 0, MaxValue: AutomationSlots - 1, CanSet: true, CanModulate: false, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v + 1), "" }},
+		},
+		StackUse: stackUseSource,
+	},
 	"window": {
 		// window pushes a window over the note of its voice: it rises from 0
 		// to 1 and falls back to 0 over length, and stays 0 after it. Length 0

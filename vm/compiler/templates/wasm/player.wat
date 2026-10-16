@@ -187,6 +187,18 @@
 {{- end}}
 {{- end}}
 
+{{- if .HasOp "automation"}}
+{{- /*
+;-------------------------------------------------------------------------------
+;    The lanes of the automation units: see vm/automation.go
+;-------------------------------------------------------------------------------
+*/}}
+{{- .SetDataLabel "su_automation"}}
+{{- range .Automation}}
+{{- $.DataB .}}
+{{- end}}
+{{- end}}
+
 {{- /*
 ;-------------------------------------------------------------------------------
 ; The number of transformed parameters each opcode takes

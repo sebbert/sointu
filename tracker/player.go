@@ -39,6 +39,10 @@ type (
 		frameDeltas map[any]int64 // Player.frame (approx.)= event.Timestamp + frameDeltas[event.Source]
 		events      NoteEventList
 
+		// live are the values that the host last gave the automation slots,
+		// in steps of a parameter: see Automate
+		live [sointu.AutomationSlots]float32
+
 		midiRouter  midiRouter
 		midiAssigns midiAssigns
 		prevVal     []byte
@@ -64,6 +68,9 @@ type (
 		// NumPlayheads of them.
 		Playheads    [MaxPlayheads]sointu.Playhead
 		NumPlayheads int
+		// Automation are the live values of the automation slots: what the
+		// host last gave each, in steps of a parameter.
+		Automation [sointu.AutomationSlots]float32
 	}
 
 	// BufferFill tells which frames of a writable buffer are valid: the
@@ -91,6 +98,10 @@ type (
 		Note      byte
 		IsTrack   bool // true if "Channel" means track number, false if it means instrument number
 		Source    any
+		// Automation is true for an event that gives an automation slot,
+		// Channel, the live Value, instead of triggering or releasing a note.
+		Automation bool
+		Value      float32
 
 		playerTimestamp int64 // the timestamp of the event, adjusted to the player's clock, used to sort events
 	}
@@ -133,6 +144,14 @@ func (p *Player) Process(buffer sointu.AudioBuffer, context PlayerProcessContext
 			ev := p.events[0]
 			copy(p.events, p.events[1:]) // remove processed events
 			p.events = p.events[:len(p.events)-1]
+			if ev.Automation {
+				p.setLive(ev.Channel, ev.Value)
+				p.recording.RecordAutomation(ev.Channel, ev.Value, p.frame)
+				continue
+			}
+			if p.recording.State == RecordingWaitingForNote {
+				p.recording.Initial = p.live // the recording starts with this note
+			}
 			p.recording.Record(ev, p.frame)
 			p.processNoteEvent(ev)
 		}
@@ -216,6 +235,40 @@ func (p *Player) Process(buffer sointu.AudioBuffer, context PlayerProcessContext
 
 func (p *Player) EmitMIDIMsg(msg *MIDIMessage) bool { return p.midiRouter.route(p.broker, msg) }
 
+// Automate gives an automation slot a live value, in steps of a parameter,
+// at the timestamp on the clock of the source: what a plugin host sends for
+// one of the parameters of the plugin. The automation units of the slot push
+// it while the song is not playing, from that sample on, and a recording
+// records it. Call from the thread that calls Process, before it.
+func (p *Player) Automate(timestamp int64, slot int, value float32, source any) {
+	if slot < 0 || slot >= sointu.AutomationSlots {
+		return
+	}
+	p.events = append(p.events, NoteEvent{Timestamp: timestamp, Channel: slot, Value: value, Automation: true, Source: source})
+}
+
+func (p *Player) setLive(slot int, value float32) {
+	p.live[slot], p.status.Automation[slot] = value, value
+	if a, ok := p.synth.(sointu.Automator); ok {
+		a.SetAutomation(slot, value)
+	}
+}
+
+// syncSongTime tells the synth where the song is, for its automation units:
+// the sample of the song rendered next, or that the song is not playing.
+func (p *Player) syncSongTime() {
+	a, ok := p.synth.(sointu.Automator)
+	if !ok {
+		return
+	}
+	if !p.playing {
+		a.SetSongTime(-1)
+		return
+	}
+	spr := p.song.SamplesPerRow()
+	a.SetSongTime(max(p.song.Score.SongRow(p.status.SongPos), 0)*spr + min(max(p.rowtime, 0), spr))
+}
+
 // mixPreview adds the next frames of the buffer preview to the output.
 func (p *Player) mixPreview(buffer sointu.AudioBuffer) {
 	a := p.preview
@@ -289,6 +342,7 @@ func (p *Player) advanceRow() {
 	if p.status.SongPos == origPos {
 		p.send(IsPlayingMsg{bool: false})
 		p.playing = false
+		p.syncSongTime()
 		for i := range p.song.Score.Tracks {
 			p.processNoteEvent(NoteEvent{Channel: i, IsTrack: true, Source: p})
 		}
@@ -304,7 +358,8 @@ func (p *Player) advanceRow() {
 		} // n = 1 means hold so do nothing
 	}
 	p.rowtime = 0
-	p.send(nil) // just send volume and song row information
+	p.syncSongTime() // also after a loop, or when the row is not the one after the last
+	p.send(nil)      // just send volume and song row information
 }
 
 func (p NullPlayerProcessContext) BPM() (bpm float64, ok bool) {
@@ -374,6 +429,7 @@ loop:
 				p.loop = m
 			case IsPlayingMsg:
 				p.playing = bool(m.bool)
+				p.syncSongTime()
 				if !p.playing {
 					for i := range p.song.Score.Tracks {
 						p.processNoteEvent(NoteEvent{Channel: i, IsTrack: true, Source: p})
@@ -384,9 +440,15 @@ loop:
 			case BPMMsg:
 				p.song.BPM = m.int
 				p.compileOrUpdateSynth()
+				p.syncSongTime()
 			case RowsPerBeatMsg:
 				p.song.RowsPerBeat = m.int
 				p.compileOrUpdateSynth()
+				p.syncSongTime()
+			case AutomationLiveMsg:
+				for slot, v := range m {
+					p.setLive(slot, v)
+				}
 			case StartPlayMsg:
 				p.playing = true
 				p.status.SongPos = m.SongPos
@@ -532,6 +594,14 @@ func (p *Player) compileOrUpdateSynth() {
 			s.SetBuffers(p.buffers)
 		}
 		p.applyTaps()
+		if a, ok := p.synth.(sointu.Automator); ok {
+			for slot, v := range p.live {
+				if v != 0 {
+					a.SetAutomation(slot, v)
+				}
+			}
+		}
+		p.syncSongTime()
 	}
 	voice := 0
 	for _, instr := range p.song.Patch {
@@ -544,6 +614,10 @@ func (p *Player) compileOrUpdateSynth() {
 	}
 	p.midiAssigns.update(p.song.Patch)
 }
+
+// AutomationLiveMsg sets the live values of the automation slots, e.g. those
+// saved with the project of a plugin host.
+type AutomationLiveMsg [sointu.AutomationSlots]float32
 
 // HostBPMMsg tells the model the tempo of the host (e.g. a DAW), rounded to
 // whole BPM, which the song follows.

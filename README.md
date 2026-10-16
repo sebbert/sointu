@@ -475,6 +475,17 @@ module preset Convolution reverb is such a reverb, with the buffer of its
 response; `examples/convolution.yml` uses it. See
 [FORK.md](FORK.md#convolution-unit).
 
+The plugins show their host 64 parameters, the automation slots. Edit →
+Automate parameter binds the parameter under the cursor to a slot, which then
+offsets it, in steps of the parameter, by what the host gives it; the value
+of the unit stays. The host shows the slot by what it is bound to, or by the
+name typed into the field that the toolbar under the units then has. Recording in the plugin records the automation of the
+host with the notes, as a few points for each slot (`automation:` in the
+song), and the song plays them when it is played in the tracker and
+compiled: an `automation` unit and a send before each automated unit.
+`examples/automation.yml` has four such lanes. See
+[FORK.md](FORK.md#automation).
+
 For patterns of units used again and again, e.g. a supersaw or a reverb, a
 song can have modules: named blocks of units with inputs, outputs and up to 8
 parameters. A `module` unit in an instrument, or in another module, stands for
@@ -507,7 +518,7 @@ uses the first. The x86 players have the first 8
 channels (three aux pairs); a song that uses no channel above 7 compiles as
 before. See [FORK.md](FORK.md#output-channels).
 
-`bufread`, `bufwrite`, `spawn`, `arg`, `window`, `ott`, `limiter`, `softclip`,
+`bufread`, `bufwrite`, `spawn`, `arg`, `automation`, `window`, `ott`, `limiter`, `softclip`,
 `width`, `ladder`, `reverb`, `convolution`, the spectral units,
 the mc units, bandlimited oscillators, curved envelopes and the output
 channels above 7 are WebAssembly only

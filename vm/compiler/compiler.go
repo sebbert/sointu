@@ -377,6 +377,12 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 			warnings = append(warnings, u.Error()+": the unit is left out")
 		}
 	}
+	if active := song.Automation.Active(); len(active) != len(song.Automation) {
+		// lanes that add nothing are not compiled
+		without := *song
+		without.Automation = active
+		song = &without
+	}
 	if song.NeedsExpand() {
 		// the players only know the units the module units stand for
 		expanded, expansion := song.Expand()
@@ -389,7 +395,7 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 	for _, unit := range features.Instructions() {
 		wasmOnly := len(sointu.SpectrumBufferParams(unit)) > 0 || len(sointu.BusParams(unit)) > 0
 		switch unit {
-		case "bufread", "bufwrite", "spawn", "arg", "window", "ott", "limiter", "softclip", "width", "ladder", "reverb", "convolution":
+		case "bufread", "bufwrite", "spawn", "arg", "automation", "window", "ott", "limiter", "softclip", "width", "ladder", "reverb", "convolution":
 			wasmOnly = true
 		}
 		if wasmOnly && com.Arch != "wasm" {

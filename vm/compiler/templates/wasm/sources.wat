@@ -642,6 +642,45 @@
 )
 {{end}}
 
+{{- if .HasOp "automation"}}
+{{- $auto := index .Labels "su_automation"}}
+{{- $vs := .AutomationValueBytes}}
+;;-------------------------------------------------------------------------------
+;;   AUTOMATION opcode: push the value of a lane at the time of the song
+;;-------------------------------------------------------------------------------
+;;   The operand is the offset of the first record of the lane in
+;;   su_automation, 2 bytes. A record is the time after the record before
+;;   it, 16 bits in units of 16 samples, and the value reached then; a time
+;;   of 0 ends the lane. The value before the first record precedes it.
+;;   WRK[0] is the offset of the current record from the first, WRK[1] the
+;;   sample at which the record before it was reached. Matches automation
+;;   in vm/automation.go.
+;;-------------------------------------------------------------------------------
+(func $su_op_automation (param $stereo i32) (local $lane i32) (local $p i32) (local $t i32) (local $dt i32) (local $v0 i32) (local $v f32)
+    (local.set $lane (i32.add (call $scanOperand) (i32.shl (call $scanOperand) (i32.const 8))))
+    (local.set $p (i32.add (local.get $lane) (i32.load (global.get $WRK))))
+    (local.set $t (i32.sub (global.get $globaltick) (i32.load offset=4 (global.get $WRK))))
+    loop $records
+        ;; the record is reached, unless it is the end (a time of 0)
+        (if (i32.gt_u (local.get $t) (i32.sub (local.tee $dt (i32.shl (i32.load16_u offset={{$auto}} (local.get $p)) (i32.const 4))) (i32.const 1))) (then
+            (local.set $t (i32.sub (local.get $t) (local.get $dt)))
+            (local.set $p (i32.add (local.get $p) (i32.const {{add 2 $vs}})))
+            (br $records)
+        ))
+    end
+    (i32.store (global.get $WRK) (i32.sub (local.get $p) (local.get $lane)))
+    (i32.store offset=4 (global.get $WRK) (i32.sub (global.get $globaltick) (local.get $t)))
+    (local.set $v (f32.convert_i32_s (local.tee $v0 ({{if .AutomationFine}}i32.load16_s{{else}}i32.load8_s{{end}} offset={{sub $auto $vs}} (local.get $p)))))
+    (if (local.get $dt) (then
+        (local.set $v (f32.add (local.get $v) (f32.mul
+            (f32.convert_i32_s (i32.sub ({{if .AutomationFine}}i32.load16_s{{else}}i32.load8_s{{end}} offset={{add $auto 2}} (local.get $p)) (local.get $v0)))
+            (f32.div (f32.convert_i32_u (local.get $t)) (f32.convert_i32_u (local.get $dt)))
+        )))
+    ))
+    (call $push (f32.mul (local.get $v) (f32.const {{if .AutomationFine}}0.00006103515625{{else}}0.0078125{{end}})))
+)
+{{end}}
+
 {{- if .HasOp "bufread"}}
 ;;-------------------------------------------------------------------------------
 ;;   BUFREAD opcode: plays a region of a buffer

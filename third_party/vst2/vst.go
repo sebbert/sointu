@@ -765,6 +765,10 @@ type (
 		NotAutomated      bool
 		GetValueLabelFunc func(value float32) string
 		GetValueFunc      func(value float32) float32
+		// GetNameFunc, if set, returns the name instead of Name, for
+		// parameters whose name changes. It is called from the threads of
+		// the host.
+		GetNameFunc func() string
 	}
 
 	// Preset refers to plugin presets.
@@ -772,6 +776,14 @@ type (
 		name string
 	}
 )
+
+// GetName returns Name, or the return value of GetNameFunc when it is set.
+func (e Parameter) GetName() string {
+	if e.GetNameFunc == nil {
+		return e.Name
+	}
+	return e.GetNameFunc()
+}
 
 // GetValue should be called in ProcessDoubleFunc or ProcessFloatFunc and will be called in GetDisplayVal.
 // It returns the plain Value or the return value of GetValueFunc, when it was set for the Parameter

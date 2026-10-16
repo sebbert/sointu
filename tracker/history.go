@@ -57,6 +57,12 @@ func (m *historyRedo) Do() {
 // MarshalRecovery marshals the current model data to a byte slice for recovery
 // saving.
 func (m *HistoryModel) MarshalRecovery() []byte {
+	m.d.HostAutomation = nil
+	for slot, v := range m.playerStatus.Automation {
+		if v != 0 {
+			m.d.HostAutomation = append(m.d.HostAutomation[:0:0], m.playerStatus.Automation[:slot+1]...)
+		}
+	}
 	out, err := json.Marshal(m.d)
 	if err != nil {
 		(*Model)(m).Alerts().Add(fmt.Sprintf("Could not marshal recovery data: %s", err.Error()), Error)
@@ -116,6 +122,7 @@ func (m *HistoryModel) UnmarshalRecovery(bytes []byte) {
 		}
 	}
 	m.d.ChangedSinceRecovery = false
+	TrySend(m.broker.ToPlayer, any(AutomationLiveMsg((*Model)(m).Automation().HostValues())))
 	TrySend(m.broker.ToPlayer, any((*Model)(m).playerSong()))
 	(*Model)(m).updateDeriveData(SongChange)
 }

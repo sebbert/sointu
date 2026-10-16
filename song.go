@@ -24,6 +24,9 @@ type (
 		// Modules are the reusable blocks of units that the module units
 		// of the patch stand for. See Module.
 		Modules Modules `yaml:",omitempty"`
+		// Automation is the lanes of the automation slots: offsets of
+		// parameters over the time of the song. See Lane.
+		Automation Automation `yaml:",omitempty" json:",omitempty"`
 	}
 
 	// Score represents the arrangement of notes in a song; just a list of
@@ -306,6 +309,7 @@ func (s *Song) Copy() Song {
 	ret.Buffers = s.Buffers.Copy()
 	ret.EncodingPresets = s.EncodingPresets.Copy()
 	ret.Modules = s.Modules.Copy()
+	ret.Automation = s.Automation.Copy()
 	return ret
 }
 
