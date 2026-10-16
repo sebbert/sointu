@@ -176,7 +176,7 @@ func TestBufreadBufferParameter(t *testing.T) {
 	func() {
 		defer m.change("Test", SongChange, MajorChange)()
 		m.d.Song.Buffers = sointu.Buffers{{ID: 3, Name: "kick", Channels: 1}, {ID: 5, Name: "snare", Channels: 1}}
-		m.d.Song.Patch[0].Units = []sointu.Unit{{Type: "bufread", ID: 100, Parameters: sointu.ParamMap{"buffer": 5, "notetracking": 1}}}
+		m.d.Song.Patch[0].Units = []sointu.Unit{{Type: "bufread", ID: 100, Parameters: sointu.ParamMap{"buffer": 5, "note": 1}}}
 		m.d.UnitIndex = 0
 	}()
 	var p Parameter

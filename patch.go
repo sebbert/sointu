@@ -129,6 +129,9 @@ type (
 		// the modulation port itself. Such parameters must come after the
 		// transformed ones.
 		NoTransform bool
+		// Choice is true for parameters whose values are named choices,
+		// which the tracker offers in a menu instead of a knob.
+		Choice      bool
 		DisplayFunc UnitParameterDisplayFunc
 	}
 
@@ -700,68 +703,73 @@ var UnitTypes = map[string]UnitType{
 		StackUse: stackUseSource,
 	},
 	"bufread": {
-		// bufread plays a buffer. With note tracking, note 60 plays it at its
-		// original speed; transpose and detune shift the pitch like in the
-		// oscillator, and speed multiplies the rate from -1 (backwards) to 1.
-		// start, loopstart and looplength are in frames from the oldest valid
-		// frame of the buffer; a negative start or loopstart counts back from
-		// the newest one when the note was triggered. Modulating them shifts them by the valid length of the buffer
-		// times the modulation. start is read when the note is triggered.
-		// loop forward plays the loop again and again, ping-pong forwards and
-		// backwards in turn, from its start to its last frame and back.
-		// fade is the length of the crossfade at the end of a forward loop
-		// (the turns of a ping-pong loop need none), and
-		// edgefade the length of the fade near the edges of the valid
-		// frames. In a ring that bufwrite units have filled, the edges meet
-		// at the write head: there the fade is a crossfade to the frames on
-		// the other side of the head, and a read head that crosses the write
-		// head goes on where the crossfade has brought the sound, edgefade
-		// frames further.
+		// bufread plays a buffer. mode is how: one shot plays it from start
+		// on, loop plays the loop again and again once the position reaches
+		// it, ping-pong plays the loop forwards and backwards in turn, from
+		// its start to its last frame and back, and tap reads a delay line.
+		//
+		// note is what the note does: nothing, the pitch (note 60 plays the
+		// buffer at its original speed), the slice, or the slice and the
+		// pitch. transpose and detune shift the pitch like in the
+		// oscillator, also without the note, and speed multiplies the rate
+		// from -1 (backwards) to 1. start, loopstart and looplength are in
+		// frames from the oldest valid frame of the buffer; a negative start
+		// or loopstart counts back from the newest one when the note was
+		// triggered. Modulating them shifts them by the valid length of the
+		// buffer times the modulation. start is read when the note is
+		// triggered. loopfade is the length of the crossfade at the end of a
+		// loop (the turns of a ping-pong loop need none), and edgefade the
+		// length of the fade near the edges of the valid frames. In a ring
+		// that bufwrite units have filled, the edges meet at the write head:
+		// there the fade is a crossfade to the frames on the other side of
+		// the head, and a read head that crosses the write head goes on
+		// where the crossfade has brought the sound, edgefade frames further.
 		//
 		// With mode tap, the unit is a tap of a delay line: it does not play
 		// from start on, but reads the frame at start every sample, counted
 		// from the buffer as it is then, so that a negative start stays that
 		// many frames behind the write head; modulating start moves the tap
-		// while it sounds, and the unit sounds without a note. speed, the
-		// pitch and the loop are not used.
+		// while it sounds, and the unit sounds without a note. note, speed,
+		// the loop, the edge fade and the slices are not used.
 		//
 		// timing is what start, loopstart and looplength count: frames; with
 		// pitch, start is in frames at note 0 and is divided by 2^(note/12),
 		// like the times of the delay unit (10788 is one period of the
 		// note); with BPM, all three are in 48ths of a beat, like those too.
 		//
-		// With slices, the unit plays a slice of the buffer, between two of
-		// its slice markers (Buffer.Slices; the first slice starts at the
-		// oldest valid frame, the last ends at the newest): slice, or with
-		// slices note, the note minus 60 (C-3) plus slice, wrapped around the
-		// number of slices. A modulation of slice adds 128 slices per 1,
-		// rounded: a loadnote sent at amount 96 adds the note minus 64.
-		// start is then an offset from the start of the slice, read like
-		// before, and loopstart and looplength are in 128ths of the length
-		// of the slice, modulated by the length of the slice, the loop held
-		// within the slice. With sliceend stop, frames outside the slice are
-		// silent, and edgefade fades at its edges. With slices note, the
-		// pitch does not follow the note. A tap has no slices, and sliced
-		// units do not crossfade at the write head of a ring.
+		// With slices continue or stop, the unit plays a slice of the
+		// buffer, between two of its slice markers (Buffer.Slices; the first
+		// slice starts at the oldest valid frame, the last ends at the
+		// newest): slice, or with note slice, the note minus 60 (C-3) plus
+		// slice, wrapped around the number of slices. A modulation of slice
+		// adds 128 slices per 1, rounded: a loadnote sent at amount 96 adds
+		// the note minus 64. start is then an offset from the start of the
+		// slice, read like before, and loopstart and looplength are in
+		// 128ths of the length of the slice, modulated by the length of the
+		// slice, the loop held within the slice. With stop, frames outside
+		// the slice are silent, and edgefade fades at its edges. Without
+		// slices, note slice does nothing and slice and pitch is pitch.
+		// Sliced units do not crossfade at the write head of a ring.
+		//
+		// Songs saved before mode, note and slices took these values are
+		// converted when they are loaded: see upgradeBufread.
 		Params: []UnitParameter{
+			{Name: "mode", MinValue: 0, MaxValue: 3, CanSet: true, CanModulate: false, Choice: true, DisplayFunc: arrDispFunc([]string{"one shot", "loop", "ping-pong", "tap"})},
+			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
 			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "note", MinValue: 0, Default: BufreadNotePitch, MaxValue: 3, CanSet: true, CanModulate: false, Choice: true, DisplayFunc: arrDispFunc([]string{"none", "pitch", "slice", "slice and pitch"})},
 			{Name: "transpose", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: transposeDisplay},
 			{Name: "detune", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return formatFloat(float64(v-64) / 64), "st" }},
 			{Name: "gain", MinValue: 0, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
 			{Name: "speed", MinValue: 0, Neutral: 64, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return formatFloat(float64(v)/64 - 1), "x" }},
-			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
-			{Name: "notetracking", MinValue: 0, Default: 1, MaxValue: 1, CanSet: true, CanModulate: false},
-			{Name: "loop", MinValue: 0, MaxValue: 2, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"off", "forward", "ping-pong"})},
+			{Name: "timing", MinValue: 0, MaxValue: 2, CanSet: true, CanModulate: false, Choice: true, DisplayFunc: arrDispFunc([]string{"frames", "pitch", "BPM"})},
 			{Name: "start", MinValue: math.MinInt32 + 1, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true, NoTransform: true},
 			{Name: "loopstart", MinValue: math.MinInt32 + 1, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true, NoTransform: true},
 			{Name: "looplength", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true, NoTransform: true},
-			{Name: "fade", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
+			{Name: "loopfade", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
 			{Name: "edgefade", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
-			{Name: "mode", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"play", "tap"})},
-			{Name: "timing", MinValue: 0, MaxValue: 2, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"frames", "pitch", "BPM"})},
-			{Name: "slices", MinValue: 0, MaxValue: 2, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"off", "slice", "note"})},
+			{Name: "slices", MinValue: 0, MaxValue: 2, CanSet: true, CanModulate: false, Choice: true, DisplayFunc: arrDispFunc([]string{"off", "continue", "stop"})},
 			{Name: "slice", MinValue: 0, MaxValue: BufreadMaxSlice, CanSet: true, CanModulate: true, NoTransform: true},
-			{Name: "sliceend", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"continue", "stop"})},
 		},
 		StackUse: stackUseSource,
 	},
@@ -1407,13 +1415,89 @@ func stackUseEffect(u *Unit) StackUse {
 }
 
 // The slices of a bufread unit: the largest slice parameter, the note that
-// plays slice 0 with slices note (C-3), and what loopstart and looplength are
+// plays slice 0 with note slice (C-3), and what loopstart and looplength are
 // parts of the slice in.
 const (
 	BufreadMaxSlice      = 127
 	BufreadSliceBaseNote = 60
 	BufreadSliceParts    = 128
 )
+
+// The values of the mode, note and slices parameters of a bufread unit.
+const (
+	BufreadOneShot  = 0
+	BufreadLoop     = 1
+	BufreadPingPong = 2
+	BufreadTap      = 3
+
+	BufreadNoteNone       = 0
+	BufreadNotePitch      = 1
+	BufreadNoteSlice      = 2
+	BufreadNoteSlicePitch = 3
+
+	BufreadSlicesOff      = 0
+	BufreadSlicesContinue = 1
+	BufreadSlicesStop     = 2
+)
+
+// BufreadSliced reports whether a bufread unit plays a slice of its buffer.
+func BufreadSliced(u Unit) bool {
+	return u.Type == "bufread" && u.Parameters["slices"] != BufreadSlicesOff && u.Parameters["mode"] != BufreadTap
+}
+
+// upgradeBufread converts the parameters of a bufread unit saved before
+// mode, note and slices took their present values, which it tells by the
+// missing note and loopfade parameters and a mode of 0 or 1: then mode was play or tap and loop off, forward
+// or ping-pong; notetracking was 0 or 1; slices was off, slice or note
+// (which ignored notetracking) and sliceend continue or stop; and loopfade
+// was fade. The compiled song is the same. Bindings of a module unit to
+// notetracking, fade and loop are moved to note, loopfade and mode, whose
+// values are the same; one to sliceend is dropped, and those to the old
+// mode and slices stay, with the new meanings of their values.
+func upgradeBufread(u *Unit) {
+	p := u.Parameters
+	if u.Type != "bufread" || p == nil {
+		return
+	}
+	_, hasNote := p["note"]
+	_, hasLoopFade := p["loopfade"]
+	if hasNote || hasLoopFade || p["mode"] > 1 { // only in the present parameters
+		return
+	}
+	tap := p["mode"] == 1
+	mode := p["loop"]
+	if tap {
+		mode = BufreadTap
+	}
+	note := p["notetracking"]
+	if p["slices"] == 2 {
+		note = BufreadNoteSlice
+	}
+	slices := BufreadSlicesOff
+	if p["slices"] != 0 {
+		slices = BufreadSlicesContinue + min(max(p["sliceend"], 0), 1)
+	}
+	fade, hasFade := p["fade"]
+	for _, k := range []string{"loop", "notetracking", "sliceend", "fade"} {
+		delete(p, k)
+	}
+	p["mode"], p["note"] = min(max(mode, 0), BufreadTap), note
+	if _, ok := p["slices"]; ok || slices != 0 {
+		p["slices"] = slices
+	}
+	if hasFade {
+		p["loopfade"] = fade
+	}
+	delete(u.Bind, "sliceend")
+	for from, to := range map[string]string{"notetracking": "note", "fade": "loopfade", "loop": "mode"} {
+		if b, ok := u.Bind[from]; ok {
+			delete(u.Bind, from)
+			if to != "mode" || !tap {
+				u.Bind[to] = b
+			}
+		}
+	}
+}
 
 // The length parameter of a bufwrite unit, in frames: of the buffer that the
 // tracker makes for a unit without one.
@@ -1449,6 +1533,7 @@ func (u *Unit) UnmarshalYAML(value *yaml.Node) error {
 	if err := value.Decode((*plain)(u)); err != nil {
 		return err
 	}
+	upgradeBufread(u)
 	u.fillAddedParameters()
 	return nil
 }
@@ -1459,6 +1544,7 @@ func (u *Unit) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, (*plain)(u)); err != nil {
 		return err
 	}
+	upgradeBufread(u)
 	u.fillAddedParameters()
 	return nil
 }

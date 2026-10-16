@@ -641,8 +641,8 @@ func (n *namedParameter) Type(p *Parameter) ParameterType {
 	if p.unit.Type == "send" && p.up.Name == "target" {
 		return IDParameter
 	}
-	if p.up.MinValue == 0 && p.up.MaxValue == 1 && p.up.DisplayFunc != nil {
-		return ChoiceParameter // two named values, e.g. play and tap
+	if p.up.Choice || p.up.MinValue == 0 && p.up.MaxValue == 1 && p.up.DisplayFunc != nil {
+		return ChoiceParameter // named values, e.g. one shot, loop, ping-pong and tap
 	}
 	if p.up.MinValue >= -1 && p.up.MaxValue <= 1 {
 		return BoolParameter
@@ -669,7 +669,10 @@ func (n *namedParameter) Hint(p *Parameter) ParameterHint {
 	label := strconv.Itoa(val)
 	if p.up.DisplayFunc != nil {
 		valueInUnits, units := p.up.DisplayFunc(val)
-		label = fmt.Sprintf("%s %s", valueInUnits, units)
+		label = valueInUnits
+		if units != "" {
+			label += " " + units
+		}
 	}
 	return ParameterHint{label, true}
 }
@@ -1137,7 +1140,7 @@ func (b *bufferFrameParameter) Range(p *Parameter) RangeInclusive {
 // is shown as the delay behind the write head: named delay, without the sign
 // of the negative value that is stored, and its knob turns the other way.
 func bufreadTapDelay(p *Parameter) bool {
-	return p.unit.Type == "bufread" && p.up != nil && p.up.Name == "start" && p.unit.Parameters["mode"] == 1
+	return p.unit.Type == "bufread" && p.up != nil && p.up.Name == "start" && p.unit.Parameters["mode"] == sointu.BufreadTap
 }
 
 func (b *bufferFrameParameter) Name(p *Parameter) string {
@@ -1636,7 +1639,7 @@ func (m *Model) moduleArg(call *sointu.Unit, module, k int, up *sointu.UnitParam
 // bufreadSliced tells if a bufread unit plays slices: its loop points are
 // then in parts of the slice.
 func bufreadSliced(u *sointu.Unit) bool {
-	return u.Type == "bufread" && u.Parameters["slices"] != 0 && u.Parameters["mode"] != 1
+	return sointu.BufreadSliced(*u)
 }
 
 // sliceLoopParameter vtable: a loop point of a sliced bufread unit, in
@@ -1653,8 +1656,8 @@ func (s *sliceLoopParameter) Label(p *Parameter) string {
 	return trimFloat(float64(s.Value(p))*100/sointu.BufreadSliceParts, 0) + "%"
 }
 
-// sliceParameter vtable: the slice of a bufread unit, which with slices
-// note adds to the note.
+// sliceParameter vtable: the slice of a bufread unit, which with note
+// slice adds to the note.
 
 func (s *sliceParameter) Hint(p *Parameter) ParameterHint {
 	v := s.Value(p)
@@ -1662,7 +1665,7 @@ func (s *sliceParameter) Hint(p *Parameter) ParameterHint {
 	if buf, ok := p.m.d.Song.Buffers.Find(p.unit.Parameters["buffer"]); ok {
 		n = len(buf.Slices) + 1
 	}
-	if p.unit.Parameters["slices"] == 2 {
+	if note := p.unit.Parameters["note"]; note == sointu.BufreadNoteSlice || note == sointu.BufreadNoteSlicePitch {
 		return ParameterHint{fmt.Sprintf("C-3 plays slice %d of %d", v%max(n, 1), n), true}
 	}
 	return ParameterHint{fmt.Sprintf("slice %d of %d", v%max(n, 1), n), true}

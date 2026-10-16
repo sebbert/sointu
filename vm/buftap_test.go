@@ -16,7 +16,7 @@ func fullRing(data ...float32) sointu.BufferAudio {
 }
 
 func readParams(params sointu.ParamMap) sointu.ParamMap {
-	p := sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 1, "notetracking": 0}
+	p := sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 1, "note": 0}
 	for k, v := range params {
 		p[k] = v
 	}
@@ -50,7 +50,7 @@ func TestBufreadTap(t *testing.T) {
 		return map[int]sointu.BufferAudio{1: fullRing(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7)}
 	}
 	tap := func(params sointu.ParamMap) sointu.Patch {
-		params["mode"] = 1
+		params["mode"] = sointu.BufreadTap
 		return sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{{Type: "bufread", Parameters: readParams(params)}, outUnit}}}
 	}
 	// 3 frames behind the write head, with and without a note
@@ -59,7 +59,7 @@ func TestBufreadTap(t *testing.T) {
 	// from the oldest frame, and not past the newest one
 	checkLeft(t, renderPatch(t, tap(sointu.ParamMap{"start": 2}), ring(), nil, 2), []float32{0.2, 0.2})
 	// the speed, the pitch and the loop are not used
-	checkLeft(t, renderPatch(t, tap(sointu.ParamMap{"start": -3, "speed": 0, "transpose": 100, "loop": 1, "looplength": 2}), ring(), map[int]byte{0: 72}, 3), []float32{0.5, 0.5, 0.5})
+	checkLeft(t, renderPatch(t, tap(sointu.ParamMap{"start": -3, "speed": 0, "transpose": 100, "mode": 1, "looplength": 2}), ring(), map[int]byte{0: 72}, 3), []float32{0.5, 0.5, 0.5})
 	// a play head goes on from start, a tap does not
 	play := sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{{Type: "bufread", Parameters: readParams(sointu.ParamMap{"start": -3})}, outUnit}}}
 	checkLeft(t, renderPatch(t, play, ring(), map[int]byte{0: 60}, 3), []float32{0.5, 0.6, 0.7})
@@ -69,7 +69,7 @@ func TestBufreadTap(t *testing.T) {
 		mod := sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{
 			{Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": 128}},
 			{Type: "send", Parameters: sointu.ParamMap{"stereo": 0, "amount": amount, "voice": 0, "target": 5, "port": 4, "sendpop": 1}},
-			{Type: "bufread", ID: 5, Parameters: readParams(sointu.ParamMap{"start": -3, "mode": 1})},
+			{Type: "bufread", ID: 5, Parameters: readParams(sointu.ParamMap{"start": -3, "mode": 3})},
 			outUnit,
 		}}}
 		checkLeft(t, renderPatch(t, mod, ring(), nil, 3), []float32{want, want, want})
@@ -82,7 +82,7 @@ func TestBufreadTapIsDelay(t *testing.T) {
 	source := []sointu.Unit{rampUnit}
 	dry := renderPatch(t, sointu.Patch{{NumVoices: 1, Units: append(append([]sointu.Unit{}, source...), outUnit)}}, nil, map[int]byte{0: 60}, 64)
 	for _, delay := range []int{1, 5, 16} {
-		units := []sointu.Unit{{Type: "bufread", Parameters: readParams(sointu.ParamMap{"start": -delay, "mode": 1})}, outUnit}
+		units := []sointu.Unit{{Type: "bufread", Parameters: readParams(sointu.ParamMap{"start": -delay, "mode": 3})}, outUnit}
 		units = append(units, source...)
 		units = append(units, sointu.Unit{Type: "bufwrite", Parameters: sointu.ParamMap{"stereo": 0, "buffer": 1, "pop": 1}})
 		bufs := map[int]sointu.BufferAudio{1: (&sointu.Buffer{ID: 1, Channels: 1, Frames: 16}).NewAudio()}
@@ -104,13 +104,13 @@ func TestBufreadTapIsDelay(t *testing.T) {
 // 48ths of a beat.
 func TestBufreadTiming(t *testing.T) {
 	ring := map[int]sointu.BufferAudio{1: fullRing(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7)}
-	tap := sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{{Type: "bufread", Parameters: readParams(sointu.ParamMap{"start": -5, "mode": 1, "timing": 1})}, outUnit}}}
+	tap := sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{{Type: "bufread", Parameters: readParams(sointu.ParamMap{"start": -5, "mode": 3, "timing": 1})}, outUnit}}}
 	// note 12: 2.5 frames behind the write head, between frames 5 and 6
 	checkLeft(t, renderPatch(t, tap, ring, map[int]byte{0: 12}, 2), []float32{0.55, 0.55})
 	// note 24: 1.25 frames
 	checkLeft(t, renderPatch(t, tap, ring, map[int]byte{0: 24}, 2), []float32{0.675, 0.675})
 	// transpose and detune tune the delay: note 12 an octave up is note 24
-	tuned := sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{{Type: "bufread", Parameters: readParams(sointu.ParamMap{"start": -5, "mode": 1, "timing": 1, "transpose": 76})}, outUnit}}}
+	tuned := sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{{Type: "bufread", Parameters: readParams(sointu.ParamMap{"start": -5, "mode": 3, "timing": 1, "transpose": 76})}, outUnit}}}
 	checkLeft(t, renderPatch(t, tuned, ring, map[int]byte{0: 12}, 2), []float32{0.675, 0.675})
 	// a play head starts there too
 	play := sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{{Type: "bufread", Parameters: readParams(sointu.ParamMap{"start": -5, "timing": 1})}, outUnit}}}
@@ -122,7 +122,7 @@ func TestBufreadTiming(t *testing.T) {
 	if got := vm.BPMFrames(-24, 100); got != -13230 {
 		t.Errorf("half a beat back at 100 BPM is %d frames", got)
 	}
-	patch := sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{{Type: "bufread", Parameters: readParams(sointu.ParamMap{"start": -48, "loop": 1, "loopstart": 12, "looplength": 96, "timing": 2})}, outUnit}}}
+	patch := sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{{Type: "bufread", Parameters: readParams(sointu.ParamMap{"start": -48, "mode": 1, "loopstart": 12, "looplength": 96, "timing": 2})}, outUnit}}}
 	bytecode, err := vm.NewBytecode(patch, vm.AllFeatures{}, 150)
 	if err != nil {
 		t.Fatal(err)
@@ -187,7 +187,7 @@ func TestBufreadRingCrossfade(t *testing.T) {
 	out = renderPatch(t, sointu.Patch{
 		{NumVoices: 1, Units: []sointu.Unit{{Type: "bufread", Parameters: readParams(sointu.ParamMap{"start": 0, "speed": 96, "edgefade": 4})}, outUnit}},
 		{NumVoices: 1, Units: []sointu.Unit{
-			{Type: "bufread", Parameters: readParams(sointu.ParamMap{"start": 0, "mode": 1})}, // writes the ring back as it is
+			{Type: "bufread", Parameters: readParams(sointu.ParamMap{"start": 0, "mode": 3})}, // writes the ring back as it is
 			{Type: "bufwrite", Parameters: sointu.ParamMap{"stereo": 0, "buffer": 1, "pop": 1}},
 		}},
 	}, map[int]sointu.BufferAudio{1: fullRing(rampRing...)}, map[int]byte{0: 60}, 3)
@@ -203,13 +203,13 @@ func TestBufwritePerVoice(t *testing.T) {
 		return sointu.Patch{
 			{NumVoices: 1, Units: []sointu.Unit{{Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": 64}}, {Type: "pop", Parameters: sointu.ParamMap{"stereo": 0}}}},
 			{NumVoices: 2, Units: []sointu.Unit{
-				{Type: "bufread", Parameters: readParams(sointu.ParamMap{"start": -2, "mode": 1})},
+				{Type: "bufread", Parameters: readParams(sointu.ParamMap{"start": -2, "mode": 3})},
 				outUnit,
 				{Type: "loadnote", Parameters: sointu.ParamMap{"stereo": 0}},
 				{Type: "bufwrite", Parameters: sointu.ParamMap{"stereo": 0, "buffer": 1, "pop": 1, "pervoice": pervoice}},
 			}},
 			// another instrument reads the copy of the first voice
-			{NumVoices: 1, Units: []sointu.Unit{{Type: "bufread", Parameters: readParams(sointu.ParamMap{"start": -2, "mode": 1})}, {Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 0}}}},
+			{NumVoices: 1, Units: []sointu.Unit{{Type: "bufread", Parameters: readParams(sointu.ParamMap{"start": -2, "mode": 3})}, {Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 0}}}},
 		}
 	}
 	note := func(n byte) float32 { return float32(n)/64 - 1 } // what loadnote pushes

@@ -251,14 +251,14 @@ func bufferFeatures(song *sointu.Song, features vm.FeatureSet, b *vm.Bytecode, d
 			ch := channels[p["buffer"]]
 			switch u.Type {
 			case "bufread":
-				loop := p["loop"] != 0
+				loop := p["mode"] == sointu.BufreadLoop || p["mode"] == sointu.BufreadPingPong
 				f.BufreadLoop = f.BufreadLoop || loop
-				f.BufreadFade = f.BufreadFade || p["loop"] == 1 && p["fade"] != 0
+				f.BufreadFade = f.BufreadFade || p["mode"] == sointu.BufreadLoop && p["loopfade"] != 0
 				backwards = backwards || p["speed"] < 64
 				f.BufreadNegStart = f.BufreadNegStart || int32(p["start"]) < 0
 				f.BufreadNegLoopStart = f.BufreadNegLoopStart || loop && int32(p["loopstart"]) < 0
 				f.BufreadEdgeFade = f.BufreadEdgeFade || p["edgefade"] > 0
-				f.BufreadNoteTracking = f.BufreadNoteTracking || p["notetracking"] == 1
+				f.BufreadNoteTracking = f.BufreadNoteTracking || p["note"] == sointu.BufreadNotePitch || p["note"] == sointu.BufreadNoteSlicePitch
 				f.BufreadPitch = f.BufreadPitch || p["transpose"] != 64 || p["detune"] != 64
 				if p["stereo"] == 1 {
 					f.BufreadChannelClamp = f.BufreadChannelClamp || ch != 2

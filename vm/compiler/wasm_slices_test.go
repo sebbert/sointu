@@ -11,7 +11,7 @@ import (
 )
 
 // TestBufreadSlicesWasmMatchesGoSynth plays slices of a sample: by the slice
-// parameter and by the note, modulated by a loadnote, stopping at the next
+// parameter, by the note, by the note with its pitch, modulated by a loadnote, stopping at the next
 // marker with an edge fade, and looping in parts of the slice, also in a
 // voice of an instrument with a buffer per voice.
 func TestBufreadSlicesWasmMatchesGoSynth(t *testing.T) {
@@ -33,11 +33,11 @@ func TestBufreadSlicesWasmMatchesGoSynth(t *testing.T) {
 		units []sointu.Unit
 	}{
 		{"slice", []sointu.Unit{
-			{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 1, "notetracking": 1, "slices": 1, "slice": 2, "start": 300}},
+			{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 1, "note": 1, "slices": 1, "slice": 2, "start": 300}},
 			{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
 		}},
 		{"note stop", []sointu.Unit{
-			{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 1, "transpose": 64, "detune": 64, "gain": 128, "speed": 100, "buffer": 2, "notetracking": 1, "slices": 2, "sliceend": 1, "edgefade": 200}},
+			{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 1, "transpose": 64, "detune": 64, "gain": 128, "speed": 100, "buffer": 2, "note": 2, "slices": 2, "edgefade": 200}},
 			{Type: "out", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128}},
 		}},
 		{"loadnote loop", []sointu.Unit{
@@ -45,12 +45,16 @@ func TestBufreadSlicesWasmMatchesGoSynth(t *testing.T) {
 			{Type: "send", Parameters: sointu.ParamMap{"stereo": 0, "amount": 96, "target": 100, "port": 7, "sendpop": 1}},
 			{Type: "oscillator", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 40, "detune": 64, "phase": 0, "color": 64, "shape": 64, "gain": 128, "type": sointu.Sine, "lfo": 1}},
 			{Type: "send", Parameters: sointu.ParamMap{"stereo": 0, "amount": 70, "target": 100, "port": 6, "sendpop": 1}},
-			{ID: 100, Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 1, "notetracking": 1, "slices": 1, "slice": 3,
-				"loop": 1, "loopstart": 32, "looplength": 64, "fade": 100, "timing": 2}},
+			{ID: 100, Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 1, "note": 1, "slices": 1, "slice": 3,
+				"mode": 1, "loopstart": 32, "looplength": 64, "loopfade": 100, "timing": 2}},
+			{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
+		}},
+		{"slice and pitch", []sointu.Unit{
+			{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 66, "detune": 70, "gain": 128, "speed": 128, "buffer": 1, "note": 3, "slices": 2, "slice": 1, "edgefade": 30}},
 			{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
 		}},
 		{"backwards stop", []sointu.Unit{
-			{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 20, "buffer": 2, "notetracking": 0, "slices": 1, "slice": 1, "start": 2000, "sliceend": 1, "edgefade": 50}},
+			{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 20, "buffer": 2, "note": 0, "slices": 2, "slice": 1, "start": 2000, "edgefade": 50}},
 			{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
 		}},
 	} {

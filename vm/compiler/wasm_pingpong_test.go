@@ -28,7 +28,7 @@ func TestBufreadPingPongWasmMatchesGoSynth(t *testing.T) {
 		t.Skipf("ffmpeg not found: %v", err)
 	}
 	bufread := func(id int, p sointu.ParamMap) sointu.Unit {
-		q := sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 1, "notetracking": 1, "loop": 2}
+		q := sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 1, "note": 1, "mode": 2}
 		for k, v := range p {
 			q[k] = v
 		}
@@ -52,12 +52,12 @@ func TestBufreadPingPongWasmMatchesGoSynth(t *testing.T) {
 		{"slice modulated", []sointu.Unit{
 			lfo(30), send(5, 80),
 			lfo(45), send(6, 50),
-			bufread(100, sointu.ParamMap{"slices": 1, "slice": 2, "sliceend": 1, "edgefade": 40, "loopstart": 30, "looplength": 70, "speed": 120}), out(0),
+			bufread(100, sointu.ParamMap{"slices": 2, "slice": 2, "edgefade": 40, "loopstart": 30, "looplength": 70, "speed": 120}), out(0),
 		}},
 		{"negative loop start", []sointu.Unit{bufread(0, sointu.ParamMap{"loopstart": -4000, "looplength": 2500, "transpose": 70, "timing": 1}), out(0)}},
 		{"one frame", []sointu.Unit{bufread(0, sointu.ParamMap{"loopstart": 500, "looplength": 1, "speed": 90}), out(0)}},
 		{"next to forward", []sointu.Unit{
-			bufread(0, sointu.ParamMap{"loop": 1, "loopstart": 1000, "looplength": 2000, "fade": 300, "speed": 30}),
+			bufread(0, sointu.ParamMap{"mode": 1, "loopstart": 1000, "looplength": 2000, "loopfade": 300, "speed": 30}),
 			bufread(0, sointu.ParamMap{"loopstart": 1500, "looplength": 2000, "speed": 115}),
 			{Type: "addp", Parameters: sointu.ParamMap{"stereo": 0}},
 			out(0),

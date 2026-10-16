@@ -20,7 +20,7 @@ func newBufwriteSynth(t *testing.T, units []sointu.Unit, write, read sointu.Para
 	for k, v := range write {
 		w[k] = v
 	}
-	r := sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 1, "notetracking": 0}
+	r := sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 1, "note": 0}
 	for k, v := range read {
 		r[k] = v
 	}
@@ -185,7 +185,7 @@ func TestBufwriteMultithread(t *testing.T) {
 	patch := sointu.Patch{
 		{NumVoices: 1, ThreadMaskM1: 0, Units: []sointu.Unit{rampUnit, {Type: "bufwrite", Parameters: sointu.ParamMap{"stereo": 0, "feedback": 0, "buffer": 1, "oneshot": 1, "pop": 1}}}},
 		{NumVoices: 1, ThreadMaskM1: 1, Units: []sointu.Unit{
-			{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 1, "notetracking": 0}},
+			{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 1, "note": 0}},
 			{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
 		}},
 	}
