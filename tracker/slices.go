@@ -47,6 +47,12 @@ func (m *BufferModel) Slices() []int {
 	return nil
 }
 
+// SlicesOf returns the slice markers of the buffer with the ID.
+func (m *BufferModel) SlicesOf(id int) []int {
+	buf, _ := m.d.Song.Buffers.Find(id)
+	return buf.Slices
+}
+
 // SliceOrigin returns the frame of the selected buffer's audio where its
 // slice markers count from: its oldest valid frame.
 func (m *BufferModel) SliceOrigin() int {

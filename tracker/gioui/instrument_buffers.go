@@ -51,6 +51,7 @@ type (
 		waveform     *Plot
 		waveformOf   int // the index of the buffer drawn, to reset the view when it changes
 		spectrum     *Plot
+		slices       *bufferSlices
 	}
 )
 
@@ -82,6 +83,7 @@ func NewInstrumentBuffers(m *tracker.Model) *InstrumentBuffers {
 		info:         new(widget.Selectable),
 		waveform:     NewPlot(plotRange{0, 1}, plotRange{-1, 1}, 0),
 		spectrum:     NewPlot(plotRange{-3.8, 0}, plotRange{bufferSpectrumDbMax, bufferSpectrumDbMin}, bufferSpectrumDbMin),
+		slices:       newBufferSlices(),
 	}
 }
 
@@ -278,6 +280,7 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 				nil,
 				info,
 				ib.layoutWaveform,
+				ib.slices.Layout,
 			)
 		} else {
 			lines = append(common, nil,
@@ -311,6 +314,7 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 				nil,
 				info,
 				ib.layoutWaveform,
+				ib.slices.Layout,
 			)
 		}
 		return ib.props.Layout(gtx, len(lines), func(gtx C, i int) D {
@@ -386,6 +390,7 @@ func (ib *InstrumentBuffers) layoutWaveform(gtx C) D {
 			}
 		})
 	}
+	ib.slices.decorate(tr, ib.waveform, frames)
 	cursor := float32(math.NaN())
 	if audio.Writable && frames > 0 {
 		cursor = float32(head) / float32(frames)

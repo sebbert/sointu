@@ -63,6 +63,11 @@ func (pe *InstrumentEditor) layoutUnitPreview(gtx C, y, id int, spectrum bool) {
 			if audio.Writable {
 				line(float32(head)/float32(frames), paint.ColorOp{Color: style.CursorColor})
 			}
+			// the slice markers, counted from the oldest valid frame
+			oldest := ((head-filled)%frames + frames) % frames
+			for _, m := range t.Buffer().SlicesOf(id) {
+				line(float32((oldest+m)%frames)/float32(frames), paint.ColorOp{Color: style.SliceColor})
+			}
 		}
 	}
 	gtx.Constraints.Min, gtx.Constraints.Max = s, s
