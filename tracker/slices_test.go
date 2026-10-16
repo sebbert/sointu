@@ -262,3 +262,18 @@ func TestImportRexWithoutLibrary(t *testing.T) {
 		t.Errorf("got %v", err)
 	}
 }
+
+// An ACID loop without markers gets none, but Slice equally a slice per
+// beat.
+func TestImportAcidBeats(t *testing.T) {
+	m, _ := newRemoteTestModel(t)
+	setBuffers(m, sointu.Buffers{{ID: 1, Channels: 1, Sample: &sointu.AudioSample{}}})
+	m.Buffer().setImportedSlices(importMeta{beats: 8})
+	if got := m.Buffer().Slices(); got != nil || m.Buffer().SliceCount().Value() != 8 {
+		t.Errorf("markers %v, count %d", got, m.Buffer().SliceCount().Value())
+	}
+	m.Buffer().setImportedSlices(importMeta{markers: []int{100}, beats: 4})
+	if got := m.Buffer().Slices(); !slices.Equal(got, []int{100}) || m.Buffer().SliceCount().Value() != 8 {
+		t.Errorf("markers win over beats: %v, count %d", got, m.Buffer().SliceCount().Value())
+	}
+}

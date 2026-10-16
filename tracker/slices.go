@@ -284,6 +284,13 @@ func detectOnsets(frame func(i int) float32, n, sensitivity int) []int {
 
 func abs32(v float32) float32 { return float32(math.Abs(float64(v))) }
 
+// importMeta is what an imported file says about its slices: its markers,
+// and the length in beats of an ACID loop.
+type importMeta struct {
+	markers []int
+	beats   int
+}
+
 // FileSlices returns the slice markers that an imported audio file carries:
 // the cue points of a WAV file or the markers of an AIFF file, at 44100 Hz.
 func FileSlices(data []byte) []int {
@@ -292,30 +299,39 @@ func FileSlices(data []byte) []int {
 }
 
 // importSample prepares an imported file for storing in a song, as
-// ffmpeg.Import does, and returns the slice markers it carries. A REX file
+// ffmpeg.Import does, and returns what it says about its slices. A REX file
 // is rendered with the REX Shared Library, its slices where they are in the
 // loop, and stored as FLAC.
-func importSample(f *ffmpeg.FFmpeg, name string, data []byte) (stored []byte, channels int, markers []int, err error) {
+func importSample(f *ffmpeg.FFmpeg, name string, data []byte) (stored []byte, channels int, meta importMeta, err error) {
 	if rex.IsRex(name) {
 		loop, err := rex.Decode(data)
 		if err != nil {
-			return nil, 0, nil, err
+			return nil, 0, meta, err
 		}
 		audio, markers := loop.Render()
 		stored, err = f.Store(audio)
-		return stored, audio.Channels, markers, err
+		return stored, audio.Channels, importMeta{markers: markers}, err
 	}
 	stored, channels, err = f.Import(data)
-	return stored, channels, FileSlices(data), err
+	info, _ := samplemarkers.Read(data)
+	return stored, channels, importMeta{markers: info.Slices(), beats: info.Beats}, err
 }
 
 // setImportedSlices gives the selected buffer, a sample just imported, the
-// slice markers of its file, if it has any. Call it within the change of the
-// import.
-func (m *BufferModel) setImportedSlices(markers []int) {
-	if len(markers) > 0 {
-		if buf := m.selected(); buf != nil {
-			buf.Slices = sointu.CleanSlices(markers, 0)
-		}
+// slice markers of its file, if it has any. An ACID loop without markers
+// gets none, but Slice equally is set to its beats, so that one click
+// slices it per beat. Call it within the change of the import.
+func (m *BufferModel) setImportedSlices(meta importMeta) {
+	buf := m.selected()
+	if buf == nil {
+		return
+	}
+	if len(meta.markers) > 0 {
+		buf.Slices = sointu.CleanSlices(meta.markers, 0)
+		return
+	}
+	if r := (*sliceCount)(m).Range(); meta.beats >= r.Min && meta.beats <= r.Max {
+		m.tools().count = meta.beats
+		(*Model)(m).Alerts().Add(fmt.Sprintf("An ACID loop of %d beats: Slice equally makes a slice per beat", meta.beats), Info)
 	}
 }

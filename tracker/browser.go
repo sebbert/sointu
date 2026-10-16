@@ -630,12 +630,12 @@ func (m *BufferModel) ImportFiles(paths []string, replace bool) {
 			name := filepath.Base(path)
 			var stored []byte
 			var channels int
-			var markers []int
+			var meta importMeta
 			err := findErr
 			if err == nil {
 				var data []byte
 				if data, err = os.ReadFile(path); err == nil {
-					stored, channels, markers, err = importSample(f, name, data)
+					stored, channels, meta, err = importSample(f, name, data)
 				}
 			}
 			id := 0
@@ -649,7 +649,7 @@ func (m *BufferModel) ImportFiles(paths []string, replace bool) {
 				}
 				defer m.change("ImportBuffer")() // one step with the markers
 				m.addImported(name, stored, min(max(channels, 1), 2), id)
-				m.setImportedSlices(markers)
+				m.setImportedSlices(meta)
 			}})
 			if findErr != nil {
 				return // without ffmpeg, the others fail the same

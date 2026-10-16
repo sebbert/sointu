@@ -2517,8 +2517,9 @@ the file's rate to 44100 Hz; a marker at 0 is dropped. ffmpeg drops these
 chunks, so the file is read before it is converted. The import and its
 markers are one undo step, from the import button, the sample browser and
 drops alike. The loop points of a WAV `smpl` chunk are a loop,
-not slices, and are not read. The beats of an ACID loop (`acid` chunk, not
-a one shot) are read, and not used yet. REX files (.rex, .rx2, .rcy, from
+not slices, and are not read. An ACID loop (`acid` chunk, not a one shot)
+without markers gets none, but Slice equally is set to its beats, so that
+one click slices it per beat; an alert says so. REX files (.rex, .rx2, .rcy, from
 ReCycle) are rendered with the REX Shared Library of Reason Studios, a
 closed, licensed library that only the tracker uses (package `rex`, build
 tag `rex`): each slice at 44100 Hz where it is in the loop, at the loop's

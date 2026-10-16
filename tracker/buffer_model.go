@@ -130,9 +130,9 @@ func (m *BufferModel) Import(r io.ReadCloser, replace bool) {
 		f, err := ffmpeg.Find("")
 		var stored []byte
 		var channels int
-		var markers []int
+		var meta importMeta
 		if err == nil {
-			stored, channels, markers, err = importSample(f, fileName, data)
+			stored, channels, meta, err = importSample(f, fileName, data)
 		}
 		TrySend(m.broker.ToModel, MsgToModel{Data: func() {
 			if err != nil {
@@ -141,7 +141,7 @@ func (m *BufferModel) Import(r io.ReadCloser, replace bool) {
 			}
 			defer m.change("ImportBuffer")() // one step with the markers
 			m.addImported(fileName, stored, min(max(channels, 1), 2), target)
-			m.setImportedSlices(markers)
+			m.setImportedSlices(meta)
 		}})
 	}()
 }
