@@ -22,20 +22,29 @@ import (
 //go:embed modules/*.yml
 var builtinModulePresets embed.FS
 
-type modulePreset struct {
-	name    string
-	file    string // empty for a preset that the tracker comes with
-	modules sointu.Modules
-}
+type (
+	modulePreset struct {
+		name    string
+		file    string // empty for a preset that the tracker comes with
+		modules sointu.Modules
+		samples presetSamples // that the modules read
+	}
+
+	// modulePresetFile is the file of a module preset.
+	modulePresetFile struct {
+		Modules       sointu.Modules
+		presetSamples `yaml:",inline"`
+	}
+)
 
 // parseModulePreset reads a module preset from the contents of its file.
 func parseModulePreset(fileName string, data []byte) (modulePreset, bool) {
-	var file struct{ Modules sointu.Modules }
+	var file modulePresetFile
 	if yaml.Unmarshal(data, &file) != nil || len(file.Modules) == 0 {
 		return modulePreset{}, false
 	}
 	name := filenameToInstrumentName(strings.TrimSuffix(fileName, ".yml"))
-	return modulePreset{name: name, modules: file.Modules}, true
+	return modulePreset{name: name, modules: file.Modules, samples: file.presetSamples}, true
 }
 
 // modulePresetDir returns the directory of the module presets.
@@ -146,7 +155,7 @@ func (m *overwriteModulePreset) Do() {
 			mods[i].Units[j].Unfolded = false
 		}
 	}
-	data, err := yaml.Marshal(struct{ Modules sointu.Modules }{mods})
+	data, err := yaml.Marshal(modulePresetFile{mods, model.samplesUsedBy(mods)})
 	if err == nil {
 		if err = os.MkdirAll(filepath.Dir(path), 0755); err == nil {
 			err = os.WriteFile(path, data, 0644)
@@ -243,7 +252,7 @@ func (v *modulePresetChoice) SetValue(i int) bool {
 	}
 	m := (*Model)(v)
 	defer m.change("LoadModulePreset", PatchChange, MajorChange)()
-	mods := v.modulePresets[i].modules
+	mods := m.importSamples(v.modulePresets[i].samples, v.modulePresets[i].modules)
 	ids := m.importModules(mods)
 	if index, ok := m.d.Song.Modules.Find(ids[mods[len(mods)-1].ID]); ok {
 		m.d.ModuleIndex = index

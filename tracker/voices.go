@@ -147,29 +147,33 @@ func (m *Model) marshalVoices(r Range) (data []byte, err error) {
 	for i := range patch {
 		lists[i] = patch[i].Units
 	}
+	mods := m.modulesUsedBy(lists...)
 	return yaml.Marshal(struct {
-		Patch   sointu.Patch
-		Tracks  []sointu.Track
-		Modules sointu.Modules `yaml:",omitempty"` // the modules that the instruments use
-	}{patch, tracks, m.modulesUsedBy(lists...)})
+		Patch         sointu.Patch
+		Tracks        []sointu.Track
+		Modules       sointu.Modules   `yaml:",omitempty"` // the modules that the instruments use
+		presetSamples `yaml:",inline"` // and the samples
+	}{patch, tracks, mods, m.samplesUsedBy(mods, lists...)})
 }
 
 func (m *Model) unmarshalVoices(voiceIndex int, data []byte, instruments, tracks bool) (instrRange, trackRange Range, ok bool) {
 	var d struct {
-		Patch   sointu.Patch
-		Tracks  []sointu.Track
-		Modules sointu.Modules
+		Patch         sointu.Patch
+		Tracks        []sointu.Track
+		Modules       sointu.Modules
+		presetSamples `yaml:",inline"`
 	}
 	if err := yaml.Unmarshal(data, &d); err != nil {
 		return Range{}, Range{}, false
 	}
-	if instruments && len(d.Modules) > 0 {
+	if instruments && (len(d.Modules) > 0 || len(d.Buffers) > 0) {
 		defer m.change("unmarshalVoices", PatchChange, MajorChange)()
 		lists := make([][]sointu.Unit, len(d.Patch))
 		for i := range d.Patch {
 			lists[i] = d.Patch[i].Units
 		}
-		m.importModules(d.Modules, lists...)
+		mods := m.importSamples(d.presetSamples, d.Modules, lists...)
+		m.importModules(mods, lists...)
 	}
 	return m.addVoices(voiceIndex, d.Patch, d.Tracks, instruments, tracks)
 }

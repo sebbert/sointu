@@ -1681,6 +1681,23 @@ no host was run with the plugins.
   (`FileDropEvent.Targets`). Other files are left out with an alert; a
   folder dropped alone becomes the root of the browser. In the plugin
   window too, which is the same Gio window.
+- **Samples in presets:** an instrument preset or file, a module preset and
+  instruments, units and modules on the clipboard carry the sample buffers
+  their units read (`presetSamples`, `tracker/preset_samples.go`): each
+  buffer as the song stores it, its encoded file, slices and channels, and
+  the encoding presets of the song that the samples use. The IDs are found
+  in the buffer parameters of bufread, convolution and bufwrite units, in
+  the parameters of module units bound to them, through any depth of
+  modules, and in the defaults of those parameters. Loading gives each
+  buffer an ID that neither the song nor the loaded units use, and points
+  the units, module units and defaults at it, before the modules are
+  imported, so that a module the song has matches; a buffer of the song
+  with the same file, channels and slices is used instead of a copy. A
+  preset that the song lacks comes along; one it has with another encoding
+  becomes the sample's own encoding. Written buffers, spectra and buses are
+  not carried: the tracker makes them as before (fixConvolutionBuffers,
+  assignBuses). The MCP server's presets are the same. Old presets have no
+  buffers and load as before.
 - **Plots:** zoom with Alt+scroll, pan by dragging or horizontal scrolling,
   Alt+drag to zoom y, double-click or right-click to reset, bounded zoom out.
 - **Units:** spawn targets follow instruments when they move or are pasted;
