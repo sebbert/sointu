@@ -31,6 +31,7 @@ type SampleBrowser struct {
 	refreshBtn *Clickable
 	autoBtn    *Clickable
 	playBtn    *Clickable
+	folderBtn  *Clickable
 }
 
 func NewSampleBrowser(m *tracker.Model) *SampleBrowser {
@@ -42,6 +43,7 @@ func NewSampleBrowser(m *tracker.Model) *SampleBrowser {
 		refreshBtn: new(Clickable),
 		autoBtn:    new(Clickable),
 		playBtn:    new(Clickable),
+		folderBtn:  new(Clickable),
 	}
 }
 
@@ -95,6 +97,9 @@ func (sb *SampleBrowser) update(gtx C, b *tracker.BrowserModel) {
 		}
 		sb.list.EnsureVisible(sb.list.TrackerList.Selected())
 	}
+	for sb.folderBtn.Clicked(gtx) {
+		sb.chooseFolder(TrackerFromContext(gtx))
+	}
 	for {
 		e, ok := sb.click.Update(gtx.Source)
 		if !ok {
@@ -105,6 +110,23 @@ func (sb *SampleBrowser) update(gtx C, b *tracker.BrowserModel) {
 			b.Enter()
 		}
 	}
+}
+
+// chooseFolder asks for a folder with the panel of the system and browses
+// it.
+func (sb *SampleBrowser) chooseFolder(tr *Tracker) {
+	if tr.Exploring || !canChooseFolder {
+		return
+	}
+	tr.Exploring = true
+	chooseFolder(tr.Browser().Root(), func(path string) {
+		tr.Broker().ToModel <- tracker.MsgToModel{Data: func() {
+			tr.Exploring = false
+			if path != "" {
+				tr.Browser().SetRoot(path)
+			}
+		}}
+	})
 }
 
 func (sb *SampleBrowser) Layout(gtx C) D {
@@ -129,11 +151,17 @@ func (sb *SampleBrowser) Layout(gtx C) D {
 		refreshBtn := ActionIconBtn(b.Refresh(), th, sb.refreshBtn, icons.NavigationRefresh, "Read the folders again")
 		autoBtn := ToggleIconBtn(tr.AutoPreview(), th, sb.autoBtn, icons.AVRepeat, icons.AVRepeatOne,
 			"Play a file when it is selected", "Do not play a file when it is selected,\nonly with the play button")
+		folderStyle := &th.IconButton.Enabled
+		if !canChooseFolder {
+			folderStyle = &th.IconButton.Disabled
+		}
+		folderBtn := IconBtn(th, folderStyle, sb.folderBtn, icons.FileFolderOpen, "Choose the folder to browse")
 		playBtn := ActionIconBtn(b.PlaySelected(), th, sb.playBtn, icons.AVPlayArrow, "Play the selected file")
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Flexed(1, func(gtx C) D { return rootBtn.Layout(gtx, roots...) }),
 			layout.Rigid(playBtn.Layout),
 			layout.Rigid(autoBtn.Layout),
+			layout.Rigid(folderBtn.Layout),
 			layout.Rigid(parentBtn.Layout),
 			layout.Rigid(refreshBtn.Layout),
 		)

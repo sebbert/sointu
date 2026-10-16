@@ -1473,7 +1473,9 @@ no host was run with the plugins.
   or as a new buffer if there are none or it is a spectrum or a bus. The
   roots offered: the home folder, the last folder (of the file last loaded
   into a buffer, by the browser, the dialog or a drop; `browser.lastfolder`,
-  where the browser starts) and the folder of the song.
+  where the browser starts) and the folder of the song; a button opens the
+  folder panel of the system (macOS only, `folderpicker_darwin.go`; it
+  floats, as the plugin window does).
   ffmpeg decodes a preview on a goroutine, reading the file in place
   (`FFmpeg.DecodeFile`, to a pipe); selecting another file kills it, and a
   late result is dropped by its number. The last 8 decodes are kept. A
