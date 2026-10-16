@@ -705,28 +705,19 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 							dt = min(max(abs32(advance+dPhase), minBandlimitDt), 0.5)
 						}
 						var amplitude float32
-						switch {
-						case flags&0x40 == 0x40: // Sine
-							amplitude = oscillatorSine(phase, color, dt)
-						case flags&0x20 == 0x20: // Trisaw
-							amplitude = oscillatorTrisaw(phase, color, dt)
-						case flags&0x10 == 0x10: // Pulse
-							amplitude = oscillatorPulse(phase, color, dt)
-						case gate:
-							gateBits := int32(operandsAtTransform[4])<<8 | int32(operandsAtTransform[3])
-							x := float32(gateBits >> (int32(float32(phase*16)+0.5) & 15) & 1)
+						if gate {
+							x := oscillatorGate(phase, gateBits(operandsAtTransform))
 							// the smoothed gate is 4 floats after the phase,
 							// which with stereo unison runs into the ports
 							g := unitFloat(unit, 4+k)
 							amplitude = float32(float32(*g-x)*0.99609375) + x
 							*g = amplitude
-						}
-						if !gate {
-							amplitude = waveshape(amplitude, params[4])
+						} else {
+							amplitude = oscillatorWave(flags, phase, color, params[4], dt)
 						}
 						output += float32(amplitude * params[5])
 						if j < unison {
-							params[2] += 0.08333333 // 1/12, add small phase shift so all oscillators don't start in phase
+							params[2] += unisonPhaseStep
 						}
 						detune = float32(-detune * 0.5)
 					}
@@ -1437,6 +1428,36 @@ func floor32(x float32) float32 { return float32(math.Floor(float64(x))) }
 
 func abs32(x float32) float32 { return math.Float32frombits(math.Float32bits(x) &^ (1 << 31)) }
 
+// unisonPhaseStep is how much later in its cycle each unison voice of an
+// oscillator starts than the one before: 1/12, so that they do not start in
+// phase.
+const unisonPhaseStep = 0.08333333
+
+// oscillatorWave returns the waveform of a sine, trisaw or pulse oscillator
+// (by the type bits of its flags) at the phase, shaped, before its gain.
+func oscillatorWave(flags byte, phase, color, shape, dt float32) float32 {
+	var amplitude float32
+	switch {
+	case flags&0x40 == 0x40: // Sine
+		amplitude = oscillatorSine(phase, color, dt)
+	case flags&0x20 == 0x20: // Trisaw
+		amplitude = oscillatorTrisaw(phase, color, dt)
+	case flags&0x10 == 0x10: // Pulse
+		amplitude = oscillatorPulse(phase, color, dt)
+	}
+	return waveshape(amplitude, shape)
+}
+
+// gateBits returns the pattern of a gate oscillator from its operands: color
+// is the low byte, shape the high one; bit i is the gate at phase i/16.
+func gateBits(operands []byte) int32 { return int32(operands[4])<<8 | int32(operands[3]) }
+
+// oscillatorGate returns the gate of the pattern at the phase, 0 or 1, before
+// it is smoothed.
+func oscillatorGate(phase float32, bits int32) float32 {
+	return float32(bits >> (int32(float32(phase*16)+0.5) & 15) & 1)
+}
+
 // minBandlimitDt is the smallest phase advance the bandlimited oscillators
 // use, which keeps their corrections finite when the oscillator stops.
 const minBandlimitDt = 9.5367431640625e-7 // 2^-20
@@ -1559,7 +1580,7 @@ func (s *GoSynth) sampleOscillator(unit *unit, voice *voice, flags byte, operand
 			amplitude := float32(int16(binary.LittleEndian.Uint16(su_sample_table[sampleindex*2:]))) / 32767.0
 			output += waveshape(amplitude, params[4]) * params[5]
 			if j < unison {
-				params[2] += 0.08333333
+				params[2] += unisonPhaseStep
 			}
 			detune = -detune * 0.5
 		}
