@@ -7,6 +7,7 @@ import (
 	"math"
 	"strconv"
 
+	"gioui.org/io/event"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
@@ -53,6 +54,9 @@ type (
 		spectrum     *Plot
 		browser      *SampleBrowser
 		browserBtn   *Clickable
+		// dropReplace is the tag of the properties for files dropped onto
+		// the window: see dropFiles
+		dropReplace bool
 	}
 )
 
@@ -338,7 +342,11 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 			layout.Flexed(1, func(gtx C) D {
 				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 					layout.Rigid(listSurface),
-					layout.Flexed(1, props),
+					layout.Flexed(1, func(gtx C) D {
+						defer clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Push(gtx.Ops).Pop()
+						event.Op(gtx.Ops, &ib.dropReplace)
+						return props(gtx)
+					}),
 					layout.Rigid(func(gtx C) D { return ib.layoutBrowser(gtx, tr) }),
 				)
 			}),

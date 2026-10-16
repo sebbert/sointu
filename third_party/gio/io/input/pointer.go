@@ -527,6 +527,17 @@ func (q *pointerQueue) ActionAt(pos f32.Point) (action system.Action, hasAction 
 	return action, hasAction
 }
 
+func (q *pointerQueue) TargetsAt(pos f32.Point) []event.Tag {
+	var tags []event.Tag
+	q.hitTest(pos, func(n *hitNode) bool {
+		if n.tag != nil {
+			tags = append(tags, n.tag)
+		}
+		return true
+	})
+	return tags
+}
+
 func (q *pointerQueue) SemanticAt(pos f32.Point) (semID SemanticID, hasSemID bool) {
 	q.assignSemIDs()
 	q.hitTest(pos, func(n *hitNode) bool {

@@ -2,17 +2,20 @@ package gioui
 
 import (
 	"os"
+	"slices"
 
 	"gioui.org/app"
-	"gioui.org/io/key"
+	"gioui.org/io/event"
 	"github.com/vsariola/sointu/tracker"
 )
 
 // dropFiles takes files dropped onto the window from the system (only macOS
-// sends them, see app.FileDropEvent): audio files become new buffers, in
-// order, or with Alt held, the first replaces the sample of the selected
-// buffer. A folder dropped alone is shown in the sample browser. Either
-// shows the Buffers tab, wherever the drop was.
+// sends them, see app.FileDropEvent). Audio files dropped onto the
+// properties of the Buffers tab replace the sample of the selected buffer
+// with the first, and the rest become new buffers; dropped anywhere else,
+// e.g. onto the list of the buffers, they all become new buffers, in order.
+// A folder dropped alone is shown in the sample browser. Either shows the
+// Buffers tab.
 func (t *Tracker) dropFiles(e app.FileDropEvent) {
 	var files []string
 	folder := ""
@@ -28,6 +31,8 @@ func (t *Tracker) dropFiles(e app.FileDropEvent) {
 	if len(files) == 0 && folder == "" {
 		return
 	}
+	onProps := t.Instrument().Tab().Value() == int(tracker.InstrumentBuffersTab) &&
+		slices.Contains(e.Targets, event.Tag(&t.PatchPanel.instrBuffers.dropReplace))
 	t.Instrument().Tab().SetValue(int(tracker.InstrumentBuffersTab))
 	if len(files) == 0 {
 		if !t.ShowBrowser().Value() {
@@ -37,6 +42,6 @@ func (t *Tracker) dropFiles(e app.FileDropEvent) {
 		return
 	}
 	b := t.Buffer()
-	replace := e.Modifiers.Contain(key.ModAlt) && b.HasSelection() && !b.IsSpectrum() && !b.IsBus()
+	replace := onProps && b.HasSelection() && !b.IsSpectrum() && !b.IsBus()
 	b.ImportFiles(files, replace)
 }

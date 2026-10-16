@@ -107,7 +107,8 @@ changes to the sound are fine, as long as both stay in sync.
   notches of a mouse wheel on macOS, `app.FileDropEvent` for files dropped
   from the Finder: the view of a window, also of the plugin's, is a
   dragging destination of file URLs, and a drop is a window event of the
-  paths, the position and the modifiers held; other platforms send none),
+  paths, the position, the modifiers held and the pointer handlers there
+  (`input.Router.TargetsAt`); other platforms send none),
   vst2 (`third_party/vst2`, `Host.UpdateDisplay`), CLAP headers.
 
 ## Song format
@@ -1479,11 +1480,14 @@ no host was run with the plugins.
   preview of the browser and one of a buffer share the player's preview:
   one stops the other.
 - **Drag and drop:** audio files dropped onto the window from the Finder
-  (macOS only, `app.FileDropEvent`; `filedrop.go`) become new buffers in
-  their order, wherever they are dropped, and the Buffers tab shows; with
-  Alt held the first replaces the sample of the selected buffer. Other
-  files are left out with an alert; a folder dropped alone becomes the root
-  of the browser. In the plugin window too, which is the same Gio window.
+  (macOS only, `app.FileDropEvent`; `filedrop.go`) onto the properties of
+  the Buffers tab replace the sample of the selected buffer with the first
+  and add the rest; dropped onto the list of the buffers, or anywhere else,
+  they become new buffers in their order, and the Buffers tab shows. What
+  is under the drop is what a press there would reach in the last frame
+  (`FileDropEvent.Targets`). Other files are left out with an alert; a
+  folder dropped alone becomes the root of the browser. In the plugin
+  window too, which is the same Gio window.
 - **Plots:** zoom with Alt+scroll, pan by dragging or horizontal scrolling,
   Alt+drag to zoom y, double-click or right-click to reset, bounded zoom out.
 - **Units:** spawn targets follow instruments when they move or are pasted;

@@ -4,6 +4,7 @@ package app
 
 import (
 	"gioui.org/f32"
+	"gioui.org/io/event"
 	"gioui.org/io/key"
 )
 
@@ -18,6 +19,9 @@ type FileDropEvent struct {
 	Position f32.Point
 	// Modifiers are the modifier keys held at the drop.
 	Modifiers key.Modifiers
+	// Targets are the tags of the pointer handlers at Position, topmost
+	// first, as the last frame placed them: what a press there would reach.
+	Targets []event.Tag
 }
 
 func (FileDropEvent) ImplementsEvent() {}

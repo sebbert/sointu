@@ -676,6 +676,7 @@ func (w *Window) processEvent(e event.Event) bool {
 		}
 		w.coalesced.view = &e2
 	case FileDropEvent:
+		e2.Targets = w.queue.TargetsAt(e2.Position)
 		w.coalesced.drops = append(w.coalesced.drops, e2)
 	case ConfigEvent:
 		w.decorations.Decorations.Maximized = e2.Config.Mode == Maximized

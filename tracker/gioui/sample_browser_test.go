@@ -5,10 +5,13 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
 	"gioui.org/app"
+	"gioui.org/f32"
+	"gioui.org/io/event"
 	"gioui.org/gpu/headless"
 	"gioui.org/io/input"
 	"gioui.org/io/key"
@@ -112,4 +115,14 @@ func TestSampleBrowserLayout(t *testing.T) {
 		t.Errorf("a dropped folder did not become the root: %q", b.Root())
 	}
 	frame("3-dropped-folder")
+	// what is under the drop decides: the properties replace, the list adds
+	ib = tr.PatchPanel.instrBuffers
+	props := router.TargetsAt(f32.Pt(900, 300))
+	list := router.TargetsAt(f32.Pt(480, 300))
+	if !slices.Contains(props, event.Tag(&ib.dropReplace)) {
+		t.Errorf("the properties are not a drop target: %v", props)
+	}
+	if slices.Contains(list, event.Tag(&ib.dropReplace)) || !slices.Contains(list, event.Tag(ib.list)) {
+		t.Errorf("the list is not a drop target of its own: %v", list)
+	}
 }
