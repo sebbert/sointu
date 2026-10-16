@@ -63,6 +63,16 @@ static CFTypeRef readClipboard(void) {
 	}
 }
 
+static NSUInteger arrayCount(CFTypeRef arrayRef) {
+	NSArray *a = (__bridge NSArray *)arrayRef;
+	return [a count];
+}
+
+static CFTypeRef arrayObject(CFTypeRef arrayRef, NSUInteger i) {
+	NSArray *a = (__bridge NSArray *)arrayRef;
+	return (__bridge CFTypeRef)[a objectAtIndex:i];
+}
+
 static CGFloat viewHeight(CFTypeRef viewRef) {
 	@autoreleasepool {
 		NSView *view = (__bridge NSView *)viewRef;
@@ -713,6 +723,19 @@ func gio_onText(h C.uintptr_t, cstr C.CFTypeRef) {
 	str := nsstringToString(cstr)
 	w := windowFor(h)
 	w.w.EditorInsert(str)
+}
+
+//export gio_onFileDrop
+func gio_onFileDrop(h C.uintptr_t, paths C.CFTypeRef, x, y C.CGFloat, mods C.NSUInteger) {
+	w := windowFor(h)
+	e := FileDropEvent{
+		Position:  f32.Point{X: float32(x) * w.scale, Y: float32(y) * w.scale},
+		Modifiers: convertMods(mods),
+	}
+	for i := C.NSUInteger(0); i < C.arrayCount(paths); i++ {
+		e.Paths = append(e.Paths, nsstringToString(C.arrayObject(paths, i)))
+	}
+	w.ProcessEvent(e)
 }
 
 //export gio_onMouse

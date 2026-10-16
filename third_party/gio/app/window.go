@@ -116,6 +116,7 @@ type eventSummary struct {
 	frame        *frameEvent
 	framePending bool
 	destroy      *DestroyEvent
+	drops        []FileDropEvent
 }
 
 type callbacks struct {
@@ -596,6 +597,10 @@ func (w *Window) nextEvent() (event.Event, bool) {
 		e := *s.cfg
 		s.cfg = nil
 		return e, true
+	case len(s.drops) > 0:
+		e := s.drops[0]
+		s.drops = s.drops[1:]
+		return e, true
 	case s.frame != nil:
 		e := *s.frame
 		s.frame = nil
@@ -670,6 +675,8 @@ func (w *Window) processEvent(e event.Event) bool {
 			w.ctx.Unlock()
 		}
 		w.coalesced.view = &e2
+	case FileDropEvent:
+		w.coalesced.drops = append(w.coalesced.drops, e2)
 	case ConfigEvent:
 		w.decorations.Decorations.Maximized = e2.Config.Mode == Maximized
 		wasFocused := w.decorations.Config.Focused
