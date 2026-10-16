@@ -3,6 +3,7 @@ package tracker
 import (
 	"math"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -140,5 +141,61 @@ func TestSampleEditMovesMarkers(t *testing.T) {
 	m.History().Undo().Do()
 	if got := b.Slices(); !slices.Equal(got, []int{100, 300, 600}) {
 		t.Errorf("markers after undo: %v", got)
+	}
+}
+
+// The MCP server sets slice markers, lists them, and shows the slice
+// parameters of a bufread unit only with slices on.
+func TestRemoteSlices(t *testing.T) {
+	m, r := newRemoteTestModel(t)
+	setBuffers(m, sointu.Buffers{{ID: 4, Name: "rec", Channels: 1, Frames: 8000}})
+	m.syncBuffers()
+	remoteStep(t, m, func() (string, error) { return r.SetSlices(4, nil, 4, 0, false) })
+	if got := m.d.Song.Buffers[0].Slices; !slices.Equal(got, []int{2000, 4000, 6000}) {
+		t.Fatalf("equal slices: %v", got)
+	}
+	remoteStep(t, m, func() (string, error) { return r.SetSlices(4, []int{3000, 100}, 0, 0, false) })
+	if got := m.d.Song.Buffers[0].Slices; !slices.Equal(got, []int{100, 3000}) {
+		t.Fatalf("slices by frames: %v", got)
+	}
+	if !strings.Contains(r.Song(), "3 slices, markers at frames 100 3000") {
+		t.Errorf("get_song does not list the slices:\n%s", r.Song())
+	}
+	if _, err := r.SetSlices(99, nil, 4, 0, false); err == nil {
+		t.Error("slices of a missing buffer")
+	}
+	first := m.d.Song.Patch[0].Units[0].ID
+	remoteStep(t, m, func() (string, error) {
+		return r.AddUnits("", "", 0, first, []RemoteNewUnit{{Type: "bufread", Params: map[string]any{"buffer": 1, "loop": 1}}})
+	})
+	shown := func() map[string]Parameter {
+		ret := map[string]Parameter{}
+		for x := 0; x < m.Params().RowWidth(0); x++ {
+			if p := m.Params().Item(Point{x, 0}); p.up != nil {
+				ret[p.up.Name] = p
+			}
+		}
+		return ret
+	}
+	s := shown()
+	if _, ok := s["slice"]; ok {
+		t.Error("the slice is shown with slices off")
+	}
+	func() {
+		defer m.change("test", PatchChange, MajorChange)()
+		m.d.Song.Patch[0].Units[0].Parameters["slices"] = 2
+		m.d.Song.Patch[0].Units[0].Parameters["looplength"] = 64
+	}()
+	s = shown()
+	for _, name := range []string{"slice", "sliceend"} {
+		if _, ok := s[name]; !ok {
+			t.Errorf("%s is not shown with slices note", name)
+		}
+	}
+	if _, ok := s["notetracking"]; ok {
+		t.Error("notetracking is shown with slices note")
+	}
+	if p := s["looplength"]; p.Label() != "50%" {
+		t.Errorf("the loop length of a sliced unit: %q", p.Label())
 	}
 }

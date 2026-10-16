@@ -253,8 +253,14 @@ func (r *Remote) Song() string {
 				kind = "spectrum for spectral units"
 			case buf.Sample != nil:
 				kind = fmt.Sprintf("sample %s, %d bytes encoded", buf.Sample.FileName, len(buf.Sample.Data))
+				if f := (*Model)(r).bufferFrames(buf.ID); f > 0 {
+					kind += fmt.Sprintf(", %d frames", f)
+				}
 			case buf.Writable():
 				kind = fmt.Sprintf("written by bufwrite units, %.2f s", float64(buf.Frames)/44100)
+			}
+			if len(buf.Slices) > 0 {
+				kind += "; " + describeSlices(buf.Slices, 0)
 			}
 			fmt.Fprintf(&b, "  %d %q: %s\n", buf.ID, buf.Name, kind)
 		}

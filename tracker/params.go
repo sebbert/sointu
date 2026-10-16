@@ -352,6 +352,8 @@ type (
 	moduleArgParameter         struct{}
 	spawnRateParameter         struct{ namedParameter }
 	bufferFrameParameter       struct{ namedParameter }
+	sliceLoopParameter         struct{ namedParameter }
+	sliceParameter             struct{ namedParameter }
 	windowTimeParameter        struct{ bufferFrameParameter }
 	bufwriteLengthParameter    struct{ namedParameter }
 	convolutionLengthParameter struct{ namedParameter }
@@ -1081,6 +1083,9 @@ func bufreadTiming(p *Parameter) int {
 	if p.unit.Type != "bufread" {
 		return 0
 	}
+	if bufreadSliced(p.unit) && (p.up.Name == "loopstart" || p.up.Name == "looplength") {
+		return 0 // in parts of the slice
+	}
 	switch t := p.unit.Parameters["timing"]; {
 	case t == 2 && (p.up.Name == "start" || p.up.Name == "loopstart" || p.up.Name == "looplength"):
 		return 2
@@ -1619,4 +1624,39 @@ func (m *Model) moduleArg(call *sointu.Unit, module, k int, up *sointu.UnitParam
 		}
 	}
 	return plain
+}
+
+// bufreadSliced tells if a bufread unit plays slices: its loop points are
+// then in parts of the slice.
+func bufreadSliced(u *sointu.Unit) bool {
+	return u.Type == "bufread" && u.Parameters["slices"] != 0 && u.Parameters["mode"] != 1
+}
+
+// sliceLoopParameter vtable: a loop point of a sliced bufread unit, in
+// sointu.BufreadSliceParts of the length of the slice, shown in percent.
+
+func (s *sliceLoopParameter) Range(p *Parameter) RangeInclusive {
+	return RangeInclusive{Min: 0, Max: max(sointu.BufreadSliceParts, p.unit.Parameters[p.up.Name])}
+}
+func (s *sliceLoopParameter) Hint(p *Parameter) ParameterHint {
+	v := s.Value(p)
+	return ParameterHint{fmt.Sprintf("%s%% of the slice (%d)", trimFloat(float64(v)*100/sointu.BufreadSliceParts, 1), v), true}
+}
+func (s *sliceLoopParameter) Label(p *Parameter) string {
+	return trimFloat(float64(s.Value(p))*100/sointu.BufreadSliceParts, 0) + "%"
+}
+
+// sliceParameter vtable: the slice of a bufread unit, which with slices
+// note adds to the note.
+
+func (s *sliceParameter) Hint(p *Parameter) ParameterHint {
+	v := s.Value(p)
+	n := 0
+	if buf, ok := p.m.d.Song.Buffers.Find(p.unit.Parameters["buffer"]); ok {
+		n = len(buf.Slices) + 1
+	}
+	if p.unit.Parameters["slices"] == 2 {
+		return ParameterHint{fmt.Sprintf("C-3 plays slice %d of %d", v%max(n, 1), n), true}
+	}
+	return ParameterHint{fmt.Sprintf("slice %d of %d", v%max(n, 1), n), true}
 }

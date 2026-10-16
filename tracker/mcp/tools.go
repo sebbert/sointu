@@ -106,6 +106,13 @@ type (
 		Seconds  float64 `json:"seconds,omitempty" jsonschema:"its length, 1 if left out: how far back a ring written by bufwrite reaches"`
 		Channels int     `json:"channels,omitempty" jsonschema:"1 (mono, if left out) or 2 (stereo)"`
 	}
+	setSlicesArgs struct {
+		Buffer      int   `json:"buffer" jsonschema:"the ID of the buffer, as get_song lists it"`
+		Frames      []int `json:"frames,omitempty" jsonschema:"the markers: frames from the start of the buffer, each above 0; the first slice starts at 0"`
+		Count       int   `json:"count,omitempty" jsonschema:"instead of frames: this many slices of equal length, 2 to 128"`
+		Sensitivity int   `json:"sensitivity,omitempty" jsonschema:"without frames and count, the markers are put at the transients of the audio: 0 to 100, 50 if left out; more finds more"`
+		Clear       bool  `json:"clear,omitempty" jsonschema:"removes the markers"`
+	}
 	bpmArgs struct {
 		BPM int `json:"bpm" jsonschema:"1 to 999"`
 	}
@@ -245,6 +252,10 @@ func Tools() []Tool {
 		modelTool("add_buffer", "Adds an empty audio buffer to the song, for bufwrite units to record into and bufread units to play (delays, loopers, grains): they name it by the ID that this returns. Not for samples, which the user imports, nor for the buffers of spectral, mc and convolution units, which the tracker makes. One step of the tracker's undo history.", false,
 			func(r *tracker.Remote, a addBufferArgs) (string, error) {
 				return r.AddBuffer(a.Name, a.Seconds, a.Channels)
+			}),
+		modelTool("set_slices", "Sets the slice markers of an audio buffer (a sample, e.g. a drum break, or a buffer bufwrite units record into), which bufread units with slices play from: by frames, equally, or at the transients. One step of the tracker's undo history.", false,
+			func(r *tracker.Remote, a setSlicesArgs) (string, error) {
+				return r.SetSlices(a.Buffer, a.Frames, a.Count, a.Sensitivity, a.Clear)
 			}),
 		modelTool("set_bpm", "Sets the tempo of the song. In a plugin, the song follows the host's tempo again when that changes.", false,
 			func(r *tracker.Remote, a bpmArgs) (string, error) { return r.SetBPM(a.BPM) }),

@@ -204,9 +204,15 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 		if unit.Type == "bufread" && unit.Parameters["loop"] == 0 && (up.Name == "loopstart" || up.Name == "looplength" || up.Name == "fade") {
 			continue // loop points only matter when looping
 		}
+		if unit.Type == "bufread" && (unit.Parameters["slices"] == 0 || unit.Parameters["mode"] == 1) && (up.Name == "slice" || up.Name == "sliceend") {
+			continue // the slice only matters when playing slices
+		}
+		if unit.Type == "bufread" && unit.Parameters["slices"] == 2 && unit.Parameters["mode"] != 1 && up.Name == "notetracking" {
+			continue // the note picks the slice, and the pitch does not follow it
+		}
 		if unit.Type == "bufread" && unit.Parameters["mode"] == 1 {
-			switch up.Name { // a tap reads the frame at start: it has no speed, loop or edges
-			case "speed", "notetracking", "loop", "loopstart", "looplength", "fade", "edgefade":
+			switch up.Name { // a tap reads the frame at start: it has no speed, loop, edges or slices
+			case "speed", "notetracking", "loop", "loopstart", "looplength", "fade", "edgefade", "slices":
 				continue
 			case "transpose", "detune": // they tune a delay that follows the note
 				if unit.Parameters["timing"] != 1 {
@@ -289,6 +295,11 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 				vtable = audioBufferParameter
 			case "start", "loopstart", "looplength", "fade", "edgefade":
 				vtable = &bufferFrameParameter{}
+				if bufreadSliced(unit) && (up.Name == "loopstart" || up.Name == "looplength") {
+					vtable = &sliceLoopParameter{}
+				}
+			case "slice":
+				vtable = &sliceParameter{}
 			}
 		}
 		if unit.Type == "window" && up.Name == "time" {
