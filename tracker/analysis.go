@@ -87,6 +87,12 @@ func (m toggleAnalysis) Do() {
 	}
 	if m.analysis[key] != nil {
 		delete(m.analysis, key)
+		// the synth stops recording there at once
+		mm := (*Model)(m.UnitModel)
+		if tk := (tapKey{Unit: key.unit, Call: key.call, Analysis: true}); mm.taps[tk] != nil {
+			delete(mm.taps, tk)
+			mm.sendTaps()
+		}
 		return
 	}
 	if m.analysis == nil {

@@ -3,7 +3,6 @@ package tracker
 import (
 	"math"
 	"testing"
-	"time"
 
 	"github.com/vsariola/sointu"
 	"github.com/vsariola/sointu/vm"
@@ -119,18 +118,14 @@ func TestAnalysis(t *testing.T) {
 	if !found {
 		t.Errorf("the player taps %v", r.player.taps)
 	}
-	// closed: the watch ends once not asked for, and the synth records
-	// nothing more
+	// closed: the watches end, and the synth records nothing more, at once
 	for _, row := range rows {
 		m.Unit().ToggleAnalysis(row).Do()
 	}
 	if _, ok := m.Unit().AnalysisOf(1); ok || m.Unit().Analysis().Value() {
 		t.Error("a closed panel is open")
 	}
-	for _, w := range m.taps {
-		w.asked = time.Now().Add(-2 * time.Second)
-	}
-	r.run(2, false)
+	r.run(1, false)
 	if len(m.taps) != 0 || len(r.player.taps) != 0 {
 		t.Errorf("with the panels closed, %d watches and %d taps are left", len(m.taps), len(r.player.taps))
 	}

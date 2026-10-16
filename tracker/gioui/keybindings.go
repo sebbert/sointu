@@ -224,6 +224,8 @@ func (t *Tracker) KeyEvent(e key.Event, gtx C) {
 		t.Unit().Disabled().Toggle()
 	case "UnfoldModuleToggle":
 		t.Unit().Unfold().Toggle()
+	case "AnalysisToggle":
+		t.Unit().Analysis().Toggle()
 	case "MakeModule":
 		t.Unit().MakeModule().Do()
 	case "OpenModule":

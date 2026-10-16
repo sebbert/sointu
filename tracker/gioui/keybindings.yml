@@ -97,6 +97,7 @@
 - { key: "O", action: "Note26" }
 - { key: "0", action: "Note27" }
 - { key: "P", action: "Note28" }
+- { key: "A", shortcut: true, alt: true, action: "AnalysisToggle" }
 - { key: "+", action: "Increase" }
 - { key: "-", action: "Decrease" }
 - { key: "+", shortcut: true, action: "IncreaseMore" } # increase a large step
