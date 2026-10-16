@@ -13,6 +13,7 @@ package main
 #include <stdlib.h>
 
 void sointu_mark_dirty(uintptr_t plugin);
+void sointu_params_changed(uintptr_t plugin, bool values);
 */
 import "C"
 
@@ -44,7 +45,10 @@ func sointuNew(p C.uintptr_t) C.uintptr_t {
 	// the window opens when the host shows the view of the plugin, or after
 	// a moment if the host does not ask for one: see the view in
 	// au_darwin.m
-	return C.uintptr_t(cgo.NewHandle(plugin.NewHidden("sointu-au", func() { C.sointu_mark_dirty(p) }, nil)))
+	return C.uintptr_t(cgo.NewHandle(plugin.NewHidden("sointu-au",
+		func() { C.sointu_mark_dirty(p) },
+		func(values bool) { C.sointu_params_changed(p, C.bool(values)) },
+	)))
 }
 
 // sointuManageWindow tells that the window opens with the view of the plugin
@@ -70,6 +74,33 @@ func sointuMIDI(h C.uintptr_t, time C.uint32_t, d0, d1, d2 C.uint8_t) {
 // sointuSetSampleRate tells the instance the sample rate of the host and
 // returns its latency at that rate, in frames.
 //
+//export sointuParams
+func sointuParams() C.uint32_t { return plugin.NumParams }
+
+//export sointuParamRange
+func sointuParamRange() C.double { return plugin.ParamRange }
+
+// sointuParam handles a value that the host gives a parameter time frames
+// into the next render. Called on the render thread.
+//
+//export sointuParam
+func sointuParam(h C.uintptr_t, time C.uint32_t, id C.uint32_t, value C.double, mod C.bool) {
+	instance(h).Param(int(time), int(id), float64(value), bool(mod))
+}
+
+//export sointuParamValue
+func sointuParamValue(h C.uintptr_t, id C.uint32_t) C.double {
+	return C.double(instance(h).ParamValue(int(id)))
+}
+
+// sointuParamName returns the name of a parameter in memory allocated with
+// malloc, to be freed by the caller.
+//
+//export sointuParamName
+func sointuParamName(h C.uintptr_t, id C.uint32_t) *C.char {
+	return C.CString(instance(h).ParamName(int(id)))
+}
+
 //export sointuSetSampleRate
 func sointuSetSampleRate(h C.uintptr_t, sampleRate C.double) C.uint32_t {
 	return C.uint32_t(instance(h).SetSampleRate(float64(sampleRate)))

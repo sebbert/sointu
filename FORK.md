@@ -90,7 +90,8 @@ changes to the sound are fine, as long as both stay in sync.
 - An Audio Unit (version 2) plugin for macOS (`cmd/sointu-au`,
   `make install-au`, `sointu-au.component`), for hosts that load neither
   CLAP nor a VST2 they like, e.g. Ableton Live: a music device `aumu` /
-  `Sntu` / `Vsar` with one stereo output and no parameters, written against
+  `Sntu` / `Vsar` with one stereo output and a parameter for each
+  automation slot (see [Automation](#automation)), written against
   the system's C interface (`au_darwin.m`), with no SDK. MIDI on 16
   channels; tempo from the host's callbacks; the song is in the class info
   (`sointu-state`), so the host saves it with the project and in presets;
@@ -1206,7 +1207,7 @@ has fractions, so it is 16 bits unless the points are rounded.
   first free slot, or removes its lane (`AutomationModel`). The hint of an
   automated parameter starts with the slot and what the host gives it now:
   `A3 +12.5: 686 Hz`. A lane goes with its unit when the unit is deleted.
-- The CLAP and VST2 plugins have a parameter for each slot, -128 to 128 with the default
+- The plugins have a parameter for each slot, -128 to 128 with the default
   0, named by the slot and what it is bound to (`A3 Bass: filter
   frequency`), or by the `name` of its lane alone. With an automated
   parameter under the cursor, the toolbar under the units has the slot and
@@ -1216,7 +1217,13 @@ has fractions, so it is 16 bits unless the points are rounded.
   modulation of the host (`CLAP_EVENT_PARAM_MOD`) on top of the value. In
   VST2 the range is 0 to 1 with 0.5 in the middle, and a value takes effect
   at the start of the next block. The vendored vst2 has `GetNameFunc`, and
-  24 bytes for the name of a parameter instead of 8.
+  24 bytes for the name of a parameter instead of 8. In the Audio Unit the
+  parameters are global, with the slot as the id; `ScheduleParameters`
+  gives values at their frames (a ramp in steps of 32 frames, ending on its
+  last frame), `SetParameter`, from any thread, at the start of the next
+  render. A change of the names is told as a change of `ParameterList` and
+  `ParameterInfo`, the values of a loaded state with
+  `AUParameterListenerNotify`, on the main thread.
 - A value of the host reaches the player with its frame, like a note
   (`Player.Automate`), and the Go synth at that sample
   (`sointu.Automator`), where it is reached in a ramp of 128 samples
@@ -1256,11 +1263,9 @@ has not been seen.
 editing points there (the MCP tools read and set them); turning a knob in
 the tracker does not write automation in the host, as the knob is not the
 parameter; importing the envelopes of a Live set (`.als`) or MIDI
-controllers; lanes together with the `speed` unit; x86. The Audio Unit
-has no parameters: `kAudioUnitProperty_ParameterList` and `ParameterInfo`
-for the 64 slots, `SetParameter` and `ScheduleParameters` into
-`Instance.Param`, and a change of `ParameterList` when the names change, so
-through the Audio Unit nothing is automated or recorded.
+controllers; lanes together with the `speed` unit; x86. The parameters
+of the Audio Unit were tried only by calling it directly, not by auval or a
+host.
 
 ## Bandlimited oscillators
 
