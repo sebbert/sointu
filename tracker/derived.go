@@ -207,6 +207,9 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 		if unit.Type == "bufread" && unit.Parameters["loop"] == 0 && (up.Name == "loopstart" || up.Name == "looplength" || up.Name == "fade") {
 			continue // loop points only matter when looping
 		}
+		if unit.Type == "bufread" && unit.Parameters["loop"] == 2 && up.Name == "fade" {
+			continue // the turns of a ping-pong loop need no crossfade
+		}
 		if unit.Type == "bufread" && (unit.Parameters["slices"] == 0 || unit.Parameters["mode"] == 1) && (up.Name == "slice" || up.Name == "sliceend") {
 			continue // the slice only matters when playing slices
 		}

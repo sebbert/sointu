@@ -691,7 +691,7 @@
 ;;   the note was triggered. WRK[0] is the integer part of the position
 ;;   (signed), WRK[1] the fraction, WRK[2] the oldest valid frame at the
 ;;   trigger, WRK[3] 1 once playback has started, WRK[4] 1 once the position
-;;   has been in the loop, WRK[5] the filled length at the trigger, WRK[6] 1
+;;   has been in the loop (3 while a ping-pong loop plays it backwards), WRK[5] the filled length at the trigger, WRK[6] 1
 ;;   more than the position from the oldest frame in a full ring and WRK[7]
 ;;   the slice of a sliced unit. Voices never triggered (note 0) are silent. Matches
 ;;   bufread in vm/go_synth.go.
@@ -735,7 +735,7 @@
     (local.set $pos (i32.load (global.get $WRK)))
     (local.set $frac (f32.load offset=4 (global.get $WRK)))
     (local.set $base (i32.load offset=8 (global.get $WRK)))
-{{- if .BufreadBackwards}}
+{{- if or .BufreadBackwards .BufreadPingPong}}
     (local.set $inloop (i32.load offset=16 (global.get $WRK)))
 {{- end}}
 {{- if .BufreadTap}}
@@ -919,6 +919,48 @@
         (local.set $fade (call $minu (call $minu (i32.load offset=16 (local.get $r)) (local.get $ls)) (local.get $ll)))
 {{- end}}
         (if (local.get $ll) (then
+{{- if .BufreadPingPong}}
+          (if (i32.and (i32.load offset=24 (local.get $r)) (i32.const 4096)) (then
+            ;; ping-pong: past the last frame, or before the loop start once
+            ;; in the loop, the position folds back into the loop, and each
+            ;; fold turns its direction: bit 2 of $inloop
+            (local.set $t (i32.sub (local.get $le) (i32.const 1)))
+            (if (i32.or
+                    (i32.or
+                        (i32.gt_s (local.get $pos) (local.get $t))
+                        (i32.and (i32.eq (local.get $pos) (local.get $t)) (f32.gt (local.get $frac) (f32.const 0))))
+                    (i32.and (i32.ne (local.get $inloop) (i32.const 0)) (i32.lt_s (local.get $pos) (local.get $ls)))) (then
+                (local.set $d (i32.shl (i32.sub (local.get $ll) (i32.const 1)) (i32.const 1))) ;; the period, forwards and backwards
+                (if (local.get $d) (then
+                    (local.set $t (i32.rem_u (i32.sub (local.get $pos) (local.get $ls)) (local.get $d)))
+                    (if (i32.lt_s (local.get $pos) (local.get $ls)) (then
+                        (local.set $t (i32.rem_u (i32.sub (local.get $d) (i32.rem_u (i32.sub (local.get $ls) (local.get $pos)) (local.get $d))) (local.get $d)))
+                    ))
+                    (if (i32.or
+                            (i32.lt_s (local.get $t) (i32.shr_u (local.get $d) (i32.const 1)))
+                            (i32.and (i32.eq (local.get $t) (i32.shr_u (local.get $d) (i32.const 1))) (f32.eq (local.get $frac) (f32.const 0)))) (then
+                        (local.set $pos (i32.add (local.get $ls) (local.get $t)))
+                    )(else ;; on the way back
+                        (local.set $pos (i32.sub (i32.add (local.get $ls) (local.get $d)) (local.get $t)))
+                        (if (f32.gt (local.get $frac) (f32.const 0)) (then
+                            (local.set $pos (i32.sub (local.get $pos) (i32.const 1)))
+                            (local.set $frac (f32.sub (f32.const 1) (local.get $frac)))
+                            (if (f32.ge (local.get $frac) (f32.const 1)) (then ;; rounded up
+                                (local.set $frac (f32.const 0))
+                                (local.set $pos (i32.add (local.get $pos) (i32.const 1)))
+                            ))
+                        ))
+                        (local.set $inloop (i32.xor (local.get $inloop) (i32.const 2)))
+                    ))
+                )(else ;; a loop of one frame holds the position there
+                    (local.set $pos (local.get $ls))
+                    (local.set $frac (f32.const 0))
+                ))
+            ))
+            (if (i32.ge_s (local.get $pos) (local.get $ls)) (then (local.set $inloop (i32.or (local.get $inloop) (i32.const 1)))))
+            (local.set $next (i32.add (local.get $pos) (i32.const 1)))
+          )(else
+{{- end}}
             (if (i32.ge_s (local.get $pos) (local.get $le)) (then
                 (local.set $pos (i32.add (local.get $ls) (i32.rem_u (i32.sub (local.get $pos) (local.get $ls)) (local.get $ll))))
 {{- if .BufreadBackwards}}
@@ -938,6 +980,9 @@
             (if (i32.ge_s (local.get $next) (local.get $le)) (then
                 (local.set $next (local.get $ls))
             ))
+{{- if .BufreadPingPong}}
+          ))
+{{- end}}
         ))
     ))
 {{- end}}
@@ -1050,21 +1095,26 @@
         ))
     ))
 {{- end}}
+{{- $rate := print "(call $inputSigned (i32.const " (.InputNumber "bufread" "speed") "))"}}
 {{- if or .BufreadPitch .BufreadNoteTracking}}
-    (local.set $frac (f32.add (local.get $frac) (f32.mul
-        (call $inputSigned (i32.const {{.InputNumber "bufread" "speed"}}))
-        (call $pow2 (f32.div (local.get $semitones) (f32.const 12)))
-    )))
+{{- $rate = print "(f32.mul " $rate " (call $pow2 (f32.div (local.get $semitones) (f32.const 12))))"}}
 {{- else}}
     ;; no transpose, detune or note tracking in the song: the rate is the speed
-    (local.set $frac (f32.add (local.get $frac) (call $inputSigned (i32.const {{.InputNumber "bufread" "speed"}}))))
 {{- end}}
+{{- if .BufreadPingPong}}
+    (local.set $w {{$rate}})
+    (if (i32.and (local.get $inloop) (i32.const 2)) (then ;; turned backwards by a ping-pong loop
+        (local.set $w (f32.neg (local.get $w)))
+    ))
+{{- $rate = "(local.get $w)"}}
+{{- end}}
+    (local.set $frac (f32.add (local.get $frac) {{$rate}}))
     (local.set $whole (f32.floor (local.get $frac)))
     (i32.store (global.get $WRK) (i32.add (local.get $pos) (i32.trunc_f32_s (local.get $whole))))
     (f32.store offset=4 (global.get $WRK) (f32.sub (local.get $frac) (local.get $whole)))
     (i32.store offset=8 (global.get $WRK) (local.get $base))
     (i32.store offset=12 (global.get $WRK) (i32.const 1))
-{{- if .BufreadBackwards}}
+{{- if or .BufreadBackwards .BufreadPingPong}}
     (i32.store offset=16 (global.get $WRK) (local.get $inloop))
 {{- end}}
 )

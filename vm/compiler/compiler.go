@@ -200,6 +200,7 @@ type wasmBufferFeatures struct {
 	BufreadSliceNote    bool // the note picks the slice
 	BufreadSliceStop    bool // a slice is silent outside it
 	BufreadSliceLoop    bool // a sliced bufread loops
+	BufreadPingPong     bool // a bufread loops ping-pong
 	BufreadModSlice     bool // the slice is modulated
 
 	BufwriteNoPop     bool
@@ -221,6 +222,7 @@ func bufferFeatures(song *sointu.Song, features vm.FeatureSet, b *vm.Bytecode, d
 			f.BufreadTap = f.BufreadTap || r.Flags&vm.BufferRegionTap != 0
 			f.BufreadPitchTiming = f.BufreadPitchTiming || r.Flags&vm.BufferRegionPitchTiming != 0
 			f.BufreadRing = f.BufreadRing || r.Flags&vm.BufferRegionRingRead != 0 && r.EdgeFade > 0
+			f.BufreadPingPong = f.BufreadPingPong || r.Flags&vm.BufferRegionPingPong != 0
 		}
 		f.BufPerVoice = f.BufPerVoice || r.Flags&vm.BufferRegionPerVoice != 0
 		if r.Flags&vm.BufferRegionSliced != 0 {
@@ -249,9 +251,9 @@ func bufferFeatures(song *sointu.Song, features vm.FeatureSet, b *vm.Bytecode, d
 			ch := channels[p["buffer"]]
 			switch u.Type {
 			case "bufread":
-				loop := p["loop"] == 1
+				loop := p["loop"] != 0
 				f.BufreadLoop = f.BufreadLoop || loop
-				f.BufreadFade = f.BufreadFade || loop && p["fade"] != 0
+				f.BufreadFade = f.BufreadFade || p["loop"] == 1 && p["fade"] != 0
 				backwards = backwards || p["speed"] < 64
 				f.BufreadNegStart = f.BufreadNegStart || int32(p["start"]) < 0
 				f.BufreadNegLoopStart = f.BufreadNegLoopStart || loop && int32(p["loopstart"]) < 0

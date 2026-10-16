@@ -214,6 +214,11 @@ const (
 	// BufferRegionSliceStop is set in BufferRegion.Flags for sliced bufread
 	// units that are silent outside their slice.
 	BufferRegionSliceStop = 2048
+	// BufferRegionPingPong is set in BufferRegion.Flags, with
+	// BufferRegionLoop, for bufread units whose loop plays forwards and
+	// backwards in turn: to its last frame, back to its start, and so on.
+	// There is no crossfade at the turns.
+	BufferRegionPingPong = 4096
 	// BufferRegionSliceShift is where the slice parameter is in
 	// BufferRegion.Flags, for BufferRegionSliced: 7 bits.
 	BufferRegionSliceShift = 24
@@ -838,9 +843,13 @@ func (b *bytecodeBuilder) getBufferRegionIndex(unit sointu.Unit, firstVoice int)
 	}
 	r := BufferRegion{BufferID: uint32(p["buffer"]), Start: uint32(int32(start)), EdgeFade: uint32(max(p["edgefade"], 0))}
 	// loop points as int32 too; a negative loop start counts from the end
-	if p["loop"] == 1 && p["mode"] != 1 {
+	if p["loop"] != 0 && p["mode"] != 1 {
 		r.LoopStart, r.LoopLength, r.Fade = uint32(int32(loopStart)), uint32(loopLength), uint32(p["fade"])
 		r.Flags |= BufferRegionLoop
+		if p["loop"] == 2 { // the turns need no crossfade
+			r.Fade = 0
+			r.Flags |= BufferRegionPingPong
+		}
 	}
 	if unit.Type == "bufwrite" {
 		r = BufferRegion{BufferID: uint32(p["buffer"]), Flags: BufferRegionWrite}

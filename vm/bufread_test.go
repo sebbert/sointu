@@ -343,3 +343,43 @@ func TestBufreadSliceEdgeFade(t *testing.T) {
 	out := renderBufread(t, sointu.ParamMap{"slices": 1, "slice": 1, "sliceend": 1, "edgefade": 2}, bufs, 60, 7)
 	checkLeft(t, out, []float32{0, 0.25, 0.6, 0.7, 0.4, 0, 0})
 }
+
+func TestBufreadPingPong(t *testing.T) {
+	bufs := map[int]sointu.BufferAudio{1: ramp(8, 1, 0.1)}
+	// frames 2 to 4, forwards and backwards; fade does nothing at the turns
+	loop := sointu.ParamMap{"loop": 2, "loopstart": 2, "looplength": 3, "fade": 2}
+	checkLeft(t, renderBufread(t, loop, bufs, 60, 11), []float32{0, 0.1, 0.2, 0.3, 0.4, 0.3, 0.2, 0.3, 0.4, 0.3, 0.2})
+	// backwards from inside the loop, turning at its start
+	back := sointu.ParamMap{"loop": 2, "loopstart": 2, "looplength": 3, "start": 4, "speed": 0}
+	checkLeft(t, renderBufread(t, back, bufs, 60, 7), []float32{0.4, 0.3, 0.2, 0.3, 0.4, 0.3, 0.2})
+	// started past the loop, folded into it as if it had bounced
+	past := sointu.ParamMap{"loop": 2, "loopstart": 2, "looplength": 3, "start": 7}
+	checkLeft(t, renderBufread(t, past, bufs, 60, 5), []float32{0.3, 0.4, 0.3, 0.2, 0.3}) // bounced off 4 and 2
+	// a loop of one frame holds it
+	one := sointu.ParamMap{"loop": 2, "loopstart": 2, "looplength": 1}
+	checkLeft(t, renderBufread(t, one, bufs, 60, 5), []float32{0, 0.1, 0.2, 0.2, 0.2})
+}
+
+func TestBufreadPingPongInterpolates(t *testing.T) {
+	bufs := map[int]sointu.BufferAudio{1: ramp(4, 1, 0.1)}
+	// at half speed, the turns are at the last and the first frame
+	loop := sointu.ParamMap{"loop": 2, "loopstart": 0, "looplength": 4}
+	checkLeft(t, renderBufread(t, loop, bufs, 48, 15), []float32{0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05, 0, 0.05, 0.1})
+	// at 0.75 speed, a turn falls between two frames
+	loop["speed"] = 112
+	checkLeft(t, renderBufread(t, loop, bufs, 60, 8), []float32{0, 0.075, 0.15, 0.225, 0.3, 0.225, 0.15, 0.075})
+}
+
+func TestBufreadPingPongSlice(t *testing.T) {
+	bufs := slicedRamp()
+	// slice 1 is [4,10): the loop is its frames 7 to 9
+	loop := sointu.ParamMap{"slices": 1, "slice": 1, "loop": 2, "loopstart": 64, "looplength": 128}
+	checkLeft(t, renderBufread(t, loop, bufs, 60, 11), []float32{0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.8, 0.7, 0.8, 0.9, 0.8})
+}
+
+func TestBufreadPingPongModulatedLoop(t *testing.T) {
+	bufs := map[int]sointu.BufferAudio{1: ramp(8, 1, 0.1)}
+	// loop start 1 + 0.25*8 = 3, loop length 4 - 0.25*8 = 2: frames 3 and 4
+	loop := sointu.ParamMap{"loop": 2, "loopstart": 1, "looplength": 4}
+	checkLeft(t, renderModulatedBufread(t, loop, map[int]int{5: 80, 6: 48}, bufs, 8), []float32{0, 0.1, 0.2, 0.3, 0.4, 0.3, 0.4, 0.3})
+}

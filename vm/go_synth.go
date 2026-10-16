@@ -991,7 +991,8 @@ func (s *GoSynth) regionBuffer(r BufferRegion, voiceIndex int) *synthBuffer {
 // was triggered. unit.state holds, as bits, the integer part of the position
 // (signed) in state[0], the fraction in state[1], the oldest valid frame at
 // the trigger in state[2], 1 in state[3] once playback has started, 1 in
-// state[4] once the position has been in the loop, the filled length at the
+// state[4] once the position has been in the loop (3 while a ping-pong loop
+// plays it backwards), the filled length at the
 // trigger in state[5] and, for the crossfade at the write head of a ring, 1
 // more than where the position was from the oldest frame in state[6] and the
 // slice of a sliced unit in state[7]; all are zeroed when a note is
@@ -1015,7 +1016,8 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, voiceIndex int, r BufferRegi
 	oldest := (buf.head + capacity - buf.filled) % capacity
 	pos, frac := int32(math.Float32bits(unit.state[0])), unit.state[1]
 	base := math.Float32bits(unit.state[2])
-	inLoop := math.Float32bits(unit.state[4]) != 0
+	inLoop := math.Float32bits(unit.state[4])&1 != 0
+	back := math.Float32bits(unit.state[4])&2 != 0 // a ping-pong loop has turned it backwards
 	// the start, and what a pitch timed start has more than whole frames
 	start, startFrac := int32(r.Start), float32(0)
 	if r.Flags&BufferRegionPitchTiming != 0 {
@@ -1104,7 +1106,11 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, voiceIndex int, r BufferRegi
 		}
 		loopEnd = loopStart + loopLength
 		fade = min(int32(r.Fade), loopStart, loopLength)
-		if loopLength > 0 {
+		if loopLength > 0 && r.Flags&BufferRegionPingPong != 0 {
+			pos, frac, back = bufreadBounce(pos, frac, loopStart, loopLength, inLoop, back)
+			inLoop = inLoop || pos >= loopStart
+			next = pos + 1 // at the turns, the fraction is 0
+		} else if loopLength > 0 {
 			if pos >= loopEnd {
 				pos = loopStart + (pos-loopStart)%loopLength
 			} else if inLoop && pos < loopStart { // backwards past the loop start
@@ -1200,12 +1206,20 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, voiceIndex int, r BufferRegi
 		semitones += float32(voice.note) - 60
 	}
 	// computed like the wasm player, which uses JavaScript's Math.pow
-	frac += float32((float32(speed*2) - 1) * exp2f(semitones/12))
+	step := float32((float32(speed*2) - 1) * exp2f(semitones/12))
+	if back {
+		step = -step
+	}
+	frac += step
 	whole := float32(math.Floor(float64(frac)))
 	unit.state[0] = math.Float32frombits(uint32(pos + int32(whole)))
 	unit.state[1] = frac - whole
 	if inLoop {
-		unit.state[4] = math.Float32frombits(1)
+		flags := uint32(1)
+		if back {
+			flags |= 2
+		}
+		unit.state[4] = math.Float32frombits(flags)
 	}
 }
 
@@ -1403,6 +1417,42 @@ func (s *GoSynth) bufwrite(unit *unit, voice *voice, voiceIndex int, r BufferReg
 	} else {
 		buf.filled = buf.head
 	}
+}
+
+// bufreadBounce returns the position pos+frac of a bufread unit in a
+// ping-pong loop: folded back into the frames from loopStart to the last one
+// of the loop, as often as it has passed one of them, and whether it then
+// plays backwards: back, turned at each fold. It is folded when it is past
+// the last frame, or before loopStart once it has been in the loop. A loop
+// of one frame holds the position there.
+func bufreadBounce(pos int32, frac float32, loopStart, loopLength int32, inLoop, back bool) (int32, float32, bool) {
+	last := loopStart + loopLength - 1
+	if !(pos > last || pos == last && frac > 0 || inLoop && pos < loopStart) {
+		return pos, frac, back
+	}
+	if loopLength == 1 {
+		return loopStart, 0, back
+	}
+	span := loopLength - 1     // the frames from loopStart to last
+	period := uint32(2 * span) // forwards and backwards
+	q := int32(uint32(pos-loopStart) % period)
+	if pos < loopStart {
+		q = int32((period - uint32(loopStart-pos)%period) % period)
+	}
+	if q < span || q == span && frac == 0 {
+		return loopStart + q, frac, back
+	}
+	// on the way back
+	pos = loopStart + int32(period) - q
+	if frac > 0 {
+		pos--
+		frac = 1 - frac
+		if frac >= 1 { // rounded up
+			frac = 0
+			pos++
+		}
+	}
+	return pos, frac, !back
 }
 
 // bufreadWrap returns a position of a bufread unit in a full ring, which is

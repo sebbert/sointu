@@ -139,7 +139,7 @@ All of these are Go and wasm only.
 
 | Unit | What it does |
 |---|---|
-| `bufread` | Plays a buffer: note tracking, looping with crossfade, modulatable start/loop points, negative start counting back from the newest frame, `speed` (-1 to 1), edge fade, which in a full ring is a crossfade across the write head. With `mode` tap it is a tap of a delay line: it reads the frame at `start` every sample. `timing` counts the positions in frames, in frames at note 0 (pitch) or in 48ths of a beat (BPM). With `slices`, it plays a slice of the buffer, picked by `slice` or by the note, stopping at the next marker with `sliceend`. See [Buffers as delay lines](#buffers-as-delay-lines) and [Slices and sample editing](#slices-and-sample-editing) |
+| `bufread` | Plays a buffer: note tracking, looping forward with crossfade or ping-pong (`loop`), modulatable start/loop points, negative start counting back from the newest frame, `speed` (-1 to 1), edge fade, which in a full ring is a crossfade across the write head. With `mode` tap it is a tap of a delay line: it reads the frame at `start` every sample. `timing` counts the positions in frames, in frames at note 0 (pitch) or in 48ths of a beat (BPM). With `slices`, it plays a slice of the buffer, picked by `slice` or by the note, stopping at the next marker with `sliceend`. See [Buffers as delay lines](#buffers-as-delay-lines) and [Slices and sample editing](#slices-and-sample-editing) |
 | `bufwrite` | Writes into a buffer: a continuous ring buffer, or `oneshot` while the note is held. Several writers mix; `feedback`, `pop`. Without a buffer, it gets one of its own, `length` frames long; with `pervoice`, every voice has a copy of it |
 | `spawn` | Triggers voices of another instrument: at a `rate`, synced to the beat, or on a rising edge. Transpose, note length, up to 4 `args`, `steal` |
 | `arg` | Pushes a value passed by the `spawn` that triggered the voice |
@@ -2560,6 +2560,35 @@ move with the audio.
 **MCP server.** `get_song` lists the frames and the markers of each buffer;
 `set_slices` sets them: by frames, `count` equal slices, or at the
 transients (`sensitivity`), or clears them, as one undo step.
+
+**Ping-pong loops.** `loop` off, forward or ping-pong (2): the loop plays
+forwards to its last frame, backwards to its start, and so on. Go synth and
+wasm player render the same (`vm/compiler/wasm_pingpong_test.go`).
+
+- **The turns** are at the last frame of the loop (loop start + length −
+  1) and at its start: a position past one is folded back into the loop,
+  as often as it has passed one, and each fold turns the direction. The
+  signal is continuous at a turn, so there is no crossfade: `fade` does
+  nothing and is not shown. A loop of one frame holds that frame.
+- **Speed**: the direction multiplies the rate. A negative speed plays
+  backwards from `start`; inside the loop it turns at the loop start. A
+  position before the loop is not folded until it has been in the loop, as
+  with forward: started before the loop, a backwards unit plays out to the
+  start of the buffer. Started past the loop, it is folded in as if it had
+  bounced there.
+- **Slices, modulation, edge fade, stereo**: as with forward. The loop
+  points are read every sample; the position folds into the loop as it is
+  then. A sliced loop is in parts of the slice. Both channels read at the
+  same position. The edge fade fades near the edges of the valid frames or
+  of a stopped slice, wherever the position is.
+- **No release**: bufread does not see the note-off; the loop plays on
+  until an envelope or the next note ends it, as with forward.
+- **State and bytecode**: `BufferRegionPingPong` (4096) with
+  `BufferRegionLoop`; the region's fade is 0. The direction is bit 2 of
+  `state[4]` (WRK offset 16), which is 1 once in the loop and 3 while a
+  ping-pong loop plays it backwards. The wasm code for it is only there
+  when a unit loops ping-pong; old songs compile to the same bytes. x86 has
+  no bufread.
 
 ## MCP server
 

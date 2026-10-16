@@ -707,7 +707,10 @@ var UnitTypes = map[string]UnitType{
 		// frame of the buffer; a negative start or loopstart counts back from
 		// the newest one when the note was triggered. Modulating them shifts them by the valid length of the buffer
 		// times the modulation. start is read when the note is triggered.
-		// fade is the length of the crossfade at the end of the loop, and
+		// loop forward plays the loop again and again, ping-pong forwards and
+		// backwards in turn, from its start to its last frame and back.
+		// fade is the length of the crossfade at the end of a forward loop
+		// (the turns of a ping-pong loop need none), and
 		// edgefade the length of the fade near the edges of the valid
 		// frames. In a ring that bufwrite units have filled, the edges meet
 		// at the write head: there the fade is a crossfade to the frames on
@@ -748,7 +751,7 @@ var UnitTypes = map[string]UnitType{
 			{Name: "speed", MinValue: 0, Neutral: 64, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return formatFloat(float64(v)/64 - 1), "x" }},
 			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
 			{Name: "notetracking", MinValue: 0, Default: 1, MaxValue: 1, CanSet: true, CanModulate: false},
-			{Name: "loop", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
+			{Name: "loop", MinValue: 0, MaxValue: 2, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"off", "forward", "ping-pong"})},
 			{Name: "start", MinValue: math.MinInt32 + 1, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true, NoTransform: true},
 			{Name: "loopstart", MinValue: math.MinInt32 + 1, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true, NoTransform: true},
 			{Name: "looplength", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: true, NoTransform: true},
