@@ -290,7 +290,7 @@ var UnitTypes = map[string]UnitType{
 			{Name: "dry", MinValue: 0, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true},
 			{Name: "feedback", MinValue: 0, Default: 96, MaxValue: 128, CanSet: true, CanModulate: true},
 			{Name: "damp", MinValue: 0, MaxValue: 128, CanSet: true, CanModulate: true},
-			{Name: "notetracking", MinValue: 0, Default: 2, MaxValue: 2, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"fixed", "pitch", "BPM"})},
+			{Name: "notetracking", MinValue: 0, Default: 2, MaxValue: 2, CanSet: true, CanModulate: false, Choice: true, DisplayFunc: arrDispFunc([]string{"fixed", "pitch", "BPM"})},
 			{Name: "delaytime", MinValue: 0, MaxValue: -1, CanSet: false, CanModulate: true},
 		},
 		DefaultVarArgs: []int{48},
@@ -523,7 +523,7 @@ var UnitTypes = map[string]UnitType{
 			{Name: "network", MinValue: 0, MaxValue: 2800, CanSet: true, CanModulate: false, DisplayFunc: reverbTimeDispFunc("by size")},
 			{Name: "diffuser", MinValue: 0, MaxValue: 700, CanSet: true, CanModulate: false, DisplayFunc: reverbTimeDispFunc("by size")},
 			{Name: "pretime", MinValue: 0, MaxValue: 2000, CanSet: true, CanModulate: false, DisplayFunc: reverbTimeDispFunc("by predelay")},
-			{Name: "bypass", MinValue: 0, MaxValue: 7, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"none", "lowcut", "highcut", "low+highcut", "predelay", "lowcut+pre", "highcut+pre", "all"})},
+			{Name: "bypass", MinValue: 0, MaxValue: 7, CanSet: true, CanModulate: false, Choice: true, DisplayFunc: arrDispFunc([]string{"none", "lowcut", "highcut", "low+highcut", "predelay", "lowcut+pre", "highcut+pre", "all"})},
 			{Name: "allpass", MinValue: 0, MaxValue: MCAllpassGainMax, CanSet: true, CanModulate: false, DisplayFunc: reverbAllpassDispFunc},
 			{Name: "loopsize", MinValue: 0, MaxValue: 2800, CanSet: true, CanModulate: false, DisplayFunc: reverbTimeDispFunc("none")},
 			{Name: "loopgain", MinValue: 0, MaxValue: MCAllpassGainMax, CanSet: true, CanModulate: false, DisplayFunc: reverbAllpassDispFunc},
@@ -618,7 +618,7 @@ var UnitTypes = map[string]UnitType{
 		Params: []UnitParameter{
 			{Name: "stereo", MinValue: 0, Default: 1, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "gain", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
-			{Name: "channel", MinValue: 0, Default: 2, MaxValue: NumChannels - 2, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc(channelNames[:])},
+			{Name: "channel", MinValue: 0, Default: 2, MaxValue: NumChannels - 2, CanSet: true, CanModulate: false, Choice: true, DisplayFunc: arrDispFunc(channelNames[:])},
 		},
 		StackUse: stackUseSink,
 	},
@@ -687,7 +687,7 @@ var UnitTypes = map[string]UnitType{
 			{Name: "shape", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true},
 			{Name: "gain", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.FormatFloat(toDecibel(float64(v)/128), 'g', 3, 64), "dB" }},
 			{Name: "frequency", MinValue: 0, MaxValue: -1, CanSet: false, CanModulate: true},
-			{Name: "type", MinValue: int(Sine), Default: int(Sine), MaxValue: int(Sample), CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"sine", "trisaw", "pulse", "gate", "sample"})},
+			{Name: "type", MinValue: int(Sine), Default: int(Sine), MaxValue: int(Sample), CanSet: true, CanModulate: false, Choice: true, DisplayFunc: arrDispFunc([]string{"sine", "trisaw", "pulse", "gate", "sample"})},
 			{Name: "lfo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "unison", MinValue: 0, MaxValue: 3, CanSet: true, CanModulate: false},
 			// bandlimit reduces the aliasing of the sine, trisaw and pulse
@@ -898,7 +898,7 @@ var UnitTypes = map[string]UnitType{
 		// toward phase 0, pitching the sound to the frame rate. amount scales
 		// the effect.
 		Params: []UnitParameter{
-			{Name: "mode", MinValue: 0, MaxValue: 2, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc(spphaseModeNames[:])},
+			{Name: "mode", MinValue: 0, MaxValue: 2, CanSet: true, CanModulate: false, Choice: true, DisplayFunc: arrDispFunc(spphaseModeNames[:])},
 			{Name: "amount", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v * 100 / 128), "%" }},
 			{Name: "buffer", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
 		},
@@ -985,7 +985,7 @@ var UnitTypes = map[string]UnitType{
 		// push them. instrument is the index of the instrument plus one; 0
 		// means none.
 		Params: []UnitParameter{
-			{Name: "mode", MinValue: 0, MaxValue: 2, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc(spawnModeNames[:])},
+			{Name: "mode", MinValue: 0, MaxValue: 2, CanSet: true, CanModulate: false, Choice: true, DisplayFunc: arrDispFunc(spawnModeNames[:])},
 			{Name: "rate", MinValue: 0, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) {
 				return strconv.FormatFloat(SpawnRateHz(float64(v)/128), 'g', 3, 64), "Hz"
 			}},
@@ -1051,7 +1051,7 @@ var UnitTypes = map[string]UnitType{
 		// the note), with transpose and detune added to the note; with BPM,
 		// in 48ths of a beat. The length is taken when the note starts.
 		Params: []UnitParameter{
-			{Name: "timing", MinValue: 0, MaxValue: 2, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"frames", "pitch", "BPM"})},
+			{Name: "timing", MinValue: 0, MaxValue: 2, CanSet: true, CanModulate: false, Choice: true, DisplayFunc: arrDispFunc([]string{"frames", "pitch", "BPM"})},
 			{Name: "length", MinValue: 0, Default: 0, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: windowLengthDisplay},
 			{Name: "time", MinValue: 1, Default: 10788, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
 			{Name: "shape", MinValue: 0, Default: 128, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: func(v int) (string, string) { return strconv.Itoa(v * 100 / 128), "%" }},
@@ -1078,7 +1078,7 @@ var UnitTypes = map[string]UnitType{
 	"in": {
 		Params: []UnitParameter{
 			{Name: "stereo", MinValue: 0, Default: 1, MaxValue: 1, CanSet: true, CanModulate: false},
-			{Name: "channel", MinValue: 0, Default: 2, MaxValue: NumChannels - 2, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc(channelNames[:])},
+			{Name: "channel", MinValue: 0, Default: 2, MaxValue: NumChannels - 2, CanSet: true, CanModulate: false, Choice: true, DisplayFunc: arrDispFunc(channelNames[:])},
 		},
 		StackUse: stackUseSource,
 	},
@@ -1217,7 +1217,7 @@ var UnitTypes = map[string]UnitType{
 		// mean (each keeps 3/4 of itself), and shuffle permutes the channels
 		// and flips the polarity of some, at random by seed.
 		Params: []UnitParameter{
-			{Name: "type", MinValue: 0, MaxValue: MCMixShuffle, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc(mcMixNames[:])},
+			{Name: "type", MinValue: 0, MaxValue: MCMixShuffle, CanSet: true, CanModulate: false, Choice: true, DisplayFunc: arrDispFunc(mcMixNames[:])},
 			{Name: "seed", MinValue: 0, MaxValue: 255, CanSet: true, CanModulate: false},
 			{Name: "bus", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
 		},
@@ -1251,7 +1251,7 @@ var UnitTypes = map[string]UnitType{
 				}
 				return strconv.FormatFloat(f, 'f', 0, 64), "Hz"
 			}},
-			{Name: "type", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"lowpass", "highpass"})},
+			{Name: "type", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false, Choice: true, DisplayFunc: arrDispFunc([]string{"lowpass", "highpass"})},
 			{Name: "bus", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
 		},
 		StackUse: stackUseNone,

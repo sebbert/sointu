@@ -641,7 +641,7 @@ func (n *namedParameter) Type(p *Parameter) ParameterType {
 	if p.unit.Type == "send" && p.up.Name == "target" {
 		return IDParameter
 	}
-	if p.up.Choice || p.up.MinValue == 0 && p.up.MaxValue == 1 && p.up.DisplayFunc != nil {
+	if p.up.Choice {
 		return ChoiceParameter // named values, e.g. one shot, loop, ping-pong and tap
 	}
 	if p.up.MinValue >= -1 && p.up.MaxValue <= 1 {
@@ -1540,17 +1540,30 @@ func (b *moduleArgParameter) Type(p *Parameter) ParameterType {
 	if !mp.CanSet {
 		return NoParameter // only a port
 	}
+	if mp.Choice {
+		return ChoiceParameter
+	}
 	if mp.MinValue >= -1 && mp.MaxValue <= 1 {
 		return BoolParameter
 	}
 	return IntegerParameter
+}
+func (b *moduleArgParameter) StringOf(p *Parameter, value int) string {
+	if mp := b.param(p); mp.DisplayFunc != nil {
+		s, _ := mp.DisplayFunc(value)
+		return s
+	}
+	return strconv.Itoa(value)
 }
 func (b *moduleArgParameter) Name(p *Parameter) string { return b.param(p).Name }
 func (b *moduleArgParameter) Hint(p *Parameter) ParameterHint {
 	mp, val := b.param(p), b.Value(p)
 	if mp.DisplayFunc != nil {
 		valueInUnits, units := mp.DisplayFunc(val)
-		return ParameterHint{fmt.Sprintf("%s %s", valueInUnits, units), true}
+		if units == "" {
+			return ParameterHint{valueInUnits, true}
+		}
+		return ParameterHint{valueInUnits + " " + units, true}
 	}
 	return ParameterHint{strconv.Itoa(val), true}
 }
@@ -1558,6 +1571,9 @@ func (b *moduleArgParameter) Hint(p *Parameter) ParameterHint {
 // Label is the text on the knob: with a scaled binding, the value that the
 // first bound parameter gets, as that parameter shows it.
 func (b *moduleArgParameter) Label(p *Parameter) string {
+	if mp := b.param(p); mp.Choice {
+		return b.StringOf(p, b.Value(p))
+	}
 	if i, ok := p.m.d.Song.Modules.Find(p.unit.Parameters["module"]); ok {
 		if source, name, ok := p.m.d.Song.Modules.ParamSourceUnit(i, p.index); ok && source.Bind[name].Scaled {
 			if mp := b.param(p); mp.DisplayFunc != nil {
