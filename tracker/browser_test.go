@@ -184,7 +184,7 @@ func TestBrowserCancelsStaleDecode(t *testing.T) {
 		t.Fatalf("got %+v, want b.wav", p.Audio)
 	}
 	// a result of the old decode that comes late is not played
-	b.decoded(gen, filepath.Join(b.Root(), "A.flac"), sointu.BufferAudio{Channels: 1, Data: []float32{9}}, nil)
+	b.decoded(gen, filepath.Join(b.Root(), "A.flac"), fileStamp{}, sointu.BufferAudio{Channels: 1, Data: []float32{9}}, nil)
 	select {
 	case msg := <-broker.ToPlayer:
 		if p, ok := msg.(PreviewMsg); ok {
@@ -263,5 +263,52 @@ func TestBrowserWithoutAutoPreview(t *testing.T) {
 	b.List().SetSelected(2) // leaving the file stops it
 	if p := nextPreview(t, m, broker); p.Audio.Frames() != 0 {
 		t.Fatalf("leaving b.wav did not stop its preview: %+v", p.Audio)
+	}
+}
+
+func TestBrowserWatchesFolders(t *testing.T) {
+	browserWatchInterval = 10 * time.Millisecond
+	t.Cleanup(func() { browserWatchInterval = time.Second })
+	m, broker, _ := newBrowserTestModel(t)
+	b := m.Browser()
+	root := browserTree(t)
+	b.SetRoot(root)
+	b.Right() // expands kicks
+	waitFor := func(name string, want bool) {
+		t.Helper()
+		deadline := time.After(5 * time.Second)
+		for slices.Contains(browserNames(m), name) != want {
+			select {
+			case msg := <-broker.ToModel:
+				m.ProcessMsg(msg)
+			case <-deadline:
+				t.Fatalf("%s shown: %v, want %v: %v", name, !want, want, browserNames(m))
+			}
+		}
+	}
+	os.WriteFile(filepath.Join(root, "new.wav"), nil, 0o644)
+	waitFor("new.wav", true)
+	os.WriteFile(filepath.Join(root, "kicks", "k2.wav"), nil, 0o644)
+	waitFor("k2.wav", true)
+	os.Remove(filepath.Join(root, "b.wav"))
+	waitFor("b.wav", false)
+}
+
+func TestBrowserDecodesChangedFileAgain(t *testing.T) {
+	m, broker, calls := newBrowserTestModel(t)
+	b := m.Browser()
+	root := browserTree(t)
+	b.SetRoot(root)
+	b.List().SetSelected(2) // A.flac
+	nextPreview(t, m, broker)
+	b.List().SetSelected(3)
+	nextPreview(t, m, broker)
+	nextPreview(t, m, broker)
+	os.WriteFile(filepath.Join(root, "A.flac"), make([]byte, 7), 0o644)
+	b.List().SetSelected(2)
+	nextPreview(t, m, broker)
+	nextPreview(t, m, broker)
+	if len(*calls) != 3 {
+		t.Errorf("decodes %v, want A.flac decoded again after it changed", *calls)
 	}
 }

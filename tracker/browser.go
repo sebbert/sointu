@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/vsariola/sointu"
 	"github.com/vsariola/sointu/ffmpeg"
@@ -39,12 +41,26 @@ type (
 		// PlaySelected only
 		manual bool
 		cache      []browserDecoded
+		// watched is read by the watcher, which runs while there is a root
+		watched     atomic.Pointer[browserWatch]
+		watchCancel context.CancelFunc
 	}
 
 	browserDecoded struct {
 		path  string
+		stamp fileStamp // the file as it was decoded
 		audio sointu.BufferAudio
 	}
+
+	// fileStamp tells whether a file or a folder has changed.
+	fileStamp struct {
+		modTime time.Time
+		size    int64
+	}
+
+	// browserWatch is what the watcher of the folders compares: the stamps
+	// of the folders shown, as they were read.
+	browserWatch map[string]fileStamp
 
 	// BrowserEntry is a row of the sample browser: a folder or an audio
 	// file, indented by its depth below the root.
@@ -180,6 +196,74 @@ func (m *BrowserModel) refresh() {
 		b.selected = i
 	}
 	b.selected = min(max(b.selected, 0), len(b.entries)-1)
+	m.watch()
+}
+
+// browserWatchInterval is how often the watcher looks at the folders shown.
+var browserWatchInterval = time.Second
+
+func stampOf(path string) fileStamp {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fileStamp{}
+	}
+	return fileStamp{info.ModTime(), info.Size()}
+}
+
+// watch gives the watcher the folders shown, the root and the expanded
+// folders, as they are now, and starts it if it is not running. The watcher
+// stats them every browserWatchInterval, on a goroutine, and when one has
+// changed (a file was added, removed or renamed in it) the browser reads
+// the folders again.
+func (m *BrowserModel) watch() {
+	b := m.state()
+	w := browserWatch{b.root: stampOf(b.root)}
+	for _, e := range b.entries {
+		if e.Dir && e.Expanded {
+			w[e.Path] = stampOf(e.Path)
+		}
+	}
+	b.watched.Store(&w)
+	if b.watchCancel != nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	b.watchCancel = cancel
+	go func() {
+		ticker := time.NewTicker(browserWatchInterval)
+		defer ticker.Stop()
+		var told *browserWatch // a change is told once, until the folders are read again
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+			w := b.watched.Load()
+			if w == told {
+				continue
+			}
+			for dir, stamp := range *w {
+				if stampOf(dir) != stamp {
+					told = w
+					TrySend(m.broker.ToModel, MsgToModel{Data: func() {
+						if b.watched.Load() == w {
+							m.refresh()
+						}
+					}})
+					break
+				}
+			}
+		}
+	}()
+}
+
+// stopWatching stops the watcher.
+func (m *BrowserModel) stopWatching() {
+	if m.browser.watchCancel != nil {
+		m.browser.watchCancel()
+		m.browser.watchCancel = nil
+	}
 }
 
 // appendDir appends the rows of the folders and audio files in dir, folders
@@ -425,7 +509,8 @@ func (m *BrowserModel) preview(path string) {
 	m.cancelDecode()
 	m.stopPreview()
 	b.previewing = path
-	if i := slices.IndexFunc(b.cache, func(d browserDecoded) bool { return d.path == path }); i >= 0 {
+	stamp := stampOf(path)
+	if i := slices.IndexFunc(b.cache, func(d browserDecoded) bool { return d.path == path && d.stamp == stamp }); i >= 0 {
 		b.status = ""
 		m.play(b.cache[i].audio)
 		return
@@ -444,12 +529,12 @@ func (m *BrowserModel) preview(path string) {
 		if ctx.Err() != nil {
 			return // cancelled: another file is selected, or the preview stopped
 		}
-		TrySend(m.broker.ToModel, MsgToModel{Data: func() { m.decoded(gen, path, audio, err) }})
+		TrySend(m.broker.ToModel, MsgToModel{Data: func() { m.decoded(gen, path, stamp, audio, err) }})
 	}()
 }
 
 // decoded takes the result of a decode, unless another one was started since.
-func (m *BrowserModel) decoded(gen int, path string, audio sointu.BufferAudio, err error) {
+func (m *BrowserModel) decoded(gen int, path string, stamp fileStamp, audio sointu.BufferAudio, err error) {
 	b := m.state()
 	if gen != b.gen || b.previewing != path {
 		return
@@ -461,7 +546,8 @@ func (m *BrowserModel) decoded(gen int, path string, audio sointu.BufferAudio, e
 		return
 	}
 	b.status = ""
-	b.cache = append(b.cache, browserDecoded{path, audio})
+	b.cache = slices.DeleteFunc(b.cache, func(d browserDecoded) bool { return d.path == path })
+	b.cache = append(b.cache, browserDecoded{path, stamp, audio})
 	if len(b.cache) > browserCacheSize {
 		b.cache = b.cache[1:]
 	}

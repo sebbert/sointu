@@ -1478,7 +1478,12 @@ no host was run with the plugins.
   floats, as the plugin window does).
   ffmpeg decodes a preview on a goroutine, reading the file in place
   (`FFmpeg.DecodeFile`, to a pipe); selecting another file kills it, and a
-  late result is dropped by its number. The last 8 decodes are kept. A
+  late result is dropped by its number. The last 8 decodes are kept, each
+  with the time and size of its file: a file that changed is decoded again.
+  The folders shown, the root and the expanded ones, are watched: a
+  goroutine stats them every second, and when one has changed (a file was
+  added, removed or renamed in it) they are read again. No fsnotify: a
+  poll of a few folders costs nothing and works on every platform. A
   preview of the browser and one of a buffer share the player's preview:
   one stops the other.
 - **Drag and drop:** audio files dropped onto the window from the Finder
