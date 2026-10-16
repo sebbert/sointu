@@ -107,11 +107,17 @@ func (m *BufferModel) Item(i int) (name, info string) {
 }
 
 // Import imports an audio file as a new buffer, or into the selected buffer
-// if replace is true. The file is converted in the background.
+// if replace is true: the one selected now, wherever the selection is when
+// the file has been converted, in the background.
 func (m *BufferModel) Import(r io.ReadCloser, replace bool) {
 	fileName := "sample"
 	if f, ok := r.(*os.File); ok {
 		fileName = filepath.Base(f.Name())
+		m.browser.lastFolder = filepath.Dir(f.Name())
+	}
+	target := 0
+	if buf := m.selected(); replace && buf != nil {
+		target = buf.ID
 	}
 	data, err := io.ReadAll(r)
 	r.Close()
@@ -132,18 +138,22 @@ func (m *BufferModel) Import(r io.ReadCloser, replace bool) {
 				(*Model)(m).Alerts().Add(fmt.Sprintf("Error importing %s: %v", fileName, err), Error)
 				return
 			}
-			m.addImported(fileName, stored, min(max(channels, 1), 2), replace)
+			m.addImported(fileName, stored, min(max(channels, 1), 2), target)
 		}})
 	}()
 }
 
-func (m *BufferModel) addImported(fileName string, data []byte, channels int, replace bool) {
+// addImported adds an imported sample as a new buffer, or puts it in the
+// buffer with the ID replace, if there is one, in place of what it has.
+func (m *BufferModel) addImported(fileName string, data []byte, channels int, replace int) {
 	defer m.change("ImportBuffer")()
 	if len(m.d.Song.EncodingPresets) == 0 {
 		m.d.Song.EncodingPresets = m.defaultPresets.Copy()
 	}
 	sample := &sointu.AudioSample{FileName: fileName, Data: data}
-	if buf := m.selected(); replace && buf != nil {
+	if i := slices.IndexFunc(m.d.Song.Buffers, func(b sointu.Buffer) bool { return b.ID == replace }); replace != 0 && i >= 0 {
+		buf := &m.d.Song.Buffers[i]
+		m.d.BufferIndex = i
 		if buf.Sample != nil { // keep the encoding
 			sample.Preset, sample.Encoding = buf.Sample.Preset, buf.Sample.Encoding
 		} else {
