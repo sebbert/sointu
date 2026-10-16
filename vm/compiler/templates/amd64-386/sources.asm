@@ -412,6 +412,17 @@ su_op_loadval_mono:
 {{end}}
 
 
+{{- if .HasOp "automation"}}
+;-------------------------------------------------------------------------------
+;   AUTOMATION opcode: not supported on x86 yet; pushes 0
+;-------------------------------------------------------------------------------
+{{.Func "su_op_automation" "Opcode"}}
+    lodsw                                       ; skip the offset of the lane
+    fldz
+    ret
+{{end}}
+
+
 {{- if .HasOp "bufread"}}
 ;-------------------------------------------------------------------------------
 ;   BUFREAD opcode: not supported on x86 yet; outputs silence

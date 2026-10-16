@@ -136,6 +136,7 @@ func songChanges(old, now *sointu.Song) []string {
 		}
 	}
 	lines = append(lines, bufferChanges(old.Buffers, now.Buffers)...)
+	lines = append(lines, automationChanges(old.Automation, now.Automation)...)
 	if !reflect.DeepEqual(old.EncodingPresets, now.EncodingPresets) {
 		add("the sample encoding presets changed")
 	}

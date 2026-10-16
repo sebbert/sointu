@@ -81,8 +81,10 @@ func (d Dispatcher) dispatchFunc(p Plugin) dispatchFunc {
 			}
 			return 0
 		case plugGetParamName:
-			s := (*ascii8)(ptr)
-			copyASCII(s[:], p.Parameters[index].Name)
+			// 8 bytes by the specification, but hosts take 24 or more,
+			// and plugins commonly write that many
+			s := (*ascii24)(ptr)
+			copyASCII(s[:], p.Parameters[index].GetName())
 		case plugGetParamDisplay:
 			s := (*ascii8)(ptr)
 			copyASCII(s[:], p.Parameters[index].GetValueLabel())
