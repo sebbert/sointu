@@ -61,10 +61,10 @@ type (
 
 		trackerHidden bool
 
-		// delayFree tells, by the ID of every delay unit, if its delay
-		// times are edited freely instead of on a grid; see
-		// delayFreeParameter
-		delayFree map[int]bool
+		// gridFree tells, by the ID of every delay unit, if its delay
+		// times are edited freely instead of on a grid, and of every
+		// bufread unit, if its positions are; see delayFreeParameter
+		gridFree map[int]bool
 
 		// spectra are the latest spectra of the sources in spectrumWatch,
 		// which the player reports while the GUI asks for them, last at
@@ -109,6 +109,9 @@ type (
 		// remoteSeen is a copy of the song as the last Remote call left it,
 		// to tell the next one whether the user changed it in between
 		remoteSeen *sointu.Song
+		// remoteAlerts are the warnings and errors shown to the user since
+		// the last Remote call, for the next one to tell
+		remoteAlerts []Alert
 
 		prevUndoKind    string
 		undoSkipCounter int
@@ -387,6 +390,7 @@ func (m *Model) change(kind string, t ChangeType, severity ChangeSeverity) func(
 				m.fixModules()
 				m.fixSpectrumBuffers()
 				m.fixBuses()
+				m.fixWriteBuffers()
 				m.fixConvolutionBuffers()
 				m.d.InstrIndex = clamp(m.d.InstrIndex, 0, len(m.d.Song.Patch)-1)
 				m.d.InstrIndex2 = clamp(m.d.InstrIndex2, 0, len(m.d.Song.Patch)-1)
@@ -441,6 +445,9 @@ func (m *Model) ProcessMsg(msg MsgToModel) {
 			}))
 		}
 		m.panic = msg.Panic
+		if m.panic {
+			clear(m.spectra) // the synth is gone, and its spectra with it
+		}
 	}
 	if msg.HasDetectorResult {
 		m.detectorResult = msg.DetectorResult

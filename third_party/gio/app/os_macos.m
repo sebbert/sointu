@@ -46,6 +46,14 @@ __attribute__ ((visibility ("hidden"))) CALayer *gio_layerFactory(BOOL presentWi
   GioView *view = (GioView *)window.contentView;
 	gio_onChangeScreen(view.handle, dispID);
 }
+// A window that nothing of is to be seen, e.g. behind another one, is not
+// drawn: its drawables do not come back while it is not shown, and waiting
+// for the next one would hold the main thread up.
+- (void)windowDidChangeOcclusionState:(NSNotification *)notification {
+	NSWindow *window = (NSWindow *)[notification object];
+	GioView *view = (GioView *)window.contentView;
+	gio_onOcclusion(view.handle, (window.occlusionState & NSWindowOcclusionStateVisible) != 0 ? 1 : 0);
+}
 - (void)windowDidBecomeKey:(NSNotification *)notification {
 	NSWindow *window = (NSWindow *)[notification object];
 	GioView *view = (GioView *)window.contentView;

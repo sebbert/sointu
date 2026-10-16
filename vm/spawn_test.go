@@ -315,3 +315,37 @@ func TestSpawnPrefersReleasedVoices(t *testing.T) {
 		t.Errorf("got %v, want %v: the held voice was taken", out[1][0], want)
 	}
 }
+
+// A window timed by pitch is whole periods of the note long, of the note
+// transposed by its transpose; one timed by tempo, note lengths.
+func TestWindowTiming(t *testing.T) {
+	lengthOf := func(w sointu.ParamMap, note byte) int {
+		synth := newSynth(t, sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{
+			{Type: "window", Parameters: w},
+			{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
+		}}})
+		synth.Trigger(0, note)
+		out := render(t, synth, 30000)
+		n := 0
+		for i := 1; i < len(out); i++ {
+			if out[i][0] != 0 {
+				n = i + 1
+			}
+		}
+		return n
+	}
+	// a period of note 60 is 10788/32 = 337.1 frames
+	if n := lengthOf(sointu.ParamMap{"timing": 1, "time": 10788, "shape": 0, "transpose": 64, "detune": 64}, 60); n != 338 {
+		t.Errorf("one period of note 60: %d frames, want 338", n)
+	}
+	if n := lengthOf(sointu.ParamMap{"timing": 1, "time": 4 * 10788, "shape": 0, "transpose": 76, "detune": 64}, 60); n != 675 {
+		t.Errorf("four periods of note 72: %d frames, want 675", n)
+	}
+	// a quarter note at 120 BPM
+	if n := lengthOf(sointu.ParamMap{"timing": 2, "time": 48, "shape": 0, "transpose": 64, "detune": 64}, 60); n != 22050 {
+		t.Errorf("a quarter note: %d frames", n)
+	}
+	if n := lengthOf(sointu.ParamMap{"timing": 2, "time": 12, "shape": 0, "transpose": 64, "detune": 64}, 60); n != 5512 {
+		t.Errorf("a sixteenth note: %d frames, want 5512", n)
+	}
+}

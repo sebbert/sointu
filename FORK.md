@@ -21,7 +21,7 @@ changes to the sound are fine, as long as both stay in sync.
 ## Build and plugins
 
 - `Makefile` builds all the tools and plugins, also in CI: `make`,
-  `make install-vst`, `make install-clap`.
+  `make install-vst`, `make install-clap`, `make install-au`.
 - A CLAP plugin (`cmd/sointu-clap`, `cmd/plugin` shared with the VST2) with 4
   note ports of 16 MIDI channels each: 64 MIDI channels.
 - The plugins follow the tempo of the host, one way: the song's tempo can be
@@ -34,6 +34,75 @@ changes to the sound are fine, as long as both stay in sync.
 - The plugin window comes to the front when it opens. Edit → Keep window on
   top keeps it above other windows; the setting is saved in the user's
   `preferences.yml`.
+- The plugin window is the tracker's own, not embedded in a window of the
+  host. On macOS it floats above the windows of the host while the host (or
+  the helper process that the plugin runs in) is the application in front,
+  and goes behind when another application comes to the front
+  (`tracker/gioui/hostfront_darwin.go`, `window.go`): a helper process is
+  not among the applications to switch to, so a window behind the host's
+  could not be reached.
+  In a host that loads its plugins in its own process (e.g. Ableton Live
+  with the Audio Unit) the window does not float: it is one of the windows
+  of the host, and the system's switching between the windows of an
+  application reaches it.
+- Removing a plugin does not hold the host up: `Instance.Close` does not
+  wait for the tracker on the main thread of macOS, where the window that
+  the tracker waits to close can only close once `Close` has returned
+  (before, 3 seconds for every plugin removed with its window open), and
+  Gio delivers nothing to a window after its `DestroyEvent`, where the main
+  thread could wait for good.
+  The loop of the tracker does not wait for the thread of the window when
+  it closes, hides, shows or raises the window outside the answer to an
+  event (`windowDo`): that thread could be waiting to hand over an event
+  that only the loop takes, e.g. that the window was closed, and then
+  neither went on. That was the hang on removing a plugin; a test host
+  that removes the Audio Unit with its window open hung every time, and
+  does not now.
+- A window that is wholly behind others is not drawn (Gio,
+  `windowDidChangeOcclusionState`), and is drawn again when it shows.
+  Drawing it waited up to a second per frame, on the main thread, for a
+  drawable that does not come back while the window is not shown: in a
+  sample of Ableton Live the main thread spent 3.6 of 10 seconds in
+  `[CAMetalLayer nextDrawable]`, and switching to the window took a second
+  or two.
+- A plugin shows its frames on its own, not with the transaction of the
+  main thread and not in step with the display (`app.PresentAsync`, added
+  to Gio), and draws at most 30 of them a second (`app.MinFrameInterval`;
+  `tracker/gioui/framerate_plugin.go`): with the fix above alone, a second
+  sample of Live still had the main thread waiting for the next drawable
+  two thirds of the time, with the window in view. The tracker on its own
+  draws as before. With that, a third sample still had the wait, and the
+  window came a second after it was switched to: a window that was just
+  brought to the front is only shown when the main thread is done, so a
+  frame drawn then waits for a drawable until the wait gives up. So the
+  drawable of the next frame is got ahead of time, off the main thread
+  (`mtlContext.fetch`), and a frame that comes before it is left out and
+  drawn when it has come (`errNoFrame`). **Not verified** in a host.
+- CLAP: the plugin has the `gui` extension, as a floating window
+  (`cmd/sointu-clap/clap.c`). A host that supports floating windows shows
+  and hides the window, e.g. with the button of the device, suggests its
+  title, and is told when the user closes it; the tracker then runs without
+  a window (`Tracker.runHidden`) until it is shown again. The window opens
+  when the host shows it; if the host has not created the gui within a
+  second, it opens as before and cannot be closed (`plugin.NewHidden`). A
+  window that was hidden opens again where the system puts new windows, not
+  where it was. The VST2 plugin has no editor: its window always opens.
+- An Audio Unit (version 2) plugin for macOS (`cmd/sointu-au`,
+  `make install-au`, `sointu-au.component`), for hosts that load neither
+  CLAP nor a VST2 they like, e.g. Ableton Live: a music device `aumu` /
+  `Sntu` / `Vsar` with one stereo output and no parameters, written against
+  the system's C interface (`au_darwin.m`), with no SDK. MIDI on 16
+  channels; tempo from the host's callbacks; the song is in the class info
+  (`sointu-state`), so the host saves it with the project and in presets;
+  the latency of the resampler is reported. An edit is told to the host as
+  a change of the present preset, which is what Audio Units have for it.
+  The view that the host shows for the plugin is a label and a "Show
+  window" button: the tracker window opens when the host shows that view
+  and from the button, and the user can close it. A host that never asks
+  for the view gets the window after a second, as with CLAP.
+  Checked with a host of a few calls (format, render with the host's and
+  the unit's buffers, a note, class info there and back, the view).
+  **Not verified:** in a host, and with `auval`.
 - Vendored: Gio (`third_party/gio`, macOS plugin window and event loop fixes,
   `TopMost` on Windows and turning it off, `pointer.Event.Notch` for the
   notches of a mouse wheel on macOS),
@@ -65,12 +134,12 @@ All of these are Go and wasm only.
 
 | Unit | What it does |
 |---|---|
-| `bufread` | Plays a buffer: note tracking, looping with crossfade, modulatable start/loop points, negative start counting back from the newest frame, `speed` (-1 to 1), edge fade |
-| `bufwrite` | Writes into a buffer: a continuous ring buffer, or `oneshot` while the note is held. Several writers mix; `feedback`, `pop` |
+| `bufread` | Plays a buffer: note tracking, looping with crossfade, modulatable start/loop points, negative start counting back from the newest frame, `speed` (-1 to 1), edge fade, which in a full ring is a crossfade across the write head. With `mode` tap it is a tap of a delay line: it reads the frame at `start` every sample. `timing` counts the positions in frames, in frames at note 0 (pitch) or in 48ths of a beat (BPM). See [Buffers as delay lines](#buffers-as-delay-lines) |
+| `bufwrite` | Writes into a buffer: a continuous ring buffer, or `oneshot` while the note is held. Several writers mix; `feedback`, `pop`. Without a buffer, it gets one of its own, `length` frames long; with `pervoice`, every voice has a copy of it |
 | `spawn` | Triggers voices of another instrument: at a `rate`, synced to the beat, or on a rising edge. Transpose, note length, up to 4 `args`, `steal` |
 | `arg` | Pushes a value passed by the `spawn` that triggered the voice |
 | `automation` | Pushes the value of the lane of an automation slot at the time of the song. The tracker puts one, with a send, before every parameter that a slot is bound to. See [Automation](#automation) |
-| `window` | A smoothstep window over the spawned note, for click-free grains |
+| `window` | A smoothstep window over the spawned note, for click-free grains; timed by pitch, whole cycles of an oscillator |
 | `spfft`, `spifft`, `spcopy` | Spectral analysis and resynthesis (Hann, 4× overlap, 256 to 8192 samples, mono or stereo), copying spectra |
 | `spfilter`, `spcompress`, `spblur`, `spgate`, `spphase`, `spscale`, `spformant` | Change a spectrum in place: band cut and tilt, magnitudes pulled to their mean (with optional attack and release per bin), time smoothing and freeze, gate, phase dispersion/randomization/robot, bin scaling and shifting, formant shift |
 | `spcross`, `spcomb` | Cross-synthesis/vocoder with another spectrum; resonances at the harmonics of up to 8 notes held in another instrument |
@@ -1137,7 +1206,7 @@ has fractions, so it is 16 bits unless the points are rounded.
   first free slot, or removes its lane (`AutomationModel`). The hint of an
   automated parameter starts with the slot and what the host gives it now:
   `A3 +12.5: 686 Hz`. A lane goes with its unit when the unit is deleted.
-- The plugins have a parameter for each slot, -128 to 128 with the default
+- The CLAP and VST2 plugins have a parameter for each slot, -128 to 128 with the default
   0, named by the slot and what it is bound to (`A3 Bass: filter
   frequency`), or by the `name` of its lane alone. With an automated
   parameter under the cursor, the toolbar under the units has the slot and
@@ -1187,7 +1256,11 @@ has not been seen.
 editing points there (the MCP tools read and set them); turning a knob in
 the tracker does not write automation in the host, as the knob is not the
 parameter; importing the envelopes of a Live set (`.als`) or MIDI
-controllers; lanes together with the `speed` unit; x86.
+controllers; lanes together with the `speed` unit; x86. The Audio Unit
+has no parameters: `kAudioUnitProperty_ParameterList` and `ParameterInfo`
+for the 64 slots, `SetParameter` and `ScheduleParameters` into
+`Instance.Param`, and a change of `ParameterList` when the names change, so
+through the Audio Unit nothing is automated or recorded.
 
 ## Bandlimited oscillators
 
@@ -1862,11 +1935,20 @@ no host was run with the plugins.
   the top. `examples/eq.yml` has three.
   - *Mouse.* Dragging a handle changes the frequency and the gain, or for a
     band without gain the frequency and the Q; with Shift a fifth as far;
-    with Alt the Q only (60 dp up doubles it). Scrolling over a handle
-    changes the Q of its band; elsewhere the scrolling is the rack's. A
+    with Alt the Q only (60 dp up doubles it). Scrolling over the plot
+    scrolls the rack; with Alt held it changes the Q of the band under the
+    pointer, or of the selected one (the plot takes the scroll only while
+    the key is held, `Tracker.plotZoomModifier`, like the plots that
+    zoom). A
     double click on empty space adds a band there and drags it: a bell, a
     low cut below 40 Hz, a `ladder` high cut above 12 kHz. A double click
     on a handle removes its band; the right button switches it on or off.
+  - *Knobs.* The row under the plot has a knob for the frequency, the gain
+    and the Q of the selected band, beside the numbers
+    (`EQEditor.layoutKnob`): dragging up or to the right goes through the
+    range in 256 dp, a fifth as fast with Shift, as one step of the undo
+    history; the right button sets the gain to 0 dB and the Q to that of
+    the type. The gain knob of a band without gain is greyed out.
   - *Keys*, with the focus on a plot, small or large (Tab, or a click):
     Left and Right
     select a band, Shift+Left and Shift+Right change its frequency by a
@@ -2144,6 +2226,120 @@ no host was run with the plugins.
   Go synth; the long song takes most of two minutes and runs only with
   `SOINTU_TEST_LONG=1`, see [Tests](#tests)).
 
+
+## Buffers as delay lines
+
+A `bufwrite` unit and `bufread` units make what the `delay` unit does, in
+parts: the write head of a ring is the input of a delay line, and a tap
+reads it some time later. Go synth and wasm player, which render the same
+(`vm/compiler/wasm_buffeatures_test.go`).
+
+- **Tap** (`bufread` `mode` tap). A play head starts at `start` when its
+  note is triggered and goes on from there at its speed; a tap reads the
+  frame at `start` every sample, counted from the ring as it is then. A
+  negative `start` is that many frames behind the write head: -1 is the
+  frame written last, so a tap before the `bufwrite` unit in the same voice
+  is a delay of that many samples, and the two with a gain between them a
+  feedback loop. The tap is interpolated, follows a modulation of `start`
+  while it sounds (a chorus or flanger; the modulation is in parts of the
+  length of the buffer, as for a play head) and sounds without a note, as
+  in a bus instrument. A tap further behind the write head than the ring
+  has frames is silent, like a delay line that has not run that long.
+  Transpose, detune, speed, note tracking, the loop and the edge fade are
+  not used, and not shown.
+- **Timing** (`bufread` `timing`). frames: as before. pitch: `start` is in
+  frames at note 0 and divided by 2^(note/12), like a pitch tracked delay
+  time: 10788 is one period of the note, and parts of frames count, which
+  the delay unit rounds. BPM: `start`, `loopstart` and `looplength` are in
+  48ths of a beat, like the delay times: 48 is a quarter note, 36 a dotted
+  eighth. They are made frames when the patch is compiled
+  (`vm.BPMFrames`), so the tempo costs nothing while playing. The tracker
+  shows the values as what they count, and edits them on a grid like the
+  delay times (`tracker/bufreadgrid.go`): with pitch timing ±1/4, 1/3, 1/2,
+  2/3, 3/4, 1, 1.5, 2 … 16 periods, then 1.5·2^k and 2^k; with BPM timing
+  the note lengths of the delay, then whole bars. A drag and the arrows move
+  from one grid value to the next, a large step between whole periods,
+  straight notes and bars. The `free` switch that the unit has then (a
+  setting of the tracker, kept with that of the delay units in
+  `Model.gridFree`) takes any value; a unit starts free if a position is
+  off the grid when it is first seen.
+- **Crossfade at the write head** (`edgefade`). `edgefade` fades a play head
+  near the edges of the valid frames. In a ring that is full the edges meet
+  at the write head, and a play head that the write head overtakes (any
+  speed below 1) or that overtakes it used to fade out and in again. There
+  the fade is now a crossfade: within `edgefade` frames of the write head,
+  the frames on the other side of it are mixed in with the weight that the
+  fade takes away, and when the heads cross, the play head goes on
+  `edgefade` frames further, where the crossfade has brought the sound. In
+  such a ring the position also wraps around the end, instead of the note
+  ending after one round. Samples, one shot recordings and rings that are
+  not full yet have edges, and fade as before. This changes how songs with
+  an edge fade on a ring sound.
+- **A buffer of its own** (`bufwrite` without a buffer). The tracker gives a
+  `bufwrite` unit with buffer 0 a buffer (`Model.fixWriteBuffers`,
+  `Buffer.Auto`), as long as its `length` parameter and stereo if the unit
+  is, and deletes it when no unit refers to it anymore. A `bufread` unit
+  with buffer 0 gets the buffer of the nearest `bufwrite` unit before it
+  among its units, or else after it. A buffer that the user made keeps its
+  own length.
+- **A copy per voice** (`bufwrite` `pervoice`). All voices of an instrument
+  share a buffer and mix into it. With `pervoice`, every voice has its own
+  copy, which the `bufread` units of that voice read: the lines of a delay
+  unit, e.g. a plucked string per note with a pitch timed tap. Units of
+  other instruments read the copy of the first voice, which is also the one
+  the Buffers tab shows; the others are in the synth alone, are empty again
+  after a change of the buffer's size, and cost the length of the buffer
+  each.
+- **Panic clears them.** What `bufwrite` units recorded survives a new
+  synth (after an edit of the patch), but not a panic: the player clears
+  the writable buffers and their reported fill, as after a NaN, and the
+  model drops the spectra it shows, which the next synth reports afresh.
+
+What the `delay` unit has and this does not: its damping is a one-pole
+low-pass, the `filter` unit a two-pole one; its eight lines per channel
+would be eight buffers and loops, more than the 63 units of an instrument
+for a reverb; and it runs in the x86 players.
+
+**A tap in the tracker.** `mode` shows as a choice of play and tap, as
+every parameter of two named values now does (before, a switch). The start
+of a tap is shown as `delay`: the frames behind the write head, without
+the sign of the negative value that is stored; its range ends at -1, and
+its knob, arrows and grid turn the other way, up being a longer delay. With
+pitch timing, `transpose` and `detune` stay shown and tune the delay: the
+start is divided by 2^((note + transpose + detune)/12), in the Go synth
+and the wasm player alike; with other timings, and in play mode, they do
+as before.
+
+**Module presets with a tap.** `Plucked string` (13 units, no inputs): a
+noise burst (`burst`, high cut `pick`), or with `cycle` one cycle of a sine
+at the note (a window of one period, tuned with the string), crossfaded,
+into a pitch timed tap one period
+long, tuned by `tune` and `fine`, round a `ladder` low-pass (`tone`, 4.5
+to 19 kHz) with the loop gain `decay` (0.94 to 1), a voice its own line.
+`Comb filter` (4 units, stereo): the same loop on its input, `feedback`
+up to 97 %. The loop filter is a ladder without resonance, which never
+raises the level: the `filter` unit peaks about 1.25 dB at its cutoff even
+at its least resonance, and a loop that gives back nearly all it gets
+grows without end through it. The ladder delays the loop, so high notes
+are flat when `tone` is low: C5 12 cents at the default, 32 at `tone` 64;
+the decay is per round of the loop, so high notes ring shorter (at the
+defaults, C1 3 s, C3 2 s, C5 0.2 s to -60 dB).
+
+**A window of periods.** `window` has `timing` like `bufread`: frames
+(as before, `length`), pitch or BPM. Timed, its length is `time`, shown as
+`length` on the grid of a `bufread` position with the `free` switch: with
+pitch, in frames at note 0 (10788 is one period), divided by
+2^((note + transpose + detune)/12); with BPM, in 48ths of a beat. A trigger
+clears the voice, so an oscillator starts every note at its `phase`: a
+window of N periods with shape 0 cuts N whole cycles out of it, e.g. one
+cycle of a sine as the exciter of a pluck or a drum. The length is taken
+when the note starts, so modulating the pitch afterwards does not move the
+end. Windows timed in frames are encoded as before; when one is timed, the
+window units get the time as a four byte operand (0 for those in frames,
+the frames at note 0 negated with pitch, the frames with BPM). Go synth
+and wasm player; the tracker gives windows from before timing `time`,
+`transpose` and `detune` of a new unit.
+
 ## MCP server
 
 A language model, e.g. Claude in Claude Code, can read and change the patch
@@ -2242,6 +2438,7 @@ resolved; the instructions say so.
 | `move_instrument` | before or after another instrument |
 | `add_module`, `edit_module`, `delete_module` | a module preset or an empty module; name, comment, inputs, parameters (added, named, defaults, deleted) |
 | `get_automation`, `automate`, `set_automation` | the points of the lane of an automation slot; binding a slot to a parameter of a unit, naming it for the host, or removing that; setting the points. `get_song` lists the lanes, `get_instrument` marks automated parameters (`A3 +0.0: ...`), and the changes of the user list lanes added, removed, bound elsewhere and recorded |
+| `add_buffer` | an empty audio buffer (name, seconds, 1 or 2 channels) for `bufwrite` and `bufread` units; returns its ID |
 | `set_bpm`, `undo`, `redo` | undo and redo go through the same history as the user's |
 | `render_note` | renders notes of an instrument offline and measures them (below) |
 | `play_note` | plays a note in the running tracker, for the user to hear |
@@ -2272,6 +2469,17 @@ parameters), buffers by ID, the tempo, the score per track, the encoding
 presets. `get_changes` asks for them alone. The guide tells the model not to
 trust what it read earlier and to read an instrument right before changing
 it.
+
+**Alerts.** The warnings and errors that the tracker shows the user as
+notifications (`Alerts.AddAlert`: a stack left unbalanced, a module using
+itself, a sample that failed to import or encode, a file that failed to
+load, a fault of the synth) are kept for the model too (`Model.remoteAlerts`,
+the last 32, a named alert with the same message once). The next call
+starts its answer with "ALERTS: ..." and a line each, `warning:` or
+`error:`, and forgets them; those that the call itself causes come with its
+own answer, also when it fails. Info alerts, such as the "MCP: ..." one of
+each change, are not told. `get_changes` returns them when nothing else
+changed.
 
 **Measuring.** A model cannot hear; until now the sounds of this fork were
 tuned by rendering and measuring, by hand. `render_note` takes a copy of the

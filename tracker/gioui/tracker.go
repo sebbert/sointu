@@ -64,6 +64,9 @@ type (
 
 		preferences Preferences
 
+		// window is what a plugin host does with the window: see window.go
+		window windowControl
+
 		// remoteControl lets a language model change the song: see
 		// SetRemoteControl
 		remoteControl RemoteControl
@@ -93,6 +96,7 @@ func NewTracker(model *tracker.Model) *Tracker {
 	t := &Tracker{
 		OctaveNumberInput: NewNumericUpDownState(),
 		InstrumentVoices:  NewNumericUpDownState(),
+		window:            windowControl{cmds: make(chan windowCmd, 16)},
 
 		TopHorizontalSplit:    &SplitState{Ratio: -.5},
 		BottomHorizontalSplit: &SplitState{Ratio: -.6},
@@ -138,15 +142,24 @@ func (t *Tracker) Main() {
 	changedSinceSave := false
 	globals := make(map[string]any, 1)
 	globals["Tracker"] = t
+	hostTitle := ""
+	t.watchHostFront()
+	defer t.unwatchHostFront()
 	for !t.Quitted() {
+		if t.window.hidden {
+			// a plugin host hid the window, or has not shown it yet: the
+			// model goes on without one
+			t.runHidden(recoveryTicker)
+			continue
+		}
 		w := t.newWindow()
-		w.Option(app.Title(titleFromPath(titlePath, changedSinceSave)))
+		w.Option(app.Title(t.windowTitle(titlePath, changedSinceSave)))
 		t.Explorer = explorer.NewExplorer(w)
 		// a plugin host, e.g. a DAW, can put its own windows in front of the
 		// new window while it is loading the plugin, so raise the window on
 		// its first frame and once more a moment later
-		raised := false
-		onTop := t.preferences.Window.AlwaysOnTop
+		raised, focused := false, false
+		onTop := t.windowOnTop()
 		raiseAgain := time.After(500 * time.Millisecond)
 		acks := make(chan struct{})
 		events := make(chan event.Event)
@@ -181,33 +194,43 @@ func (t *Tracker) Main() {
 				w.Invalidate()
 			case <-t.Broker().CloseGUI:
 				t.ForceQuit().Do()
-				w.Perform(system.ActionClose)
+				windowDo(func() { w.Perform(system.ActionClose) })
 			case e := <-events:
 				switch e := e.(type) {
 				case app.DestroyEvent:
 					if canQuit {
 						t.RequestQuit().Do()
 					}
+					t.windowDestroyed()
 					acks <- struct{}{}
 					break F // this window is done, we need to create a new one
 				case app.ConfigEvent:
+					if e.Config.Focused && !focused {
+						// a plugin host can change the level of the window
+						// after it was created (it then floats although the
+						// setting is off), so set it again
+						w.Option(app.TopMost(onTop))
+					}
+					focused = e.Config.Focused
 					if !e.Config.Focused {
 						t.plotZoomModifier = false  // Alt is not released in another window
 						t.zoomScroll = zoomScroll{} // nor is Ctrl/Cmd
 					}
 				case app.FrameEvent:
-					if onTop != t.preferences.Window.AlwaysOnTop {
-						onTop = t.preferences.Window.AlwaysOnTop
+					if onTop != t.windowOnTop() {
+						onTop = t.windowOnTop()
 						w.Option(app.TopMost(onTop))
 					}
 					if !raised {
 						raised = true
+						w.Option(app.TopMost(onTop))
 						w.Perform(system.ActionRaise)
 					}
-					if titlePath != t.filePathString.Value() || changedSinceSave != t.Song().ChangedSinceSave() {
+					if titlePath != t.filePathString.Value() || changedSinceSave != t.Song().ChangedSinceSave() || hostTitle != t.window.title {
 						titlePath = t.filePathString.Value()
 						changedSinceSave = t.Song().ChangedSinceSave()
-						w.Option(app.Title(titleFromPath(titlePath, changedSinceSave)))
+						hostTitle = t.window.title
+						w.Option(app.Title(t.windowTitle(titlePath, changedSinceSave)))
 					}
 					gtx := app.NewContext(&ops, e)
 					gtx.Values = globals
@@ -216,10 +239,40 @@ func (t *Tracker) Main() {
 					if t.Quitted() {
 						w.Perform(system.ActionClose)
 					}
+				default:
+					t.platformEvent(e)
 				}
 				acks <- struct{}{}
+			case cmd := <-t.window.cmds:
+				switch t.windowCommand(cmd) {
+				case windowHide:
+					windowDo(func() { w.Perform(system.ActionClose) })
+				case windowShow:
+					top := onTop
+					windowDo(func() {
+						w.Option(app.TopMost(top))
+						w.Perform(system.ActionRaise)
+					})
+				}
+				w.Invalidate()
+			case front := <-t.window.hostFront:
+				// the host, or another application, came to the front: the
+				// window floats above the host only
+				t.window.front = front
+				if onTop != t.windowOnTop() {
+					onTop = t.windowOnTop()
+					top := onTop
+					windowDo(func() { w.Option(app.TopMost(top)) })
+				}
+				if !onTop {
+					t.sendWindowBack()
+				}
 			case <-raiseAgain:
-				w.Perform(system.ActionRaise)
+				top := onTop
+				windowDo(func() {
+					w.Option(app.TopMost(top))
+					w.Perform(system.ActionRaise)
+				})
 			case <-recoveryTicker.C:
 				t.History().SaveRecovery()
 			}
@@ -229,6 +282,15 @@ func (t *Tracker) Main() {
 	t.History().SaveRecovery()
 	close(t.Broker().FinishedGUI)
 }
+
+// windowDo does something to the window that is not the answer to one of
+// its events: an option or an action, which wait for the thread of the
+// window. That thread may itself wait to hand over an event, e.g. that the
+// window was closed, which only the loop of the tracker takes: the loop
+// must go on, so f runs beside it. In the answer to an event the thread of
+// the window is known to be there for it, and options and actions are
+// called as they are.
+func windowDo(f func()) { go f() }
 
 func TrackerFromContext(gtx C) *Tracker {
 	t, ok := gtx.Values["Tracker"]
@@ -244,7 +306,7 @@ func (t *Tracker) newWindow() *app.Window {
 	if t.preferences.Window.Maximized {
 		w.Option(app.Maximized.Option())
 	}
-	w.Option(app.TopMost(t.preferences.Window.AlwaysOnTop))
+	w.Option(app.TopMost(t.windowOnTop()))
 	return w
 }
 
@@ -328,7 +390,12 @@ func (t *Tracker) Layout(gtx layout.Context) {
 	if at, ok := t.zoomScroll.Expires(); ok {
 		gtx.Execute(op.InvalidateCmd{At: at}) // to stop taking the scroll then
 	}
-	// if no-one else handled the note events, we handle them here
+	t.playMIDIMessages()
+}
+
+// playMIDIMessages plays the notes of the MIDI input that no one else
+// handled, in the selected instrument.
+func (t *Tracker) playMIDIMessages() {
 	for len(t.midiMsgs) > 0 {
 		ev := tracker.NoteEvent{
 			Timestamp: t.midiMsgs[0].Timestamp,

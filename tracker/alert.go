@@ -95,8 +95,31 @@ func (m *Alerts) ClearNamed(name string) {
 	}
 }
 
+// maxRemoteAlerts is how many warnings and errors are kept for the next
+// Remote call: the oldest are dropped.
+const maxRemoteAlerts = 32
+
+// logRemote keeps a warning or an error for the next Remote call to tell. A
+// named alert is set again whenever its cause is looked at, so one that is
+// already waiting with the same message is not kept twice.
+func (m *Alerts) logRemote(a Alert) {
+	if a.Priority < Warning {
+		return
+	}
+	for _, l := range m.remoteAlerts {
+		if l.Name == a.Name && l.Message == a.Message {
+			return
+		}
+	}
+	m.remoteAlerts = append(m.remoteAlerts, a)
+	if n := len(m.remoteAlerts) - maxRemoteAlerts; n > 0 {
+		m.remoteAlerts = append(m.remoteAlerts[:0], m.remoteAlerts[n:]...)
+	}
+}
+
 // AddAlert adds or updates an alert.
 func (m *Alerts) AddAlert(a Alert) {
+	m.logRemote(a)
 	for i := range m.alerts {
 		if n := m.alerts[i].Name; n != "" && n == a.Name {
 			a.FadeLevel = m.alerts[i].FadeLevel

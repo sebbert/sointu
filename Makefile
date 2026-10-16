@@ -1,11 +1,14 @@
-# Build sointu's command line tools, tracker and VST2 and CLAP plugins.
+# Build sointu's command line tools, tracker and VST2, CLAP and Audio Unit
+# plugins.
 #
 #   make                      build everything into out/
 #   make compile track play mcp
 #                             build individual tools
 #   make vst clap             build the VST2 or CLAP plugin
+#   make au                   build the Audio Unit plugin (macOS only)
 #   make install-vst          install a plugin into the user plugin directory
 #   make install-clap
+#   make install-au
 #   sudo make install-vst-system
 #   sudo make install-clap-system
 #                             install a plugin into the system plugin directory
@@ -15,10 +18,10 @@
 #
 # The VST2 plugin is a .vst bundle on macOS, a .so on Linux and a .dll on
 # Windows. The CLAP plugin is a .clap bundle on macOS and a .clap shared
-# library elsewhere. On Windows, run from a POSIX shell such as Git Bash or
+# library elsewhere. The Audio Unit is a .component bundle. On Windows, run from a POSIX shell such as Git Bash or
 # MSYS2.
 #
-# Set VST_DIR=... or CLAP_DIR=... to install a plugin somewhere else. Set
+# Set VST_DIR=..., CLAP_DIR=... or AU_DIR=... to install a plugin somewhere else. Set
 # NATIVE=1 to use the native synth in the tracker and plugins (x86 only;
 # requires the native library to be built into build/ with CMake first).
 
@@ -47,6 +50,9 @@ vst_USER_DIR    := $(HOME)/Library/Audio/Plug-Ins/VST
 vst_SYSTEM_DIR  := /Library/Audio/Plug-Ins/VST
 clap_USER_DIR   := $(HOME)/Library/Audio/Plug-Ins/CLAP
 clap_SYSTEM_DIR := /Library/Audio/Plug-Ins/CLAP
+au_FILE         := sointu-au.component
+au_USER_DIR     := $(HOME)/Library/Audio/Plug-Ins/Components
+au_SYSTEM_DIR   := /Library/Audio/Plug-Ins/Components
 else ifeq ($(PLATFORM),linux)
 vst_FILE        := sointu-vsti.so
 vst_USER_DIR    := $(HOME)/.vst
@@ -64,11 +70,16 @@ endif
 clap_FILE := sointu-clap.clap
 vst_DIR   := $(VST_DIR)
 clap_DIR  := $(CLAP_DIR)
+au_DIR    := $(AU_DIR)
 vst_PKG   := sointu-vsti
 clap_PKG  := sointu-clap
+au_PKG    := sointu-au
 
 TOOLS   := compile track play mcp
 PLUGINS := vst clap
+ifeq ($(PLATFORM),macos)
+PLUGINS += au
+endif
 
 .PHONY: all $(TOOLS) $(PLUGINS) clean FORCE \
 	$(foreach p,$(PLUGINS),install-$(p) install-$(p)-system uninstall-$(p) uninstall-$(p)-system)

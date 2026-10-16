@@ -7,6 +7,7 @@ package app
 
 import (
 	"errors"
+	"sync/atomic"
 
 	"gioui.org/gpu"
 )
@@ -48,6 +49,16 @@ static CFTypeRef nextDrawable(CFTypeRef layerRef) {
 	}
 }
 
+// drawableFits tells if a drawable has the size that the layer has now.
+static int drawableFits(CFTypeRef layerRef, CFTypeRef drawableRef) {
+	@autoreleasepool {
+		CAMetalLayer *layer = (__bridge CAMetalLayer *)layerRef;
+		id<CAMetalDrawable> drawable = (__bridge id<CAMetalDrawable>)drawableRef;
+		CGSize size = layer.drawableSize;
+		return drawable.texture.width == (NSUInteger)size.width && drawable.texture.height == (NSUInteger)size.height;
+	}
+}
+
 static CFTypeRef drawableTexture(CFTypeRef drawableRef) {
 	@autoreleasepool {
 		id<CAMetalDrawable> drawable = (__bridge id<CAMetalDrawable>)drawableRef;
@@ -82,6 +93,14 @@ type mtlContext struct {
 	queue    C.CFTypeRef
 	drawable C.CFTypeRef
 	texture  C.CFTypeRef
+	// With PresentAsync the drawable of the next frame is got ahead of
+	// time, off the main thread: next is where it comes, fetching is set
+	// while it is on its way, and waiting while a frame was left out for
+	// it, which wake asks for again.
+	next     chan C.CFTypeRef
+	fetching bool
+	waiting  *atomic.Bool
+	wake     func()
 }
 
 func newMtlContext(w *window) (*mtlContext, error) {
@@ -103,10 +122,13 @@ func newMtlContext(w *window) (*mtlContext, error) {
 	}
 	C.setupLayer(layer, dev)
 	c := &mtlContext{
-		dev:   dev,
-		view:  view,
-		layer: layer,
-		queue: queue,
+		dev:     dev,
+		view:    view,
+		layer:   layer,
+		queue:   queue,
+		next:    make(chan C.CFTypeRef, 1),
+		waiting: new(atomic.Bool),
+		wake:    w.Invalidate,
 	}
 	return c, nil
 }
@@ -115,7 +137,15 @@ func (c *mtlContext) RenderTarget() (gpu.RenderTarget, error) {
 	if c.drawable != 0 || c.texture != 0 {
 		return nil, errors.New("metal:a previous RenderTarget wasn't Presented")
 	}
-	c.drawable = C.nextDrawable(c.layer)
+	if PresentAsync {
+		d, ok := c.fetched()
+		if !ok {
+			return nil, errNoFrame
+		}
+		c.drawable = d
+	} else {
+		c.drawable = C.nextDrawable(c.layer)
+	}
 	if c.drawable == 0 {
 		return nil, errors.New("metal: [CAMetalLayer nextDrawable] failed")
 	}
@@ -128,6 +158,49 @@ func (c *mtlContext) RenderTarget() (gpu.RenderTarget, error) {
 	}, nil
 }
 
+// fetch gets the next drawable off the main thread, where getting it can
+// wait.
+func (c *mtlContext) fetch() {
+	if c.fetching {
+		return
+	}
+	c.fetching = true
+	layer, next, waiting, wake := c.layer, c.next, c.waiting, c.wake
+	C.CFRetain(layer)
+	go func() {
+		d := C.nextDrawable(layer)
+		C.CFRelease(layer)
+		next <- d
+		if d != 0 && waiting.Swap(false) {
+			wake()
+		}
+	}()
+}
+
+// fetched returns the drawable that was got ahead of time, if it has come.
+// One of another size than the layer has now, as while the window is
+// resized, is of no use: the right one is waited for, as without
+// PresentAsync.
+func (c *mtlContext) fetched() (C.CFTypeRef, bool) {
+	c.waiting.Store(true)
+	select {
+	case d := <-c.next:
+		c.waiting.Store(false)
+		c.fetching = false
+		switch {
+		case d == 0:
+			return 0, false
+		case C.drawableFits(c.layer, d) == 0:
+			C.CFRelease(d)
+			return C.nextDrawable(c.layer), true
+		}
+		return d, true
+	default:
+		c.fetch()
+		return 0, false
+	}
+}
+
 func (c *mtlContext) API() gpu.API {
 	return gpu.Metal{
 		Device:      uintptr(c.dev),
@@ -137,6 +210,14 @@ func (c *mtlContext) API() gpu.API {
 }
 
 func (c *mtlContext) Release() {
+	if next := c.next; c.fetching {
+		// the drawable that is on its way
+		go func() {
+			if d := <-next; d != 0 {
+				C.CFRelease(d)
+			}
+		}()
+	}
 	C.CFRelease(c.queue)
 	C.CFRelease(c.dev)
 	C.CFRelease(c.layer)
@@ -155,6 +236,9 @@ func (c *mtlContext) Present() error {
 	C.presentDrawable(c.queue, c.drawable)
 	C.CFRelease(c.drawable)
 	c.drawable = 0
+	if PresentAsync {
+		c.fetch()
+	}
 	return nil
 }
 

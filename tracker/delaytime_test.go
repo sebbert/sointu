@@ -244,14 +244,14 @@ func TestDelayTimePerLine(t *testing.T) {
 	addTestUnit(m, "delay")
 	_, free := delayTimes(m)
 	free.SetValue(1)
-	if _, other := delayTimesOf(m, 2); len(m.delayFree) != 2 || !m.delayFree[unit().ID] || free.Value() != 1 || other.Name() != "free" || other.Value() != 0 {
-		t.Errorf("free units %v, want only %d", m.delayFree, unit().ID)
+	if _, other := delayTimesOf(m, 2); len(m.gridFree) != 2 || !m.gridFree[unit().ID] || free.Value() != 1 || other.Name() != "free" || other.Value() != 0 {
+		t.Errorf("free units %v, want only %d", m.gridFree, unit().ID)
 	}
 	// and is forgotten with its unit, so that a new unit with its ID starts on the grid
 	m.d.UnitIndex, m.d.UnitIndex2 = 1, 1
 	m.Unit().Delete().Do()
-	if _, free := delayTimes(m); len(m.delayFree) != 1 || free.Value() != 0 || m.d.Song.Patch[0].Units[1].Type != "delay" {
-		t.Errorf("free units %v after deleting the unit, want only the other, on the grid", m.delayFree)
+	if _, free := delayTimes(m); len(m.gridFree) != 1 || free.Value() != 0 || m.d.Song.Patch[0].Units[1].Type != "delay" {
+		t.Errorf("free units %v after deleting the unit, want only the other, on the grid", m.gridFree)
 	}
 }
 
@@ -269,7 +269,7 @@ func TestDelayTimeStartsFree(t *testing.T) {
 			unit().Parameters["stereo"] = 0
 			unit().Parameters["notetracking"] = tracking
 			unit().VarArgs = times
-			m.delayFree = nil
+			m.gridFree = nil
 		}()
 	}
 	for _, c := range []struct {
@@ -471,7 +471,7 @@ func TestDelayTimeChoices(t *testing.T) {
 			unit().Parameters["notetracking"] = tracking
 			unit().VarArgs = times
 		}()
-		m.setDelayFree(unit(), free)
+		m.setGridFree(unit(), free)
 		times2, _ := delayTimes(m)
 		return times2[0]
 	}

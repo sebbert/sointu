@@ -37,6 +37,10 @@ type (
 		// values of the parameters, changed
 		paramNames    atomic.Pointer[[sointu.AutomationSlots]string]
 		paramsChanged func(values bool)
+		// managed is true once the host shows and hides the window
+		managed atomic.Bool
+		// closed is true from Close on: the host is not told anything more
+		closed atomic.Bool
 	}
 
 	// output plays the player, whose synth runs at 44100 Hz, in the blocks
@@ -89,6 +93,50 @@ type (
 // host that the names of the parameters changed, or with values their
 // values, from the same goroutine.
 func New(name string, markDirty func(), paramsChanged func(values bool)) *Instance {
+	return newInstance(name, markDirty, paramsChanged, false)
+}
+
+// windowFallback is how long an instance made with NewHidden waits for the
+// host to take over its window before it opens the window itself.
+const windowFallback = time.Second
+
+// NewHidden creates a plugin instance like New, for a host that may show and
+// hide the window (ManageWindow, ShowWindow, HideWindow): the window is not
+// opened until the host shows it. A host that has not taken the window over
+// within a second is taken not to: the window then opens as with New, so
+// that it is never out of reach.
+func NewHidden(name string, markDirty func(), paramsChanged func(values bool)) *Instance {
+	i := newInstance(name, markDirty, paramsChanged, true)
+	time.AfterFunc(windowFallback, func() {
+		if !i.managed.Load() && !i.closed.Load() {
+			i.tracker.ShowWindow()
+		}
+	})
+	return i
+}
+
+// ManageWindow tells that the host shows and hides the window from now on.
+// closed is called, from the tracker's goroutine, when the user closes the
+// window; the host can show it again.
+func (i *Instance) ManageWindow(closed func()) {
+	i.managed.Store(true)
+	i.tracker.HostManagesWindow(func() {
+		if !i.closed.Load() {
+			closed()
+		}
+	})
+}
+
+// ShowWindow opens the window, or raises it if it is open, and HideWindow
+// closes it; the instance plays on without one.
+func (i *Instance) ShowWindow() { i.tracker.ShowWindow() }
+func (i *Instance) HideWindow() { i.tracker.HideWindow() }
+
+// SetWindowTitle sets what the title of the window names besides the
+// tracker: what the host suggests, e.g. the name of the track.
+func (i *Instance) SetWindowTitle(title string) { i.tracker.SetWindowTitle(title) }
+
+func newInstance(name string, markDirty func(), paramsChanged func(values bool), hidden bool) *Instance {
 	recoveryFile := ""
 	if configDir, err := os.UserConfigDir(); err == nil {
 		randBytes := make([]byte, 16)
@@ -109,19 +157,28 @@ func New(name string, markDirty func(), paramsChanged func(values bool)) *Instan
 	// swapped/added etc.
 	model.Track().LinkInstrument().SetValue(false)
 	i := &Instance{
-		output:        output{player: player},
-		broker:        broker,
-		model:         model,
-		tracker:       t,
-		mcp:           host,
-		paramsChanged: paramsChanged,
+		output:  output{player: player},
+		broker:  broker,
+		model:   model,
+		tracker: t,
+		mcp:     host,
+	}
+	if paramsChanged != nil {
+		i.paramsChanged = func(values bool) {
+			if !i.closed.Load() {
+				paramsChanged(values)
+			}
+		}
 	}
 	model.SetHostSavesState(func() {
-		if markDirty != nil && !i.changed.Swap(true) {
+		if markDirty != nil && !i.closed.Load() && !i.changed.Swap(true) {
 			markDirty()
 		}
 		i.updateParamNames()
 	})
+	if hidden {
+		t.StartHidden()
+	}
 	go t.Main()
 	return i
 }
@@ -299,12 +356,20 @@ func (o *output) Process(left, right []float32, host Host) {
 	o.totalFrames += int64(need)
 }
 
-// Close closes the tracker window and waits for it to finish.
+// Close closes the tracker window and waits for it to finish, where it can:
+// on the thread that the window is closed on, the main thread of macOS, the
+// window cannot close while Close waits there, and the tracker would only
+// finish when Close gave up, with the host standing still until then. Hosts
+// close their plugins on that thread. The tracker then finishes on its own,
+// a moment after Close; the host is told nothing more from Close on.
 func (i *Instance) Close() {
+	i.closed.Store(true)
 	i.mcp.Close()
 	tracker.TrySend(i.broker.CloseGUI, struct{}{})
 	i.model.Close()
-	tracker.TimeoutReceive(i.broker.FinishedGUI, 3*time.Second)
+	if !onWindowThread() {
+		tracker.TimeoutReceive(i.broker.FinishedGUI, 3*time.Second)
+	}
 }
 
 // State returns the current song and settings, or nil on failure.

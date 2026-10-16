@@ -101,6 +101,11 @@ type (
 	deleteModuleArgs struct {
 		Module string `json:"module" jsonschema:"the name of the module, or its ID"`
 	}
+	addBufferArgs struct {
+		Name     string  `json:"name,omitempty"`
+		Seconds  float64 `json:"seconds,omitempty" jsonschema:"its length, 1 if left out: how far back a ring written by bufwrite reaches"`
+		Channels int     `json:"channels,omitempty" jsonschema:"1 (mono, if left out) or 2 (stereo)"`
+	}
 	bpmArgs struct {
 		BPM int `json:"bpm" jsonschema:"1 to 999"`
 	}
@@ -251,6 +256,10 @@ func Tools() []Tool {
 			}),
 		modelTool("delete_module", "Deletes a module. The module units using it are left without a module."+changeNote, false,
 			func(r *tracker.Remote, a deleteModuleArgs) (string, error) { return r.DeleteModule(a.Module) }),
+		modelTool("add_buffer", "Adds an empty audio buffer to the song, for bufwrite units to record into and bufread units to play (delays, loopers, grains): they name it by the ID that this returns. Not for samples, which the user imports, nor for the buffers of spectral, mc and convolution units, which the tracker makes. One step of the tracker's undo history.", false,
+			func(r *tracker.Remote, a addBufferArgs) (string, error) {
+				return r.AddBuffer(a.Name, a.Seconds, a.Channels)
+			}),
 		modelTool("set_bpm", "Sets the tempo of the song. In a plugin, the song follows the host's tempo again when that changes.", false,
 			func(r *tracker.Remote, a bpmArgs) (string, error) { return r.SetBPM(a.BPM) }),
 		modelTool("get_automation", "The points of the lane of an automation slot. get_song lists the lanes, and get_instrument marks automated parameters with their slot (A3 +0.0: ...).", true,
@@ -293,5 +302,6 @@ sointu is a modular software synthesizer and tracker for 4k/64k intros. These to
 - The user edits the patch in the tracker far more than through you, also between your calls: never rely on what you read earlier. Read an instrument right before changing it. An answer that starts with NOTE: the song changed, lists what the user changed; get_changes asks for that alone.
 - Instruments run in order and a bus (an instrument that reads a channel with in, e.g. the master chain) hears only the instruments before it. add_instrument puts new ones before the first bus; mind the order when moving instruments, and the WARNING lines of get_song.
 - Each change tool is one undo step and returns the units after it. Watch the stack numbers and any PROBLEM or WARNING line in what comes back.
+- An answer with ALERTS: lists the warnings and errors that the tracker showed the user since your previous call, in its notifications: those your change caused, and those of what the user did (a file that failed to load, a buffer that failed to encode). Act on the ones about the patch, and tell the user about the rest when it matters.
 - You cannot hear: use render_note before and after a change to check what it did (level, pitch, spectrum, envelope). The user judges the sound; play_note lets them hear a note.
 `)

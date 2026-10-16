@@ -181,6 +181,11 @@ func (w *Window) validateAndProcess(size image.Point, sync bool, frame *op.Ops, 
 		if w.gpu != nil {
 			if err := w.frame(frame, size); err != nil {
 				w.ctx.Unlock()
+				if errors.Is(err, errNoFrame) {
+					// Nothing to draw into yet: leave the frame out.
+					w.queue.Frame(frame)
+					return nil
+				}
 				if errors.Is(err, errOutOfDate) {
 					// GPU surface needs refreshing.
 					sync = true
@@ -300,6 +305,10 @@ func (w *Window) Option(opts ...Option) {
 		return
 	}
 	w.Run(func() {
+		if w.driver == nil {
+			// The window was destroyed while this waited for its turn.
+			return
+		}
 		cnf := Config{Decorated: w.decorations.enabled}
 		for _, opt := range opts {
 			opt(w.metric, &cnf)
@@ -874,6 +883,10 @@ func (w *Window) Perform(actions system.Action) {
 		return
 	}
 	w.Run(func() {
+		if w.driver == nil {
+			// The window was destroyed while this waited for its turn.
+			return
+		}
 		w.driver.Perform(actions)
 	})
 }

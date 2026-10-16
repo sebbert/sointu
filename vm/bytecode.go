@@ -44,6 +44,9 @@ type (
 		// BufreadUnits are the bufread units of the patch, for finding their
 		// state in the voices.
 		BufreadUnits []BufreadUnit
+		// PerVoiceBuffers are the buffers that the voices of an instrument
+		// each have a copy of
+		PerVoiceBuffers []PerVoiceBuffer
 
 		// BPM is the tempo the bytecode was made for, e.g. for spawn units
 		// in sync mode.
@@ -181,12 +184,48 @@ const (
 	// BufferRegionNoPop is set in BufferRegion.Flags for bufwrite units that
 	// leave the signal on the stack.
 	BufferRegionNoPop = 16
+	// BufferRegionTap is set in BufferRegion.Flags for bufread units that
+	// are taps: they read the frame at start every sample.
+	BufferRegionTap = 32
+	// BufferRegionPitchTiming is set in BufferRegion.Flags for bufread units
+	// whose start is in frames at note 0, divided by 2^(note/12).
+	BufferRegionPitchTiming = 64
+	// BufferRegionRingRead is set in BufferRegion.Flags for bufread units
+	// whose buffer a bufwrite unit of the patch writes as a ring: when it is
+	// full, its edges meet, and the edge fade is a crossfade.
+	BufferRegionRingRead = 128
+	// BufferRegionPerVoice is set in BufferRegion.Flags for the bufread and
+	// bufwrite units of an instrument whose voices each have a copy of the
+	// buffer. BufferRegionFirstVoice then has the first voice of the
+	// instrument.
+	BufferRegionPerVoice = 256
+	// BufferRegionFirstVoiceShift is where the first voice of the instrument
+	// is in BufferRegion.Flags, for BufferRegionPerVoice.
+	BufferRegionFirstVoiceShift = 16
 )
+
+// PerVoiceBuffer is a buffer that every voice of an instrument has a copy
+// of: a bufwrite unit of the instrument writes it with pervoice.
+type PerVoiceBuffer struct {
+	BufferID, FirstVoice, NumVoices int
+}
+
+// BPMFrames returns the frames of a time in 48ths of a beat, as the delay
+// unit and the bufread unit count them with BPM tracking; negative times stay
+// negative.
+func BPMFrames(time, bpm int) int {
+	if bpm <= 0 {
+		return 0
+	}
+	return int(int64(44100*60) * int64(time) / 48 / int64(bpm))
+}
 
 type bytecodeBuilder struct {
 	sampleOffsetMap map[SampleOffset]int
 	bufferRegionMap map[BufferRegion]int
-	spectrumSizes   map[int]Spectrum // spectrum buffer ID -> its size and channels
+	ringBuffers     map[int]bool           // the IDs of the buffers written as rings
+	perVoice        map[int]PerVoiceBuffer // by buffer ID
+	spectrumSizes   map[int]Spectrum       // spectrum buffer ID -> its size and channels
 	globalAddrs     map[int]int
 	globalFixups    map[int]([]int)
 	localAddrs      map[int]int
@@ -210,6 +249,7 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 	if err := b.buildAutomation(patch); err != nil {
 		return nil, err
 	}
+	b.scanBuffers(patch)
 	for instrIndex, instr := range patch {
 		if instr.NumVoices < 1 {
 			return nil, errors.New("Each instrument must have at least 1 voice")
@@ -374,7 +414,7 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				}
 				b.MCUnits = append(b.MCUnits, u)
 			case "bufread", "bufwrite":
-				index := b.getBufferRegionIndex(unit)
+				index := b.getBufferRegionIndex(unit, patch.FirstVoiceForInstrument(instrIndex))
 				if index > 255 {
 					return nil, errors.New("Patch uses over 256 different buffer regions")
 				}
@@ -411,6 +451,16 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 			case "window":
 				b.op(opcode)
 				b.defOperands(unit)
+				if WindowTimeOperand(featureSet) {
+					time := int32(0)
+					switch p["timing"] {
+					case 1:
+						time = -int32(max(p["time"], 1))
+					case 2:
+						time = int32(max(BPMFrames(p["time"], b.BPM), 1))
+					}
+					b.operand(int(time), int(time>>8), int(time>>16), int(time>>24))
+				}
 			case "arg":
 				b.op(opcode)
 				b.operand(min(max(p["index"], 0), sointu.MaxSpawnArgs-1))
@@ -757,14 +807,42 @@ func spectrumSizes(patch sointu.Patch) map[int]Spectrum {
 	return ret
 }
 
+// scanBuffers finds the buffers that bufwrite units of the patch write as
+// rings, and those that the voices of an instrument each have a copy of.
+func (b *bytecodeBuilder) scanBuffers(patch sointu.Patch) {
+	b.ringBuffers = map[int]bool{}
+	b.perVoice = map[int]PerVoiceBuffer{}
+	for i, instr := range patch {
+		for _, u := range instr.Units {
+			id := u.Parameters["buffer"]
+			if u.Type != "bufwrite" || u.Disabled || id == 0 {
+				continue
+			}
+			if u.Parameters["oneshot"] == 0 {
+				b.ringBuffers[id] = true
+			}
+			if _, ok := b.perVoice[id]; !ok && u.Parameters["pervoice"] == 1 && instr.NumVoices > 1 {
+				pv := PerVoiceBuffer{BufferID: id, FirstVoice: patch.FirstVoiceForInstrument(i), NumVoices: instr.NumVoices}
+				b.perVoice[id] = pv
+				b.PerVoiceBuffers = append(b.PerVoiceBuffers, pv)
+			}
+		}
+	}
+}
+
 // getBufferRegionIndex returns the index of the region played by a bufread unit
 // in the buffer region table, adding it to the table if it is not there yet.
-func (b *bytecodeBuilder) getBufferRegionIndex(unit sointu.Unit) int {
+// firstVoice is the first voice of the instrument of the unit.
+func (b *bytecodeBuilder) getBufferRegionIndex(unit sointu.Unit, firstVoice int) int {
 	p := unit.Parameters
-	r := BufferRegion{BufferID: uint32(p["buffer"]), Start: uint32(int32(p["start"])), EdgeFade: uint32(max(p["edgefade"], 0))}
+	start, loopStart, loopLength := p["start"], p["loopstart"], p["looplength"]
+	if unit.Type == "bufread" && p["timing"] == 2 { // in 48ths of a beat
+		start, loopStart, loopLength = BPMFrames(start, b.BPM), BPMFrames(loopStart, b.BPM), BPMFrames(loopLength, b.BPM)
+	}
+	r := BufferRegion{BufferID: uint32(p["buffer"]), Start: uint32(int32(start)), EdgeFade: uint32(max(p["edgefade"], 0))}
 	// loop points as int32 too; a negative loop start counts from the end
-	if p["loop"] == 1 {
-		r.LoopStart, r.LoopLength, r.Fade = uint32(int32(p["loopstart"])), uint32(p["looplength"]), uint32(p["fade"])
+	if p["loop"] == 1 && p["mode"] != 1 {
+		r.LoopStart, r.LoopLength, r.Fade = uint32(int32(loopStart)), uint32(loopLength), uint32(p["fade"])
 		r.Flags |= BufferRegionLoop
 	}
 	if unit.Type == "bufwrite" {
@@ -775,8 +853,22 @@ func (b *bytecodeBuilder) getBufferRegionIndex(unit sointu.Unit) int {
 		if p["pop"] == 0 {
 			r.Flags |= BufferRegionNoPop
 		}
-	} else if p["notetracking"] == 1 {
-		r.Flags |= BufferRegionNoteTracking
+	} else {
+		if p["mode"] == 1 {
+			r.Flags |= BufferRegionTap
+			r.EdgeFade = 0 // a tap does not get to the edges
+		} else if p["notetracking"] == 1 {
+			r.Flags |= BufferRegionNoteTracking
+		}
+		if p["timing"] == 1 {
+			r.Flags |= BufferRegionPitchTiming
+		}
+		if b.ringBuffers[p["buffer"]] {
+			r.Flags |= BufferRegionRingRead
+		}
+	}
+	if pv, ok := b.perVoice[p["buffer"]]; ok && pv.FirstVoice == firstVoice {
+		r.Flags |= BufferRegionPerVoice | uint32(firstVoice)<<BufferRegionFirstVoiceShift
 	}
 	index, ok := b.bufferRegionMap[r]
 	if !ok {

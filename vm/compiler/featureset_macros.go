@@ -128,9 +128,16 @@ func (p *FeatureSetMacros) SpawnFlagsOperand() bool { return vm.SpawnFlagsOperan
 // notes or gives them a length; WindowOwnLength when a window unit has a
 // length of its own, and WindowNoteLength when one takes the length of the
 // spawned note.
-func (p *FeatureSetMacros) SpawnTranspose() bool  { return p.set("spawn", "transpose", 64) }
-func (p *FeatureSetMacros) SpawnLength() bool     { return p.set("spawn", "length", 0) }
-func (p *FeatureSetMacros) WindowOwnLength() bool { return p.set("window", "length", 0) }
+func (p *FeatureSetMacros) SpawnTranspose() bool    { return p.set("spawn", "transpose", 64) }
+func (p *FeatureSetMacros) SpawnLength() bool       { return p.set("spawn", "length", 0) }
+func (p *FeatureSetMacros) WindowOwnLength() bool   { return p.set("window", "length", 0) }
+func (p *FeatureSetMacros) WindowTimeOperand() bool { return vm.WindowTimeOperand(p.FeatureSet) }
+
+// WindowPitchTiming is true when a window unit is timed by pitch.
+func (p *FeatureSetMacros) WindowPitchTiming() bool {
+	return p.SupportsParamValue("window", "timing", 1)
+}
+
 func (p *FeatureSetMacros) WindowNoteLength() bool {
 	return p.SupportsParamValue("window", "length", 0) || p.SupportsModulation("window", "length")
 }

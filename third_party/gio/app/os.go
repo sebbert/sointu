@@ -6,6 +6,7 @@ import (
 	"errors"
 	"image"
 	"image/color"
+	"time"
 
 	"gioui.org/io/event"
 	"gioui.org/io/key"
@@ -20,6 +21,10 @@ import (
 // errOutOfDate is reported when the GPU surface dimensions or properties no
 // longer match the window.
 var errOutOfDate = errors.New("app: GPU surface out of date")
+
+// errNoFrame is returned by a context that has nothing to draw into yet:
+// the frame is left out, and the context asks for another when it has.
+var errNoFrame = errors.New("app: no frame to draw into yet")
 
 // Config describes a Window configuration.
 type Config struct {
@@ -301,6 +306,27 @@ func (e *eventLoop) Run(f func()) {
 	e.wakeup()
 }
 
+// MinFrameInterval is the least time between two frames of a window, or 0
+// for as many frames as the display shows. A frame is drawn on the main
+// thread and waits there for the display to take the frame before; a
+// program that shares the main thread, e.g. a plugin in its host, leaves
+// more of it to the others with fewer frames. Set it before the first
+// window is made. Only macOS has it.
+var MinFrameInterval time.Duration
+
+// PresentAsync makes a window show its frames on its own, not with the
+// transaction of the main thread and not in step with the display, and get
+// what it draws the next frame into ahead of time, off the main thread: the
+// main thread then does not wait for it. A frame that comes before there is
+// something to draw into is left out and drawn when there is. Waiting is
+// what a window does that was just brought to the front: it is only shown
+// when the main thread is done, so the wait ends when it gives up, after a
+// second. That is for a program that shares the main thread, e.g. a plugin
+// in its host; the cost is that the content can lag behind the frame of the
+// window while it is resized. Set it before the first window is made. Only
+// macOS has it.
+var PresentAsync bool
+
 // FlushEvents delivers pending events to the client.
 func (e *eventLoop) FlushEvents() {
 	if e.delivering || e.destroyed {
@@ -314,6 +340,11 @@ func (e *eventLoop) FlushEvents() {
 			break
 		}
 		e.deliverEvent(evt)
+		if e.destroyed {
+			// Whatever came up while the DestroyEvent waited for the
+			// client, e.g. a wakeup, has no one to go to.
+			break
+		}
 	}
 }
 

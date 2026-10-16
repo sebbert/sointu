@@ -372,6 +372,13 @@ type window struct {
 	w           *callbacks
 	anim        bool
 	displayLink *displayLink
+	// occluded is set while nothing of the window is to be seen, e.g.
+	// behind another window: it is then not drawn.
+	occluded bool
+	// lastFrame is when the last frame was drawn, and frameWaits is set
+	// while a frame waits for MinFrameInterval to pass since then.
+	lastFrame  time.Time
+	frameWaits bool
 	// redraw is a single entry channel for making sure only one
 	// display link redraw request is in flight.
 	redraw      chan struct{}
@@ -518,6 +525,11 @@ func (w *window) Configure(options []Option) {
 		barTrans = C.YES
 		titleVis = C.NSWindowTitleHidden
 	}
+	// keep what was asked for: until the first draw reads the style of the
+	// window back (updateWindowMode), w.config.Decorated is still false, and
+	// an Option in between, e.g. TopMost on the first focus, would take the
+	// title bar away and leave Gio to draw its own
+	w.config.Decorated = cnf.Decorated
 	w.config.TopMost = cnf.TopMost
 	if cnf.TopMost {
 		C.setWindowLevel(window, C.NSFloatingWindowLevel)
@@ -588,7 +600,7 @@ func (w *window) SetInputHint(_ key.InputHint) {}
 func (w *window) SetAnimating(anim bool) {
 	w.anim = anim
 	window := C.windowForView(w.view)
-	if w.anim && window != 0 && C.isMiniaturized(window) == 0 {
+	if w.anim && !w.occluded && window != 0 && C.isMiniaturized(window) == 0 {
 		w.displayLink.Start()
 	} else {
 		w.displayLink.Stop()
@@ -767,6 +779,17 @@ func gio_onFocus(h C.uintptr_t, focus C.int) {
 	w.SetCursor(w.cursor)
 	w.config.Focused = focus == 1
 	w.ProcessEvent(ConfigEvent{Config: w.config})
+}
+
+//export gio_onOcclusion
+func gio_onOcclusion(h C.uintptr_t, visible C.int) {
+	w := windowFor(h)
+	w.occluded = visible == 0
+	w.SetAnimating(w.anim)
+	if !w.occluded {
+		// what was to be drawn in the meantime
+		C.setNeedsDisplay(w.view)
+	}
 }
 
 //export gio_onChangeScreen
@@ -961,9 +984,23 @@ func (w *window) draw() {
 		w.SetAnimating(w.anim)
 	}
 	sz := w.config.Size
-	if sz.X == 0 || sz.Y == 0 {
+	if sz.X == 0 || sz.Y == 0 || w.occluded {
 		return
 	}
+	if wait := MinFrameInterval - time.Since(w.lastFrame); wait > 0 {
+		// too soon after the last frame: draw when the time has passed
+		if !w.frameWaits {
+			w.frameWaits = true
+			time.AfterFunc(wait, func() {
+				w.runOnMain(func() {
+					w.frameWaits = false
+					C.setNeedsDisplay(w.view)
+				})
+			})
+		}
+		return
+	}
+	w.lastFrame = time.Now()
 	cfg := configFor(w.scale)
 	w.ProcessEvent(frameEvent{
 		FrameEvent: FrameEvent{
@@ -1083,7 +1120,7 @@ func newWindow(win *callbacks, options []Option) {
 
 func (w *window) init(customRenderer bool) error {
 	presentWithTrans := 1
-	if customRenderer {
+	if customRenderer || PresentAsync {
 		presentWithTrans = 0
 	}
 	view := C.gio_createView(C.int(presentWithTrans))

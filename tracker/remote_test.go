@@ -493,3 +493,69 @@ func TestRemoteChanges(t *testing.T) {
 		t.Errorf("the changes are told again: %q", text)
 	}
 }
+
+func TestRemoteAddBuffer(t *testing.T) {
+	m, r := newRemoteTestModel(t)
+	text := remoteStep(t, m, func() (string, error) { return r.AddBuffer("Ring", 2, 2) })
+	if len(m.d.Song.Buffers) != 1 {
+		t.Fatalf("the buffer was not added: %v", m.d.Song.Buffers)
+	}
+	if b := m.d.Song.Buffers[0]; b.ID != 1 || b.Name != "Ring" || b.Channels != 2 || b.Frames != 88200 || !b.Writable() {
+		t.Errorf("the buffer is not as asked: %+v", b)
+	}
+	if !strings.Contains(text, `added buffer 1 "Ring"`) || !strings.Contains(text, "buffers:") {
+		t.Errorf("the answer does not tell the buffer:\n%s", text)
+	}
+	remoteStep(t, m, func() (string, error) { return r.AddBuffer("", 0, 0) })
+	if b := m.d.Song.Buffers[1]; b.ID != 2 || b.Name != "Recording 2" || b.Channels != 1 || b.Frames != 44100 {
+		t.Errorf("the defaults of a buffer are not 1 s, mono: %+v", b)
+	}
+	// units can name it
+	remoteStep(t, m, func() (string, error) {
+		return r.AddUnits("0", "", 0, 0, []RemoteNewUnit{{Type: "bufread", Params: map[string]any{"buffer": 1.0}}, {Type: "pop"}})
+	})
+	remoteRefused(t, m, "1 or 2 channels", func() (string, error) { return r.AddBuffer("", 1, 3) })
+	remoteRefused(t, m, "seconds", func() (string, error) { return r.AddBuffer("", 1000, 1) })
+}
+
+func TestRemoteAlerts(t *testing.T) {
+	m, r := newRemoteTestModel(t)
+	call := func(f func() (string, error)) (string, error) { return r.Call(f) }
+	if _, err := call(func() (string, error) { return r.Song(), nil }); err != nil {
+		t.Fatal(err)
+	}
+	m.Alerts().Add("only for the user", Info)
+	m.Alerts().Add("Error importing kick.wav: no ffmpeg", Error)
+	m.Alerts().AddNamed("Named", "a warning", Warning)
+	m.Alerts().AddNamed("Named", "a warning", Warning)           // set again: told once
+	text, err := call(func() (string, error) { return "", nil }) // get_changes
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"ALERTS:", "error: Error importing kick.wav: no ffmpeg", "warning: a warning"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the answer does not tell %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "only for the user") || strings.Count(text, "a warning") != 1 {
+		t.Errorf("the answer tells an info alert, or a named one twice:\n%s", text)
+	}
+	if text, _ := call(func() (string, error) { return "", nil }); text != "nothing changed since your previous call" {
+		t.Errorf("the alerts are told again:\n%s", text)
+	}
+	// an alert that the call itself causes comes with its answer, also when it fails
+	text, _ = call(func() (string, error) {
+		m.Alerts().Add("caused by the call", Warning)
+		return "done", nil
+	})
+	if !strings.HasPrefix(text, "ALERTS:") || !strings.Contains(text, "caused by the call") || !strings.HasSuffix(text, "done") {
+		t.Errorf("the answer does not start with the alert of the call:\n%s", text)
+	}
+	_, err = call(func() (string, error) {
+		m.Alerts().Add("with the error", Error)
+		return "", fmt.Errorf("refused")
+	})
+	if err == nil || !strings.Contains(err.Error(), "with the error") || !strings.Contains(err.Error(), "refused") {
+		t.Errorf("the error does not tell the alert: %v", err)
+	}
+}

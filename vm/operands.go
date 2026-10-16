@@ -74,3 +74,11 @@ func SpawnFlagsOperand(f FeatureSet) bool {
 		uniformParam(f, "spawn", "args", 0, 1, 2, 3, 4) &&
 		uniformParam(f, "spawn", "steal", 0, 1))
 }
+
+// WindowTimeOperand is true when a window unit is timed by pitch or tempo:
+// the window units then have their time, as four bytes of an int32: 0 for a
+// unit timed in frames, which uses its length, the frames at note 0 negated
+// with pitch timing, or the frames with BPM timing.
+func WindowTimeOperand(f FeatureSet) bool {
+	return f.SupportsParamValueOtherThan("window", "timing", 0)
+}

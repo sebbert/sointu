@@ -110,18 +110,32 @@ func (m *Model) buildInstrumentTitles() {
 }
 
 func (m *Model) updateParams() {
-	for id := range m.delayFree { // forget the units that are gone
-		if u := m.d.Song.FindUnit(id); u == nil || u.Type != "delay" {
-			delete(m.delayFree, id)
+	for id := range m.gridFree { // forget the units that are gone
+		if u := m.d.Song.FindUnit(id); u == nil || u.Type != "delay" && u.Type != "bufread" && u.Type != "window" {
+			delete(m.gridFree, id)
 		}
 	}
 	for units := range m.d.Song.UnitLists() {
 		for u := range units {
-			// a delay unit seen for the first time: loaded, pasted or added
-			if unit := &units[u]; unit.Type == "delay" {
-				if _, ok := m.delayFree[unit.ID]; !ok {
-					m.setDelayFree(unit, delayOffGrid(unit))
+			// a unit seen for the first time: loaded, pasted or added
+			unit := &units[u]
+			if _, ok := m.gridFree[unit.ID]; ok {
+				continue
+			}
+			switch unit.Type {
+			case "delay":
+				m.setGridFree(unit, delayOffGrid(unit))
+			case "bufread":
+				m.setGridFree(unit, m.bufreadOffGrid(unit))
+			case "window":
+				// windows from before timing have no time, transpose or
+				// detune: give them those of a new unit
+				for _, up := range sointu.UnitTypes["window"].Params {
+					if _, ok := unit.Parameters[up.Name]; !ok && unit.Parameters != nil && (up.Name == "time" || up.Name == "transpose" || up.Name == "detune") {
+						unit.Parameters[up.Name] = up.Default
+					}
 				}
+				m.setGridFree(unit, m.bufreadOffGrid(unit))
 			}
 		}
 	}
@@ -190,6 +204,32 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 		if unit.Type == "bufread" && unit.Parameters["loop"] == 0 && (up.Name == "loopstart" || up.Name == "looplength" || up.Name == "fade") {
 			continue // loop points only matter when looping
 		}
+		if unit.Type == "bufread" && unit.Parameters["mode"] == 1 {
+			switch up.Name { // a tap reads the frame at start: it has no speed, loop or edges
+			case "speed", "notetracking", "loop", "loopstart", "looplength", "fade", "edgefade":
+				continue
+			case "transpose", "detune": // they tune a delay that follows the note
+				if unit.Parameters["timing"] != 1 {
+					continue
+				}
+			}
+		}
+		if unit.Type == "window" {
+			switch timing := unit.Parameters["timing"]; up.Name {
+			case "length": // the length in frames, or that of the spawned note
+				if timing != 0 {
+					continue
+				}
+			case "time":
+				if timing == 0 {
+					continue
+				}
+			case "transpose", "detune": // they tune a window that holds periods of the note
+				if timing != 1 {
+					continue
+				}
+			}
+		}
 		if unit.Type == "convolution" && (up.Name == "follow" || up.Name == "fade") {
 			if buf, found := m.d.Song.Buffers.Find(unit.Parameters["buffer"]); found && !buf.Writable() {
 				continue // a sample is read once: nothing to follow
@@ -213,6 +253,9 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 		}
 		if unit.Type == "bufwrite" && up.Name == "buffer" {
 			vtable = audioBufferParameter
+		}
+		if unit.Type == "bufwrite" && up.Name == "length" {
+			vtable = &bufwriteLengthParameter{}
 		}
 		for j, name := range sointu.SpectrumBufferParams(unit.Type) {
 			if up.Name == name {
@@ -248,7 +291,13 @@ func (m *Model) deriveParams(unit *sointu.Unit, ret []Parameter) []Parameter {
 				vtable = &bufferFrameParameter{}
 			}
 		}
+		if unit.Type == "window" && up.Name == "time" {
+			vtable = &windowTimeParameter{}
+		}
 		ret = append(ret, Parameter{m: m, unit: unit, up: &unitType.Params[i], vtable: vtable, port: q})
+	}
+	if (unit.Type == "bufread" || unit.Type == "window") && unit.Parameters["timing"] != 0 {
+		ret = append(ret, Parameter{m: m, unit: unit, vtable: &delayFreeParameter{}})
 	}
 	if unit.Type == "oscillator" && unit.Parameters["type"] == sointu.Sample {
 		ret = append(ret, Parameter{m: m, unit: unit, vtable: &gmDlsEntryParameter{}})

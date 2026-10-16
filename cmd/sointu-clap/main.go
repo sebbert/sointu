@@ -13,6 +13,7 @@ package main
 
 void sointu_mark_dirty(uintptr_t plugin);
 void sointu_params_changed(uintptr_t plugin, bool values);
+void sointu_window_closed(uintptr_t plugin);
 */
 import "C"
 
@@ -55,10 +56,31 @@ func sointuVersion() *C.char {
 
 //export sointuNew
 func sointuNew(p C.uintptr_t) C.uintptr_t {
-	return C.uintptr_t(cgo.NewHandle(plugin.New("sointu-clap",
+	// the window opens when the host shows it, or after a moment if the
+	// host does not take it over: see the gui extension in clap.c
+	return C.uintptr_t(cgo.NewHandle(plugin.NewHidden("sointu-clap",
 		func() { C.sointu_mark_dirty(p) },
 		func(values bool) { C.sointu_params_changed(p, C.bool(values)) },
 	)))
+}
+
+// sointuManageWindow tells that the host shows and hides the window from now
+// on; the host is told when the user closes it.
+//
+//export sointuManageWindow
+func sointuManageWindow(h C.uintptr_t, p C.uintptr_t) {
+	instance(h).ManageWindow(func() { C.sointu_window_closed(p) })
+}
+
+//export sointuShowWindow
+func sointuShowWindow(h C.uintptr_t) { instance(h).ShowWindow() }
+
+//export sointuHideWindow
+func sointuHideWindow(h C.uintptr_t) { instance(h).HideWindow() }
+
+//export sointuWindowTitle
+func sointuWindowTitle(h C.uintptr_t, title *C.char) {
+	instance(h).SetWindowTitle(C.GoString(title))
 }
 
 //export sointuClose

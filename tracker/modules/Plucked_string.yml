@@ -1,0 +1,70 @@
+modules:
+    - id: 1
+      name: Plucked string
+      comment: 'A Karplus-Strong string: a short burst of noise, or one cycle of a sine at the note, into a delay line one period of the note long, which feeds back through a low-pass. Mono, panned to stereo. Each voice has its own line, so the instrument can have several voices. The decay is per round of the loop: low notes ring longer than high ones. Uses bufread, bufwrite and a window timed by pitch: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: tune, default: 64}
+        - {name: fine, default: 64}
+        - {name: decay, default: 112}
+        - {name: tone, default: 96}
+        - {name: burst, default: 45}
+        - {name: pick, default: 112}
+        - {name: cycle, default: 0}
+      units:
+        - type: envelope
+          id: 1
+          parameters: {attack: 0, curve: 0, decay: 45, gain: 128, release: 45, stereo: 0, sustain: 0}
+          bind: {decay: 5, release: 5}
+          comment: 'burst: how long the noise that plucks the string lasts; longer is louder and softer at the start'
+        - type: noise
+          id: 2
+          parameters: {gain: 128, shape: 64, stereo: 0}
+          bind: {gain: {p: 7, min: 128, max: 0}}
+          comment: 'cycle: the noise fades out as the sine cycle fades in'
+        - type: mulp
+          id: 3
+          parameters: {stereo: 0}
+        - type: oscillator
+          id: 10
+          parameters: {color: 64, detune: 64, gain: 0, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+          bind: {detune: 2, gain: 7, transpose: 1}
+          comment: 'cycle: a sine at the pitch of the string, from phase 0 at the note; a pluck that is all fundamental, rounder and more like a drum than the noise'
+        - type: window
+          id: 11
+          parameters: {detune: 64, length: 0, shape: 0, time: 10788, timing: 1, transpose: 64}
+          bind: {detune: 2, transpose: 1}
+          comment: 'One period of the string: one whole cycle of the sine, which starts and ends at 0'
+        - type: mulp
+          id: 12
+          parameters: {stereo: 0}
+        - type: addp
+          id: 13
+          parameters: {stereo: 0}
+          comment: The noise burst plus the sine cycle
+        - type: filter
+          id: 4
+          parameters: {bandpass: 0, frequency: 112, highpass: 0, lowpass: 1, resonance: 128, stereo: 0}
+          bind: {frequency: 6}
+          comment: 'pick: the high cut of the pluck, a softer or harder attack'
+        - type: bufread
+          id: 5
+          parameters: {buffer: 0, detune: 64, gain: 127, mode: 1, start: -10788, stereo: 0, timing: 1, transpose: 64}
+          bind: {detune: 2, gain: {p: 3, min: 120, max: 128}, transpose: 1}
+          comment: 'The string: one period of the note behind the write head. tune in semitones and fine (one semitone) move its pitch; decay is what is left after each round, 128 rings for ever'
+        - type: ladder
+          id: 6
+          parameters: {drive: 0, frequency: 112, resonance: 0, stereo: 0}
+          bind: {frequency: {p: 4, min: 64, max: 128}}
+          comment: 'tone: the high cut in the loop, 4.5 to 19 kHz, which makes the highs die before the lows. A ladder without resonance, which never raises the level: the filter unit would, a little, near its cutoff, and the string would grow without end. It delays the loop a little, so high notes are a little flat when damp is low'
+        - type: addp
+          id: 7
+          parameters: {stereo: 0}
+          comment: The pluck plus what comes round
+        - type: bufwrite
+          id: 8
+          parameters: {buffer: 0, feedback: 0, length: 22050, oneshot: 0, pervoice: 1, pop: 0, stereo: 0}
+          comment: 'Into the line, which is 0.5 s long, enough for note 0 an octave down; the signal stays on the stack'
+        - type: pan
+          id: 9
+          parameters: {panning: 64, stereo: 0}
