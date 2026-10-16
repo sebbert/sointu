@@ -1,6 +1,6 @@
 # Changes in the sebbert-custom branch
 
-This branch of Sointu adds macOS and CLAP plugins, audio samples and buffers,
+This branch of Sointu adds macOS, CLAP and VST3 plugins, audio samples and buffers,
 granular synthesis, spectral processing, convolution, modules (reusable blocks of units),
 a graphical parametric equalizer, up to 255 voices and 16 output channels
 (seven aux pairs), [automation](#automation) from the plugin host that the
@@ -21,7 +21,8 @@ changes to the sound are fine, as long as both stay in sync.
 ## Build and plugins
 
 - `Makefile` builds all the tools and plugins, also in CI: `make`,
-  `make install-vst`, `make install-clap`, `make install-au`.
+  `make install-vst`, `make install-vst3`, `make install-clap`,
+  `make install-au`.
 - A CLAP plugin (`cmd/sointu-clap`, `cmd/plugin` shared with the VST2) with 4
   note ports of 16 MIDI channels each: 64 MIDI channels.
 - The plugins follow the tempo of the host, one way: the song's tempo can be
@@ -30,7 +31,8 @@ changes to the sound are fine, as long as both stay in sync.
   of the audio device: the synth stays at 44100 Hz and its output is
   resampled. See [Sample rate](#sample-rate).
 - The song is saved in the host's project. Edits mark the project unsaved
-  (CLAP `mark_dirty`, VST2 `audioMasterUpdateDisplay`).
+  (CLAP `mark_dirty`, VST2 `audioMasterUpdateDisplay`, VST3
+  `IComponentHandler2::setDirty`).
 - The plugin window comes to the front when it opens. Edit → Keep window on
   top keeps it above other windows; the setting is saved in the user's
   `preferences.yml`.
@@ -104,6 +106,40 @@ changes to the sound are fine, as long as both stay in sync.
   Checked with a host of a few calls (format, render with the host's and
   the unit's buffers, a note, class info there and back, the view).
   **Not verified:** in a host, and with `auval`.
+- A VST3 plugin (`cmd/sointu-vst3`, `make install-vst3`,
+  `sointu-vst3.vst3`, a bundle on every system), written in C against the
+  C API of the VST3 SDK (`third_party/vst3/vst3_c_api.h`, Steinberg's own
+  header, BSD licensed; nothing else of the SDK), so the build needs no
+  CMake and no C++. Why not clap-wrapper around the CLAP: it needs CMake,
+  C++ and the whole SDK, and asks a CLAP for an embedded GUI only, which
+  ours is not. One object is the component and its own edit controller
+  (`getControllerClassId` has none). An instrument (`Instrument|Synth`) with
+  one stereo output and 4 event inputs of 16 MIDI channels each, as the
+  CLAP's note ports. Notes come as VST3 events; MIDI controllers (for the
+  tracker's MIDI learn) do not exist as events in VST3, so each controller
+  of each channel of each input is a hidden parameter that the host maps
+  them to (`IMidiMapping`, ids from `0x10000`; 8192 of them), turned back
+  into MIDI CC. The automation slots are parameters 0 to 63, sample
+  accurate (each point of the host's queues at its offset), normalized 0 to
+  1 with 0.5 in the middle. Tempo from the process context; latency of the
+  resampler from `setupProcessing`, told with `restartComponent`; the song
+  is the state of the component, the controller has none; a loaded state
+  tells the host the values of the parameters, a change of the bindings
+  their titles. What is told to the host goes to the main thread with
+  `dispatch_async` on macOS; on Linux and Windows it waits for the host's
+  next call of the controller.
+  VST3 has no plugin window outside the host's: the view that the host
+  gets (macOS: an NSView, `view_darwin.m`) is a label and a "Show window"
+  button, like the Audio Unit's. The tracker window opens when the host
+  attaches the view, closes when it removes it (e.g. the host's window of
+  the plugin is closed), and the user can close it on its own and get it
+  back from the button. Linux and Windows have no view: the window opens
+  after a second and cannot be closed, as with a host that asks for no
+  view. REX builds bundle the REX library as for the others.
+  Checked with the validator of the VST3 SDK 3.8.0 (537 tests, none
+  failed, also the REX build) and a test host (`testdata/host.c`, run by
+  `go test -tags plugin ./cmd/sointu-vst3`). **Not verified:** in Bitwig or
+  Live, the view in any host, Linux and Windows (not even built).
 - Vendored: Gio (`third_party/gio`, macOS plugin window and event loop fixes,
   `TopMost` on Windows and turning it off, `pointer.Event.Notch` for the
   notches of a mouse wheel on macOS, `app.FileDropEvent` for files dropped
@@ -111,7 +147,9 @@ changes to the sound are fine, as long as both stay in sync.
   dragging destination of file URLs, and a drop is a window event of the
   paths, the position, the modifiers held and the pointer handlers there
   (`input.Router.TargetsAt`); other platforms send none),
-  vst2 (`third_party/vst2`, `Host.UpdateDisplay`), CLAP headers.
+  vst2 (`third_party/vst2`, `Host.UpdateDisplay`), CLAP headers, the VST3
+  C API header (`third_party/vst3`, from steinbergmedia/vst3_c_api at
+  93a116f, for SDK 3.8).
 
 ## Song format
 
@@ -1581,14 +1619,16 @@ interpolate between two. Every row is scaled to pass DC as it is.
 renders `Need(n)` frames, n·44100/rate within one, which are resampled into
 the block.
 
-- The host tells its rate when it activates the plugin (CLAP) or with
+- The host tells its rate when it activates the plugin (CLAP), in
+  `setupProcessing` (VST3), or with
   `effSetSampleRate` (VST2, `Dispatcher.SetSampleRateFunc`, added to the
   vendored vst2); the VST2 plugin also asks the time info every 2 seconds,
   as before. The resampler is made there, not in the audio thread, which
   takes it over at its next block.
 - The latency is told to the host: the CLAP latency extension (it changes
   only in `activate`), and `initialDelay` with `audioMasterIOChanged` for
-  VST2 (`Host.SetInitialDelay`, added to the vendored vst2). 0 at 44100 Hz.
+  VST2 (`Host.SetInitialDelay`, added to the vendored vst2), and
+  `getLatencySamples` with `kLatencyChanged` for VST3. 0 at 44100 Hz.
 - A MIDI event at frame d of a block is played at frame `Need(d)` of the
   player's block: the first frame of the synth at or after its time. So a
   note is heard at its frame plus the latency, up to one frame of the synth
@@ -3337,6 +3377,13 @@ leaves it out in any case):
 
 The browser tests need neither variable for anything else: they are only
 opt-in because they launch a browser and play in real time.
+
+The plugins need the build tag: `go test -tags plugin ./cmd/...`. The VST3
+test builds the plugin and a test host (macOS); with
+`VST3_VALIDATOR=<path>` it runs the validator of the VST3 SDK on it too.
+The validator is built from the SDK, e.g. cloned into `.vst3sdk/` (ignored
+by git): `cmake -S .vst3sdk -B .vst3sdk/build -DSMTG_ENABLE_VSTGUI_SUPPORT=OFF`
+and `cmake --build .vst3sdk/build --target validator`.
 
 ## Updating the x86 backend
 

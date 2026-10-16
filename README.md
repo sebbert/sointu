@@ -29,7 +29,7 @@ You can either:
     
 In both cases, you can then just run one of the executables (no need to install
 anything); or in the case of the plugin library files, copy them wherever
-you keep your VST2 or CLAP plugins.
+you keep your VST2, VST3 or CLAP plugins.
 
 The pre 1.0 version release tags are mostly for reference: no backwards
 compatibility will be guaranteed while upgrading to a newer version. Backwards
@@ -56,7 +56,7 @@ synthesis engine can already be fitted in 600 bytes (386, compressed), with
 another few hundred bytes for the patch and pattern data.
 
 Sointu consists of two core elements:
-- A cross-platform synth-tracker that runs as either a VSTi, a CLAP plugin or stand-alone
+- A cross-platform synth-tracker that runs as either a VSTi, a VST3 or CLAP plugin or stand-alone
   app for composing music, written in [go](https://golang.org/). The app
   is still heavily work in progress. The app exports the projects as
   .yml files.
@@ -189,6 +189,23 @@ bundle:
 ```
 xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/CLAP/sointu-clap.clap
 ```
+
+### Sointu-vst3
+
+The same plugin in VST3 format, with the same prerequisites. It is a
+`.vst3` bundle on every system, written against the C API header of the
+VST3 SDK (in `third_party/vst3`); nothing else of the SDK is needed.
+
+```
+make vst3           # builds out/sointu-vst3.vst3
+make install-vst3   # installs into the user VST3 directory
+```
+
+The user VST3 directory is `~/Library/Audio/Plug-Ins/VST3` on macOS,
+`~/.vst3` on Linux and `%LOCALAPPDATA%\Programs\Common\VST3` on Windows. Set
+`VST3_DIR` to install elsewhere, or use `make install-vst3-system`. The
+tracker is a window of its own; the host's window of the plugin has a
+button to show it.
 
 ### Sointu-mcp
 
