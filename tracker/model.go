@@ -173,6 +173,7 @@ type (
 
 		buffers        bufferState
 		defaultPresets sointu.EncodingPresets
+		browser        browserState
 
 		presetData presetData
 	}
@@ -299,6 +300,8 @@ func NewModel(broker *Broker, synthers []sointu.Synther, midiContext MIDIContext
 }
 
 func (m *Model) Close() {
+	m.Browser().cancelDecode()
+	m.Browser().stopWatching()
 	TrySend(m.broker.CloseDetector, struct{}{})
 	TrySend(m.broker.CloseSpecAn, struct{}{})
 	TrySend(m.broker.CloseMIDIHandler, struct{}{})

@@ -7,3 +7,6 @@ rack:
   bufferpreviews: true
 mcp:
   enabled: false
+browser:
+  shown: true
+  autopreview: true

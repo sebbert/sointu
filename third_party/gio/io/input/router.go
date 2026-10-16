@@ -685,6 +685,12 @@ func (q *Router) ActionAt(p f32.Point) (system.Action, bool) {
 	return q.pointer.queue.ActionAt(p)
 }
 
+// TargetsAt returns the tags of the pointer handlers at p, as the last frame
+// placed them, topmost first, as a pointer event there would reach them.
+func (q *Router) TargetsAt(p f32.Point) []event.Tag {
+	return q.pointer.queue.TargetsAt(p)
+}
+
 func (q *Router) ClickFocus() {
 	focus := q.lastState().focus
 	if focus == nil {
