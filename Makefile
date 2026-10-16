@@ -24,12 +24,26 @@
 # Set VST_DIR=..., CLAP_DIR=... or AU_DIR=... to install a plugin somewhere else. Set
 # NATIVE=1 to use the native synth in the tracker and plugins (x86 only;
 # requires the native library to be built into build/ with CMake first).
+#
+# Set REX=1 to read REX files (ReCycle loops) in the tracker and the plugins,
+# with the REX Shared Library of Reason Studios (macOS only): its SDK is
+# downloaded into .rexsdk/ and the library is put into out/ next to the
+# tracker and into each plugin bundle, with the SDK's license. Set
+# REXSDK=... to use an SDK unpacked elsewhere instead. Such builds are for
+# yourself: the SDK's license does not allow them to be published.
 
 GO      ?= go
 OUT     := out
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null)
 LDFLAGS := -X github.com/vsariola/sointu/version.Version=$(VERSION)
 NATIVE_TAGS := $(if $(NATIVE),native)
+REXSDK_URL  := https://cdn.reasonstudios.com/developers/RexSDK/1/192/REXSDK_Mac_1.9.2.zip
+REXSDK      ?= $(if $(REX),.rexsdk)
+REX_TAGS    := $(if $(REXSDK),rex)
+REX_ENV     := $(if $(REXSDK),CGO_CFLAGS="-g -O2 -I$(abspath $(REXSDK))")
+REX_DEP     := $(if $(REXSDK),$(REXSDK)/REX.h)
+REX_BUNDLE  := $(REXSDK)/Mac/Deployment/REX Shared Library.bundle
+REX_LICENSE := $(REXSDK)/General License Agreement.txt
 
 empty :=
 space := $(empty) $(empty)
@@ -90,17 +104,29 @@ $(TOOLS): %: $(OUT)/sointu-%$(EXE)
 
 # Everything depends on FORCE and is always rebuilt: go build does its own
 # caching.
-$(OUT)/sointu-track$(EXE): TAGS := $(NATIVE_TAGS)
+$(OUT)/sointu-track$(EXE): TAGS := $(NATIVE_TAGS) $(REX_TAGS)
+$(OUT)/sointu-track$(EXE): $(REX_DEP)
 ifeq ($(PLATFORM),windows)
 $(OUT)/sointu-track$(EXE): EXTRA_LDFLAGS := -H=windowsgui
 endif
 
 $(OUT)/sointu-%$(EXE): FORCE
 	mkdir -p $(OUT)
-	$(GO) build -tags=$(call join-tags,$(TAGS)) \
+	$(if $(filter rex,$(TAGS)),$(REX_ENV)) $(GO) build -tags=$(call join-tags,$(TAGS)) \
 		-ldflags "$(LDFLAGS) $(EXTRA_LDFLAGS)" -o $@ ./cmd/sointu-$*/
+ifneq ($(REXSDK),)
+	$(if $(filter rex,$(TAGS)),rm -rf "$(OUT)/REX Shared Library.bundle" && cp -R "$(REX_BUNDLE)" $(OUT)/ && cp "$(REX_LICENSE)" "$(OUT)/REX License Agreement.txt")
+endif
 
-PLUGIN_TAGS := $(call join-tags,plugin $(NATIVE_TAGS))
+# the REX SDK, downloaded under its license, when REX=1
+.rexsdk/REX.h:
+	mkdir -p .rexsdk
+	curl -fL -o .rexsdk/sdk.zip $(REXSDK_URL)
+	unzip -q -o .rexsdk/sdk.zip -d .rexsdk
+	rm .rexsdk/sdk.zip
+	touch $@
+
+PLUGIN_TAGS := $(call join-tags,plugin $(NATIVE_TAGS) $(REX_TAGS))
 
 # plugin-rules generates the build, install and uninstall rules for plugin $(1).
 #
@@ -116,12 +142,17 @@ define plugin-rules
 $(1): $(OUT)/$($(1)_FILE)
 
 ifeq ($(PLATFORM),macos)
-$(OUT)/$($(1)_FILE): FORCE
+$(OUT)/$($(1)_FILE): FORCE $(REX_DEP)
 	rm -rf $$@
 	mkdir -p $$@/Contents/MacOS
-	CGO_ENABLED=1 $(GO) build -buildmode=c-shared -tags=$(PLUGIN_TAGS) \
+	CGO_ENABLED=1 $(REX_ENV) $(GO) build -buildmode=c-shared -tags=$(PLUGIN_TAGS) \
 		-ldflags "$(LDFLAGS)" -o $$@/Contents/MacOS/$($(1)_PKG) ./cmd/$($(1)_PKG)/
 	rm -f $$@/Contents/MacOS/$($(1)_PKG).h
+ifneq ($(REXSDK),)
+	mkdir -p $$@/Contents/Frameworks $$@/Contents/Resources
+	cp -R "$(REX_BUNDLE)" $$@/Contents/Frameworks/
+	cp "$(REX_LICENSE)" "$$@/Contents/Resources/REX License Agreement.txt"
+endif
 	sed 's/@VERSION@/$(VERSION)/g' cmd/$($(1)_PKG)/Info.plist > $$@/Contents/Info.plist
 	printf 'BNDL????' > $$@/Contents/PkgInfo
 	codesign --force --sign - $$@

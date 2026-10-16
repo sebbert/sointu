@@ -50,9 +50,9 @@ func TestBufwriteWasmMatchesGoSynth(t *testing.T) {
 			}},
 			{Name: "player", NumVoices: 1, Units: []sointu.Unit{
 				// plays the recording while it is recorded, then loops it
-				{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 1, "notetracking": 1, "loop": 1, "loopstart": 2000, "looplength": 5000, "fade": 1000}},
+				{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 1, "note": 1, "mode": 1, "loopstart": 2000, "looplength": 5000, "loopfade": 1000}},
 				// and backwards in a loop counted from the end, at 3/4 speed
-				{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 16, "buffer": 1, "notetracking": 1, "start": -2000, "loop": 1, "loopstart": -6000, "looplength": 5000, "fade": 1000}},
+				{Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 16, "buffer": 1, "note": 1, "start": -2000, "mode": 1, "loopstart": -6000, "looplength": 5000, "loopfade": 1000}},
 				{Type: "addp", Parameters: sointu.ParamMap{"stereo": 0}},
 				{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
 			}},
@@ -65,7 +65,7 @@ func TestBufwriteWasmMatchesGoSynth(t *testing.T) {
 				{Type: "arg", Parameters: sointu.ParamMap{"index": 0}},
 				{Type: "send", Parameters: sointu.ParamMap{"stereo": 0, "amount": 96, "target": 30, "port": 4, "sendpop": 1}},
 				// backwards, counted from the write head, faded near it
-				{ID: 30, Type: "bufread", Parameters: sointu.ParamMap{"stereo": 1, "transpose": 64, "detune": 64, "gain": 128, "speed": 20, "buffer": 2, "notetracking": 1, "start": -1500, "edgefade": 300}},
+				{ID: 30, Type: "bufread", Parameters: sointu.ParamMap{"stereo": 1, "transpose": 64, "detune": 64, "gain": 128, "speed": 20, "buffer": 2, "note": 1, "start": -1500, "edgefade": 300}},
 				{Type: "out", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128}},
 			}},
 		},

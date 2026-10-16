@@ -13,6 +13,7 @@ import (
 
 	"github.com/vsariola/sointu"
 	"github.com/vsariola/sointu/ffmpeg"
+	"github.com/vsariola/sointu/rex"
 )
 
 type (
@@ -630,7 +631,31 @@ func decodePreview(ctx context.Context, path string) (sointu.BufferAudio, error)
 		return sointu.BufferAudio{}, err
 	}
 	f.Context = ctx
+	if rex.IsRex(path) {
+		return rexPreview(path)
+	}
 	return f.DecodeFile(path, 2, browserPreviewSeconds)
+}
+
+// rexPreview renders the first browserPreviewSeconds of a REX file in
+// stereo.
+func rexPreview(path string) (sointu.BufferAudio, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return sointu.BufferAudio{}, err
+	}
+	loop, err := rex.Decode(data)
+	if err != nil {
+		return sointu.BufferAudio{}, err
+	}
+	a, _ := loop.Render()
+	frames := min(a.Frames(), int(browserPreviewSeconds*44100))
+	out := sointu.BufferAudio{Channels: 2, Data: make([]float32, 2*frames)}
+	for i := range frames {
+		out.Data[2*i] = a.Data[i*a.Channels]
+		out.Data[2*i+1] = a.Data[i*a.Channels+a.Channels-1]
+	}
+	return out, nil
 }
 
 // ImportFiles imports audio files as new buffers, in order, on a goroutine,
@@ -666,12 +691,13 @@ func (m *BufferModel) ImportFiles(paths []string, replace bool) {
 		f, findErr := ffmpeg.Find("")
 		for i, path := range files {
 			name := filepath.Base(path)
-			var data, stored []byte // data is the file as it is, before ffmpeg
+			var data, stored []byte
 			var channels int
+			var meta importMeta
 			err := findErr
 			if err == nil {
 				if data, err = os.ReadFile(path); err == nil {
-					stored, channels, err = f.Import(data)
+					stored, channels, meta, err = importSample(f, name, data)
 				}
 			}
 			id := 0
@@ -683,8 +709,9 @@ func (m *BufferModel) ImportFiles(paths []string, replace bool) {
 					(*Model)(m).Alerts().Add(fmt.Sprintf("Error importing %s: %v", name, err), Error)
 					return
 				}
+				defer m.change("ImportBuffer")() // one step with the markers
 				m.addImported(name, stored, min(max(channels, 1), 2), id)
-				_ = data // for what reads the original file, e.g. its markers
+				m.setImportedSlices(meta)
 			}})
 			if findErr != nil {
 				return // without ffmpeg, the others fail the same

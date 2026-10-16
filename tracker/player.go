@@ -410,6 +410,7 @@ loop:
 				for id, b := range m.Audio {
 					// continue writing to the same audio
 					if old, ok := p.buffers[id]; ok && b.Writable && sameData(old.Data, b.Data) {
+						old.Slices = b.Slices
 						m.Audio[id] = old
 					}
 				}

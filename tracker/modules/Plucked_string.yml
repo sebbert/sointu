@@ -49,7 +49,7 @@ modules:
           comment: 'pick: the high cut of the pluck, a softer or harder attack'
         - type: bufread
           id: 5
-          parameters: {buffer: 0, detune: 64, gain: 127, mode: 1, start: -10788, stereo: 0, timing: 1, transpose: 64}
+          parameters: {buffer: 0, detune: 64, gain: 127, mode: 3, note: 0, start: -10788, stereo: 0, timing: 1, transpose: 64}
           bind: {detune: 2, gain: {p: 3, min: 120, max: 128}, transpose: 1}
           comment: 'The string: one period of the note behind the write head. tune in semitones and fine (one semitone) move its pitch; decay is what is left after each round, 128 rings for ever'
         - type: ladder

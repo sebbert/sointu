@@ -192,6 +192,9 @@ type (
 		// end; for other buffers, all frames are valid.
 		Writable     bool
 		Head, Filled int
+		// Slices are the slice markers of the buffer (Buffer.Slices), which
+		// bufread units with slices play from.
+		Slices []int
 	}
 )
 
@@ -243,6 +246,7 @@ func PlayWithBuffers(synther Synther, song Song, buffers map[int]BufferAudio, pr
 			buffers[b.ID] = b.NewAudio() // rendering starts with nothing written
 		}
 	}
+	song.Buffers.AttachSlices(buffers)
 	if s, ok := synth.(BufferSetter); ok {
 		s.SetBuffers(buffers)
 	} else if len(buffers) > 0 {

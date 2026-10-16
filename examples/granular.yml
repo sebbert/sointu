@@ -94,7 +94,7 @@ patch:
           parameters: {amount: 96, port: 4, sendpop: 1, stereo: 0, target: 60, voice: 0}
         - type: bufread
           id: 60
-          parameters: {buffer: 1, detune: 64, edgefade: 35481, fade: 0, gain: 128, loop: 0, looplength: 0, loopstart: 0, notetracking: 1, speed: 128, start: 88200, stereo: 0, transpose: 64}
+          parameters: {buffer: 1, detune: 64, edgefade: 35481, gain: 128, looplength: 0, loopfade: 0, loopstart: 0, mode: 0, note: 1, speed: 128, start: 88200, stereo: 0, transpose: 64}
         - type: mulp
           id: 88
           parameters: {stereo: 0}
@@ -127,7 +127,7 @@ patch:
           parameters: {amount: 100, port: 0, sendpop: 1, stereo: 0, target: 71, voice: 0}
         - type: bufread
           id: 70
-          parameters: {buffer: 1, detune: 64, edgefade: 13366, fade: 0, gain: 128, loop: 0, looplength: 0, loopstart: 0, notetracking: 1, speed: 0, start: -8820, stereo: 0, transpose: 64}
+          parameters: {buffer: 1, detune: 64, edgefade: 13366, gain: 128, looplength: 0, loopfade: 0, loopstart: 0, mode: 0, note: 1, speed: 0, start: -8820, stereo: 0, transpose: 64}
         - type: mulp
           id: 95
           parameters: {stereo: 0}

@@ -32,6 +32,20 @@ type (
 		lastPressPos   f32.Point
 		// Markers are drawn as lines, e.g. playheads; set before Layout.
 		Markers []PlotMarker
+		// Spans are ranges of x drawn shaded, e.g. a selection; set before
+		// Layout.
+		Spans []plotRange
+		// Editor, if not nil, gets the pointer events before the plot.
+		Editor PlotEditor
+	}
+
+	// PlotEditor edits what a plot shows with the pointer. PlotPointer gets
+	// a pointer event with its position as x and the pixels per unit of x,
+	// and returns true if it took the event, which the plot then ignores.
+	// PlotHint is added to the hint shown while the plot is hovered.
+	PlotEditor interface {
+		PlotPointer(e pointer.Event, x, pxPerX float32) bool
+		PlotHint() string
 	}
 
 	PlotStyle struct {
@@ -39,13 +53,21 @@ type (
 		LimitColor  color.NRGBA    `yaml:",flow"`
 		CursorColor color.NRGBA    `yaml:",flow"`
 		MarkerColor color.NRGBA    `yaml:",flow"`
-		Ticks       LabelStyle
-		DpPerTick   unit.Dp
+		// SliceColor is that of the markers with Slice, SelectionColor that
+		// of Spans
+		SliceColor     color.NRGBA `yaml:",flow"`
+		SelectionColor color.NRGBA `yaml:",flow"`
+		Ticks          LabelStyle
+		DpPerTick      unit.Dp
 	}
 
 	// PlotMarker is a line at X, drawn with the marker color, its alpha
-	// multiplied by Alpha (0-1).
-	PlotMarker struct{ X, Alpha float32 }
+	// multiplied by Alpha (0-1); with Slice, in the slice color, with a
+	// handle at the top.
+	PlotMarker struct {
+		X, Alpha float32
+		Slice    bool
+	}
 
 	PlotDataFunc func(chn int, xr plotRange) (yr plotRange, ok bool)
 	PlotTickFunc func(r plotRange, num int, yield func(pos float32, label string))
@@ -96,14 +118,31 @@ func (p *Plot) Layout(gtx C, data PlotDataFunc, xticks, yticks PlotTickFunc, cur
 		Label(t.Theme, &t.Theme.Plot.Ticks, txt).Layout(gtx)
 	})
 
+	// draw spans
+	for _, sp := range p.Spans {
+		x1 := max(plotPx(s.X).toScreen(xlim.toRelative(sp.a)), 0)
+		x2 := min(plotPx(s.X).toScreen(xlim.toRelative(sp.b)), s.X)
+		if x2 > x1 {
+			paint.ColorOp{Color: style.SelectionColor}.Add(gtx.Ops)
+			fillRect(gtx, clip.Rect{Min: image.Pt(x1, 0), Max: image.Pt(x2, s.Y)})
+		}
+	}
+
 	// draw markers
 	for _, m := range p.Markers {
 		msx := plotPx(s.X).toScreen(xlim.toRelative(m.X))
 		if msx >= 0 && msx < s.X {
 			c := style.MarkerColor
+			if m.Slice {
+				c = style.SliceColor
+			}
 			c.A = uint8(float32(c.A) * min(max(m.Alpha, 0), 1))
 			paint.ColorOp{Color: c}.Add(gtx.Ops)
 			fillRect(gtx, clip.Rect{Min: image.Pt(msx, 0), Max: image.Pt(msx+1, s.Y)})
+			if m.Slice { // a handle to grab
+				w := gtx.Dp(3)
+				fillRect(gtx, clip.Rect{Min: image.Pt(msx-w, 0), Max: image.Pt(msx+w+1, gtx.Dp(8))})
+			}
 		}
 	}
 
@@ -119,6 +158,11 @@ func (p *Plot) Layout(gtx C, data PlotDataFunc, xticks, yticks PlotTickFunc, cur
 		hint := "alt+scroll: zoom · drag: pan · double-click: reset"
 		if !p.fixedY {
 			hint = "alt+scroll: zoom · drag: pan · alt+drag: zoom y · double-click: reset"
+		}
+		if p.Editor != nil {
+			if h := p.Editor.PlotHint(); h != "" {
+				hint = h + " · " + hint
+			}
 		}
 		stack := op.Offset(image.Pt(gtx.Dp(2), s.Y-gtx.Dp(16))).Push(gtx.Ops)
 		Label(t.Theme, &t.Theme.Plot.Ticks, hint).Layout(gtx)
@@ -267,6 +311,16 @@ func (o *Plot) update(gtx C) {
 			continue
 		}
 		alt := e.Modifiers.Contain(key.ModAlt)
+		if o.Editor != nil && e.Kind != pointer.Scroll {
+			xl := o.xlim()
+			x := xl.fromRelative(plotPx(s.X).fromScreenF32(e.Position.X))
+			if o.Editor.PlotPointer(e, x, float32(max(s.X-1, 1))/(xl.b-xl.a)) {
+				if e.Kind == pointer.Press {
+					o.dragging = false
+				}
+				continue
+			}
+		}
 		switch e.Kind {
 		case pointer.Enter, pointer.Move:
 			o.hovered = true

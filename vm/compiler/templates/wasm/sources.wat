@@ -691,21 +691,27 @@
 ;;   the note was triggered. WRK[0] is the integer part of the position
 ;;   (signed), WRK[1] the fraction, WRK[2] the oldest valid frame at the
 ;;   trigger, WRK[3] 1 once playback has started, WRK[4] 1 once the position
-;;   has been in the loop and WRK[5] the filled length at the trigger. Voices never triggered (note 0) are silent. Matches
+;;   has been in the loop (3 while a ping-pong loop plays it backwards), WRK[5] the filled length at the trigger, WRK[6] 1
+;;   more than the position from the oldest frame in a full ring and WRK[7]
+;;   the slice of a sliced unit. Voices never triggered (note 0) are silent. Matches
 ;;   bufread in vm/go_synth.go.
 ;;-------------------------------------------------------------------------------
 {{- $fadeArgs := ""}}
 {{- if .BufreadFade}}{{$fadeArgs = "(local.get $ll) (local.get $le) (local.get $fade) "}}{{end}}
 {{- if .BufreadRing}}{{$fadeArgs = print $fadeArgs "(local.get $cross) (local.get $xg) "}}{{end}}
-(func $su_op_bufread (param $stereo i32) (local $r i32) (local $h i32) (local $cap i32) (local $filled i32) (local $pos i32) (local $frac f32) (local $base i32) (local $next i32) (local $ls i32) (local $ll i32) (local $le i32) (local $fade i32) (local $inloop i32) (local $start i32) (local $g f32) (local $rel i32) (local $semitones f32) (local $whole f32) (local $tap i32) (local $ring i32) (local $edge i32) (local $prev i32) (local $cross i32) (local $ton i32) (local $xg f32) (local $w f32) (local $sf f32)
-    (local.set $r (i32.add (i32.const {{index .Labels "su_buffer_regions"}}) (i32.mul (call $scanOperand) (i32.const 28))))
+(func $su_op_bufread (param $stereo i32) (local $r i32) (local $h i32) (local $cap i32) (local $filled i32) (local $pos i32) (local $frac f32) (local $base i32) (local $next i32) (local $ls i32) (local $ll i32) (local $le i32) (local $fade i32) (local $inloop i32) (local $start i32) (local $g f32) (local $rel i32) (local $semitones f32) (local $whole f32) (local $tap i32) (local $ring i32) (local $edge i32) (local $prev i32) (local $cross i32) (local $ton i32) (local $xg f32) (local $w f32) (local $sf f32) (local $sl i32) (local $t i32) (local $lo i32) (local $hi i32) (local $d i32)
+    (local.set $r (i32.add (i32.const {{index .Labels "su_buffer_regions"}}) (i32.mul (call $scanOperand) (i32.const {{if .BufreadSlices}}32{{else}}28{{end}}))))
     (local.set $h (i32.add (i32.const {{index .Labels "su_buffer_headers"}}) (i32.load (local.get $r))))
 {{- if .BufPerVoice}}
     (if (i32.and (i32.load offset=24 (local.get $r)) (i32.const 256)) (then ;; the copy of the buffer that the voice has
         (local.set $h (i32.add (local.get $h) (i32.mul
             (i32.sub
                 (i32.shr_u (i32.sub (global.get $voice) (i32.const {{index .Labels "su_voices"}})) (i32.const 12))
+{{- if .BufreadSlices}}
+                (i32.and (i32.shr_u (i32.load offset=24 (local.get $r)) (i32.const 16)) (i32.const 255)))
+{{- else}}
                 (i32.shr_u (i32.load offset=24 (local.get $r)) (i32.const 16)))
+{{- end}}
             (i32.const 24))))
     ))
 {{- end}}
@@ -729,7 +735,7 @@
     (local.set $pos (i32.load (global.get $WRK)))
     (local.set $frac (f32.load offset=4 (global.get $WRK)))
     (local.set $base (i32.load offset=8 (global.get $WRK)))
-{{- if .BufreadBackwards}}
+{{- if or .BufreadBackwards .BufreadPingPong}}
     (local.set $inloop (i32.load offset=16 (global.get $WRK)))
 {{- end}}
 {{- if .BufreadTap}}
@@ -762,7 +768,34 @@
             (local.set $sf (f32.sub (local.get $sf) (f32.floor (local.get $sf))))
         ))
 {{- end}}
+{{- if .BufreadSlices}}
+        (if (i32.and (i32.load offset=24 (local.get $r)) (i32.const 512)) (then
+            ;; the slice, read when the note is triggered; start is an offset
+            ;; from its start
+            (local.set $t (i32.add (i32.const {{index .Labels "su_slices"}}) (i32.load offset=28 (local.get $r))))
+            (local.set $sl (i32.shr_u (i32.load offset=24 (local.get $r)) (i32.const 24)))
+{{- if .BufreadModSlice}}
+            (local.set $sl (i32.add (local.get $sl) (i32.trunc_sat_f32_s (f32.nearest (f32.max (f32.min
+                (f32.mul (f32.load offset={{add 32 (mul 4 (.InputNumber "bufread" "slice"))}} (global.get $WRK)) (f32.const 128))
+                (f32.const 1073741824)) (f32.const -1073741824))))))
+{{- end}}
+{{- if .BufreadSliceNote}}
+            (if (i32.and (i32.load offset=24 (local.get $r)) (i32.const 1024)) (then ;; from C-3 up
+                (local.set $sl (i32.add (local.get $sl) (i32.sub (i32.load (global.get $voice)) (i32.const 60))))
+            ))
+{{- end}}
+            (local.set $d (i32.add (i32.load (local.get $t)) (i32.const 1)))
+            (local.set $sl (i32.rem_s (i32.add (i32.rem_s (local.get $sl) (local.get $d)) (local.get $d)) (local.get $d)))
+            (i32.store offset=28 (global.get $WRK) (local.get $sl))
+            (local.set $start (i32.add (local.get $start) (call $sliceLo (local.get $t) (local.get $sl))))
 {{- if .BufreadNegStart}}
+        )(else
+            (if (i32.lt_s (local.get $start) (i32.const 0)) (then ;; from the newest frame
+                (local.set $start (i32.add (local.get $start) (local.get $filled)))
+            ))
+{{- end}}
+        ))
+{{- else if .BufreadNegStart}}
         (if (i32.lt_s (local.get $start) (i32.const 0)) (then ;; from the newest frame
             (local.set $start (i32.add (local.get $start) (local.get $filled)))
         ))
@@ -830,8 +863,41 @@
     ))
 {{- end}}
     (local.set $next (i32.add (local.get $pos) (i32.const 1)))
+{{- if .BufreadSlices}}
+    ;; the slice: lo is its first frame, hi the frame after its last
+    (local.set $lo (i32.const 0))
+    (local.set $hi (i32.const 0))
+    (if (i32.and (i32.load offset=24 (local.get $r)) (i32.const 512)) (then
+        (local.set $t (i32.add (i32.const {{index .Labels "su_slices"}}) (i32.load offset=28 (local.get $r))))
+        (local.set $lo (call $sliceLo (local.get $t) (i32.load offset=28 (global.get $WRK))))
+        (local.set $hi (select
+            (i32.load offset=4 (i32.add (local.get $t) (i32.shl (i32.load offset=28 (global.get $WRK)) (i32.const 2))))
+            (local.get $filled)
+            (i32.lt_u (i32.load offset=28 (global.get $WRK)) (i32.load (local.get $t)))))
+    ))
+{{- end}}
+{{- if .BufreadSliceStop}}
+    (global.set $slicelo (i32.const 0x80000000))
+    (global.set $slicehi (i32.const 0x7fffffff))
+    (if (i32.and (i32.load offset=24 (local.get $r)) (i32.const 2048)) (then ;; silent outside the slice
+        (global.set $slicelo (local.get $lo))
+        (global.set $slicehi (local.get $hi))
+    ))
+{{- end}}
 {{- if .BufreadLoop}}
     (if (i32.and (i32.load offset=24 (local.get $r)) (i32.const 2)) (then ;; loop
+{{- if .BufreadSliceLoop}}
+      (if (i32.and (i32.load offset=24 (local.get $r)) (i32.const 512)) (then ;; in parts of the slice, within it
+        (local.set $ls (i32.add (local.get $lo) (call $sliceFrames (i32.load offset=8 (local.get $r))
+            {{if .BufreadModLoopStart}}(f32.load offset={{add 32 (mul 4 (.InputNumber "bufread" "loopstart"))}} (global.get $WRK)){{else}}(f32.const 0){{end}}
+            (i32.sub (local.get $hi) (local.get $lo)))))
+        (local.set $ll (call $sliceFrames (i32.load offset=12 (local.get $r))
+            {{if .BufreadModLoopLen}}(f32.load offset={{add 32 (mul 4 (.InputNumber "bufread" "looplength"))}} (global.get $WRK)){{else}}(f32.const 0){{end}}
+            (i32.sub (local.get $hi) (local.get $lo))))
+        (local.set $d (i32.sub (local.get $hi) (local.get $ls)))
+        (local.set $ll (select (local.get $ll) (local.get $d) (i32.lt_s (local.get $ll) (local.get $d))))
+      )(else
+{{- end}}
         (local.set $ls (i32.load offset=8 (local.get $r)))
 {{- if .BufreadNegLoopStart}}
         (if (i32.lt_s (local.get $ls) (i32.const 0)) (then ;; from the newest frame at the trigger
@@ -845,11 +911,56 @@
         (local.set $ls (call $bufreadClamp (local.get $ls) (local.get $cap)))
         (local.set $ll (call $bufreadClamp (i32.load offset=12 (local.get $r)) (local.get $cap)))
 {{- end}}
+{{- if .BufreadSliceLoop}}
+      ))
+{{- end}}
         (local.set $le (i32.add (local.get $ls) (local.get $ll)))
 {{- if .BufreadFade}}
         (local.set $fade (call $minu (call $minu (i32.load offset=16 (local.get $r)) (local.get $ls)) (local.get $ll)))
 {{- end}}
         (if (local.get $ll) (then
+{{- if .BufreadPingPong}}
+          (if (i32.and (i32.load offset=24 (local.get $r)) (i32.const 4096)) (then
+            ;; ping-pong: past the last frame, or before the loop start once
+            ;; in the loop, the position folds back into the loop, and each
+            ;; fold turns its direction: bit 2 of $inloop
+            (local.set $t (i32.sub (local.get $le) (i32.const 1)))
+            (if (i32.or
+                    (i32.or
+                        (i32.gt_s (local.get $pos) (local.get $t))
+                        (i32.and (i32.eq (local.get $pos) (local.get $t)) (f32.gt (local.get $frac) (f32.const 0))))
+                    (i32.and (i32.ne (local.get $inloop) (i32.const 0)) (i32.lt_s (local.get $pos) (local.get $ls)))) (then
+                (local.set $d (i32.shl (i32.sub (local.get $ll) (i32.const 1)) (i32.const 1))) ;; the period, forwards and backwards
+                (if (local.get $d) (then
+                    (local.set $t (i32.rem_u (i32.sub (local.get $pos) (local.get $ls)) (local.get $d)))
+                    (if (i32.lt_s (local.get $pos) (local.get $ls)) (then
+                        (local.set $t (i32.rem_u (i32.sub (local.get $d) (i32.rem_u (i32.sub (local.get $ls) (local.get $pos)) (local.get $d))) (local.get $d)))
+                    ))
+                    (if (i32.or
+                            (i32.lt_s (local.get $t) (i32.shr_u (local.get $d) (i32.const 1)))
+                            (i32.and (i32.eq (local.get $t) (i32.shr_u (local.get $d) (i32.const 1))) (f32.eq (local.get $frac) (f32.const 0)))) (then
+                        (local.set $pos (i32.add (local.get $ls) (local.get $t)))
+                    )(else ;; on the way back
+                        (local.set $pos (i32.sub (i32.add (local.get $ls) (local.get $d)) (local.get $t)))
+                        (if (f32.gt (local.get $frac) (f32.const 0)) (then
+                            (local.set $pos (i32.sub (local.get $pos) (i32.const 1)))
+                            (local.set $frac (f32.sub (f32.const 1) (local.get $frac)))
+                            (if (f32.ge (local.get $frac) (f32.const 1)) (then ;; rounded up
+                                (local.set $frac (f32.const 0))
+                                (local.set $pos (i32.add (local.get $pos) (i32.const 1)))
+                            ))
+                        ))
+                        (local.set $inloop (i32.xor (local.get $inloop) (i32.const 2)))
+                    ))
+                )(else ;; a loop of one frame holds the position there
+                    (local.set $pos (local.get $ls))
+                    (local.set $frac (f32.const 0))
+                ))
+            ))
+            (if (i32.ge_s (local.get $pos) (local.get $ls)) (then (local.set $inloop (i32.or (local.get $inloop) (i32.const 1)))))
+            (local.set $next (i32.add (local.get $pos) (i32.const 1)))
+          )(else
+{{- end}}
             (if (i32.ge_s (local.get $pos) (local.get $le)) (then
                 (local.set $pos (i32.add (local.get $ls) (i32.rem_u (i32.sub (local.get $pos) (local.get $ls)) (local.get $ll))))
 {{- if .BufreadBackwards}}
@@ -869,6 +980,9 @@
             (if (i32.ge_s (local.get $next) (local.get $le)) (then
                 (local.set $next (local.get $ls))
             ))
+{{- if .BufreadPingPong}}
+          ))
+{{- end}}
         ))
     ))
 {{- end}}
@@ -909,9 +1023,18 @@
                 (local.set $g (f32.mul (local.get $g) (local.get $w)))
             )(else
 {{- end}}
+            (local.set $d (call $minu (local.get $rel) (i32.sub (i32.sub (local.get $filled) (i32.const 1)) (local.get $rel))))
+{{- if .BufreadSliceStop}}
+            (if (i32.and
+                    (i32.ne (i32.and (i32.load offset=24 (local.get $r)) (i32.const 2048)) (i32.const 0))
+                    (i32.and (i32.ge_s (local.get $pos) (local.get $lo)) (i32.lt_s (local.get $pos) (local.get $hi)))) (then ;; at the edges of the slice
+                (local.set $d (call $minu (call $minu (local.get $d) (i32.sub (local.get $pos) (local.get $lo)))
+                    (i32.sub (i32.sub (local.get $hi) (i32.const 1)) (local.get $pos))))
+            ))
+{{- end}}
             (local.set $g (f32.mul (local.get $g) (f32.min
                 (f32.div
-                    (f32.convert_i32_u (call $minu (local.get $rel) (i32.sub (i32.sub (local.get $filled) (i32.const 1)) (local.get $rel))))
+                    (f32.convert_i32_u (local.get $d))
                     (f32.convert_i32_u (i32.load offset=20 (local.get $r))))
                 (f32.const 1))))
 {{- if .BufreadRing}}
@@ -972,21 +1095,26 @@
         ))
     ))
 {{- end}}
+{{- $rate := print "(call $inputSigned (i32.const " (.InputNumber "bufread" "speed") "))"}}
 {{- if or .BufreadPitch .BufreadNoteTracking}}
-    (local.set $frac (f32.add (local.get $frac) (f32.mul
-        (call $inputSigned (i32.const {{.InputNumber "bufread" "speed"}}))
-        (call $pow2 (f32.div (local.get $semitones) (f32.const 12)))
-    )))
+{{- $rate = print "(f32.mul " $rate " (call $pow2 (f32.div (local.get $semitones) (f32.const 12))))"}}
 {{- else}}
     ;; no transpose, detune or note tracking in the song: the rate is the speed
-    (local.set $frac (f32.add (local.get $frac) (call $inputSigned (i32.const {{.InputNumber "bufread" "speed"}}))))
 {{- end}}
+{{- if .BufreadPingPong}}
+    (local.set $w {{$rate}})
+    (if (i32.and (local.get $inloop) (i32.const 2)) (then ;; turned backwards by a ping-pong loop
+        (local.set $w (f32.neg (local.get $w)))
+    ))
+{{- $rate = "(local.get $w)"}}
+{{- end}}
+    (local.set $frac (f32.add (local.get $frac) {{$rate}}))
     (local.set $whole (f32.floor (local.get $frac)))
     (i32.store (global.get $WRK) (i32.add (local.get $pos) (i32.trunc_f32_s (local.get $whole))))
     (f32.store offset=4 (global.get $WRK) (f32.sub (local.get $frac) (local.get $whole)))
     (i32.store offset=8 (global.get $WRK) (local.get $base))
     (i32.store offset=12 (global.get $WRK) (i32.const 1))
-{{- if .BufreadBackwards}}
+{{- if or .BufreadBackwards .BufreadPingPong}}
     (i32.store offset=16 (global.get $WRK) (local.get $inloop))
 {{- end}}
 )
@@ -1004,6 +1132,34 @@
 {{- if .BufreadModLoopLen}}
     (f32.store offset={{add 32 (mul 4 (.InputNumber "bufread" "looplength"))}} (global.get $WRK) (f32.const 0))
 {{- end}}
+{{- if .BufreadModSlice}}
+    (f32.store offset={{add 32 (mul 4 (.InputNumber "bufread" "slice"))}} (global.get $WRK) (f32.const 0))
+{{- end}}
+)
+{{- end}}
+
+{{- if .BufreadSlices}}
+;; $sliceLo returns the first frame of slice i of the slice markers at t
+(func $sliceLo (param $t i32) (param $i i32) (result i32)
+    (select (i32.load (i32.add (local.get $t) (i32.shl (local.get $i) (i32.const 2)))) (i32.const 0) (local.get $i))
+)
+{{- end}}
+{{- if .BufreadSliceLoop}}
+
+;; $sliceFrames returns a loop point of a sliced bufread: parts of the length
+;; of the slice, in 128ths, shifted by the modulation times the length,
+;; clamped to the length
+(func $sliceFrames (param $parts i32) (param $mod f32) (param $len i32) (result i32) (local $v i64)
+    (local.set $v (i64.add
+        (i64.div_s (i64.mul (i64.extend_i32_s (local.get $len)) (i64.extend_i32_s (local.get $parts))) (i64.const 128))
+        (i64.trunc_sat_f32_s (f32.max (f32.min
+            (f32.floor (f32.mul (local.get $mod) (f32.convert_i32_s (local.get $len))))
+            (f32.const 1073741824)) (f32.const -1073741824)))
+    ))
+    (i32.wrap_i64 (select (i64.const 0)
+        (select (i64.extend_i32_s (local.get $len)) (local.get $v) (i64.gt_s (local.get $v) (i64.extend_i32_s (local.get $len))))
+        (i64.lt_s (select (i64.extend_i32_s (local.get $len)) (local.get $v) (i64.gt_s (local.get $v) (i64.extend_i32_s (local.get $len)))) (i64.const 0))
+    ))
 )
 {{- end}}
 
@@ -1111,6 +1267,9 @@
     ))
 {{- end}}
     (if (i32.ge_u (local.get $i) (local.get $cap)) (then (return (f32.const 0))))
+{{- if .BufreadSliceStop}}
+    (if (i32.or (i32.lt_s (local.get $i) (global.get $slicelo)) (i32.ge_s (local.get $i) (global.get $slicehi))) (then (return (f32.const 0))))
+{{- end}}
     (local.set $abs (i32.rem_u (i32.add (local.get $base) (local.get $i)) (local.get $cap)))
     (if (i32.ge_u
             (i32.rem_u (i32.sub (i32.add (local.get $abs) (local.get $cap)) (call $bufreadOldest (local.get $h))) (local.get $cap))

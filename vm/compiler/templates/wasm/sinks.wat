@@ -456,7 +456,7 @@
 ;;   vm/go_synth.go.
 ;;-------------------------------------------------------------------------------
 (func $su_op_bufwrite (param $stereo i32) (local $r i32) (local $h i32) (local $l f32) (local $rt f32) (local $cap i32) (local $head i32) (local $ptr i32) (local $fb f32)
-    (local.set $r (i32.add (i32.const {{index .Labels "su_buffer_regions"}}) (i32.mul (call $scanOperand) (i32.const 28))))
+    (local.set $r (i32.add (i32.const {{index .Labels "su_buffer_regions"}}) (i32.mul (call $scanOperand) (i32.const {{if .BufreadSlices}}32{{else}}28{{end}}))))
     (local.set $h (i32.add (i32.const {{index .Labels "su_buffer_headers"}}) (i32.load (local.get $r))))
 {{- if .BufPerVoice}}
     (if (i32.and (i32.load offset=24 (local.get $r)) (i32.const 256)) (then ;; the copy of the buffer that the voice has

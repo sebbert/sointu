@@ -35,3 +35,5 @@ actual_output/
 
 **/testdata/fuzz/
 .DS_Store
+# the REX SDK of Reason Studios, downloaded by make REX=1; not to be committed
+.rexsdk/

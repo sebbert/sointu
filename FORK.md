@@ -139,7 +139,7 @@ All of these are Go and wasm only.
 
 | Unit | What it does |
 |---|---|
-| `bufread` | Plays a buffer: note tracking, looping with crossfade, modulatable start/loop points, negative start counting back from the newest frame, `speed` (-1 to 1), edge fade, which in a full ring is a crossfade across the write head. With `mode` tap it is a tap of a delay line: it reads the frame at `start` every sample. `timing` counts the positions in frames, in frames at note 0 (pitch) or in 48ths of a beat (BPM). See [Buffers as delay lines](#buffers-as-delay-lines) |
+| `bufread` | Plays a buffer. `mode`: one shot, loop (with the crossfade `loopfade`), ping-pong, or tap, a tap of a delay line, which reads the frame at `start` every sample. `note`: what the note does, none, pitch, slice, or slice and pitch. Modulatable start/loop points, negative start counting back from the newest frame, `speed` (-1 to 1), edge fade, which in a full ring is a crossfade across the write head. `timing` counts the positions in frames, in frames at note 0 (pitch) or in 48ths of a beat (BPM). With `slices` continue or stop, it plays a slice of the buffer, picked by `slice` or by the note, with stop silent past the next marker. See [Parameters of bufread](#parameters-of-bufread), [Buffers as delay lines](#buffers-as-delay-lines) and [Slices and sample editing](#slices-and-sample-editing) |
 | `bufwrite` | Writes into a buffer: a continuous ring buffer, or `oneshot` while the note is held. Several writers mix; `feedback`, `pop`. Without a buffer, it gets one of its own, `length` frames long; with `pervoice`, every voice has a copy of it |
 | `spawn` | Triggers voices of another instrument: at a `rate`, synced to the beat, or on a rising edge. Transpose, note length, up to 4 `args`, `steal` |
 | `arg` | Pushes a value passed by the `spawn` that triggered the voice |
@@ -2354,8 +2354,8 @@ reads it some time later. Go synth and wasm player, which render the same
   length of the buffer, as for a play head) and sounds without a note, as
   in a bus instrument. A tap further behind the write head than the ring
   has frames is silent, like a delay line that has not run that long.
-  Transpose, detune, speed, note tracking, the loop and the edge fade are
-  not used, and not shown.
+  `note`, speed, the loop, the edge fade and the slices are not used, and
+  not shown; transpose and detune only with pitch timing.
 - **Timing** (`bufread` `timing`). frames: as before. pitch: `start` is in
   frames at note 0 and divided by 2^(note/12), like a pitch tracked delay
   time: 10788 is one period of the note, and parts of frames count, which
@@ -2409,15 +2409,15 @@ low-pass, the `filter` unit a two-pole one; its eight lines per channel
 would be eight buffers and loops, more than the 63 units of an instrument
 for a reverb; and it runs in the x86 players.
 
-**A tap in the tracker.** `mode` shows as a choice of play and tap, as
-every parameter of two named values now does (before, a switch). The start
+**A tap in the tracker.** `mode` is a menu (one shot, loop, ping-pong,
+tap), as every parameter of two named values is (before, a switch). The start
 of a tap is shown as `delay`: the frames behind the write head, without
 the sign of the negative value that is stored; its range ends at -1, and
 its knob, arrows and grid turn the other way, up being a longer delay. With
 pitch timing, `transpose` and `detune` stay shown and tune the delay: the
 start is divided by 2^((note + transpose + detune)/12), in the Go synth
-and the wasm player alike; with other timings, and in play mode, they do
-as before.
+and the wasm player alike; with other timings, and in the other modes,
+they do as before.
 
 **Module presets with a tap.** `Plucked string` (13 units, no inputs): a
 noise burst (`burst`, high cut `pick`), or with `cycle` one cycle of a sine
@@ -2448,6 +2448,194 @@ window units get the time as a four byte operand (0 for those in frames,
 the frames at note 0 negated with pitch, the frames with BPM). Go synth
 and wasm player; the tracker gives windows from before timing `time`,
 `transpose` and `detune` of a new unit.
+
+## Slices and sample editing
+
+Drum breaks: an audio buffer has slice markers, and a `bufread` unit plays
+from one. Go synth and wasm player, which render the same
+(`vm/compiler/wasm_slices_test.go`).
+
+- **Markers** (`Buffer.Slices`, saved as a flow list): frames from the
+  oldest valid frame, increasing, each above 0. Frame 0 is always the start
+  of slice 0, so n markers make n+1 slices; the last ends at the newest
+  valid frame. A sample or a buffer that bufwrite units record into can
+  have them. They reach the synth with the audio (`BufferAudio.Slices`,
+  attached by `PlayWithBuffers` and by the tracker when it sends the
+  audio), so editing them does not make a new synth.
+- **`slices`** off, continue or stop; **`slice`** 0 to 127, modulatable;
+  **`note`** slice, or slice and pitch, to pick it by the note. The slice
+  is `slice`, with those plus note − 60 (C-3 is slice 0, chromatic up, as
+  in samplers), plus the
+  modulation of `slice` times 128, rounded to the nearest (ties to even):
+  a `loadnote` sent at amount 96 (×0.5) adds note − 64 exactly. It wraps
+  around the number of slices, so that every note and modulation plays a
+  slice. It is read when the note is triggered, like `start`. With
+  `note` slice the pitch does not follow the note; with slice and pitch
+  it does too, C-3 at the recorded pitch. `transpose` and `detune` apply
+  with every value of `note`.
+- **`start`** is an offset from the marker, timed as before (frames,
+  pitch, BPM); negative reaches back before it. Its modulation still
+  shifts it by parts of the buffer's length.
+- **The loop** is in the slice: `loopstart` and `looplength` are in 128ths
+  of the slice's length (`sointu.BufreadSliceParts`; 128 the whole slice,
+  shown in percent), their modulation in parts of the slice's length too;
+  the loop start is clamped to the slice and the loop length to what is
+  left of it. With BPM timing they are not converted; only `start` is.
+- **Stop at the next marker** (`slices` stop): frames outside the slice
+  read as silence, and `edgefade` measures to the slice's edges as well,
+  at both ends (a fade in at the marker, a fade out before the next).
+  continue plays on as before.
+- **Not with**: a tap (`mode` tap) has no slices; a sliced unit does not
+  crossfade at the write head of a full ring (no `BufferRegionRingRead`).
+  Without slices, `note` slice does nothing and slice and pitch is pitch.
+  Old songs have `slices` 0 and play unchanged.
+- **Bytecode**: `BufferRegionSliced`, `BufferRegionSliceNote`,
+  `BufferRegionSliceStop` in the flags of the region, and `slice` in bits
+  24 to 30 (the first voice of a buffer per voice, bits 16 to 23, is now
+  masked). `slice` is `NoTransform`, so bufread units have no new operand.
+  State: `state[7]` (WRK offset 28) is the slice; port 7 is the
+  modulation of `slice`, cleared by the unit. In the wasm player, the
+  regions are 8 i32s instead of 7 when the song has sliced units, the
+  eighth the offset of the buffer's markers in `su_slices` (their number,
+  then the markers); the code for note, stop, loop and modulation is only
+  there when the song uses them.
+
+**In the tracker.** The waveform of the Buffers tab shows the markers with
+a handle, and the unit preview of a bufread unit shows them as lines.
+ctrl/cmd+click adds a marker, dragging a handle moves it (one undo step, on
+release), right-clicking one deletes it, shift+drag selects a range and
+shift+click clears it; plain dragging pans as before. Below the waveform:
+Slice equally (2 to 128 slices), Detect transients (sensitivity 0 to 100),
+Clear. Detect transients finds where the level of the audio with its highs
+emphasized (the energy plus 4 times that of its first difference, in
+windows of 256 frames every 128) rises above that of the 4 windows before
+it by a threshold, 15 dB at sensitivity 0 to 1.5 dB at 100, ignoring
+windows 40 dB below the loudest, at least 40 ms apart; the marker is 16
+frames before the first frame of the window that reaches a quarter of its
+peak. Marker edits are undoable. A sample replaced by an import loses its
+markers.
+
+**Markers in the file.** An imported WAV or AIFF file brings its markers
+as slice markers (`samplemarkers`, `tracker.FileSlices`), as ReCycle,
+sample editors and sample packs mark the slices of loops: the cue points of
+a WAV file (`cue ` chunk, `dwSampleOffset`; names from `LIST adtl labl` are
+read but not kept) and the markers of an AIFF file (`MARK`), scaled from
+the file's rate to 44100 Hz; a marker at 0 is dropped. ffmpeg drops these
+chunks, so the file is read before it is converted. The import and its
+markers are one undo step, from the import button, the sample browser and
+drops alike. The loop points of a WAV `smpl` chunk are a loop,
+not slices, and are not read. An ACID loop (`acid` chunk, not a one shot)
+without markers gets none, but Slice equally is set to its beats, so that
+one click slices it per beat; an alert says so. REX files (.rex, .rx2, .rcy, from
+ReCycle) are rendered with the REX Shared Library of Reason Studios, a
+closed, licensed library that only the tracker uses (package `rex`, build
+tag `rex`): each slice at 44100 Hz where it is in the loop, at the loop's
+tempo (positions in 15360ths of a quarter note), mixed where slices
+overlap, as long as the loop; the slice starts become the markers, and the
+audio is stored as FLAC like an edited sample. The song and the players
+never need the library. Builds without it refuse REX files, also in the
+browser's preview.
+
+`make REX=1` builds the tracker and the plugins with it (macOS): it
+downloads the REX SDK 1.9.2 into `.rexsdk/` (ignored by git; `REXSDK=...`
+uses an SDK unpacked elsewhere), compiles the SDK's `REX.c`, which loads
+the library at run time, through cgo (`rex/rex_sdk.go`, tag `rex`), and
+puts `REX Shared Library.bundle` next to `out/sointu-track` and into
+`Contents/Frameworks` of each plugin bundle, as the SDK asks (a plugin
+must not take the library from its host), with the SDK's license beside
+it. The library is looked for in `$SOINTU_REX_DIR`, then next to the
+binary the code is in, then in `../Frameworks` and `../Resources` of it.
+The SDK's license allows using it, not publishing it or builds with it:
+such builds are for yourself, and no SDK file is in the repository. Tested
+with the SDK's test loops (`SOINTU_REX_SDK=<sdk> go test -tags rex ./rex`
+with `CGO_CFLAGS=-I<sdk>`): 10 slices each, mono and stereo, REX2 and
+.rcy. The rendered audio is as long as the loop or, when the last slice
+rings on past it, as long as that slice.
+
+**Sample editing** (samples, not recordings): Crop (keep the selection),
+Delete (the selection), Trim silence (the ends below a level, -60 dB by
+default, of any channel), Fade in and Fade out at the ends (length in ms,
+10 by default; curve -100 to 100: the gain is t^(4^(curve/100)), 0
+linear). The stored file is decoded by ffmpeg at 44100 Hz, edited, and
+stored again as 24-bit FLAC (`ffmpeg.Store`): lossless from then on,
+whatever it was, and larger than a lossy original. The encoding preset is
+kept, so the compiled player encodes it as before. The edit runs in the
+background; it is dropped if the sample changed meanwhile, and otherwise
+is one undo step. Markers in a removed range are deleted, those after it
+move with the audio.
+
+**MCP server.** `get_song` lists the frames and the markers of each buffer;
+`set_slices` sets them: by frames, `count` equal slices, or at the
+transients (`sensitivity`), or clears them, as one undo step.
+
+**Ping-pong loops.** `mode` ping-pong: the loop plays
+forwards to its last frame, backwards to its start, and so on. Go synth and
+wasm player render the same (`vm/compiler/wasm_pingpong_test.go`).
+
+- **The turns** are at the last frame of the loop (loop start + length −
+  1) and at its start: a position past one is folded back into the loop,
+  as often as it has passed one, and each fold turns the direction. The
+  signal is continuous at a turn, so there is no crossfade: `loopfade`
+  does nothing and is not shown. A loop of one frame holds that frame.
+- **Speed**: the direction multiplies the rate. A negative speed plays
+  backwards from `start`; inside the loop it turns at the loop start. A
+  position before the loop is not folded until it has been in the loop, as
+  with loop: started before the loop, a backwards unit plays out to the
+  start of the buffer. Started past the loop, it is folded in as if it had
+  bounced there.
+- **Slices, modulation, edge fade, stereo**: as with loop. The loop
+  points are read every sample; the position folds into the loop as it is
+  then. A sliced loop is in parts of the slice. Both channels read at the
+  same position. The edge fade fades near the edges of the valid frames or
+  of a stopped slice, wherever the position is.
+- **No release**: bufread does not see the note-off; the loop plays on
+  until an envelope or the next note ends it, as with loop.
+- **State and bytecode**: `BufferRegionPingPong` (4096) with
+  `BufferRegionLoop`; the region's fade is 0. The direction is bit 2 of
+  `state[4]` (WRK offset 16), which is 1 once in the loop and 3 while a
+  ping-pong loop plays it backwards. The wasm code for it is only there
+  when a unit loops ping-pong; old songs compile to the same bytes. x86 has
+  no bufread.
+
+### Parameters of bufread
+
+bufread had grown switches that overlapped: `mode` play or tap, `loop`
+off or on, `notetracking`, `slices` off, slice or note (which ignored
+`notetracking`), `sliceend`. They are now three choices, menus in the
+tracker instead of knobs, with `timing`:
+
+| Parameter | Values | Was |
+|---|---|---|
+| `mode` | 0 one shot, 1 loop, 2 ping-pong, 3 tap | `mode` play/tap and `loop` |
+| `note` | 0 none, 1 pitch, 2 slice, 3 slice and pitch | `notetracking`, and `slices` note |
+| `slices` | 0 off, 1 continue, 2 stop | `slices` and `sliceend` |
+| `loopfade` | frames | `fade` |
+
+Slice and pitch is new: the note picks the slice and also sets the pitch,
+C-3 at the recorded pitch (`BufferRegionSliceNote` and
+`BufferRegionNoteTracking` together). The order is mode, buffer, stereo,
+note, transpose, detune, gain, speed, timing, start, loopstart,
+looplength, loopfade, edgefade, slices, slice: the modulatable parameters
+keep their order, so the ports that sends name stay. What does nothing is
+hidden: the loop points outside loop and ping-pong, `loopfade` outside
+loop, `slice` without slices, and for a tap `note`, `speed`, `edgefade`
+and `slices` (transpose and detune with pitch timing only).
+
+**Old songs** are converted when a unit is read (`upgradeBufread`, from
+`Unit.UnmarshalYAML` and `UnmarshalJSON`): a bufread without `note` and
+`loopfade` and with a `mode` of 0 or 1 was saved before. Then `mode` is 3
+for a tap, else the old `loop`; `note` is 2 with the old `slices` note,
+else `notetracking`; `slices` is off, or 1 plus `sliceend`; `fade`
+becomes `loopfade`. A module unit's bindings to `notetracking`, `fade` and
+`loop` move to `note`, `loopfade` and `mode`, whose values are the same;
+one to `sliceend` is dropped, and those to the old `mode` and `slices` are
+not converted. A hand-written new unit should give `note`, or it is read
+as old. The region flags are those of before, so the Go synth renders old
+songs to the same samples and the wasm player compiles them to the same
+bytes, measured on 11 songs of every old combination; two get smaller,
+because code that could not run is left out: a tap with a hidden loop on
+(the loop code) and slices note with `notetracking` 1 (the note tracking
+code). The bundled modules and `examples/granular.yml` are converted.
 
 ## MCP server
 

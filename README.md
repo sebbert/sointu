@@ -277,10 +277,21 @@ neither.
 be modulated: a modulation of 1 shifts them by the length of the buffer.
 `start` is read when a note is triggered, so a `send` to it picks where each
 note starts; a negative `start` or `loopstart` counts back from the end, or
-from the write head of a buffer being recorded, when the note starts. `fade` crossfades the end of the loop, and
-`edgefade` fades out near the edges of the valid audio, e.g. the write head.
-`speed` multiplies the playback rate from -1 (backwards) to 1, and can be
+from the write head of a buffer being recorded, when the note starts. `mode`
+plays the buffer once, loops it (`loopfade` crossfades the end of the loop),
+loops it ping-pong, or taps it as a delay line, and `note` makes the note set
+the pitch, pick the slice, or both. `edgefade` fades out near the edges of
+the valid audio, e.g. the write head. `speed` multiplies the playback rate from -1 (backwards) to 1, and can be
 modulated.
+
+A buffer can have slice markers, e.g. at the hits of a drum break: put them
+on its waveform in the Buffers tab (ctrl/cmd+click), equally, or at the
+transients. With `slices` continue or stop, `bufread` plays from the marker
+of `slice`, or with `note` slice from slice note − C-3 + `slice`, chromatic
+up, wrapped around the number of slices; `start` is then an offset from the
+marker, stop makes the unit silent past the next marker, and `loopstart`
+and `looplength` are in 128ths of the slice. The Buffers tab also crops,
+deletes a selected range, trims silence and fades the ends of a sample.
 
 For granular synthesis and arpeggiators, the `spawn` unit triggers notes on the
 voices of another instrument, taking the released voice spawned longest ago;

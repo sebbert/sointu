@@ -275,3 +275,27 @@ func floatsToBytes(f []float32) []byte {
 	}
 	return ret
 }
+
+// Store encodes audio at 44100 Hz as 24-bit FLAC, for storing an edited
+// sample in a song. Values beyond full scale are clipped.
+func (f *FFmpeg) Store(audio sointu.BufferAudio) ([]byte, error) {
+	return f.convert(FloatWav(audio), "flac", "-c:a", "flac", "-sample_fmt", "s32", "-bits_per_raw_sample", "24", "-compression_level", "12")
+}
+
+// FloatWav returns audio at 44100 Hz as a WAV file of 32-bit floats.
+func FloatWav(audio sointu.BufferAudio) []byte {
+	data := floatsToBytes(audio.Data)
+	var b bytes.Buffer
+	w := func(v any) { binary.Write(&b, binary.LittleEndian, v) }
+	b.WriteString("RIFF")
+	w(uint32(36 + len(data)))
+	b.WriteString("WAVEfmt ")
+	ch := uint16(audio.Channels)
+	for _, v := range []any{uint32(16), uint16(3), ch, uint32(44100), uint32(44100 * 4 * uint32(ch)), 4 * ch, uint16(32)} {
+		w(v)
+	}
+	b.WriteString("data")
+	w(uint32(len(data)))
+	b.Write(data)
+	return b.Bytes()
+}
