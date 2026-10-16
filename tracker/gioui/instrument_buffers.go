@@ -51,6 +51,8 @@ type (
 		waveform     *Plot
 		waveformOf   int // the index of the buffer drawn, to reset the view when it changes
 		spectrum     *Plot
+		browser      *SampleBrowser
+		browserBtn   *Clickable
 	}
 )
 
@@ -82,6 +84,8 @@ func NewInstrumentBuffers(m *tracker.Model) *InstrumentBuffers {
 		info:         new(widget.Selectable),
 		waveform:     NewPlot(plotRange{0, 1}, plotRange{-1, 1}, 0),
 		spectrum:     NewPlot(plotRange{-3.8, 0}, plotRange{bufferSpectrumDbMax, bufferSpectrumDbMin}, bufferSpectrumDbMin),
+		browser:      NewSampleBrowser(m),
+		browserBtn:   new(Clickable),
 	}
 }
 
@@ -95,7 +99,8 @@ func (ib *InstrumentBuffers) Tags(level int, yield TagYieldFunc) bool {
 		ib.channelsMenu.Tags(level+1, yield) &&
 		yield(level+1, ib.info) &&
 		ib.presetMenu.Tags(level+1, yield) &&
-		ib.formatMenu.Tags(level+1, yield)
+		ib.formatMenu.Tags(level+1, yield) &&
+		ib.browser.Tags(level, yield)
 }
 
 func (ib *InstrumentBuffers) update(gtx C, tr *Tracker) {
@@ -146,6 +151,7 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 	replaceBtn := IconBtn(th, replaceStyle, ib.replaceBtn, icons.FileFolderOpen, "Replace the sample of the buffer")
 	deleteBtn := ActionIconBtn(tr.Buffer().Delete(), th, ib.deleteBtn, icons.ActionDelete, "Delete buffer")
 	originalBtn := ToggleBtn(tr.Buffer().Original(), th, ib.originalBtn, "Original", "Play the samples without encoding,\nto compare with the encoded versions")
+	browserBtn := ToggleIconBtn(tr.ShowBrowser(), th, ib.browserBtn, icons.AVQueueMusic, icons.AVLibraryMusic, "Show the sample browser", "Hide the sample browser")
 	previewBtn := ToggleIconBtn(tr.Buffer().Preview(), th, ib.previewBtn, icons.AVPlayArrow, icons.AVStop, "Preview the sample as encoded\n(or original, with Original on)", "Stop the preview")
 	toolbar := func(gtx C) D {
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
@@ -156,6 +162,7 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 			layout.Flexed(1, func(gtx C) D { return D{Size: gtx.Constraints.Min} }),
 			layout.Rigid(previewBtn.Layout),
 			layout.Rigid(originalBtn.Layout),
+			layout.Rigid(browserBtn.Layout),
 			layout.Rigid(layout.Spacer{Width: 4}.Layout),
 		)
 	}
@@ -332,12 +339,23 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 					layout.Rigid(listSurface),
 					layout.Flexed(1, props),
+					layout.Rigid(func(gtx C) D { return ib.layoutBrowser(gtx, tr) }),
 				)
 			}),
 		)
 		return D{Size: m}
 	}
 	return Surface{Height: 3, Focus: tr.PatchPanel.TreeFocused(gtx)}.Layout(gtx, f)
+}
+
+// layoutBrowser lays out the sample browser at the right of the tab, if it
+// is shown: 260 dp wide, or a third of the tab if that is less.
+func (ib *InstrumentBuffers) layoutBrowser(gtx C, tr *Tracker) D {
+	if !tr.ShowBrowser().Value() {
+		return D{}
+	}
+	gtx.Constraints = layout.Exact(image.Pt(min(gtx.Dp(260), gtx.Constraints.Max.X/3), gtx.Constraints.Max.Y))
+	return ib.browser.Layout(gtx)
 }
 
 // releasedPlayheadFade is how many frames the playheads of released notes take

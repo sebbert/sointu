@@ -18,6 +18,16 @@ type (
 		Window WindowPreferences
 		Rack   RackPreferences
 		MCP    MCPPreferences
+		// Browser is the sample browser of the Buffers tab
+		Browser BrowserPreferences
+	}
+
+	BrowserPreferences struct {
+		// Shown shows the sample browser
+		Shown bool
+		// LastFolder is the folder of the file last loaded into a buffer,
+		// where the browser starts
+		LastFolder string `yaml:",omitempty"`
 	}
 
 	// MCPPreferences are the settings of the MCP server, through which a
@@ -154,6 +164,36 @@ func (t *alwaysOnTop) SetValue(val bool) {
 	t.preferences.Window.AlwaysOnTop = val
 	if err := WriteCustomConfig("preferences.yml", val, "window", "alwaysontop"); err != nil {
 		(*Tracker)(t).Alerts().Add(fmt.Sprintf("Could not save preferences: %v", err), tracker.Error)
+	}
+}
+
+// ShowBrowser toggles Preferences.Browser.Shown and saves it in the custom
+// preferences.
+func (t *Tracker) ShowBrowser() tracker.Bool { return tracker.MakeBool((*showBrowser)(t)) }
+
+type showBrowser Tracker
+
+func (t *showBrowser) Value() bool { return t.preferences.Browser.Shown }
+func (t *showBrowser) SetValue(val bool) {
+	t.preferences.Browser.Shown = val
+	if !val {
+		t.Browser().Stop()
+	}
+	if err := WriteCustomConfig("preferences.yml", val, "browser", "shown"); err != nil {
+		(*Tracker)(t).Alerts().Add(fmt.Sprintf("Could not save preferences: %v", err), tracker.Error)
+	}
+}
+
+// saveBrowserFolder saves the folder of the file last loaded into a buffer
+// in the custom preferences, when it changes.
+func (t *Tracker) saveBrowserFolder() {
+	dir := t.Browser().LastFolder()
+	if dir == "" || dir == t.preferences.Browser.LastFolder {
+		return
+	}
+	t.preferences.Browser.LastFolder = dir
+	if err := WriteCustomConfig("preferences.yml", dir, "browser", "lastfolder"); err != nil {
+		t.Alerts().Add(fmt.Sprintf("Could not save preferences: %v", err), tracker.Error)
 	}
 }
 

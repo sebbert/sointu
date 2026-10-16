@@ -104,7 +104,10 @@ changes to the sound are fine, as long as both stay in sync.
   **Not verified:** in a host, and with `auval`.
 - Vendored: Gio (`third_party/gio`, macOS plugin window and event loop fixes,
   `TopMost` on Windows and turning it off, `pointer.Event.Notch` for the
-  notches of a mouse wheel on macOS),
+  notches of a mouse wheel on macOS, `app.FileDropEvent` for files dropped
+  from the Finder: the view of a window, also of the plugin's, is a
+  dragging destination of file URLs, and a drop is a window event of the
+  paths, the position and the modifiers held; other platforms send none),
   vst2 (`third_party/vst2`, `Host.UpdateDisplay`), CLAP headers.
 
 ## Song format
@@ -1455,6 +1458,31 @@ no host was run with the plugins.
   writable buffers for recording (length, clear, fit to recording), a
   waveform with the write head and where `bufread` notes play, and live
   spectra of spectrum buffers.
+- **Sample browser:** a panel at the right of the Buffers tab
+  (`sample_browser.go`, `tracker/browser.go`), shown and hidden by a button
+  of the tab (`browser.shown` in `preferences.yml`): a tree of the folders
+  and the audio files that the loader reads, folders first, hidden files
+  left out. Up and down move through the rows, and a selected file plays at
+  once, its first 30 s in stereo, as the preview of a buffer plays; a
+  folder, Escape or hiding the panel stops it. Right expands a folder, or
+  goes into it; left collapses it, or goes to the folder above, which at the
+  top becomes the root (Backspace too). Enter or a double click loads the
+  file into the buffer that was selected, as Replace does, one undo step,
+  or as a new buffer if there are none or it is a spectrum or a bus. The
+  roots offered: the home folder, the last folder (of the file last loaded
+  into a buffer, by the browser, the dialog or a drop; `browser.lastfolder`,
+  where the browser starts) and the folder of the song.
+  ffmpeg decodes a preview on a goroutine, reading the file in place
+  (`FFmpeg.DecodeFile`, to a pipe); selecting another file kills it, and a
+  late result is dropped by its number. The last 8 decodes are kept. A
+  preview of the browser and one of a buffer share the player's preview:
+  one stops the other.
+- **Drag and drop:** audio files dropped onto the window from the Finder
+  (macOS only, `app.FileDropEvent`; `filedrop.go`) become new buffers in
+  their order, wherever they are dropped, and the Buffers tab shows; with
+  Alt held the first replaces the sample of the selected buffer. Other
+  files are left out with an alert; a folder dropped alone becomes the root
+  of the browser. In the plugin window too, which is the same Gio window.
 - **Plots:** zoom with Alt+scroll, pan by dragging or horizontal scrolling,
   Alt+drag to zoom y, double-click or right-click to reset, bounded zoom out.
 - **Units:** spawn targets follow instruments when they move or are pasted;

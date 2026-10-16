@@ -509,3 +509,25 @@ func (m *BufferModel) ImportFiles(paths []string, replace bool) {
 		}
 	}()
 }
+
+// ShowRoot returns an Action to make path the root of the browser.
+func (m *BrowserModel) ShowRoot(path string) Action {
+	return MakeAction(browserShowRoot{m, path})
+}
+
+type browserShowRoot struct {
+	m    *BrowserModel
+	path string
+}
+
+func (a browserShowRoot) Do() { a.m.SetRoot(a.path) }
+
+// Parent returns an Action to make the parent of the root the root, as Up.
+func (m *BrowserModel) Parent() Action { return MakeAction((*browserParent)(m)) }
+
+type browserParent BrowserModel
+
+func (m *browserParent) Enabled() bool {
+	return m.browser.root != "" && filepath.Dir(m.browser.root) != m.browser.root
+}
+func (m *browserParent) Do() { (*BrowserModel)(m).Up() }
