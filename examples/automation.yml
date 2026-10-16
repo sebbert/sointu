@@ -1,0 +1,69 @@
+bpm: 140
+rowsperbeat: 4
+score:
+    tracks:
+        - numvoices: 1
+          order: [0, 0, 1, 1]
+          patterns: [[45, 1, 0, 45, 1, 0, 57, 1, 45, 1, 0, 45, 1, 1, 48, 0], [41, 1, 0, 41, 1, 0, 53, 1, 41, 1, 0, 41, 1, 1, 43, 0]]
+        - numvoices: 3
+          order: [0, 0, 1, 1]
+          patterns: [[69, 1, 1, 1, 72, 1, 1, 1, 76, 1, 1, 1, 1, 1, 1, 1], [65, 1, 1, 1, 69, 1, 1, 1, 72, 1, 1, 1, 1, 1, 1, 1]]
+    rowsperpattern: 16
+    length: 4
+patch:
+    - name: bass
+      numvoices: 1
+      units:
+        - type: envelope
+          id: 1
+          parameters: {attack: 24, decay: 68, gain: 128, release: 60, sustain: 96}
+        - type: oscillator
+          id: 2
+          parameters: {color: 0, detune: 64, gain: 128, shape: 64, transpose: 52, type: 1}
+        - type: mulp
+          id: 3
+          parameters: {stereo: 0}
+        - type: filter
+          id: 4
+          parameters: {frequency: 32, lowpass: 1, resonance: 60}
+          comment: 'Slot A1 opens it over the song, and closes it in a step at the last pattern'
+        - type: pan
+          id: 5
+          parameters: {panning: 64}
+        - type: out
+          id: 6
+          parameters: {gain: 80, stereo: 1}
+    - name: pad
+      numvoices: 3
+      units:
+        - type: envelope
+          id: 7
+          parameters: {attack: 70, decay: 70, gain: 128, release: 76, stereo: 1, sustain: 100}
+        - type: oscillator
+          id: 8
+          parameters: {color: 0, detune: 70, gain: 96, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 3}
+          comment: 'Slot A2 widens the detune; slot A3 bends the pitch by less than a semitone, which needs values of 16 bits'
+        - type: mulp
+          id: 9
+          parameters: {stereo: 1}
+        - type: out
+          id: 10
+          parameters: {gain: 40, stereo: 1}
+          comment: 'Slot A4 fades the pad in'
+automation:
+    - slot: 0
+      unit: 4
+      param: frequency
+      points: [[0, 0], [32, 40], [48, 70], [48, 10], [64, 30]]
+    - slot: 1
+      unit: 8
+      param: detune
+      points: [[16, 0], [64, 30]]
+    - slot: 2
+      unit: 8
+      param: transpose
+      points: [[0, 0], [28, 0], [30, 0.35], [32, 0], [60, 0], [62, -0.35], [64, 0]]
+    - slot: 3
+      unit: 10
+      param: gain
+      points: [[0, -40], [16, 0]]

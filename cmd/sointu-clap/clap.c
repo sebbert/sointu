@@ -16,8 +16,10 @@ typedef struct {
 	const clap_host_t *host;
 	const clap_host_state_t *host_state;
 	const clap_host_latency_t *host_latency;
+	const clap_host_params_t *host_params;
 	const clap_host_gui_t *host_gui;
 	atomic_bool dirty;      // the song changed; tell the host on the main thread
+	atomic_uint rescan;     // clap_param_rescan_flags to tell the host on the main thread
 	atomic_bool gui_closed; // the user closed the window; tell the host likewise
 	bool gui_created;       // the host has created the gui: it shows and hides the window
 	uintptr_t handle;  // cgo.Handle of the Go instance
@@ -160,6 +162,84 @@ static const clap_plugin_latency_t latency = {
 	.get = latency_get,
 };
 
+// params: one for each automation slot, an offset of the parameter that the
+// slot is bound to, in steps of that parameter. The id of a parameter is the
+// number of its slot, which is what keeps the automation of the host on it
+// whatever happens to the patch.
+
+static void handle_event(sointu_plugin_t *p, const clap_event_header_t *hdr);
+
+static uint32_t params_count(const clap_plugin_t *plugin) {
+	return sointuParams();
+}
+
+static bool params_get_info(const clap_plugin_t *plugin, uint32_t index, clap_param_info_t *info) {
+	if (index >= sointuParams())
+		return false;
+	memset(info, 0, sizeof(*info));
+	info->id = index;
+	info->flags = CLAP_PARAM_IS_AUTOMATABLE | CLAP_PARAM_IS_MODULATABLE;
+	char *name = sointuParamName(self(plugin)->handle, index);
+	snprintf(info->name, sizeof(info->name), "%s", name);
+	free(name);
+	snprintf(info->module, sizeof(info->module), "Automation");
+	info->min_value = -sointuParamRange();
+	info->max_value = sointuParamRange();
+	info->default_value = 0;
+	return true;
+}
+
+static bool params_get_value(const clap_plugin_t *plugin, clap_id id, double *value) {
+	if (id >= sointuParams())
+		return false;
+	*value = sointuParamValue(self(plugin)->handle, id);
+	return true;
+}
+
+static bool params_value_to_text(const clap_plugin_t *plugin, clap_id id, double value, char *out, uint32_t capacity) {
+	if (id >= sointuParams() || capacity == 0)
+		return false;
+	snprintf(out, capacity, "%+.2f", value);
+	return true;
+}
+
+static bool params_text_to_value(const clap_plugin_t *plugin, clap_id id, const char *text, double *value) {
+	char *end;
+	double v = strtod(text, &end);
+	if (id >= sointuParams() || end == text)
+		return false;
+	*value = v;
+	return true;
+}
+
+static void params_flush(const clap_plugin_t *plugin, const clap_input_events_t *in, const clap_output_events_t *out) {
+	sointu_plugin_t *p = self(plugin);
+	uint32_t n = in->size(in);
+	for (uint32_t i = 0; i < n; i++) {
+		const clap_event_header_t *hdr = in->get(in, i);
+		if (hdr->space_id == CLAP_CORE_EVENT_SPACE_ID && (hdr->type == CLAP_EVENT_PARAM_VALUE || hdr->type == CLAP_EVENT_PARAM_MOD))
+			handle_event(p, hdr);
+	}
+}
+
+static const clap_plugin_params_t params = {
+	.count = params_count,
+	.get_info = params_get_info,
+	.get_value = params_get_value,
+	.value_to_text = params_value_to_text,
+	.text_to_value = params_text_to_value,
+	.flush = params_flush,
+};
+
+// sointu_params_changed tells the host that the names of the parameters
+// changed, or with values their values. Called from any thread; the host is
+// told on the main thread.
+void sointu_params_changed(uintptr_t plugin, bool values) {
+	sointu_plugin_t *p = (sointu_plugin_t *)plugin;
+	atomic_fetch_or(&p->rescan, values ? CLAP_PARAM_RESCAN_VALUES : CLAP_PARAM_RESCAN_INFO);
+	p->host->request_callback(p->host);
+}
+
 // gui: the tracker is a window of its own, which CLAP calls floating; it is
 // not embedded in a window of the host. A host that supports floating
 // windows shows and hides it, e.g. with the button of the device, and is
@@ -269,6 +349,7 @@ static bool plugin_init(const clap_plugin_t *plugin) {
 	sointu_plugin_t *p = self(plugin);
 	p->host_state = p->host->get_extension(p->host, CLAP_EXT_STATE);
 	p->host_latency = p->host->get_extension(p->host, CLAP_EXT_LATENCY);
+	p->host_params = p->host->get_extension(p->host, CLAP_EXT_PARAMS);
 	p->host_gui = p->host->get_extension(p->host, CLAP_EXT_GUI);
 	p->handle = sointuNew((uintptr_t)p);
 	return true;
@@ -346,6 +427,17 @@ static void handle_event(sointu_plugin_t *p, const clap_event_header_t *hdr) {
 		sointuMIDI(p->handle, hdr->time, ev->port_index, ev->data[0], ev->data[1], ev->data[2]);
 		break;
 	}
+	case CLAP_EVENT_PARAM_VALUE: {
+		const clap_event_param_value_t *ev = (const clap_event_param_value_t *)hdr;
+		sointuParam(p->handle, hdr->time, ev->param_id, ev->value, false);
+		break;
+	}
+	case CLAP_EVENT_PARAM_MOD: {
+		// the parameters are not modulated per note, so this is for all
+		const clap_event_param_mod_t *ev = (const clap_event_param_mod_t *)hdr;
+		sointuParam(p->handle, hdr->time, ev->param_id, ev->amount, true);
+		break;
+	}
 	}
 }
 
@@ -372,6 +464,8 @@ static const void *plugin_get_extension(const clap_plugin_t *plugin, const char 
 		return &state;
 	if (strcmp(id, CLAP_EXT_LATENCY) == 0)
 		return &latency;
+	if (strcmp(id, CLAP_EXT_PARAMS) == 0)
+		return &params;
 	if (strcmp(id, CLAP_EXT_GUI) == 0)
 		return &gui;
 	return NULL;
@@ -381,6 +475,9 @@ static void plugin_on_main_thread(const clap_plugin_t *plugin) {
 	sointu_plugin_t *p = self(plugin);
 	if (atomic_exchange(&p->dirty, false) && p->host_state != NULL)
 		p->host_state->mark_dirty(p->host);
+	unsigned rescan = atomic_exchange(&p->rescan, 0);
+	if (rescan != 0 && p->host_params != NULL)
+		p->host_params->rescan(p->host, rescan);
 	if (atomic_exchange(&p->gui_closed, false) && p->host_gui != NULL)
 		p->host_gui->closed(p->host, false);
 }

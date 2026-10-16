@@ -48,6 +48,11 @@ type (
 		// UnitIndex and UnitIndex2 are then indices of the units of the
 		// module of the last one. See rows.go.
 		UnitPath []int `json:",omitempty"`
+		// HostAutomation are the values that a plugin host last gave the
+		// automation slots, when they were saved: the host saves the
+		// values of the parameters of a plugin with its state. Up to the
+		// last slot that is not 0.
+		HostAutomation []float32 `json:",omitempty"`
 	}
 
 	Model struct {
@@ -385,8 +390,12 @@ func (m *Model) change(kind string, t ChangeType, severity ChangeSeverity) func(
 				m.d.Cursor2.SongPos = m.d.Song.Score.Clamp(m.d.Cursor2.SongPos)
 				TrySend(m.broker.ToPlayer, any(m.d.Song.Score.Copy()))
 			}
+			if m.changeType&(BPMChange|RowsPerBeatChange) != 0 && len(m.d.Song.Automation) > 0 {
+				m.changeType |= PatchChange // the automation units have their points in samples
+			}
 			if m.changeType&PatchChange != 0 {
 				m.fixIDCollisions()
+				m.fixAutomation()
 				m.fixUnitParams()
 				m.fixModules()
 				m.fixSpectrumBuffers()
@@ -474,6 +483,7 @@ func (m *Model) ProcessMsg(msg MsgToModel) {
 		}
 		defer m.change("Recording", SongChange, MajorChange)()
 		m.d.Song.Score = score
+		m.d.Song.Automation = e.Lanes(m.d.Song.Automation, m.d.Song.RowsPerBeat)
 		m.d.Song.BPM = int(e.BPM + 0.5)
 		m.trackerHidden = false
 	case TapAudio:

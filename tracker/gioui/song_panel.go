@@ -504,6 +504,8 @@ func (t *MenuBar) Layout(gtx C) D {
 			DividerMenuChild(),
 			ActionMenuChild(tr.Order().RemoveUnusedPatterns(), "Remove unused data", keyActionMap["RemoveUnused"], icons.ImageCrop),
 			DividerMenuChild(),
+			BoolMenuChild(tr.Automation().Automated(), "Automate parameter", "", icons.NavigationCheck),
+			DividerMenuChild(),
 			BoolMenuChild(tr.AlwaysOnTop(), "Keep window on top", "", icons.NavigationCheck),
 			BoolMenuChild(tr.EnableMCP(), "Enable MCP", "", icons.NavigationCheck),
 		)

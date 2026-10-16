@@ -576,7 +576,7 @@ func (s *Song) FindUnit(id int) *Unit {
 
 // NeedsExpand reports whether the song has units that the synths do not
 // run, for Song.Expand to replace: module units and eq units.
-func (s *Song) NeedsExpand() bool { return s.HasModules() || s.HasEQs() }
+func (s *Song) NeedsExpand() bool { return s.HasModules() || s.HasEQs() || len(s.Automation) > 0 }
 
 // HasModules reports whether the song has module units to expand.
 func (s *Song) HasModules() bool {
@@ -618,10 +618,26 @@ func (s *Song) HasModules() bool {
 // What cannot be expanded is left out and reported in Expansion.Problems:
 // modules using themselves, bindings that are not allowed, and sends from
 // outside a module to one of its units, as they are ambiguous.
+//
+// Before that, every unit that a lane of the automation is bound to gets an
+// automation unit and a send before it; after it, the automation units have
+// the points of their lanes, and the song no automation.
 func (s *Song) Expand() (Song, *Expansion) {
 	exp := &Expansion{}
+	src := s
+	if len(s.Automation) > 0 {
+		inserted := s.insertAutomation(exp)
+		src = &inserted
+	}
+	ret := src.expandModules(exp)
+	ret.fillAutomation(s.Automation)
+	return ret, exp
+}
+
+// expandModules expands the module and eq units of the song: see Expand.
+func (s *Song) expandModules(exp *Expansion) Song {
 	if !s.HasModules() {
-		return s.expandEQs(exp), exp
+		return s.expandEQs(exp)
 	}
 	e := expander{song: s, exp: exp, ports: map[int]*ModulePorts{}, bodyIDs: map[int]int{}}
 	exp.Units, exp.Buffers = map[int]ExpandedUnit{}, map[int]int{}
@@ -706,7 +722,7 @@ func (s *Song) Expand() (Song, *Expansion) {
 	}
 	// last the eq units, also those that were units of modules: each copy
 	// has its own place among the units that are played
-	return ret.expandEQs(exp), exp
+	return ret.expandEQs(exp)
 }
 
 // SendToPorts returns the units that a send to a module unit becomes once
