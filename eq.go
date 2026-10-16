@@ -737,18 +737,24 @@ func (s *Song) expandEQs(exp *Expansion) Song {
 	copied := false
 	for i, instr := range s.Patch {
 		var out []Unit
+		var counts []int // how many units each unit became: see moveSpans
 		for j := range instr.Units {
 			u := &instr.Units[j]
 			if u.Type != "eq" {
 				if out != nil {
 					out = append(out, *u)
+					counts = append(counts, 1)
 				}
 				continue
 			}
 			if out == nil {
 				out = append(make([]Unit, 0, len(instr.Units)+8), instr.Units[:j]...)
+				for range j {
+					counts = append(counts, 1)
+				}
 			}
 			if u.Disabled {
+				counts = append(counts, 0)
 				continue
 			}
 			units := u.CompileEQ().Units
@@ -759,10 +765,12 @@ func (s *Song) expandEQs(exp *Expansion) Song {
 				exp.EQs[u.ID] = ExpandedEQ{Instrument: i, First: len(out), Count: len(units)}
 			}
 			out = append(out, units...)
+			counts = append(counts, len(units))
 		}
 		if out == nil {
 			continue
 		}
+		exp.moveSpans(i, counts)
 		if !copied {
 			ret.Patch = append(Patch{}, s.Patch...)
 			copied = true

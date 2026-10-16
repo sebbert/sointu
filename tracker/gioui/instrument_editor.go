@@ -70,9 +70,13 @@ type (
 		previews  []Clickable // of the units' buffers, by unit
 		railLane  RailLane
 
-		eqEditors      []*EQEditor // of the eq units, by row
-		eqShown        []int       // the rows whose eq editors were laid out
-		rackHeight     int         // in pixels, as last laid out
+		eqEditors      []*EQEditor      // of the eq units, by row
+		cycles         []*cycleView     // the plots of the cycles of the oscillators, by row
+		analysisBtns   []Clickable      // the buttons of the analysis panels, by row
+		analysisPanels []*AnalysisPanel // by row
+		analysisShown  []int            // the rows whose analysis panels were laid out
+		eqShown        []int            // the rows whose eq editors were laid out
+		rackHeight     int              // in pixels, as last laid out
 		expandEQHint   string
 		collapseEQHint string
 	}
@@ -134,6 +138,11 @@ func (ie *InstrumentEditor) Tags(level int, yield TagYieldFunc) bool {
 	for _, row := range ie.eqShown {
 		if row < len(ie.eqEditors) {
 			ret = ret && ie.eqEditors[row].Tags(level, yield)
+		}
+	}
+	for _, row := range ie.analysisShown {
+		if row < len(ie.analysisPanels) && ie.analysisPanels[row] != nil {
+			ret = ret && ie.analysisPanels[row].Tags(level, yield)
 		}
 	}
 	if ie.automationShown { // last: it is only there for automated parameters
@@ -354,6 +363,7 @@ func (pe *InstrumentEditor) layoutTable(gtx C) D {
 	if pe.searching.Value() {
 		editorFunc = pe.layoutUnitTypeChooser
 		pe.eqShown = pe.eqShown[:0]
+		pe.analysisShown = pe.analysisShown[:0]
 	}
 	return Surface{Height: 3, Focus: t.PatchPanel.TreeFocused(gtx)}.Layout(gtx, func(gtx C) D {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
@@ -374,6 +384,13 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 	defer clip.Rect(image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Constraints.Max.Y)).Push(gtx.Ops).Pop()
 	t := TrackerFromContext(gtx)
 	pe.eqShown = pe.eqShown[:0] // the rows lay them out: see layoutEQ
+	pe.analysisShown = pe.analysisShown[:0]
+	// a panel opened again scrolls into view again
+	for y, p := range pe.analysisPanels {
+		if p != nil && !t.Unit().AnalysisOpen(y) {
+			p.fresh = true
+		}
+	}
 	pe.rackHeight = gtx.Constraints.Max.Y
 	// create enough parameter widget to match the number of parameters
 	width := pe.paramTable.Table.Width()
@@ -462,10 +479,7 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 		colP, rowP := pe.paramTable.ColTitleList.List.Position, pe.paramTable.RowTitleList.List.Position
 		paramStyle.Origin = image.Pt(rowTitleWidth+(x-colP.First)*cellWidth-colP.Offset, pe.rowTop(gtx, y)-rowP.Offset)
 		paramStyle.Layout(gtx)
-		commentX := t.Model.Params().RowWidth(y)
-		if t.EQAt(y).Active() && !t.Unit().EQExpanded(y) { // after the small plot
-			commentX += tracker.EQInlineCells
-		}
+		commentX := t.Model.Params().RowWidth(y) + t.Unit().InlineCells(y) // after the small plot
 		if x == commentX {
 			if y == cursor.Y {
 				return layout.W.Layout(gtx, func(gtx C) D {
@@ -499,17 +513,22 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 	table.CellHeight = t.Theme.UnitEditor.Height
 	table.RowHeight = func(y int) int { return pe.rowHeight(gtx, y) }
 	table.RowOverlay = func(gtx C, y int) {
-		if t.EQAt(y).Active() {
+		switch cycle := t.Unit().OscillatorCycle(y); {
+		case t.EQAt(y).Active():
 			pe.layoutEQ(gtx, y)
-			return
+		case cycle != nil:
+			pe.layoutOscillatorCycle(gtx, y, cycle)
 		}
-		if !t.preferences.Rack.BufferPreviews {
-			return
+		if t.preferences.Rack.BufferPreviews && !t.EQAt(y).Active() {
+			if id, ok := t.Unit().Bus(y); ok {
+				pe.layoutBusPreview(gtx, y, id)
+			} else if id, spectrum, ok := t.Unit().Buffer(y); ok {
+				pe.layoutUnitPreview(gtx, y, id, spectrum)
+			}
 		}
-		if id, ok := t.Unit().Bus(y); ok {
-			pe.layoutBusPreview(gtx, y, id)
-		} else if id, spectrum, ok := t.Unit().Buffer(y); ok {
-			pe.layoutUnitPreview(gtx, y, id, spectrum)
+		pe.layoutAnalysisButton(gtx, y)
+		if t.Unit().AnalysisOpen(y) {
+			pe.layoutAnalysis(gtx, y)
 		}
 	}
 	pe.drawBackGround(gtx)
@@ -519,12 +538,16 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 }
 
 // rowHeight returns the height of a row of the rack in pixels: of an unfolded
-// eq unit, with its editor under it.
+// eq unit, with its editor under it, and with the analysis panel of the unit
+// under that, if it is open.
 func (pe *InstrumentEditor) rowHeight(gtx C, y int) int {
 	t := TrackerFromContext(gtx)
 	h := gtx.Dp(t.Theme.UnitEditor.Height)
 	if t.Unit().EQExpanded(y) {
 		h += gtx.Dp(eqEditorHeight)
+	}
+	if t.Unit().AnalysisOpen(y) {
+		h += gtx.Dp(analysisPanelHeight)
 	}
 	return h
 }
@@ -568,16 +591,8 @@ func (pe *InstrumentEditor) layoutEQ(gtx C, y int) {
 		ed.Layout(gtx)
 		return
 	}
-	// the cursor stays on the parameters: a click on the small plot puts it
-	// in a cell under it
+	pe.keepCursorOnParams(gtx, y)
 	w := t.Params().RowWidth(y)
-	if c, c2 := t.Params().Cursor(), t.Params().Cursor2(); c.Y == y && c.X >= w && w > 0 {
-		c.X = w - 1
-		t.Params().SetCursor(c)
-		if c2.Y == y {
-			t.Params().SetCursor2(c)
-		}
-	}
 	colP := pe.paramTable.ColTitleList.List.Position
 	inset := gtx.Dp(4)
 	x := (w-colP.First)*cellWidth - colP.Offset
@@ -588,6 +603,21 @@ func (pe *InstrumentEditor) layoutEQ(gtx C, y int) {
 	defer op.Offset(image.Pt(x+inset, inset)).Push(gtx.Ops).Pop()
 	gtx.Constraints = layout.Exact(size)
 	ed.LayoutSmall(gtx)
+}
+
+// keepCursorOnParams keeps the cursor of the rack on the parameters of row
+// y, which has a plot after them: a click on the plot puts it in a cell
+// under it.
+func (pe *InstrumentEditor) keepCursorOnParams(gtx C, y int) {
+	t := TrackerFromContext(gtx)
+	w := t.Params().RowWidth(y)
+	if c, c2 := t.Params().Cursor(), t.Params().Cursor2(); c.Y == y && c.X >= w && w > 0 {
+		c.X = w - 1
+		t.Params().SetCursor(c)
+		if c2.Y == y {
+			t.Params().SetCursor2(c)
+		}
+	}
 }
 
 // railWidth returns the width of the signal rails of the rack, in pixels: see

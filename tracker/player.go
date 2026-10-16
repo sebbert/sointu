@@ -790,5 +790,5 @@ func (p *Player) processNoteEvent(ev NoteEvent) {
 	p.voices[oldestVoice] = voice{triggerEvent: ev, sustain: true, samplesSinceEvent: 0}
 	p.status.VoiceLevels[oldestVoice] = 1.0
 	p.synth.Trigger(oldestVoice, ev.Note)
-	TrySend(p.broker.ToModel, MsgToModel{TriggerChannel: instrIndex + 1})
+	TrySend(p.broker.ToModel, MsgToModel{TriggerChannel: instrIndex + 1, TriggerVoice: oldestVoice - p.song.Patch.FirstVoiceForInstrument(instrIndex) + 1})
 }

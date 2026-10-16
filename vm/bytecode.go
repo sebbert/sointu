@@ -283,30 +283,8 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 						return nil, errors.New("Patch uses over 256 samples")
 					}
 				}
-				flags := 0
-				switch p["type"] {
-				case sointu.Sine:
-					flags = 0x40
-				case sointu.Trisaw:
-					flags = 0x20
-				case sointu.Pulse:
-					flags = 0x10
-				case sointu.Gate:
-					flags = 0x04
-				case sointu.Sample:
-					flags = 0x80
-				}
-				if p["lfo"] == 1 {
-					flags += 0x08
-				}
-				if sointu.OscillatorBandlimited(unit) {
-					// the type bits are one-hot: gate (0x04) together with a
-					// waveform bit means a bandlimited waveform
-					flags += 0x04
-				}
-				flags += p["unison"]
 				b.op(opcode + p["stereo"])
-				b.operand(p["transpose"], p["detune"], p["phase"], color, p["shape"], p["gain"], flags)
+				b.operand(p["transpose"], p["detune"], p["phase"], color, p["shape"], p["gain"], int(oscillatorFlags(unit)))
 			case "delay":
 				count := len(unit.VarArgs)
 				if unit.Parameters["stereo"] == 1 {
@@ -877,4 +855,33 @@ func (b *bytecodeBuilder) getBufferRegionIndex(unit sointu.Unit, firstVoice int)
 		b.BufferRegions = append(b.BufferRegions, r)
 	}
 	return index
+}
+
+// oscillatorFlags returns the flags operand of an oscillator unit: the type
+// (one-hot: 0x40 sine, 0x20 trisaw, 0x10 pulse, 0x04 gate, 0x80 sample),
+// 0x08 for an LFO, and the unison voices in the low two bits.
+func oscillatorFlags(unit sointu.Unit) byte {
+	p := unit.Parameters
+	var flags byte
+	switch p["type"] {
+	case sointu.Sine:
+		flags = 0x40
+	case sointu.Trisaw:
+		flags = 0x20
+	case sointu.Pulse:
+		flags = 0x10
+	case sointu.Gate:
+		flags = 0x04
+	case sointu.Sample:
+		flags = 0x80
+	}
+	if p["lfo"] == 1 {
+		flags += 0x08
+	}
+	if sointu.OscillatorBandlimited(unit) {
+		// the type bits are one-hot: gate (0x04) together with a
+		// waveform bit means a bandlimited waveform
+		flags += 0x04
+	}
+	return flags + byte(p["unison"])
 }

@@ -154,8 +154,11 @@ func (m *Model) updateParamsOf(d *derivedInstrument, units []sointu.Unit) {
 		p := m.deriveParams(&units[u], d.params[u])
 		d.params[u] = p
 		paramsWidth = max(paramsWidth, len(p))
-		if units[u].Type == "eq" { // room for its small plot
+		switch units[u].Type { // room for its small plot
+		case "eq":
 			paramsWidth = max(paramsWidth, len(p)+EQInlineCells)
+		case "oscillator":
+			paramsWidth = max(paramsWidth, len(p)+OscillatorInlineCells)
 		}
 		_, _, ok := unitBuffer(&units[u])
 		previews = previews || ok

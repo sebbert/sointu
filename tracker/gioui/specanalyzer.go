@@ -75,37 +75,7 @@ func (s *SpectrumState) Layout(gtx C) D {
 				if chn >= numchns {
 					return plotRange{}, false
 				}
-				xr.a = float32(math.Pow(10, float64(xr.a)))
-				xr.b = float32(math.Pow(10, float64(xr.b)))
-				w1, f1 := math.Modf(float64(xr.a)*float64(speclen) - 1) // -1 cause we don't have the DC bin there
-				w2, f2 := math.Modf(float64(xr.b)*float64(speclen) - 1) // -1 cause we don't have the DC bin there
-				x1 := max(int(w1), 0)
-				x2 := min(int(w2), speclen-1)
-				if x1 > x2 {
-					return plotRange{}, false
-				}
-				y1 := float32(math.Inf(-1))
-				y2 := float32(math.Inf(+1))
-				switch {
-				case x2 <= x1+1 && x2 < speclen-1: // perform smoothstep interpolation when we are overlapping only a few bins
-					l := t.Model.Spectrum().Result()[chn][x1]
-					r := t.Model.Spectrum().Result()[chn][x1+1]
-					y1 = smoothInterpolate(l, r, float32(f1))
-					l = t.Model.Spectrum().Result()[chn][x2]
-					r = t.Model.Spectrum().Result()[chn][x2+1]
-					y2 = smoothInterpolate(l, r, float32(f2))
-					y1, y2 = max(y1, y2), min(y1, y2)
-				default:
-					for i := x1; i <= x2; i++ {
-						sample := t.Model.Spectrum().Result()[chn][i]
-						y1 = max(y1, sample)
-						y2 = min(y2, sample)
-					}
-				}
-				y1 = softplus((y1-SpectrumDbMin)/5)*5 + SpectrumDbMin // we "squash" the low volumes so the -Inf dB becomes -SpectrumDbMin
-				y2 = softplus((y2-SpectrumDbMin)/5)*5 + SpectrumDbMin
-
-				return plotRange{y1, y2}, true
+				return spectrumCurve(t.Model.Spectrum().Result()[chn], xr)
 			}
 			xticks, yticks := spectrumXTicks, spectrumYTicks
 			n := numchns
@@ -219,4 +189,43 @@ func spectrumYTicks(r plotRange, count int, yield func(pos float32, label string
 	for i := start; i <= end; i++ {
 		yield(float32(i*step), strconv.Itoa(i*step))
 	}
+}
+
+// spectrumCurve returns the range of the levels of a spectrum (in dB, bin i
+// at (i+1)/len of half the sample rate) over a range of log10 of the
+// frequency over half the sample rate, the lowest squashed towards
+// SpectrumDbMin.
+func spectrumCurve(levels []float32, xr plotRange) (plotRange, bool) {
+	speclen := len(levels)
+	xr.a = float32(math.Pow(10, float64(xr.a)))
+	xr.b = float32(math.Pow(10, float64(xr.b)))
+	w1, f1 := math.Modf(float64(xr.a)*float64(speclen) - 1) // -1 cause we don't have the DC bin there
+	w2, f2 := math.Modf(float64(xr.b)*float64(speclen) - 1) // -1 cause we don't have the DC bin there
+	x1 := max(int(w1), 0)
+	x2 := min(int(w2), speclen-1)
+	if x1 > x2 {
+		return plotRange{}, false
+	}
+	y1 := float32(math.Inf(-1))
+	y2 := float32(math.Inf(+1))
+	switch {
+	case x2 <= x1+1 && x2 < speclen-1: // perform smoothstep interpolation when we are overlapping only a few bins
+		l := levels[x1]
+		r := levels[x1+1]
+		y1 = smoothInterpolate(l, r, float32(f1))
+		l = levels[x2]
+		r = levels[x2+1]
+		y2 = smoothInterpolate(l, r, float32(f2))
+		y1, y2 = max(y1, y2), min(y1, y2)
+	default:
+		for i := x1; i <= x2; i++ {
+			sample := levels[i]
+			y1 = max(y1, sample)
+			y2 = min(y2, sample)
+		}
+	}
+	y1 = softplus((y1-SpectrumDbMin)/5)*5 + SpectrumDbMin // we "squash" the low volumes so the -Inf dB becomes -SpectrumDbMin
+	y2 = softplus((y2-SpectrumDbMin)/5)*5 + SpectrumDbMin
+
+	return plotRange{y1, y2}, true
 }

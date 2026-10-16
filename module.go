@@ -80,14 +80,21 @@ type (
 		// module, the ID of its copy (see Units). Eq units without an ID,
 		// and disabled ones, are not in it.
 		EQs map[int]ExpandedEQ
+		// Spans maps the ID of each module unit to where the units of its
+		// module are among the units of the expanded song: for a module
+		// unit in a module, the ID of its copy (see Units). So also a send
+		// to a module unit with an ID, which becomes a send to each
+		// parameter bound to its port (see SendToPorts). Disabled module
+		// units have Count 0.
+		Spans map[int]ExpandedEQ
 		// Problems are the things that could not be expanded as meant, e.g.
 		// modules using themselves. The expanded song leaves them out.
 		Problems []error
 	}
 
-	// ExpandedEQ is where the units of an eq unit are in the expanded
-	// song: Count units of the instrument, from the unit First on. With
-	// Count 0, First is where they would be.
+	// ExpandedEQ is where the units of an eq unit, or of a module unit,
+	// are in the expanded song: Count units of the instrument, from the
+	// unit First on. With Count 0, First is where they would be.
 	ExpandedEQ struct {
 		Instrument, First, Count int
 	}
@@ -662,7 +669,9 @@ func (s *Song) expandModules(exp *Expansion) Song {
 		for _, u := range instr.Units {
 			if u.Type == "module" {
 				e.call, e.instr = u.ID, i
+				first := len(units)
 				units = e.instantiate(units, &u, u.ID, nil)
+				e.span(u.ID, first, len(units))
 			} else {
 				units = append(units, u.Copy())
 			}
@@ -673,10 +682,12 @@ func (s *Song) expandModules(exp *Expansion) Song {
 	for i := range ret.Patch {
 		units := ret.Patch[i].Units
 		var out []Unit
+		var counts []int // how many units each unit became
 		for j, u := range units {
 			if u.Type != "send" || u.Disabled {
 				if out != nil {
 					out = append(out, u)
+					counts = append(counts, 1)
 				}
 				continue
 			}
@@ -688,16 +699,25 @@ func (s *Song) expandModules(exp *Expansion) Song {
 				}
 				if out != nil {
 					out = append(out, u)
+					counts = append(counts, 1)
 				}
 				continue
 			}
 			if out == nil {
 				out = append(make([]Unit, 0, len(units)), units[:j]...)
+				for range j {
+					counts = append(counts, 1)
+				}
 			}
-			out = append(out, SendToPorts(u, ports)...)
+			sends := SendToPorts(u, ports)
+			out = append(out, sends...)
+			counts = append(counts, len(sends))
+			e.instr = i
+			e.span(u.ID, j, j+1)
 		}
 		if out != nil {
 			ret.Patch[i].Units = out
+			exp.moveSpans(i, counts)
 		}
 	}
 	// last the eq units, also those that were units of modules: each copy
@@ -893,6 +913,37 @@ type (
 	ModulePorts [MaxModuleParams][]PortTarget
 )
 
+// span notes that the unit with the ID, of the instrument being expanded,
+// became the units from first to end; a unit without an ID is not noted.
+func (e *expander) span(id, first, end int) {
+	if id == 0 {
+		return
+	}
+	if e.exp.Spans == nil {
+		e.exp.Spans = map[int]ExpandedEQ{}
+	}
+	e.exp.Spans[id] = ExpandedEQ{Instrument: e.instr, First: first, Count: end - first}
+}
+
+// moveSpans moves the spans of an instrument after its units were replaced:
+// unit j by counts[j] units.
+func (exp *Expansion) moveSpans(instr int, counts []int) {
+	if len(exp.Spans) == 0 {
+		return
+	}
+	at := make([]int, len(counts)+1) // where each unit is now
+	for j, c := range counts {
+		at[j+1] = at[j] + c
+	}
+	for id, s := range exp.Spans {
+		if s.Instrument != instr || s.First+s.Count >= len(at) {
+			continue
+		}
+		s.First, s.Count = at[s.First], at[s.First+s.Count]-at[s.First]
+		exp.Spans[id] = s
+	}
+}
+
 func (e *expander) problem(format string, args ...any) {
 	e.exp.Problems = append(e.exp.Problems, fmt.Errorf(format, args...))
 }
@@ -1061,7 +1112,9 @@ func (e *expander) instantiate(units []Unit, call *Unit, id int, path []int) []U
 				e.nextID++ // only to find its ports below
 				inner = e.nextID
 			}
+			first := len(units)
 			units = e.instantiate(units, &c, inner, path)
+			e.span(c.ID, first, len(units))
 			if ports != nil {
 				if innerPorts := e.ports[inner]; innerPorts != nil {
 					for j, p := range bound {
