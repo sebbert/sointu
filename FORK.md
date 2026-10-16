@@ -131,7 +131,7 @@ All of these are Go and wasm only.
 
 | Unit | What it does |
 |---|---|
-| `bufread` | Plays a buffer: note tracking, looping with crossfade, modulatable start/loop points, negative start counting back from the newest frame, `speed` (-1 to 1), edge fade, which in a full ring is a crossfade across the write head. With `mode` tap it is a tap of a delay line: it reads the frame at `start` every sample. `timing` counts the positions in frames, in frames at note 0 (pitch) or in 48ths of a beat (BPM). See [Buffers as delay lines](#buffers-as-delay-lines) |
+| `bufread` | Plays a buffer: note tracking, looping with crossfade, modulatable start/loop points, negative start counting back from the newest frame, `speed` (-1 to 1), edge fade, which in a full ring is a crossfade across the write head. With `mode` tap it is a tap of a delay line: it reads the frame at `start` every sample. `timing` counts the positions in frames, in frames at note 0 (pitch) or in 48ths of a beat (BPM). With `slices`, it plays a slice of the buffer, picked by `slice` or by the note, stopping at the next marker with `sliceend`. See [Buffers as delay lines](#buffers-as-delay-lines) and [Slices and sample editing](#slices-and-sample-editing) |
 | `bufwrite` | Writes into a buffer: a continuous ring buffer, or `oneshot` while the note is held. Several writers mix; `feedback`, `pop`. Without a buffer, it gets one of its own, `length` frames long; with `pervoice`, every voice has a copy of it |
 | `spawn` | Triggers voices of another instrument: at a `rate`, synced to the beat, or on a rising edge. Transpose, note length, up to 4 `args`, `steal` |
 | `arg` | Pushes a value passed by the `spawn` that triggered the voice |
@@ -2162,6 +2162,85 @@ window units get the time as a four byte operand (0 for those in frames,
 the frames at note 0 negated with pitch, the frames with BPM). Go synth
 and wasm player; the tracker gives windows from before timing `time`,
 `transpose` and `detune` of a new unit.
+
+## Slices and sample editing
+
+Drum breaks: an audio buffer has slice markers, and a `bufread` unit plays
+from one. Go synth and wasm player, which render the same
+(`vm/compiler/wasm_slices_test.go`).
+
+- **Markers** (`Buffer.Slices`, saved as a flow list): frames from the
+  oldest valid frame, increasing, each above 0. Frame 0 is always the start
+  of slice 0, so n markers make n+1 slices; the last ends at the newest
+  valid frame. A sample or a buffer that bufwrite units record into can
+  have them. They reach the synth with the audio (`BufferAudio.Slices`,
+  attached by `PlayWithBuffers` and by the tracker when it sends the
+  audio), so editing them does not make a new synth.
+- **`slices`** off, slice or note; **`slice`** 0 to 127, modulatable;
+  **`sliceend`** continue or stop. The slice is `slice`, with note plus
+  note − 60 (C-3 is slice 0, chromatic up, as in samplers), plus the
+  modulation of `slice` times 128, rounded to the nearest (ties to even):
+  a `loadnote` sent at amount 96 (×0.5) adds note − 64 exactly. It wraps
+  around the number of slices, so that every note and modulation plays a
+  slice. It is read when the note is triggered, like `start`. With note,
+  the pitch does not follow the note (`notetracking` is ignored and not
+  shown).
+- **`start`** is an offset from the marker, timed as before (frames,
+  pitch, BPM); negative reaches back before it. Its modulation still
+  shifts it by parts of the buffer's length.
+- **The loop** is in the slice: `loopstart` and `looplength` are in 128ths
+  of the slice's length (`sointu.BufreadSliceParts`; 128 the whole slice,
+  shown in percent), their modulation in parts of the slice's length too;
+  the loop start is clamped to the slice and the loop length to what is
+  left of it. With BPM timing they are not converted; only `start` is.
+- **Stop at the next marker** (`sliceend` stop): frames outside the slice
+  read as silence, and `edgefade` measures to the slice's edges as well,
+  at both ends (a fade in at the marker, a fade out before the next).
+  continue plays on as before.
+- **Not with**: a tap (`mode` tap) has no slices; a sliced unit does not
+  crossfade at the write head of a full ring (no `BufferRegionRingRead`).
+  Old songs have `slices` 0 and play unchanged.
+- **Bytecode**: `BufferRegionSliced`, `BufferRegionSliceNote`,
+  `BufferRegionSliceStop` in the flags of the region, and `slice` in bits
+  24 to 30 (the first voice of a buffer per voice, bits 16 to 23, is now
+  masked). `slice` is `NoTransform`, so bufread units have no new operand.
+  State: `state[7]` (WRK offset 28) is the slice; port 7 is the
+  modulation of `slice`, cleared by the unit. In the wasm player, the
+  regions are 8 i32s instead of 7 when the song has sliced units, the
+  eighth the offset of the buffer's markers in `su_slices` (their number,
+  then the markers); the code for note, stop, loop and modulation is only
+  there when the song uses them.
+
+**In the tracker.** The waveform of the Buffers tab shows the markers with
+a handle, and the unit preview of a bufread unit shows them as lines.
+ctrl/cmd+click adds a marker, dragging a handle moves it (one undo step, on
+release), right-clicking one deletes it, shift+drag selects a range and
+shift+click clears it; plain dragging pans as before. Below the waveform:
+Slice equally (2 to 128 slices), Detect transients (sensitivity 0 to 100),
+Clear. Detect transients finds where the level of the audio with its highs
+emphasized (the energy plus 4 times that of its first difference, in
+windows of 256 frames every 128) rises above that of the 4 windows before
+it by a threshold, 15 dB at sensitivity 0 to 1.5 dB at 100, ignoring
+windows 40 dB below the loudest, at least 40 ms apart; the marker is 16
+frames before the first frame of the window that reaches a quarter of its
+peak. Marker edits are undoable. A sample replaced by an import loses its
+markers.
+
+**Sample editing** (samples, not recordings): Crop (keep the selection),
+Delete (the selection), Trim silence (the ends below a level, -60 dB by
+default, of any channel), Fade in and Fade out at the ends (length in ms,
+10 by default; curve -100 to 100: the gain is t^(4^(curve/100)), 0
+linear). The stored file is decoded by ffmpeg at 44100 Hz, edited, and
+stored again as 24-bit FLAC (`ffmpeg.Store`): lossless from then on,
+whatever it was, and larger than a lossy original. The encoding preset is
+kept, so the compiled player encodes it as before. The edit runs in the
+background; it is dropped if the sample changed meanwhile, and otherwise
+is one undo step. Markers in a removed range are deleted, those after it
+move with the audio.
+
+**MCP server.** `get_song` lists the frames and the markers of each buffer;
+`set_slices` sets them: by frames, `count` equal slices, or at the
+transients (`sensitivity`), or clears them, as one undo step.
 
 ## MCP server
 

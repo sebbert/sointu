@@ -282,6 +282,15 @@ from the write head of a buffer being recorded, when the note starts. `fade` cro
 `speed` multiplies the playback rate from -1 (backwards) to 1, and can be
 modulated.
 
+A buffer can have slice markers, e.g. at the hits of a drum break: put them
+on its waveform in the Buffers tab (ctrl/cmd+click), equally, or at the
+transients. With `slices` on, `bufread` plays from the marker of `slice`, or
+with `slices` note from slice note − C-3 + `slice`, chromatic up, wrapped
+around the number of slices; `start` is then an offset from the marker,
+`sliceend` stop makes the unit silent past the next marker, and `loopstart`
+and `looplength` are in 128ths of the slice. The Buffers tab also crops,
+deletes a selected range, trims silence and fades the ends of a sample.
+
 For granular synthesis and arpeggiators, the `spawn` unit triggers notes on the
 voices of another instrument, taking the released voice spawned longest ago;
 when all are held, it skips the spawn, or with `steal` takes the one spawned
