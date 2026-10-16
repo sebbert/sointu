@@ -57,8 +57,8 @@ type (
 		// of Spans
 		SliceColor     color.NRGBA `yaml:",flow"`
 		SelectionColor color.NRGBA `yaml:",flow"`
-		Ticks       LabelStyle
-		DpPerTick   unit.Dp
+		Ticks          LabelStyle
+		DpPerTick      unit.Dp
 	}
 
 	// PlotMarker is a line at X, drawn with the marker color, its alpha

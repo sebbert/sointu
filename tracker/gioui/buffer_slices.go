@@ -27,7 +27,7 @@ type bufferSlices struct {
 	selFrom   int
 	pointerID pointer.ID
 
-	equalBtn, detectBtn, clearBtn                  *Clickable
+	equalBtn, detectBtn, clearBtn                   *Clickable
 	cropBtn, deleteBtn, trimBtn, fadeInBtn, fadeOut *Clickable
 	count, sensitivity, threshold, fadeLen, curve   *NumericUpDownState
 }

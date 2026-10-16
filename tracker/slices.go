@@ -145,7 +145,9 @@ func (m *BufferModel) SliceEqually() Action { return MakeAction((*sliceEqually)(
 
 type sliceEqually BufferModel
 
-func (v *sliceEqually) Enabled() bool { return (*BufferModel)(v).CanSlice() && (*BufferModel)(v).sliceLength() > 1 }
+func (v *sliceEqually) Enabled() bool {
+	return (*BufferModel)(v).CanSlice() && (*BufferModel)(v).sliceLength() > 1
+}
 func (v *sliceEqually) Do() {
 	m := (*BufferModel)(v)
 	n, frames := m.tools().count, m.sliceLength()
@@ -240,7 +242,7 @@ func detectOnsets(frame func(i int) float32, n, sensitivity int) []int {
 		return nil
 	}
 	threshold := math.Pow(10, 15*math.Pow(0.1, float64(min(max(sensitivity, 0), 100))/100)/10) // as a ratio of energies
-	floor := loudest * 1e-4                                                                       // -40 dB
+	floor := loudest * 1e-4                                                                    // -40 dB
 	var ret []int
 	last := -minOnsetGap
 	for k := 1; k < windows; k++ {

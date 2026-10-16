@@ -50,8 +50,8 @@ type (
 		info         *widget.Selectable
 		waveform     *Plot
 		waveformOf   int // the index of the buffer drawn, to reset the view when it changes
-		spectrum     *Plot
 		slices       *bufferSlices
+		spectrum     *Plot
 	}
 )
 
@@ -82,8 +82,8 @@ func NewInstrumentBuffers(m *tracker.Model) *InstrumentBuffers {
 		props:        &layout.List{Axis: layout.Vertical},
 		info:         new(widget.Selectable),
 		waveform:     NewPlot(plotRange{0, 1}, plotRange{-1, 1}, 0),
-		spectrum:     NewPlot(plotRange{-3.8, 0}, plotRange{bufferSpectrumDbMax, bufferSpectrumDbMin}, bufferSpectrumDbMin),
 		slices:       newBufferSlices(),
+		spectrum:     NewPlot(plotRange{-3.8, 0}, plotRange{bufferSpectrumDbMax, bufferSpectrumDbMin}, bufferSpectrumDbMin),
 	}
 }
 

@@ -62,7 +62,7 @@ func TestDetectOnsets(t *testing.T) {
 		for _, h := range hits {
 			if i >= h {
 				seed = seed*1664525 + 1013904223
-				audio[i] += float32(int32(seed))/(1<<31)*float32(math.Exp(-float64(i-h)/1500)) * 0.5
+				audio[i] += float32(int32(seed)) / (1 << 31) * float32(math.Exp(-float64(i-h)/1500)) * 0.5
 			}
 		}
 	}
