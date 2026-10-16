@@ -159,6 +159,7 @@ type wasmBufferHeader struct {
 // Header is the offset of the buffer's header from su_buffer_headers in bytes.
 type wasmBufferRegion struct {
 	Header, Start, LoopStart, LoopLength, Fade, EdgeFade, Flags uint32
+	Slices                                                      uint32 // offset of the slice markers of a sliced region from su_slices
 }
 
 // wasmBufferData is the buffer data for the wasm player template.
@@ -166,6 +167,7 @@ type wasmBufferData struct {
 	Buffers     []wasmBuffer
 	Headers     []wasmBufferHeader
 	Regions     []wasmBufferRegion
+	SliceTable  []uint32 // for each buffer that sliced regions play: the number of markers, and the markers
 	ConvHeaders []uint32 // of the units of Bytecode.Convs: the offsets of the headers of their buffers
 	BufferBytes int
 	wasmBufferFeatures
@@ -194,6 +196,11 @@ type wasmBufferFeatures struct {
 	BufreadPitchTiming  bool // the start of a bufread follows the note
 	BufreadRing         bool // a bufread with an edge fade reads a buffer written as a ring: the fade is a crossfade
 	BufPerVoice         bool // the voices of an instrument each have a copy of a buffer
+	BufreadSlices       bool // a bufread plays a slice
+	BufreadSliceNote    bool // the note picks the slice
+	BufreadSliceStop    bool // a slice is silent outside it
+	BufreadSliceLoop    bool // a sliced bufread loops
+	BufreadModSlice     bool // the slice is modulated
 
 	BufwriteNoPop     bool
 	BufwriteOneShot   bool
@@ -216,12 +223,19 @@ func bufferFeatures(song *sointu.Song, features vm.FeatureSet, b *vm.Bytecode, d
 			f.BufreadRing = f.BufreadRing || r.Flags&vm.BufferRegionRingRead != 0 && r.EdgeFade > 0
 		}
 		f.BufPerVoice = f.BufPerVoice || r.Flags&vm.BufferRegionPerVoice != 0
+		if r.Flags&vm.BufferRegionSliced != 0 {
+			f.BufreadSlices = true
+			f.BufreadSliceNote = f.BufreadSliceNote || r.Flags&vm.BufferRegionSliceNote != 0
+			f.BufreadSliceStop = f.BufreadSliceStop || r.Flags&vm.BufferRegionSliceStop != 0
+			f.BufreadSliceLoop = f.BufreadSliceLoop || r.Flags&vm.BufferRegionLoop != 0
+		}
 	}
 	mod := func(unit, param string) bool { return features.SupportsModulation(unit, param) }
 	f.BufreadModStart = mod("bufread", "start")
 	f.BufreadModLoopStart = mod("bufread", "loopstart")
 	f.BufreadModLoopLen = mod("bufread", "looplength")
-	f.BufreadMod = f.BufreadModStart || f.BufreadModLoopStart || f.BufreadModLoopLen
+	f.BufreadModSlice = f.BufreadSlices && mod("bufread", "slice")
+	f.BufreadMod = f.BufreadModStart || f.BufreadModLoopStart || f.BufreadModLoopLen || f.BufreadModSlice
 	f.BufreadPitch = mod("bufread", "transpose") || mod("bufread", "detune")
 	f.BufwriteFeedback = mod("bufwrite", "feedback")
 	backwards := mod("bufread", "speed") || f.BufreadModLoopStart
@@ -807,6 +821,7 @@ func (com *Compiler) wasmBuffers(song *sointu.Song, b *vm.Bytecode) (ret wasmBuf
 		}
 		return i, nil
 	}
+	sliceOffsets := map[uint32]uint32{} // buffer ID -> offset of its markers in SliceTable
 	for _, r := range b.BufferRegions {
 		i, err := header(r.BufferID)
 		if err != nil {
@@ -817,10 +832,24 @@ func (com *Compiler) wasmBuffers(song *sointu.Song, b *vm.Bytecode) (ret wasmBuf
 				return ret, fmt.Errorf("a bufwrite unit writes to buffer %q, which has a sample", buf.Name)
 			}
 		}
-		ret.Regions = append(ret.Regions, wasmBufferRegion{
+		region := wasmBufferRegion{
 			Header: uint32(i * wasmBufferHeaderSize), Start: r.Start, LoopStart: r.LoopStart,
 			LoopLength: r.LoopLength, Fade: r.Fade, EdgeFade: r.EdgeFade, Flags: r.Flags,
-		})
+		}
+		if r.Flags&vm.BufferRegionSliced != 0 {
+			o, ok := sliceOffsets[r.BufferID]
+			if !ok {
+				buf, _ := song.Buffers.Find(int(r.BufferID))
+				o = uint32(4 * len(ret.SliceTable))
+				sliceOffsets[r.BufferID] = o
+				ret.SliceTable = append(ret.SliceTable, uint32(len(buf.Slices)))
+				for _, m := range buf.Slices {
+					ret.SliceTable = append(ret.SliceTable, uint32(m))
+				}
+			}
+			region.Slices = o
+		}
+		ret.Regions = append(ret.Regions, region)
 	}
 	// the buffers of the impulse responses of the convolution units
 	for _, cv := range b.Convs {

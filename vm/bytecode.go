@@ -194,6 +194,21 @@ const (
 	// BufferRegionFirstVoiceShift is where the first voice of the instrument
 	// is in BufferRegion.Flags, for BufferRegionPerVoice.
 	BufferRegionFirstVoiceShift = 16
+	// BufferRegionSliced is set in BufferRegion.Flags for bufread units that
+	// play a slice of their buffer: its start is an offset from the start of
+	// the slice, and its loop start and loop length are in
+	// sointu.BufreadSliceParts of the length of the slice.
+	// BufferRegionSliceShift then has the slice parameter.
+	BufferRegionSliced = 512
+	// BufferRegionSliceNote is set in BufferRegion.Flags for sliced bufread
+	// units whose slice adds the note minus sointu.BufreadSliceBaseNote.
+	BufferRegionSliceNote = 1024
+	// BufferRegionSliceStop is set in BufferRegion.Flags for sliced bufread
+	// units that are silent outside their slice.
+	BufferRegionSliceStop = 2048
+	// BufferRegionSliceShift is where the slice parameter is in
+	// BufferRegion.Flags, for BufferRegionSliced: 7 bits.
+	BufferRegionSliceShift = 24
 )
 
 // PerVoiceBuffer is a buffer that every voice of an instrument has a copy
@@ -816,8 +831,12 @@ func (b *bytecodeBuilder) scanBuffers(patch sointu.Patch) {
 func (b *bytecodeBuilder) getBufferRegionIndex(unit sointu.Unit, firstVoice int) int {
 	p := unit.Parameters
 	start, loopStart, loopLength := p["start"], p["loopstart"], p["looplength"]
+	sliced := unit.Type == "bufread" && p["slices"] != 0 && p["mode"] != 1
 	if unit.Type == "bufread" && p["timing"] == 2 { // in 48ths of a beat
-		start, loopStart, loopLength = BPMFrames(start, b.BPM), BPMFrames(loopStart, b.BPM), BPMFrames(loopLength, b.BPM)
+		start = BPMFrames(start, b.BPM)
+		if !sliced { // else in parts of the slice
+			loopStart, loopLength = BPMFrames(loopStart, b.BPM), BPMFrames(loopLength, b.BPM)
+		}
 	}
 	r := BufferRegion{BufferID: uint32(p["buffer"]), Start: uint32(int32(start)), EdgeFade: uint32(max(p["edgefade"], 0))}
 	// loop points as int32 too; a negative loop start counts from the end
@@ -837,13 +856,21 @@ func (b *bytecodeBuilder) getBufferRegionIndex(unit sointu.Unit, firstVoice int)
 		if p["mode"] == 1 {
 			r.Flags |= BufferRegionTap
 			r.EdgeFade = 0 // a tap does not get to the edges
-		} else if p["notetracking"] == 1 {
+		} else if p["notetracking"] == 1 && !(sliced && p["slices"] == 2) { // the note picks the slice
 			r.Flags |= BufferRegionNoteTracking
 		}
 		if p["timing"] == 1 {
 			r.Flags |= BufferRegionPitchTiming
 		}
-		if b.ringBuffers[p["buffer"]] {
+		if sliced {
+			r.Flags |= BufferRegionSliced | uint32(min(max(p["slice"], 0), sointu.BufreadMaxSlice))<<BufferRegionSliceShift
+			if p["slices"] == 2 {
+				r.Flags |= BufferRegionSliceNote
+			}
+			if p["sliceend"] == 1 {
+				r.Flags |= BufferRegionSliceStop
+			}
+		} else if b.ringBuffers[p["buffer"]] {
 			r.Flags |= BufferRegionRingRead
 		}
 	}

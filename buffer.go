@@ -6,6 +6,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"slices"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -36,6 +38,11 @@ type (
 		// Auto is true for a buffer created by the tracker for a unit, which
 		// the tracker deletes when no unit uses it anymore.
 		Auto bool `yaml:",omitempty"`
+		// Slices are the slice markers of an audio buffer, which bufread
+		// units with slices play from: frames from the oldest valid frame,
+		// increasing, each above 0. The first slice starts at frame 0, so
+		// that n markers make n+1 slices.
+		Slices []int `yaml:",flow,omitempty"`
 	}
 
 	// AudioSample is an audio file that fills a buffer. The file is stored in
@@ -134,6 +141,7 @@ func (b Buffers) Copy() Buffers {
 	ret := make(Buffers, len(b))
 	for i, buf := range b {
 		ret[i] = buf
+		ret[i].Slices = slices.Clone(buf.Slices)
 		if buf.Sample != nil {
 			s := *buf.Sample
 			if s.Encoding != nil {
@@ -239,7 +247,17 @@ func (b *Buffer) IsAudio() bool { return !b.Spectrum && !b.Bus }
 // NewAudio returns the audio of a writable buffer before anything has been
 // written to it: silent and without valid frames.
 func (b *Buffer) NewAudio() BufferAudio {
-	return BufferAudio{Channels: b.Channels, Data: make([]float32, b.Frames*b.Channels), Writable: true}
+	return BufferAudio{Channels: b.Channels, Data: make([]float32, b.Frames*b.Channels), Writable: true, Slices: b.Slices}
+}
+
+// AttachSlices sets the slice markers of the audio of the buffers to those
+// of the buffers, in place.
+func (b Buffers) AttachSlices(audio map[int]BufferAudio) {
+	for id, a := range audio {
+		buf, _ := b.Find(id)
+		a.Slices = buf.Slices
+		audio[id] = a
+	}
 }
 
 func (b Buffers) Find(id int) (Buffer, bool) {
@@ -249,4 +267,38 @@ func (b Buffers) Find(id int) (Buffer, bool) {
 		}
 	}
 	return Buffer{}, false
+}
+
+// CleanSlices returns slice markers as Buffer.Slices keeps them: sorted,
+// without duplicates, and within the frames of the buffer (above 0 and below
+// frames; frames <= 0 keeps all above 0).
+func CleanSlices(markers []int, frames int) []int {
+	ret := make([]int, 0, len(markers))
+	for _, m := range markers {
+		if m > 0 && (frames <= 0 || m < frames) {
+			ret = append(ret, m)
+		}
+	}
+	sort.Ints(ret)
+	ret = slices.Compact(ret)
+	if len(ret) == 0 {
+		return nil
+	}
+	return ret
+}
+
+// SliceBounds returns the first frame and the frame after the last of slice
+// i of a buffer with the markers and the valid frames, wrapping i around the
+// number of slices, as the bufread unit does.
+func SliceBounds(markers []int, i, frames int) (start, end int) {
+	n := len(markers) + 1
+	i = (i%n + n) % n
+	if i > 0 {
+		start = markers[i-1]
+	}
+	end = frames
+	if i < len(markers) {
+		end = markers[i]
+	}
+	return start, end
 }

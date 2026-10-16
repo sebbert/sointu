@@ -264,3 +264,82 @@ func TestBufreadNegativeLoopStart(t *testing.T) {
 	loop := sointu.ParamMap{"loop": 1, "loopstart": -3, "looplength": 2}
 	checkLeft(t, renderBufread(t, loop, bufs, 60, 10), []float32{0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.5, 0.6, 0.5})
 }
+
+func slicedRamp() map[int]sointu.BufferAudio {
+	a := ramp(16, 1, 0.1)
+	a.Slices = []int{4, 10} // slices [0,4), [4,10), [10,16)
+	return map[int]sointu.BufferAudio{1: a}
+}
+
+func TestBufreadSlice(t *testing.T) {
+	bufs := slicedRamp()
+	checkLeft(t, renderBufread(t, sointu.ParamMap{"slices": 1, "slice": 1}, bufs, 60, 3), []float32{0.4, 0.5, 0.6})
+	// start is an offset from the marker
+	checkLeft(t, renderBufread(t, sointu.ParamMap{"slices": 1, "slice": 2, "start": 2}, bufs, 60, 3), []float32{1.2, 1.3, 1.4})
+	// continues past the next marker, or stops there
+	checkLeft(t, renderBufread(t, sointu.ParamMap{"slices": 1, "slice": 0}, bufs, 60, 6), []float32{0, 0.1, 0.2, 0.3, 0.4, 0.5})
+	checkLeft(t, renderBufread(t, sointu.ParamMap{"slices": 1, "slice": 0, "sliceend": 1}, bufs, 60, 6), []float32{0, 0.1, 0.2, 0.3, 0, 0})
+	// wraps around the number of slices
+	checkLeft(t, renderBufread(t, sointu.ParamMap{"slices": 1, "slice": 4}, bufs, 60, 2), []float32{0.4, 0.5})
+	// no markers: one slice
+	one := map[int]sointu.BufferAudio{1: ramp(16, 1, 0.1)}
+	checkLeft(t, renderBufread(t, sointu.ParamMap{"slices": 1, "slice": 3, "start": 1}, one, 60, 2), []float32{0.1, 0.2})
+}
+
+func TestBufreadSliceByNote(t *testing.T) {
+	bufs := slicedRamp()
+	// C-3 plays slice 0, chromatic up; the pitch does not follow the note
+	checkLeft(t, renderBufread(t, sointu.ParamMap{"slices": 2}, bufs, 60, 2), []float32{0, 0.1})
+	checkLeft(t, renderBufread(t, sointu.ParamMap{"slices": 2}, bufs, 62, 2), []float32{1.0, 1.1})
+	checkLeft(t, renderBufread(t, sointu.ParamMap{"slices": 2, "slice": 1}, bufs, 60, 2), []float32{0.4, 0.5})
+	checkLeft(t, renderBufread(t, sointu.ParamMap{"slices": 2}, bufs, 59, 2), []float32{1.0, 1.1}) // wraps down
+}
+
+func TestBufreadSliceModulated(t *testing.T) {
+	bufs := slicedRamp()
+	// loadval 66 is 2/64; sent at 128, 2/64·128 = 4 slices: 4 wraps to slice 1
+	checkLeft(t, renderModulatedBufread(t, sointu.ParamMap{"slices": 1}, map[int]int{7: 66}, bufs, 2), []float32{0.4, 0.5})
+}
+
+func TestBufreadSliceFromLoadnote(t *testing.T) {
+	// a loadnote sent at 96 adds the note minus 64, exactly
+	a := ramp(200, 1, 0.01)
+	for i := 1; i < 20; i++ {
+		a.Slices = append(a.Slices, i*10)
+	}
+	patch := sointu.Patch{{NumVoices: 1, Units: []sointu.Unit{
+		{Type: "loadnote", Parameters: sointu.ParamMap{"stereo": 0}},
+		{Type: "send", Parameters: sointu.ParamMap{"stereo": 0, "amount": 96, "target": 100, "port": 7, "sendpop": 1}},
+		{ID: 100, Type: "bufread", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "gain": 128, "speed": 128, "buffer": 1, "slices": 1, "slice": 4}},
+		{Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
+	}}}
+	synth, err := vm.GoSynther{}.Synth(patch, 120)
+	if err != nil {
+		t.Fatal(err)
+	}
+	synth.(sointu.BufferSetter).SetBuffers(map[int]sointu.BufferAudio{1: a})
+	synth.Trigger(0, 67) // 67 - 64 + 4 = slice 7
+	out := make(sointu.AudioBuffer, 2)
+	if _, _, err := synth.Render(out, 2); err != nil {
+		t.Fatal(err)
+	}
+	checkLeft(t, out, []float32{0.7, 0.71})
+}
+
+func TestBufreadSliceLoop(t *testing.T) {
+	bufs := slicedRamp()
+	// slice 1 is 6 frames: loop start 64/128 of it = 3 frames in, length
+	// 128/128 held to the 3 frames left
+	loop := sointu.ParamMap{"slices": 1, "slice": 1, "loop": 1, "loopstart": 64, "looplength": 128}
+	checkLeft(t, renderBufread(t, loop, bufs, 60, 9), []float32{0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.7, 0.8, 0.9})
+	// with BPM timing, the loop points stay parts of the slice
+	loop["timing"] = 2
+	checkLeft(t, renderBufread(t, loop, bufs, 60, 9), []float32{0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.7, 0.8, 0.9})
+}
+
+func TestBufreadSliceEdgeFade(t *testing.T) {
+	bufs := slicedRamp()
+	// slice 1, [4,10): faded over 2 frames at both of its edges
+	out := renderBufread(t, sointu.ParamMap{"slices": 1, "slice": 1, "sliceend": 1, "edgefade": 2}, bufs, 60, 7)
+	checkLeft(t, out, []float32{0, 0.25, 0.6, 0.7, 0.4, 0, 0})
+}

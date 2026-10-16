@@ -824,7 +824,7 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 				var index byte
 				index, operands = operands[0], operands[1:]
 				s.bufread(unit, voice, int(s.bytecode.NumVoices-voicesRemaining), s.bytecode.BufferRegions[index], params[0], params[1], params[2], params[3], stereo, &stack)
-				unit.ports[4], unit.ports[5], unit.ports[6] = 0, 0, 0
+				unit.ports[4], unit.ports[5], unit.ports[6], unit.ports[7] = 0, 0, 0, 0
 			case opDelay:
 				pregain2 := params[0] * params[0]
 				damp := params[3]
@@ -973,7 +973,7 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 // voice, if the voices of the instrument each have one.
 func (s *GoSynth) regionBuffer(r BufferRegion, voiceIndex int) *synthBuffer {
 	if r.Flags&BufferRegionPerVoice != 0 {
-		if i := voiceIndex - int(r.Flags>>BufferRegionFirstVoiceShift); i > 0 {
+		if i := voiceIndex - int(r.Flags>>BufferRegionFirstVoiceShift&0xff); i > 0 {
 			if copies := s.voiceBuffers[int(r.BufferID)]; i <= len(copies) {
 				return copies[i-1]
 			}
@@ -990,9 +990,10 @@ func (s *GoSynth) regionBuffer(r BufferRegion, voiceIndex int) *synthBuffer {
 // the trigger in state[2], 1 in state[3] once playback has started, 1 in
 // state[4] once the position has been in the loop, the filled length at the
 // trigger in state[5] and, for the crossfade at the write head of a ring, 1
-// more than where the position was from the oldest frame in state[6]; all are
-// zeroed when a note is triggered. The modulations of start, loop start and
-// loop length are in unit.ports[4:7]. Voices that have never been triggered
+// more than where the position was from the oldest frame in state[6] and the
+// slice of a sliced unit in state[7]; all are zeroed when a note is
+// triggered. The modulations of start, loop start, loop length and slice are
+// in unit.ports[4:8]. Voices that have never been triggered
 // (note 0) are silent, except for a tap, which reads the frame at start every
 // sample and has no state but what Playheads shows. Matches $su_op_bufread
 // in the wasm player.
@@ -1023,10 +1024,24 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, voiceIndex int, r BufferRegi
 		whole := floor32(scaled)
 		start, startFrac = int32(whole), scaled-whole
 	}
+	sliced := r.Flags&BufferRegionSliced != 0
 	if tap || math.Float32bits(unit.state[3]) == 0 {
 		base = oldest
 		unit.state[5] = math.Float32frombits(uint32(filled)) // for negative loop starts
-		if start < 0 {
+		if sliced {
+			// the slice, read when the note is triggered; start is an
+			// offset from its start
+			shift := max(min(float32(unit.ports[7]*128), 1<<30), -(1 << 30)) // NaN stays NaN, and becomes 0
+			slice := int64(r.Flags>>BufferRegionSliceShift&0x7f) + truncSat64(float32(math.RoundToEven(float64(shift))))
+			if r.Flags&BufferRegionSliceNote != 0 {
+				slice += int64(voice.note) - sointu.BufreadSliceBaseNote
+			}
+			n := int64(len(buf.audio.Slices) + 1)
+			slice = (slice%n + n) % n
+			unit.state[7] = math.Float32frombits(uint32(slice))
+			lo, _ := sliceBounds(buf.audio.Slices, uint32(slice), filled)
+			start += lo
+		} else if start < 0 {
 			start += filled // from the newest frame
 		}
 		if tap {
@@ -1066,14 +1081,24 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, voiceIndex int, r BufferRegi
 		}
 	}
 	next := pos + 1
+	// the slice: lo is its first frame, hi the frame after its last
+	lo, hi := int32(0), int32(0)
+	if sliced {
+		lo, hi = sliceBounds(buf.audio.Slices, math.Float32bits(unit.state[7]), filled)
+	}
 	var loopStart, loopLength, loopEnd, fade int32
 	if r.Flags&BufferRegionLoop != 0 {
-		ls := int32(r.LoopStart)
-		if ls < 0 {
-			ls += int32(math.Float32bits(unit.state[5])) // from the newest frame at the trigger
+		if sliced { // in parts of the slice, within it
+			loopStart = lo + sliceFrames(int32(r.LoopStart), unit.ports[5], hi-lo)
+			loopLength = min(sliceFrames(int32(r.LoopLength), unit.ports[6], hi-lo), hi-loopStart)
+		} else {
+			ls := int32(r.LoopStart)
+			if ls < 0 {
+				ls += int32(math.Float32bits(unit.state[5])) // from the newest frame at the trigger
+			}
+			loopStart = bufreadFrames(ls, unit.ports[5], filled, int32(capacity))
+			loopLength = bufreadFrames(int32(r.LoopLength), unit.ports[6], filled, int32(capacity))
 		}
-		loopStart = bufreadFrames(ls, unit.ports[5], filled, int32(capacity))
-		loopLength = bufreadFrames(int32(r.LoopLength), unit.ports[6], filled, int32(capacity))
 		loopEnd = loopStart + loopLength
 		fade = min(int32(r.Fade), loopStart, loopLength)
 		if loopLength > 0 {
@@ -1090,11 +1115,12 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, voiceIndex int, r BufferRegi
 		}
 	}
 	a := buf.audio
+	stop := r.Flags&BufferRegionSliceStop != 0
 	sample := func(frame int32, channel int) float32 {
 		if ring { // valid all around
 			frame = bufreadWrap(frame, capacity)
 		}
-		if frame < 0 || frame >= int32(capacity) {
+		if frame < 0 || frame >= int32(capacity) || stop && (frame < lo || frame >= hi) {
 			return 0
 		}
 		abs := (base + uint32(frame)) % capacity
@@ -1125,6 +1151,9 @@ func (s *GoSynth) bufread(unit *unit, voice *voice, voiceIndex int, r BufferRegi
 				}
 				gain = float32(gain * w)
 			} else {
+				if stop && pos >= lo && pos < hi { // at the edges of the slice
+					d = min(d, uint32(pos-lo), uint32(hi-1-pos))
+				}
 				gain = float32(gain * min(float32(d)/float32(r.EdgeFade), 1))
 			}
 		}
@@ -1378,6 +1407,45 @@ func (s *GoSynth) bufwrite(unit *unit, voice *voice, voiceIndex int, r BufferReg
 func bufreadWrap(pos int32, capacity uint32) int32 {
 	c := int32(capacity)
 	return ((pos % c) + c) % c
+}
+
+// sliceBounds returns the first frame of slice i of a bufread unit and the
+// frame after its last: between the markers, the last slice ending at the
+// filled length.
+func sliceBounds(markers []int, i uint32, filled int32) (lo, hi int32) {
+	i = min(i, uint32(len(markers))) // the markers changed while the note played
+	if i > 0 {
+		lo = int32(markers[i-1])
+	}
+	hi = filled
+	if int(i) < len(markers) {
+		hi = int32(markers[i])
+	}
+	return lo, hi
+}
+
+// sliceFrames returns a loop point of a sliced bufread unit: parts of the
+// length of the slice, in sointu.BufreadSliceParts, shifted by the
+// modulation times the length, clamped to the length.
+func sliceFrames(parts int32, modulation float32, length int32) int32 {
+	offset := float32(math.Floor(float64(modulation * float32(length))))
+	offset = max(min(offset, 1<<30), -(1 << 30))
+	v := int64(length)*int64(parts)/sointu.BufreadSliceParts + truncSat64(offset)
+	return int32(max(min(v, int64(length)), 0))
+}
+
+// truncSat64 converts to an integer like i64.trunc_sat_f32_s of the wasm
+// player: towards zero, saturating, NaN to 0.
+func truncSat64(v float32) int64 {
+	switch {
+	case v != v:
+		return 0
+	case v >= 0x1p63:
+		return math.MaxInt64
+	case v < -0x1p63:
+		return math.MinInt64
+	}
+	return int64(v)
 }
 
 // bufreadFrames returns a position of a bufread unit: frames shifted by the

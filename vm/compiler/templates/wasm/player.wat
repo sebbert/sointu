@@ -100,12 +100,21 @@
 ;-------------------------------------------------------------------------------
 ;    Buffer regions played by bufread units, 7 i32s each: offset of the
 ;    buffer's header from su_buffer_headers in bytes, start, loop start, loop
-;    length, fade, edge fade and flags
+;    length, fade, edge fade and flags; with sliced regions in the song, 8,
+;    the last the offset of the buffer's slice markers from su_slices. The
+;    slice markers of each buffer that sliced regions play: their number, and
+;    the markers.
 ;-------------------------------------------------------------------------------
 */}}
 {{- .SetDataLabel "su_buffer_regions"}}
 {{- range .Regions}}
-{{- $.DataD .Header}}{{$.DataD .Start}}{{$.DataD .LoopStart}}{{$.DataD .LoopLength}}{{$.DataD .Fade}}{{$.DataD .EdgeFade}}{{$.DataD .Flags}}
+{{- $.DataD .Header}}{{$.DataD .Start}}{{$.DataD .LoopStart}}{{$.DataD .LoopLength}}{{$.DataD .Fade}}{{$.DataD .EdgeFade}}{{$.DataD .Flags}}{{if $.BufreadSlices}}{{$.DataD .Slices}}{{end}}
+{{- end}}
+{{- if .BufreadSlices}}
+{{- .SetDataLabel "su_slices"}}
+{{- range .SliceTable}}
+{{- $.DataD .}}
+{{- end}}
 {{- end}}
 {{- end}}
 
@@ -400,6 +409,11 @@
 {{- if .BufreadRing}}
 ;; 1 while a bufread unit reads a full ring, whose frames are valid all around
 (global $bufring (mut i32) (i32.const 0))
+{{- end}}
+{{- if .BufreadSliceStop}}
+;; the frames a bufread unit reads, outside of which it is silent: its slice
+(global $slicelo (mut i32) (i32.const 0))
+(global $slicehi (mut i32) (i32.const 0))
 {{- end}}
 (global $row (mut i32) (i32.const 0))
 (global $pattern (mut i32) (i32.const 0))

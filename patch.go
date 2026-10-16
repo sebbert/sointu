@@ -726,6 +726,20 @@ var UnitTypes = map[string]UnitType{
 		// pitch, start is in frames at note 0 and is divided by 2^(note/12),
 		// like the times of the delay unit (10788 is one period of the
 		// note); with BPM, all three are in 48ths of a beat, like those too.
+		//
+		// With slices, the unit plays a slice of the buffer, between two of
+		// its slice markers (Buffer.Slices; the first slice starts at the
+		// oldest valid frame, the last ends at the newest): slice, or with
+		// slices note, the note minus 60 (C-3) plus slice, wrapped around the
+		// number of slices. A modulation of slice adds 128 slices per 1,
+		// rounded: a loadnote sent at amount 96 adds the note minus 64.
+		// start is then an offset from the start of the slice, read like
+		// before, and loopstart and looplength are in 128ths of the length
+		// of the slice, modulated by the length of the slice, the loop held
+		// within the slice. With sliceend stop, frames outside the slice are
+		// silent, and edgefade fades at its edges. With slices note, the
+		// pitch does not follow the note. A tap has no slices, and sliced
+		// units do not crossfade at the write head of a ring.
 		Params: []UnitParameter{
 			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},
 			{Name: "transpose", MinValue: 0, Neutral: 64, Default: 64, MaxValue: 128, CanSet: true, CanModulate: true, DisplayFunc: transposeDisplay},
@@ -742,6 +756,9 @@ var UnitTypes = map[string]UnitType{
 			{Name: "edgefade", MinValue: 0, MaxValue: math.MaxInt32, CanSet: true, CanModulate: false},
 			{Name: "mode", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"play", "tap"})},
 			{Name: "timing", MinValue: 0, MaxValue: 2, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"frames", "pitch", "BPM"})},
+			{Name: "slices", MinValue: 0, MaxValue: 2, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"off", "slice", "note"})},
+			{Name: "slice", MinValue: 0, MaxValue: BufreadMaxSlice, CanSet: true, CanModulate: true, NoTransform: true},
+			{Name: "sliceend", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false, DisplayFunc: arrDispFunc([]string{"continue", "stop"})},
 		},
 		StackUse: stackUseSource,
 	},
@@ -1372,6 +1389,15 @@ func stackUseEffect(u *Unit) StackUse {
 	}
 	return StackUse{Inputs: [][]int{{0}}, Modifies: []bool{true}, NumOutputs: 1}
 }
+
+// The slices of a bufread unit: the largest slice parameter, the note that
+// plays slice 0 with slices note (C-3), and what loopstart and looplength are
+// parts of the slice in.
+const (
+	BufreadMaxSlice      = 127
+	BufreadSliceBaseNote = 60
+	BufreadSliceParts    = 128
+)
 
 // The length parameter of a bufwrite unit, in frames: of the buffer that the
 // tracker makes for a unit without one.
