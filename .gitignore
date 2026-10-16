@@ -37,3 +37,5 @@ actual_output/
 .DS_Store
 # the REX SDK of Reason Studios, downloaded by make REX=1; not to be committed
 .rexsdk/
+# the VST3 SDK of Steinberg, cloned only to build its validator for testing
+.vst3sdk*

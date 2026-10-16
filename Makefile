@@ -1,27 +1,30 @@
-# Build sointu's command line tools, tracker and VST2, CLAP and Audio Unit
-# plugins.
+# Build sointu's command line tools, tracker and VST2, VST3, CLAP and Audio
+# Unit plugins.
 #
 #   make                      build everything into out/
 #   make compile track play mcp
 #                             build individual tools
-#   make vst clap             build the VST2 or CLAP plugin
+#   make vst vst3 clap        build the VST2, VST3 or CLAP plugin
 #   make au                   build the Audio Unit plugin (macOS only)
 #   make install-vst          install a plugin into the user plugin directory
+#   make install-vst3
 #   make install-clap
 #   make install-au
 #   sudo make install-vst-system
 #   sudo make install-clap-system
 #                             install a plugin into the system plugin directory
 #   make uninstall-vst        remove a plugin from the user plugin directory
+#   make uninstall-vst3
 #   make uninstall-clap
 #   make clean
 #
 # The VST2 plugin is a .vst bundle on macOS, a .so on Linux and a .dll on
-# Windows. The CLAP plugin is a .clap bundle on macOS and a .clap shared
+# Windows. The VST3 plugin is a .vst3 bundle everywhere, with the library in
+# Contents/MacOS, Contents/<arch>-linux or Contents/x86_64-win. The CLAP plugin is a .clap bundle on macOS and a .clap shared
 # library elsewhere. The Audio Unit is a .component bundle. On Windows, run from a POSIX shell such as Git Bash or
 # MSYS2.
 #
-# Set VST_DIR=..., CLAP_DIR=... or AU_DIR=... to install a plugin somewhere else. Set
+# Set VST_DIR=..., VST3_DIR=..., CLAP_DIR=... or AU_DIR=... to install a plugin somewhere else. Set
 # NATIVE=1 to use the native synth in the tracker and plugins (x86 only;
 # requires the native library to be built into build/ with CMake first).
 #
@@ -64,6 +67,8 @@ vst_USER_DIR    := $(HOME)/Library/Audio/Plug-Ins/VST
 vst_SYSTEM_DIR  := /Library/Audio/Plug-Ins/VST
 clap_USER_DIR   := $(HOME)/Library/Audio/Plug-Ins/CLAP
 clap_SYSTEM_DIR := /Library/Audio/Plug-Ins/CLAP
+vst3_USER_DIR   := $(HOME)/Library/Audio/Plug-Ins/VST3
+vst3_SYSTEM_DIR := /Library/Audio/Plug-Ins/VST3
 au_FILE         := sointu-au.component
 au_USER_DIR     := $(HOME)/Library/Audio/Plug-Ins/Components
 au_SYSTEM_DIR   := /Library/Audio/Plug-Ins/Components
@@ -73,6 +78,9 @@ vst_USER_DIR    := $(HOME)/.vst
 vst_SYSTEM_DIR  := /usr/local/lib/vst
 clap_USER_DIR   := $(HOME)/.clap
 clap_SYSTEM_DIR := /usr/lib/clap
+vst3_USER_DIR   := $(HOME)/.vst3
+vst3_SYSTEM_DIR := /usr/lib/vst3
+vst3_BIN        := Contents/$(shell uname -m)-linux/sointu-vst3.so
 else
 EXE             := .exe
 vst_FILE        := sointu-vsti.dll
@@ -80,17 +88,23 @@ vst_USER_DIR    := # Windows has no common per-user VST directory; set VST_DIR
 vst_SYSTEM_DIR  := C:/Program Files/Common Files/VST2
 clap_USER_DIR   := $(subst \,/,$(LOCALAPPDATA))/Programs/Common/CLAP
 clap_SYSTEM_DIR := C:/Program Files/Common Files/CLAP
+vst3_USER_DIR   := $(subst \,/,$(LOCALAPPDATA))/Programs/Common/VST3
+vst3_SYSTEM_DIR := C:/Program Files/Common Files/VST3
+vst3_BIN        := Contents/x86_64-win/sointu-vst3.vst3
 endif
 clap_FILE := sointu-clap.clap
+vst3_FILE := sointu-vst3.vst3
 vst_DIR   := $(VST_DIR)
+vst3_DIR  := $(VST3_DIR)
 clap_DIR  := $(CLAP_DIR)
 au_DIR    := $(AU_DIR)
 vst_PKG   := sointu-vsti
 clap_PKG  := sointu-clap
+vst3_PKG  := sointu-vst3
 au_PKG    := sointu-au
 
 TOOLS   := compile track play mcp
-PLUGINS := vst clap
+PLUGINS := vst vst3 clap
 ifeq ($(PLATFORM),macos)
 PLUGINS += au
 endif
@@ -156,6 +170,13 @@ endif
 	sed 's/@VERSION@/$(VERSION)/g' cmd/$($(1)_PKG)/Info.plist > $$@/Contents/Info.plist
 	printf 'BNDL????' > $$@/Contents/PkgInfo
 	codesign --force --sign - $$@
+else ifneq ($($(1)_BIN),)
+$(OUT)/$($(1)_FILE): FORCE
+	rm -rf $$@
+	mkdir -p $$(dir $$@/$($(1)_BIN))
+	CGO_ENABLED=1 $(GO) build -buildmode=c-shared -tags=$(PLUGIN_TAGS) \
+		-ldflags "$(LDFLAGS)" -o $$@/$($(1)_BIN) ./cmd/$($(1)_PKG)/
+	rm -f $$(basename $$@/$($(1)_BIN)).h
 else
 $(OUT)/$($(1)_FILE): FORCE
 	mkdir -p $(OUT)
