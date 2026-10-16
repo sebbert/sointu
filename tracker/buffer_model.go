@@ -152,6 +152,7 @@ func (m *BufferModel) addImported(fileName string, data []byte, channels int, re
 		buf.Sample = sample
 		buf.Channels = channels
 		buf.Frames = 0 // no longer recorded into
+		buf.Slices = nil // they marked the sample replaced
 		return
 	}
 	id := 1

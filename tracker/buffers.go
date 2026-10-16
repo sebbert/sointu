@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"slices"
 
 	"github.com/vsariola/sointu"
 	"github.com/vsariola/sointu/ffmpeg"
@@ -21,6 +22,9 @@ type (
 		// customFormat shows the format of the selected buffer's encoding
 		// as typed in, even if it is a common one
 		customFormat bool
+		// slices are the slice markers sent to the player, by buffer ID
+		slices map[int][]int
+		sliceTools
 	}
 
 	// BufferStatus tells whether a buffer's audio is ready.
@@ -124,6 +128,13 @@ func (m *Model) syncBuffers() {
 			changed = true
 		}
 	}
+	if !changed {
+		for _, buf := range m.d.Song.Buffers {
+			if _, ok := b.audio[buf.ID]; ok && !slices.Equal(b.slices[buf.ID], buf.Slices) {
+				changed = true
+			}
+		}
+	}
 	if changed {
 		m.sendBufferAudio()
 	}
@@ -171,7 +182,13 @@ func (m *Model) clearBuffer(id int) {
 // data is shared: the model never modifies it, and only the player writes to
 // the audio of writable buffers.
 func (m *Model) sendBufferAudio() {
-	TrySend(m.broker.ToPlayer, any(BufferAudioMsg{Audio: maps.Clone(m.buffers.audio)}))
+	audio := maps.Clone(m.buffers.audio)
+	m.d.Song.Buffers.AttachSlices(audio)
+	m.buffers.slices = map[int][]int{}
+	for id, a := range audio {
+		m.buffers.slices[id] = a.Slices
+	}
+	TrySend(m.broker.ToPlayer, any(BufferAudioMsg{Audio: audio}))
 }
 
 // BufferAudio returns the audio of all buffers that are ready, keyed by
