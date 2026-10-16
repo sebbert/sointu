@@ -50,7 +50,7 @@ func (p *AnalysisPanel) Layout(gtx C, y int) D {
 		text := "after the unit"
 		switch {
 		case !ok:
-			text = "not played: the signal of a disabled unit, or with the native synth, is not recorded"
+			text = "the unit is not played"
 		case a.Before:
 			text = "before the unit, which leaves nothing on the stack"
 		}
