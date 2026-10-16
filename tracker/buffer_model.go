@@ -26,7 +26,7 @@ type BufferModel Model
 const customPreset = "Custom"
 
 // AudioFileExtensions are the extensions offered when importing samples.
-var AudioFileExtensions = []string{".wav", ".flac", ".aif", ".aiff", ".mp3", ".ogg", ".opus", ".m4a", ".webm"}
+var AudioFileExtensions = []string{".wav", ".flac", ".aif", ".aiff", ".mp3", ".ogg", ".opus", ".m4a", ".webm", ".rex", ".rx2", ".rcy"}
 
 // loadEncodingPresets loads the default encoding presets that songs start
 // with, alerting about errors in the user's presets file.
@@ -130,8 +130,9 @@ func (m *BufferModel) Import(r io.ReadCloser, replace bool) {
 		f, err := ffmpeg.Find("")
 		var stored []byte
 		var channels int
+		var markers []int
 		if err == nil {
-			stored, channels, err = f.Import(data)
+			stored, channels, markers, err = importSample(f, fileName, data)
 		}
 		TrySend(m.broker.ToModel, MsgToModel{Data: func() {
 			if err != nil {
@@ -140,7 +141,7 @@ func (m *BufferModel) Import(r io.ReadCloser, replace bool) {
 			}
 			defer m.change("ImportBuffer")() // one step with the markers
 			m.addImported(fileName, stored, min(max(channels, 1), 2), target)
-			m.setFileSlices(data)
+			m.setImportedSlices(markers)
 		}})
 	}()
 }

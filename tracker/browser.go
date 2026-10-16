@@ -13,6 +13,7 @@ import (
 
 	"github.com/vsariola/sointu"
 	"github.com/vsariola/sointu/ffmpeg"
+	"github.com/vsariola/sointu/rex"
 )
 
 type (
@@ -567,7 +568,31 @@ func decodePreview(ctx context.Context, path string) (sointu.BufferAudio, error)
 		return sointu.BufferAudio{}, err
 	}
 	f.Context = ctx
+	if rex.IsRex(path) {
+		return rexPreview(path)
+	}
 	return f.DecodeFile(path, 2, browserPreviewSeconds)
+}
+
+// rexPreview renders the first browserPreviewSeconds of a REX file in
+// stereo.
+func rexPreview(path string) (sointu.BufferAudio, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return sointu.BufferAudio{}, err
+	}
+	loop, err := rex.Decode(data)
+	if err != nil {
+		return sointu.BufferAudio{}, err
+	}
+	a, _ := loop.Render()
+	frames := min(a.Frames(), int(browserPreviewSeconds*44100))
+	out := sointu.BufferAudio{Channels: 2, Data: make([]float32, 2*frames)}
+	for i := range frames {
+		out.Data[2*i] = a.Data[i*a.Channels]
+		out.Data[2*i+1] = a.Data[i*a.Channels+a.Channels-1]
+	}
+	return out, nil
 }
 
 // ImportFiles imports audio files as new buffers, in order, on a goroutine,
@@ -603,12 +628,14 @@ func (m *BufferModel) ImportFiles(paths []string, replace bool) {
 		f, findErr := ffmpeg.Find("")
 		for i, path := range files {
 			name := filepath.Base(path)
-			var stored, data []byte
+			var stored []byte
 			var channels int
+			var markers []int
 			err := findErr
 			if err == nil {
+				var data []byte
 				if data, err = os.ReadFile(path); err == nil {
-					stored, channels, err = f.Import(data)
+					stored, channels, markers, err = importSample(f, name, data)
 				}
 			}
 			id := 0
@@ -622,7 +649,7 @@ func (m *BufferModel) ImportFiles(paths []string, replace bool) {
 				}
 				defer m.change("ImportBuffer")() // one step with the markers
 				m.addImported(name, stored, min(max(channels, 1), 2), id)
-				m.setFileSlices(data)
+				m.setImportedSlices(markers)
 			}})
 			if findErr != nil {
 				return // without ffmpeg, the others fail the same

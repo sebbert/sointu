@@ -6,6 +6,8 @@ import (
 	"slices"
 
 	"github.com/vsariola/sointu"
+	"github.com/vsariola/sointu/ffmpeg"
+	"github.com/vsariola/sointu/rex"
 	"github.com/vsariola/sointu/samplemarkers"
 )
 
@@ -289,11 +291,29 @@ func FileSlices(data []byte) []int {
 	return info.Slices()
 }
 
-// setFileSlices gives the selected buffer, a sample just imported from the
-// file data, the slice markers of the file, if it has any. Call it within
-// the change of the import.
-func (m *BufferModel) setFileSlices(data []byte) {
-	if markers := FileSlices(data); len(markers) > 0 {
+// importSample prepares an imported file for storing in a song, as
+// ffmpeg.Import does, and returns the slice markers it carries. A REX file
+// is rendered with the REX Shared Library, its slices where they are in the
+// loop, and stored as FLAC.
+func importSample(f *ffmpeg.FFmpeg, name string, data []byte) (stored []byte, channels int, markers []int, err error) {
+	if rex.IsRex(name) {
+		loop, err := rex.Decode(data)
+		if err != nil {
+			return nil, 0, nil, err
+		}
+		audio, markers := loop.Render()
+		stored, err = f.Store(audio)
+		return stored, audio.Channels, markers, err
+	}
+	stored, channels, err = f.Import(data)
+	return stored, channels, FileSlices(data), err
+}
+
+// setImportedSlices gives the selected buffer, a sample just imported, the
+// slice markers of its file, if it has any. Call it within the change of the
+// import.
+func (m *BufferModel) setImportedSlices(markers []int) {
+	if len(markers) > 0 {
 		if buf := m.selected(); buf != nil {
 			buf.Slices = sointu.CleanSlices(markers, 0)
 		}

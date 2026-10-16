@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/vsariola/sointu"
+	"github.com/vsariola/sointu/rex"
 )
 
 func TestSliceMarkersAreUndoableAndReachPlayer(t *testing.T) {
@@ -248,5 +249,16 @@ func importCuePoints(t *testing.T, m *Model, broker *Broker, undos int) {
 	}
 	if len(m.undoStack) != undos+1 {
 		t.Errorf("the import made %d undo steps", len(m.undoStack)-undos)
+	}
+}
+
+// Without the REX Shared Library, a REX file is refused, not given to
+// ffmpeg.
+func TestImportRexWithoutLibrary(t *testing.T) {
+	if rex.Available() {
+		t.Skip("this build has the REX Shared Library")
+	}
+	if _, _, _, err := importSample(nil, "break.rx2", []byte("CAT ")); err != rex.ErrUnavailable {
+		t.Errorf("got %v", err)
 	}
 }

@@ -2518,9 +2518,16 @@ chunks, so the file is read before it is converted. The import and its
 markers are one undo step, from the import button, the sample browser and
 drops alike. The loop points of a WAV `smpl` chunk are a loop,
 not slices, and are not read. The beats of an ACID loop (`acid` chunk, not
-a one shot) are read, and not used yet. REX files (.rex, .rx2, .rcy) are not
-read: their audio is in Propellerhead's compressed format, which ffmpeg does
-not decode.
+a one shot) are read, and not used yet. REX files (.rex, .rx2, .rcy, from
+ReCycle) are rendered with the REX Shared Library of Reason Studios, a
+closed, licensed library that only the tracker uses (package `rex`, build
+tag `rex`): each slice at 44100 Hz where it is in the loop, at the loop's
+tempo (positions in 15360ths of a quarter note), mixed where slices
+overlap, as long as the loop; the slice starts become the markers, and the
+audio is stored as FLAC like an edited sample. The song and the players
+never need the library. Builds without it refuse REX files, also in the
+browser's preview. Not done yet: the binding to the library, which waits
+for the SDK.
 
 **Sample editing** (samples, not recordings): Crop (keep the selection),
 Delete (the selection), Trim silence (the ends below a level, -60 dB by
