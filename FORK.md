@@ -1650,7 +1650,11 @@ no host was run with the plugins.
   folder, Escape or hiding the panel stops it. With the switch of the
   header off (`browser.autopreview`) a file plays only by the play button. Right expands a folder, or
   goes into it; left collapses it, or goes to the folder above, which at the
-  top becomes the root (Backspace too). Enter or a double click loads the
+  top becomes the root (Backspace too). The filter field above the rows
+  keeps those whose names contain it, ignoring case, among the root and the
+  expanded folders (it searches no further), with what is in a folder that
+  matches and the folders the rows kept are in; Enter goes to the rows,
+  Escape clears it. Enter or a double click loads the
   file into the buffer that was selected, as Replace does, one undo step,
   or as a new buffer if there are none or it is a spectrum or a bus. The
   roots offered: the home folder, the last folder (of the file last loaded

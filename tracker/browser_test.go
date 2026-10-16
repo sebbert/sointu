@@ -312,3 +312,34 @@ func TestBrowserDecodesChangedFileAgain(t *testing.T) {
 		t.Errorf("decodes %v, want A.flac decoded again after it changed", *calls)
 	}
 }
+
+func TestBrowserFilter(t *testing.T) {
+	m, _, _ := newBrowserTestModel(t)
+	b := m.Browser()
+	b.SetRoot(browserTree(t))
+	b.Right() // expands kicks
+	b.Right()
+	b.Right() // expands sub
+	for _, tc := range []struct {
+		filter string
+		want   []string
+	}{
+		{"s.WAV", []string{"kicks", "sub", "s.wav"}},
+		{"k1", []string{"kicks", "k1.wav"}},
+		{"sub", []string{"kicks", "sub", "s.wav"}}, // a folder keeps what is in it
+		{"flac", []string{"A.flac"}},
+		{"nothing", nil},
+		{" ", []string{"kicks", "sub", "s.wav", "k1.wav", "Snares", "A.flac", "b.wav"}},
+	} {
+		b.Filter().SetValue(tc.filter)
+		if got := browserNames(m); !slices.Equal(got, tc.want) {
+			t.Errorf("filter %q: got %v, want %v", tc.filter, got, tc.want)
+		}
+	}
+	b.Filter().SetValue("k1")
+	b.List().SetSelected(1)
+	b.Filter().SetValue("wav") // k1.wav stays selected
+	if e, _ := b.Selected(); e.Name != "k1.wav" {
+		t.Errorf("selected %s, want k1.wav", e.Name)
+	}
+}

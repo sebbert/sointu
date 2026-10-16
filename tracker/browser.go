@@ -25,6 +25,7 @@ type (
 		root     string
 		rootErr  error // why the root could not be read
 		entries  []BrowserEntry
+		filter   string // see Filter
 		expanded map[string]bool
 		selected int
 		// lastFolder is the folder of the file last loaded into a buffer,
@@ -193,11 +194,68 @@ func (m *BrowserModel) refresh() {
 	if err := m.appendDir(b.root, 0); err != nil {
 		b.rootErr = err
 	}
+	m.watch() // the folders hidden by the filter too
+	b.entries = filterEntries(b.entries, b.filter)
 	if i := slices.IndexFunc(b.entries, func(e BrowserEntry) bool { return e.Path == selected }); i >= 0 {
 		b.selected = i
+	} else if selected != "" && b.filter != "" {
+		// the filter hid the selected row
+		b.selected = 0
+		m.Stop()
 	}
 	b.selected = min(max(b.selected, 0), len(b.entries)-1)
-	m.watch()
+}
+
+// filterEntries keeps the rows whose names contain filter, ignoring case,
+// the rows inside a folder that does, and the folders that the rows kept are
+// in. An empty filter keeps all.
+func filterEntries(entries []BrowserEntry, filter string) []BrowserEntry {
+	filter = strings.ToLower(strings.TrimSpace(filter))
+	if filter == "" {
+		return entries
+	}
+	keep := make([]bool, len(entries))
+	matchDepth := -1 // the depth of the matching folder the row is in, or -1
+	for i, e := range entries {
+		if matchDepth >= 0 && e.Depth <= matchDepth {
+			matchDepth = -1
+		}
+		if !strings.Contains(strings.ToLower(e.Name), filter) && matchDepth < 0 {
+			continue
+		}
+		keep[i] = true
+		if e.Dir && matchDepth < 0 {
+			matchDepth = e.Depth
+		}
+		for j, d := i-1, e.Depth; j >= 0 && d > 0; j-- { // the folders it is in
+			if entries[j].Depth < d {
+				keep[j], d = true, entries[j].Depth
+			}
+		}
+	}
+	ret := entries[:0]
+	for i, e := range entries {
+		if keep[i] {
+			ret = append(ret, e)
+		}
+	}
+	return ret
+}
+
+// Filter returns a String for the filter of the rows: only the files and
+// folders whose names contain it are listed, among those of the root and the
+// expanded folders, and the folders they are in.
+func (m *BrowserModel) Filter() String { return MakeString((*browserFilter)(m)) }
+
+type browserFilter BrowserModel
+
+func (v *browserFilter) Value() string { return v.browser.filter }
+func (v *browserFilter) SetValue(value string) bool {
+	if value != v.browser.filter {
+		v.browser.filter = value
+		(*BrowserModel)(v).refresh()
+	}
+	return true
 }
 
 // browserWatchInterval is how often the watcher looks at the folders shown.
