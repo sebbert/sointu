@@ -40,7 +40,7 @@ type (
 		// manual turns off playing a file when it is selected: it plays by
 		// PlaySelected only
 		manual bool
-		cache      []browserDecoded
+		cache  []browserDecoded
 		// watched is read by the watcher, which runs while there is a root
 		watched     atomic.Pointer[browserWatch]
 		watchCancel context.CancelFunc

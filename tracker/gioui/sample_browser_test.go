@@ -11,8 +11,8 @@ import (
 
 	"gioui.org/app"
 	"gioui.org/f32"
-	"gioui.org/io/event"
 	"gioui.org/gpu/headless"
+	"gioui.org/io/event"
 	"gioui.org/io/input"
 	"gioui.org/io/key"
 	"gioui.org/layout"
