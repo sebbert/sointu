@@ -2,10 +2,10 @@
 // plays from a click once it has its runway, and the frame loop reads the
 // audio clock.
 //
-// With the websqz plugin, ?websqz-bin gives the bytes of a file as a
+// With the rootsqz plugin, ?rootsqz-bin gives the bytes of a file as a
 // Uint8Array, from the packed page. Without it: `import url from
 // "./song.wasm?url"` and `load(await (await fetch(url)).arrayBuffer())`.
-import wasm from "./song.wasm?websqz-bin";
+import wasm from "./song.wasm?rootsqz-bin";
 import { load, duration, rowsPerSecond, rowsPerPattern } from "./song.js";
 
 const t0 = performance.now();

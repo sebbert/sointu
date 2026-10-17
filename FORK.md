@@ -3500,11 +3500,11 @@ wat2wasm -o out/song.wasm out/song.wat
 ```
 
 writes `song.wat`, `song.js`, `song.d.ts` and, with `-samples`, `song.0.ogg`
-and so on. `examples/code/web` is a vite and websqz (rootsqz) project that
+and so on. `examples/code/web` is a vite and rootsqz project that
 uses them; its README has the usage.
 
 ```js
-import wasm from "./song.wasm?websqz-bin";
+import wasm from "./song.wasm?rootsqz-bin";
 import { load, duration, rowsPerSecond } from "./song.js";
 const song = load(wasm);              // renders in workers
 await song.ready;                     // the runway is rendered
@@ -3758,8 +3758,9 @@ whole render, about as long as one worker takes.
 
 Sizes, for `soundset_loop` with the smallest use (load, start, time), bundled
 with vite 7 and packed with rootsqz from GitHub (423821d, websqz 0.4.1,
-default profile). The JavaScript includes 21 bytes that make the plugin work
-with that packer. For the sync rows, the song has a sync unit after the
+default profile) through rollup-plugin-websqz 1.1.3. The JavaScript includes
+21 bytes that made that plugin work with that packer; the example now uses
+@r00tkids/rollup-plugin-rootsqz from npm, which needs none of them. For the sync rows, the song has a sync unit after the
 envelope of the kick, and the page reads `sync(0)`.
 
 | | JavaScript, minified | wasm | Packed page |
@@ -3779,7 +3780,7 @@ about 250 B larger; that profile is made for larger inputs.
 
 ### Samples and the packer
 
-rootsqz stores `--pre-compressed-files` (`?websqz-bin&compressed` with the
+rootsqz stores `--pre-compressed-files` (`?rootsqz-bin&compressed` with the
 plugin) as they are, after the compressed data. Measured with Opus files of 9
 to 62 KB and the packer from GitHub: compressing them with the rest never
 makes them larger, it gains 0.2 to 1 % (the Ogg pages), so samples inside
@@ -3826,7 +3827,9 @@ song can render until then.
   back), and with a timestamp of zeros or none, where it is the plain
   clock exactly.
 - The example packed with rootsqz from GitHub runs in headless Chrome from
-  http (4 workers). From `file://` the packed page does not start, with
+  http (4 workers). So does it packed with @r00tkids/rollup-plugin-rootsqz
+  0.4.1 from npm (2026-10-17), also a song with a sample stored with
+  `?rootsqz-bin&compressed` (2 workers). From `file://` the packed page does not start, with
   that packer as with websqz 0.4: it reads itself with `fetch`. An unpacked
   single file runs from `file://` with workers.
 - Not verified: Safari, a real sound card (the browsers ran muted and

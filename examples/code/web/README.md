@@ -4,32 +4,25 @@ Plays a song in the browser with the JavaScript module that
 `sointu-compile -arch wasm -js` writes: the song renders in workers while the
 page does other things, starts when a runway is rendered, and the frame loop
 reads the audio clock. Bundled with [vite](https://vite.dev) and packed into
-one html file with [websqz/rootsqz](https://github.com/r00tkids/rootsqz)
-through [rollup-plugin-websqz](https://github.com/r00tkids/rollup-plugin-websqz).
+one html file with [rootsqz](https://github.com/r00tkids/rootsqz) through
+[@r00tkids/rollup-plugin-rootsqz](https://www.npmjs.com/package/@r00tkids/rollup-plugin-rootsqz),
+which installs the packer for the platform from npm.
 The design, the numbers and what is verified are in `FORK.md`, "Web runtime".
 
 Requirements: go, `wat2wasm` ([wabt](https://github.com/WebAssembly/wabt)),
-node, and for `npm run build` the packer built from GitHub, as its npm
-releases are behind. For songs with samples, ffmpeg.
+node, and for songs with samples, ffmpeg.
 
 ```
-cargo install --git https://github.com/r00tkids/rootsqz   # installs `websqz`
 npm install
 npm run dev      # compiles the song, serves the page with vite
-npm run build    # compiles the song, bundles, packs to dist/websqz-output/index.html
+npm run build    # compiles the song, bundles, packs to dist/rootsqz-output/index.html
 npm run serve    # serves the packed page on http://127.0.0.1:8080
 ```
 
 The packed page reads itself with `fetch`, so it needs http: it does not
-start from `file://` in Chrome. The plugin (1.1.3) makes the imports read
-`wsqz.files`, and the packer from GitHub names that `rsqz`: `vite.config.js`
-adds `wsqz=self.wsqz||rsqz;` in front of the bundle, without which the packed
-page stops with an error. A fix of the plugin exists (it asks the packer
-for its version and uses `rsqz` from 0.4.1; the option `runtimeGlobal`
-overrides) but is not released: once a release of the plugin has it, the
-`banner` in `vite.config.js` can go. The same fix adds the option
-`websqzArgs`, e.g. `websqz({ websqzArgs: ["--size-profile", "64k"] })` for
-the 64k profile of the packer, which the released plugin cannot pass.
+start from `file://` in Chrome. `$ROOTSQZ_BINARY_PATH` names another rootsqz
+executable, e.g. one built from GitHub. Options of the packer go to the
+plugin in `vite.config.js`, e.g. `rootsqz({ sizeProfile: "64k" })`.
 
 `node song.mjs path/to/song.yml -stages 8` compiles another song, or the same
 with other flags. It runs:
@@ -46,7 +39,7 @@ there in the build). The module is source: the bundler minifies it with the
 intro, and it has only the code this song needs.
 
 ```js
-import wasm from "./song.wasm?websqz-bin"; // the bytes, from the packed page
+import wasm from "./song.wasm?rootsqz-bin"; // the bytes, from the packed page
 import { load, rowsPerSecond } from "./song.js";
 
 const song = load(wasm);        // rendering starts now, in the background
@@ -106,7 +99,7 @@ button.onclick = () => {
   the machine the intro runs on, as stages beyond its cores do not help.
   `sointu-compile` prints how it cut the song.
 
-Without websqz, give `load` the bytes any other way:
+Without rootsqz, give `load` the bytes any other way:
 
 ```js
 import url from "./song.wasm?url";
@@ -122,7 +115,7 @@ instead, and `load` takes them as its second argument, so the packer can
 store them as they are instead of compressing the encoded audio again:
 
 ```js
-import wasm from "./song.wasm?websqz-bin";
-import sample0 from "./song.0.ogg?websqz-bin&compressed";
+import wasm from "./song.wasm?rootsqz-bin";
+import sample0 from "./song.0.ogg?rootsqz-bin&compressed";
 const song = load(wasm, [sample0]);
 ```
