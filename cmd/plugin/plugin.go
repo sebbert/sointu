@@ -426,9 +426,13 @@ func (i *Instance) State() []byte {
 	return ret
 }
 
-// SetState restores state returned by State.
+// SetState restores state returned by State. It returns when the song is
+// restored, so that the host reads the names of the parameters of the song
+// right after it.
 func (i *Instance) SetState(data []byte) {
-	tracker.TrySend(i.broker.ToModel, tracker.MsgToModel{Data: func() {
+	done := make(chan struct{})
+	if !tracker.TrySend(i.broker.ToModel, tracker.MsgToModel{Data: func() {
+		defer close(done)
 		i.tracker.History().UnmarshalRecovery(data)
 		// the values of the parameters are saved with the song, in steps
 		values := i.model.Automation().HostValues()
@@ -442,5 +446,11 @@ func (i *Instance) SetState(data []byte) {
 		if i.paramsChanged != nil {
 			i.paramsChanged(true)
 		}
-	}})
+	}}) {
+		return
+	}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+	}
 }

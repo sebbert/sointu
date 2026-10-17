@@ -231,24 +231,21 @@ static void deliver(sointu_vst3_t *p) {
 	uintptr_t h = p->handle;
 	pthread_mutex_unlock(&p->lock);
 	Steinberg_Vst_IComponentHandler *handler = p->handler;
-	if (h == 0)
-		return;
-	if (handler == NULL) {
+	if (h == 0 || handler == NULL) {
 		atomic_fetch_or(&p->pending, pending); // for when the host gives one
 		return;
 	}
 	if (pending & PENDING_VALUES)
 		for (int32 i = 0; i < num_params(); i++)
 			p->values[i] = normalized(sointuParamValue(h, i));
-	int32 flags = 0;
+	// one flag a call: Live missed the titles of a song loaded with the
+	// project when they came with the values in one call
 	if (pending & PENDING_TITLES)
-		flags |= Steinberg_Vst_RestartFlags_kParamTitlesChanged;
+		handler->lpVtbl->restartComponent(handler, Steinberg_Vst_RestartFlags_kParamTitlesChanged);
 	if (pending & PENDING_VALUES)
-		flags |= Steinberg_Vst_RestartFlags_kParamValuesChanged;
+		handler->lpVtbl->restartComponent(handler, Steinberg_Vst_RestartFlags_kParamValuesChanged);
 	if (pending & PENDING_LATENCY)
-		flags |= Steinberg_Vst_RestartFlags_kLatencyChanged;
-	if (flags != 0)
-		handler->lpVtbl->restartComponent(handler, flags);
+		handler->lpVtbl->restartComponent(handler, Steinberg_Vst_RestartFlags_kLatencyChanged);
 	if (pending & PENDING_DIRTY) {
 		Steinberg_Vst_IComponentHandler2 *h2 = NULL;
 		if (handler->lpVtbl->queryInterface(handler, Steinberg_Vst_IComponentHandler2_iid, (void **)&h2) == OK && h2 != NULL) {

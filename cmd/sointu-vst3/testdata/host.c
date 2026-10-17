@@ -154,9 +154,9 @@ int main(int argc, char **argv) {
 	printf("state %lld bytes\n", (long long)m.size);
 	CHECK(m.size > 100);
 	m.pos = 0;
+	restarts = 0;
 	CHECK(comp->lpVtbl->setState(comp, &m.s) == 0);
 	CHECK(ctl->lpVtbl->setComponentState(ctl, &m.s) == 0);
-	restarts = 0;
 	run(1);
 	printf("after state: restart flags %#x, param 2 normalized %.3f, dirty calls %d\n", restarts, ctl->lpVtbl->getParamNormalized(ctl, 2), dirty);
 	CHECK(restarts & Steinberg_Vst_RestartFlags_kParamValuesChanged);
