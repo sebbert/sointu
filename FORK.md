@@ -2675,6 +2675,63 @@ no host was run with the plugins.
   NaN below full scale, the same at velocity 127 as without velocity and
   4 to 12 dB lower at 64; shared modules are equal; every module parameter
   is bound; with `SOINTU_TEST_LONG=1` also silent 20 s after the note).
+- **Hard techno screeches:** 11 instrument presets in LEAD whose names
+  start with `Hard techno screech`, for hard techno leads and stabs at C-4
+  to C-6 (acid and hoover an octave lower). All share one chain: detuned
+  oscillators with a pitch dive (or rise) into the note, a resonant ladder
+  opened by an envelope, a first distortion, then a short reverb *before*
+  a second distortion, so the reverb roars with the note, as hard techno
+  screeches do. Before the second distortion a low-pass and two bell peaks
+  pick the harmonics that scream; after it a high-pass (about 400 Hz, above
+  the kick and the bass), ott, a bell that tames the harshest band, width
+  (mono below about 250 Hz) and outaux to the song's reverb. Mono up to the
+  reverb: stereo unison and a wide reverb into a distortion put the side
+  above the mid (6.8 dB lost in mono in the first try). 3 or 4 voices, so
+  the reverb of a note rings on under the next.
+  - screech: four detuned saws and three squares an octave up, an octave
+    dive over about 80 ms.
+  - dive: two octaves down into the note over about 200 ms.
+  - rise: up an octave into the note over about 0.45 s, slow attack: for
+    held notes.
+  - roar: a long, loud reverb into the distortion, 4 voices.
+  - siren: a sine vibrato of ±4 semitones at about 4 Hz (not synced).
+  - acid: one saw through a ladder at the edge of self-oscillation,
+    snapped open.
+  - metal: a sine phase-modulated at a ratio that is not whole (+19 st),
+    through a comb at the octave of the note.
+  - formant: the scream peak swept between vowels by a slow triangle.
+  - yell: the scream peak sawed up and down at about 5 Hz.
+  - stab: short, no sustain, two octaves of dive, the reverb carries it.
+  - hoover: detuned pulses and saws an octave down, a swoop up into the
+    note.
+
+  Measured with the Go synth on a riff at C-4 to G-4, 150 BPM:
+
+  | | LUFS-S max | true peak dB | mono loss dB | side/mid 1-5 kHz dB | centroid Hz |
+  |---|---|---|---|---|---|
+  | screech | -12.9 | -6.3 | 1.0 | -5.6 | 2057 |
+  | dive | -12.4 | -7.6 | 1.2 | -5.0 | 2172 |
+  | rise | -13.0 | -6.1 | 0.9 | -5.9 | 1940 |
+  | roar | -13.2 | -7.3 | 1.4 | -4.4 | 1963 |
+  | siren | -12.8 | -7.2 | 1.1 | -5.3 | 2155 |
+  | acid | -13.2 | -5.4 | 0.2 | -12.1 | 1379 |
+  | metal | -13.2 | -7.8 | 1.3 | -4.5 | 2167 |
+  | formant | -12.7 | -6.5 | 1.0 | -4.2 | 1191 |
+  | yell | -13.0 | -6.3 | 1.0 | -5.6 | 1884 |
+  | stab | -13.2 | -8.4 | 1.4 | -4.1 | 1862 |
+  | hoover | -13.3 | -6.3 | 0.8 | -5.8 | 1297 |
+
+  The level holds within 3 dB from C-3 to C-7. About 20 voices per core.
+  Aliasing: on a held C-4 without unison, dive or reverb, -21 to -24 dB
+  of the energy lies between the harmonics above 6 kHz (a bare
+  bandlimited saw: -39 dB). The two distortions are hard, and softclip
+  oversamples only twice; a low-pass before each one (the ladder before the
+  peaks) keeps it there. Darker settings measured -33 dB, but no longer
+  screamed (centroid 1.5 kHz). 4x oversampling in softclip would lower it.
+  Not heard, not tested in the wasm player. Test:
+  `tracker/screech_test.go` (each expands, compiles, peaks below -3 dB,
+  has the side under the mid, no offset, and is silent 3 s after the
+  note).
 - **Drum bus** (UTIL): Global mastering 2 drumbus, and Global mastering 2
   drumbus reverb with the reverb unit (15 units; 37 with the Reverb
   module), are Global mastering 2 with a

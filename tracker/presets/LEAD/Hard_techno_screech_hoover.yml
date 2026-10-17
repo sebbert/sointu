@@ -1,0 +1,120 @@
+name: Hard techno screech hoover
+comment: 'A screech hoover: detuned pulses with a moving width, a saw an octave below, a swoop into each note, distortion and reverb into a second distortion. Play it at C-3 to C-5. Mono at its core, with the reverb and the highs wide; high-passed above the kick and the bass. Distortion and reverb: Go synth and wasm player only.'
+numvoices: 3
+units:
+    - type: envelope
+      id: 1
+      parameters: {attack: 0, curve: 32, decay: 62, gain: 128, release: 62, stereo: 0, sustain: 0}
+      comment: 'Pitch dive into the note: decay is how long it takes'
+    - type: send
+      id: 2
+      parameters: {amount: 58, port: 0, sendpop: 0, stereo: 0, target: 7, voice: 0}
+      comment: 'How far from the note it starts, 2 per semitone'
+    - type: send
+      id: 3
+      parameters: {amount: 58, port: 0, sendpop: 1, stereo: 0, target: 8, voice: 0}
+    - type: oscillator
+      id: 4
+      parameters: {bandlimit: 0, color: 128, detune: 64, gain: 128, lfo: 1, phase: 0, shape: 64, stereo: 0, transpose: 70, type: 0, unison: 0}
+      comment: 'Vibrato: transpose is its rate'
+    - type: send
+      id: 5
+      parameters: {amount: 64, port: 0, sendpop: 0, stereo: 0, target: 7, voice: 0}
+      comment: 'How deep the vibrato is, 2 per semitone'
+    - type: send
+      id: 6
+      parameters: {amount: 64, port: 0, sendpop: 1, stereo: 0, target: 8, voice: 0}
+    - type: oscillator
+      id: 7
+      parameters: {bandlimit: 1, color: 40, detune: 78, gain: 72, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 2, unison: 3}
+      comment: 'Four detuned pulses'
+    - type: oscillator
+      id: 8
+      parameters: {bandlimit: 1, color: 128, detune: 72, gain: 72, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 52, type: 1, unison: 3}
+      comment: 'Four detuned saws an octave below'
+    - type: addp
+      id: 9
+      parameters: {stereo: 0}
+    - type: envelope
+      id: 10
+      parameters: {attack: 8, curve: 0, decay: 64, gain: 128, release: 62, stereo: 0, sustain: 128}
+      comment: 'The level of the note'
+    - type: mulp
+      id: 11
+      parameters: {stereo: 0}
+    - type: envelope
+      id: 12
+      parameters: {attack: 0, curve: 32, decay: 68, gain: 128, release: 62, stereo: 0, sustain: 56}
+      comment: 'The filter sweep: decay is how fast it closes, sustain where it stays'
+    - type: send
+      id: 13
+      parameters: {amount: 84, port: 0, sendpop: 1, stereo: 0, target: 14, voice: 0}
+      comment: 'How far the sweep opens the ladder'
+    - type: ladder
+      id: 14
+      parameters: {drive: 48, frequency: 40, resonance: 48, stereo: 0}
+      comment: 'A resonant low-pass, opened by the sweep'
+    - type: dbgain
+      id: 15
+      parameters: {decibels: 80, stereo: 0}
+      comment: 'Drive into the first distortion'
+    - type: softclip
+      id: 16
+      parameters: {drive: 96, knee: 32, oversample: 1, stereo: 0}
+      comment: 'Distortion 1, oversampled'
+    - type: pan
+      id: 17
+      parameters: {panning: 64, stereo: 0}
+      comment: 'To both sides'
+    - type: push
+      id: 18
+      parameters: {stereo: 1}
+      comment: 'A copy for the reverb'
+    - type: reverb
+      id: 19
+      parameters: {decay: 52, early: 52, earlywidth: 24, gain: 64, highcut: 104, highs: 72, lowcut: 72, lows: 32, mod: 24, modrate: 56, predelay: 0, size: 36, spread: 77, steps: 4, tailwidth: 48}
+      comment: 'Reverb before the distortion: its tail is distorted with the note, the roar of a hard techno screech'
+    - type: addp
+      id: 20
+      parameters: {stereo: 1}
+      comment: 'The note and its reverb, into the distortion'
+    - type: ladder
+      id: 21
+      parameters: {drive: 0, frequency: 56, resonance: 0, stereo: 1}
+      comment: 'A low-pass before the peaks and the distortion: fewer harmonics above what can be played back, which would fold down as noise'
+    - type: belleq
+      id: 22
+      parameters: {bandwidth: 16, frequency: 44, gain: 92, stereo: 1}
+      comment: 'The scream: a peak before the distortion picks the harmonics that scream'
+    - type: belleq
+      id: 23
+      parameters: {bandwidth: 20, frequency: 58, gain: 84, stereo: 1}
+      comment: 'A second peak, the formant'
+    - type: softclip
+      id: 24
+      parameters: {drive: 80, knee: 40, oversample: 1, stereo: 1}
+      comment: 'Distortion 2, oversampled'
+    - type: filter
+      id: 25
+      parameters: {bandpass: 0, frequency: 26, highpass: 1, lowpass: 0, resonance: 96, stereo: 1}
+      comment: 'High-pass: the screech above the kick and the bass'
+    - type: ott
+      id: 26
+      parameters: {depth: 80, downward: 128, high: 64, low: 64, mid: 64, stereo: 1, time: 64, upward: 128}
+      comment: 'Multiband compression: dense, the highs and lows of the distortion even'
+    - type: belleq
+      id: 27
+      parameters: {bandwidth: 32, frequency: 76, gain: 54, stereo: 1}
+      comment: 'Tames the harshest band'
+    - type: width
+      id: 28
+      parameters: {lowcut: 24, width: 96}
+      comment: 'Width; mono below lowcut'
+    - type: softclip
+      id: 29
+      parameters: {drive: 0, knee: 96, oversample: 1, stereo: 1}
+      comment: 'The ceiling'
+    - type: outaux
+      id: 30
+      parameters: {auxgain: 24, outgain: 48, stereo: 1}
+      comment: 'outgain is the level; auxgain sends it to the reverb of the song'
