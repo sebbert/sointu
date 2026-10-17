@@ -1,0 +1,135 @@
+name: Hardstyle kick clean deep
+comment: 'A clean kick with a darker tail and a shorter pitch drop. Tuned by the note: the tail is at the note; suggested notes F-1 to A-1 (44 to 55 Hz), G-1 is 49 Hz. Hold the note for one beat or more for the whole tail; a shorter note ends it about 50 ms after the release. Mastered level: about -7 LUFS short-term at one kick a beat, peaks at -1.3 dB; set the gain of out to 64 (-6 dB) to level it with the Club presets. To route it to the drum bus of Global mastering 2 drumbus, change the last unit from out to aux, channel 8 (aux4 left). Softclip, ladder and curved envelopes: Go synth and wasm player only.'
+numvoices: 1
+units:
+    - type: envelope
+      id: 1
+      parameters: {attack: 0, curve: 128, decay: 78, gain: 128, release: 78, stereo: 0, sustain: 0}
+      comment: 'Pitch drop of the body: decay is its time'
+    - type: send
+      id: 2
+      parameters: {amount: 79, port: 0, sendpop: 1, stereo: 0, target: 5, voice: 0}
+      comment: 'How far above the note the body starts: 2 per semitone'
+    - type: envelope
+      id: 3
+      parameters: {attack: 0, curve: 96, decay: 40, gain: 128, release: 40, stereo: 0, sustain: 0}
+      comment: 'The click at the very start: a few ms higher still'
+    - type: send
+      id: 4
+      parameters: {amount: 82, port: 0, sendpop: 1, stereo: 0, target: 5, voice: 0}
+    - type: oscillator
+      id: 5
+      parameters: {bandlimit: 0, color: 128, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+      comment: 'The body, a sine at the note: the tail is tuned to the note'
+    - type: envelope
+      id: 6
+      parameters: {attack: 0, curve: 0, decay: 77, gain: 128, release: 60, stereo: 0, sustain: 0}
+      comment: 'The length of the tail: decay; release for a note released earlier'
+    - type: mulp
+      id: 7
+      parameters: {stereo: 0}
+    - type: loadval
+      id: 8
+      parameters: {stereo: 0, value: 66}
+      comment: 'An offset: asymmetric clipping, even harmonics'
+    - type: addp
+      id: 9
+      parameters: {stereo: 0}
+    - type: dbgain
+      id: 10
+      parameters: {decibels: 70, stereo: 0}
+      comment: 'Gain into the distortion'
+    - type: softclip
+      id: 11
+      parameters: {drive: 128, knee: 0, oversample: 1, stereo: 0}
+      comment: 'The distortion, oversampled against aliasing'
+    - type: eq
+      id: 12
+      parameters: {gain: 0, stereo: 0}
+      comment: 'Removes the offset and the mud, keeps the punch'
+      bands:
+        - {frequency: 28, q: 1, type: lowcut}
+        - {frequency: 380, gain: -5, q: 1.2, type: bell}
+        - {frequency: 150, gain: 3, q: 1.0, type: bell}
+    - type: ladder
+      id: 13
+      parameters: {drive: 0, frequency: 40, resonance: 16, stereo: 0}
+      comment: 'The tone of the tail'
+    - type: softclip
+      id: 14
+      parameters: {drive: 0, knee: 32, oversample: 1, stereo: 0}
+      comment: 'The second stage of distortion'
+    - type: gain
+      id: 15
+      parameters: {gain: 102, stereo: 0}
+      comment: 'The level of the body under the click'
+    - type: loadval
+      id: 16
+      parameters: {stereo: 0, value: 104}
+      comment: 'The level of the tail'
+    - type: envelope
+      id: 17
+      parameters: {attack: 68, curve: 128, decay: 70, gain: 47, release: 60, stereo: 0, sustain: 0}
+      comment: 'The punch above the tail: attack is how long it holds, decay how fast it falls to the tail'
+    - type: addp
+      id: 18
+      parameters: {stereo: 0}
+    - type: mulp
+      id: 19
+      parameters: {stereo: 0}
+    - type: envelope
+      id: 20
+      parameters: {attack: 0, curve: 64, decay: 50, gain: 128, release: 50, stereo: 0, sustain: 0}
+      comment: 'The tok'
+    - type: send
+      id: 21
+      parameters: {amount: 70, port: 0, sendpop: 1, stereo: 0, target: 22, voice: 0}
+    - type: oscillator
+      id: 22
+      parameters: {bandlimit: 0, color: 128, detune: 64, gain: 64, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 112, type: 0, unison: 0}
+      comment: 'Tok: a sine above the note'
+    - type: envelope
+      id: 23
+      parameters: {attack: 0, curve: 80, decay: 52, gain: 128, release: 50, stereo: 0, sustain: 0}
+    - type: mulp
+      id: 24
+      parameters: {stereo: 0}
+    - type: addp
+      id: 25
+      parameters: {stereo: 0}
+    - type: noise
+      id: 26
+      parameters: {gain: 45, shape: 64, stereo: 0}
+      comment: 'Click: noise through a band-pass, a few ms'
+    - type: envelope
+      id: 27
+      parameters: {attack: 0, curve: 96, decay: 54, gain: 128, release: 54, stereo: 0, sustain: 0}
+    - type: mulp
+      id: 28
+      parameters: {stereo: 0}
+    - type: filter
+      id: 29
+      parameters: {bandpass: 0, frequency: 90, highpass: 1, lowpass: 0, resonance: 128, stereo: 0}
+    - type: addp
+      id: 30
+      parameters: {stereo: 0}
+    - type: softclip
+      id: 31
+      parameters: {drive: 8, knee: 100, oversample: 1, stereo: 0}
+      comment: 'The clipper: the level of the kick'
+    - type: clip
+      id: 32
+      parameters: {stereo: 0}
+      comment: 'Nothing above full scale'
+    - type: gain
+      id: 33
+      parameters: {gain: 110, stereo: 0}
+      comment: 'The ceiling, below full scale for the peaks between samples'
+    - type: push
+      id: 34
+      parameters: {stereo: 0}
+      comment: 'Mono to both sides'
+    - type: out
+      id: 35
+      parameters: {gain: 128, stereo: 1}
+      comment: 'The level. For the drum bus, make this an aux unit with channel 8'

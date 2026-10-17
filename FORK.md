@@ -2334,6 +2334,95 @@ no host was run with the plugins.
   at 140 BPM); hold drum notes for two rows or more. "Mono below 150 Hz"
   is the side signal cut at 12 dB per octave from there: a note between
   100 and 150 Hz keeps some width.
+- **Hardstyle kicks:** 32 instrument presets in DR whose names start with
+  `Hardstyle kick`, for hardstyle, rawstyle, uptempo, gabber and
+  frenchcore: euphoric (4), raw (4), screech (2), zaag (3), tok (3), gated
+  (2), reverse bass (2), long tail (2), uptempo (2), gabber (2), frenchcore
+  (2), clean (2), ott (2). Like the Club presets they are **tuned by
+  measurement, not by ear**. One mono voice, 35 to 39 units; softclip,
+  ladder, curved envelopes and (two of them) ott, so Go synth and wasm
+  player only. They are made by one chain with different settings:
+  - *Body:* a sine at the note with two pitch envelopes, a click of 36
+    semitones for a few ms and a drop from about 33 semitones above the
+    note that halves every 45 ms, so the tail is tuned to the note
+    (suggested F-1 to A-1). The tail envelope comes before the
+    distortion: the tail stays loud while the drive lasts and ends fast
+    when it runs out, as the references do.
+  - *Distortion:* an offset (even harmonics), up to +36 dB into an
+    oversampled softclip, an eq, a ladder for the tone of the tail, a
+    second oversampled softclip. In the raw, screech, zaag, frenchcore and
+    one uptempo kick an envelope closes the ladder over the tail and an LFO
+    modulates it, the zaag: 5, 8, 10 or 20 Hz (8th, 16th and 32nd notes are
+    5, 10 and 20 Hz at 150 BPM; the rate is in Hz, not synced, and starts
+    with each note).
+  - *Level:* the body is set below the ceiling after the distortion, a
+    body envelope holds the punch for about 150 ms and drops to the tail
+    level; a tok (a sine 2.5 to 4 octaves above the note, swept) and a
+    high-passed noise click go on top; a softclip, a clip, and a gain of
+    -1.3 dB, the ceiling. Mastered level: about -7 LUFS short-term at one
+    kick a beat at 150 BPM, true peak at most 0.0 dB from F-1 to A-1: 6 dB louder than the Club
+    kicks, which their comments say how to match.
+  - *Note length:* a note held for a beat gives the whole tail; a shorter
+    note ends it about 50 ms after the release (gated: a few ms; long and
+    frenchcore: the tail lasts while the note is held).
+
+  References: the 54 kicks of the HEX2K7 HARDSTYLE pack (2007, the only
+  hardstyle kicks on disk), rendered and measured the same way. Measured at
+  G-1 (49 Hz), the note held for a beat: short-term loudness of one kick a
+  beat at 150 BPM (LUFS), crest factor (dB), time to -20 dB (ms), pitch
+  at 20, 50, 120 and 200 ms (Hz), 2 to 6 kHz in the first 30 ms, above
+  2 kHz in the tail and above 16 kHz over the kick (dB of the total).
+
+  | Preset | LUFS | Crest | -20 dB | Pitch | Click | Tail > 2 kHz | > 16 kHz |
+  |---|---|---|---|---|---|---|---|
+  | euphoric | -7.2 | 6.5 | 410 | 205, 122, 69, 54 | -16 | -35 | -54 |
+  | euphoric warm | -7.1 | 6.5 | 433 | 206, 122, 69, 54 | -20 | -43 | -57 |
+  | euphoric bright | -7.0 | 6.5 | 410 | 206, 122, 69, 54 | -13 | -32 | -55 |
+  | euphoric punchy | -8.5 | 8.5 | 423 | 249, 124, 66, 54 | -14 | -37 | -52 |
+  | raw | -7.0 | 6.3 | 434 | 206, 121, 69, 54 | -15 | -27 | -42 |
+  | raw dirty | -7.1 | 6.3 | 416 | 206, 121, 69, 54 | -14 | -26 | -42 |
+  | raw long | -6.6 | 5.9 | 437 | 206, 121, 69, 54 | -15 | -26 | -42 |
+  | raw punch | -8.2 | 8.1 | 431 | 246, 147, 73, 56 | -14 | -26 | -38 |
+  | screech | -6.7 | 6.0 | 450 | 205, 121, 68, 54 | -15 | -26 | -39 |
+  | screech high | -6.7 | 6.0 | 450 | 205, 121, 69, 54 | -15 | -25 | -39 |
+  | zaag | -7.0 | 6.2 | 415 | 208, 121, 69, 55 | -13 | -27 | -41 |
+  | zaag fast | -7.0 | 6.2 | 415 | 206, 121, 69, 54 | -15 | -26 | -42 |
+  | zaag slow | -7.0 | 6.1 | 422 | 214, 121, 69, 56 | -21 | -27 | -43 |
+  | tok | -7.4 | 6.9 | 411 | 205, 122, 69, 54 | -16 | -40 | -57 |
+  | tok high | -7.3 | 6.9 | 411 | 205, 122, 69, 54 | -16 | -40 | -57 |
+  | tok deep | -6.9 | 6.3 | 411 | 208, 122, 69, 54 | -16 | -40 | -59 |
+  | gated | -7.2 | 6.6 | 415 | 205, 122, 69, 54 | -16 | -34 | -54 |
+  | gated hard | -7.0 | 6.4 | 416 | 205, 121, 69, 54 | -15 | -26 | -53 |
+  | reverse | -8.1 | 5.6 | 234 | 205, 122, 69, 56 | -16 | -41 | -52 |
+  | reverse tight | -8.1 | 5.5 | 205 | 229, 137, 70, 58 | -14 | -43 | -52 |
+  | long | -6.9 | 6.2 | 495 | 206, 122, 69, 54 | -21 | -39 | -58 |
+  | long distorted | -6.5 | 5.9 | 499 | 205, 121, 69, 54 | -15 | -29 | -58 |
+  | uptempo | -7.6 | 5.8 | 324 | 180, 103, 61, 51 | -15 | -25 | -50 |
+  | uptempo hard | -8.2 | 6.4 | 323 | 180, 103, 61, 51 | -15 | -25 | -42 |
+  | gabber | -6.5 | 4.8 | 419 | 133, 89, 59, 51 | -16 | -30 | -58 |
+  | gabber rotterdam | -6.4 | 4.8 | 414 | 153, 102, 62, 51 | -12 | -28 | -53 |
+  | frenchcore | -6.6 | 6.1 | 519 | 205, 121, 69, 54 | -15 | -27 | -50 |
+  | frenchcore screech | -6.7 | 6.2 | 519 | 205, 121, 69, 54 | -15 | -27 | -46 |
+  | clean | -6.7 | 6.1 | 418 | 205, 122, 69, 54 | -25 | -69 | -57 |
+  | clean deep | -6.4 | 5.4 | 415 | 178, 116, 67, 54 | -31 | -72 | -58 |
+  | ott | -6.2 | 5.5 | 411 | -, 121, 69, 54 | -11 | -27 | -52 |
+  | ott hard | -8.5 | 7.6 | 408 | 203, 122, 70, 54 | -16 | -24 | -55 |
+  | *HEX2K7 references, median of 54* | -8.5 | 9.6 | 441 | 208, 122, 66, 54 | -18 | -32 | -50 |
+
+  The references range from -15.7 to -5.7 LUFS, crest 5.3 to 17.6 dB, -20 dB
+  after 260 to 880 ms. The kicks are louder and denser than their median, as
+  current releases are; the pitch curve of the euphoric, raw and tok kicks
+  is the references' median. Steady tails held for a second have no aliasing
+  to measure: the energy between the harmonics is -96 to -106 dB (a naive
+  square wave: -57 dB); in the raw, screech and zaag kicks the LFO puts
+  sidebands there, -18 to -50 dB, which go when it is off. In the first
+  30 ms, where the body sweeps from several hundred Hz and is clipped
+  hardest, the oversampling of the softclips changes the energy above
+  8 kHz by less than 1 dB: what is there is mostly the noise click and the
+  overtones, but how much of it is folded was not measured. Not tested in
+  the wasm player. Tests: `tracker/hardstyle_test.go` (each expands,
+  compiles, peaks between -1.9 and -1 dB, is mono and silent after the
+  note).
 - **Drum bus** (UTIL): Global mastering 2 drumbus, and Global mastering 2
   drumbus reverb with the reverb unit (15 units; 37 with the Reverb
   module), are Global mastering 2 with a
