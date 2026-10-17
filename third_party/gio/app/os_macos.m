@@ -112,8 +112,9 @@ static void handleMouse(GioView *view, NSEvent *event, int typ, CGFloat dx, CGFl
 	gio_onAttached(self.handle, self.window != nil ? 1 : 0);
 	// A command key combination goes to the menu of the application before
 	// the window, so that in a plugin, the host takes e.g. Cmd+Z. While the
-	// view has the keyboard, those that the window handles are its own;
-	// the rest, and Cmd+Q and Cmd+H always, go on as before.
+	// view has the keyboard, those with a letter or a digit that the window
+	// handles are its own; the rest, and Cmd+Q and Cmd+H always, go on as
+	// before.
 	if (self.window != nil && self.keyMonitor == nil) {
 		__weak GioView *weakSelf = self;
 		self.keyMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown handler:^NSEvent *(NSEvent *event) {
@@ -124,8 +125,14 @@ static void handleMouse(GioView *view, NSEvent *event, int typ, CGFloat dx, CGFl
 			if (!(event.modifierFlags & NSEventModifierFlagCommand)) {
 				return event;
 			}
+			// only letters and digits: other keys, e.g. Cmd+' or Cmd+`
+			// to cycle the windows, can be shortcuts of the system
 			NSString *keys = [event charactersIgnoringModifiers];
-			if ([keys isEqualToString:@"q"] || [keys isEqualToString:@"h"]) {
+			if (keys.length != 1 || [keys isEqualToString:@"q"] || [keys isEqualToString:@"h"]) {
+				return event;
+			}
+			unichar c = [keys characterAtIndex:0];
+			if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))) {
 				return event;
 			}
 			if (gio_onKeyEquivalent(view.handle, (__bridge CFTypeRef)keys, [event modifierFlags])) {
