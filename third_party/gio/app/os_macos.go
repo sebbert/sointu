@@ -668,6 +668,31 @@ func gio_onKeys(h C.uintptr_t, event C.CFTypeRef, cstr C.CFTypeRef, ti C.double,
 	}
 }
 
+// gio_onKeyEquivalent gives the window a command key combination before
+// the menu of the application, and reports whether it handled it; its
+// release then comes as usual.
+//
+//export gio_onKeyEquivalent
+func gio_onKeyEquivalent(h C.uintptr_t, cstr C.CFTypeRef, mods C.NSUInteger) C.bool {
+	w := windowFor(h)
+	if w.keysDown == nil {
+		w.keysDown = make(map[key.Name]struct{})
+	}
+	kmods := convertMods(mods)
+	handled := false
+	for _, k := range nsstringToString(cstr) {
+		n, ok := convertKey(k)
+		if !ok {
+			continue
+		}
+		if w.processEvent(key.Event{Name: n, Modifiers: kmods, State: key.Press}) {
+			handled = true
+			w.keysDown[n] = struct{}{}
+		}
+	}
+	return C.bool(handled)
+}
+
 //export gio_onCommandBySelector
 func gio_onCommandBySelector(h C.uintptr_t) C.bool {
 	w := windowFor(h)

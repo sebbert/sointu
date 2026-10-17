@@ -17,6 +17,9 @@ __attribute__ ((visibility ("hidden"))) CALayer *gio_layerFactory(BOOL presentWi
 @interface GioView : NSView <CALayerDelegate,NSTextInputClient>
 @property uintptr_t handle;
 @property BOOL presentWithTrans;
+// keyMonitor offers command key combinations to the window before the
+// application's menu: see viewDidMoveToWindow.
+@property (strong) id keyMonitor;
 @end
 
 @implementation GioWindowDelegate
@@ -107,6 +110,33 @@ static void handleMouse(GioView *view, NSEvent *event, int typ, CGFloat dx, CGFl
 }
 - (void)viewDidMoveToWindow {
 	gio_onAttached(self.handle, self.window != nil ? 1 : 0);
+	// A command key combination goes to the menu of the application before
+	// the window, so that in a plugin, the host takes e.g. Cmd+Z. While the
+	// view has the keyboard, those that the window handles are its own;
+	// the rest, and Cmd+Q and Cmd+H always, go on as before.
+	if (self.window != nil && self.keyMonitor == nil) {
+		__weak GioView *weakSelf = self;
+		self.keyMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown handler:^NSEvent *(NSEvent *event) {
+			GioView *view = weakSelf;
+			if (view == nil || event.window != view.window || !view.window.isKeyWindow || view.window.firstResponder != view) {
+				return event;
+			}
+			if (!(event.modifierFlags & NSEventModifierFlagCommand)) {
+				return event;
+			}
+			NSString *keys = [event charactersIgnoringModifiers];
+			if ([keys isEqualToString:@"q"] || [keys isEqualToString:@"h"]) {
+				return event;
+			}
+			if (gio_onKeyEquivalent(view.handle, (__bridge CFTypeRef)keys, [event modifierFlags])) {
+				return nil;
+			}
+			return event;
+		}];
+	} else if (self.window == nil && self.keyMonitor != nil) {
+		[NSEvent removeMonitor:self.keyMonitor];
+		self.keyMonitor = nil;
+	}
 }
 - (void)mouseDown:(NSEvent *)event {
 	handleMouse(self, event, MOUSE_DOWN, 0, 0);
@@ -223,6 +253,9 @@ static void handleMouse(GioView *view, NSEvent *event, int typ, CGFloat dx, CGFl
 	gio_onDraw(self.handle);
 }
 - (void)dealloc {
+	if (self.keyMonitor != nil) {
+		[NSEvent removeMonitor:self.keyMonitor];
+	}
 	gio_onDestroy(self.handle);
 }
 // The view is the destination of files dragged onto the window, e.g. from
