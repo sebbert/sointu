@@ -229,7 +229,8 @@ func (p ParamWidget) layoutContext(gtx C) {
 
 // layoutContextMenu lays out the context menu of the parameter, while it is
 // open: automating it in a new slot, adding it to the lane of another slot
-// (a macro) or moving it there, removing it from its lane, and resetting it.
+// (a macro) or moving it there, making its lane unipolar or bipolar,
+// removing it from its lane, and resetting it.
 func (p ParamWidget) layoutContextMenu(gtx C) {
 	if !p.State.ctxMenu.visible {
 		return
@@ -248,9 +249,13 @@ func (p ParamWidget) layoutContextMenu(gtx C) {
 		}
 		children = append(children, ActionMenuChild(a.JoinLane(&p.Parameter, l.Slot), fmt.Sprintf("%s A%d %s", verb, l.Slot+1, a.SlotName(l.Slot)), "", nil))
 	}
-	remove := "Remove automation"
+	remove, polarity := "Remove automation", "Unipolar lane"
 	if bound {
 		remove = fmt.Sprintf("Remove from A%d", slot+1)
+		polarity = fmt.Sprintf("Make A%d unipolar (0 to 128)", slot+1)
+		if i, ok := a.Lanes().Find(slot); ok && a.Lanes()[i].Unipolar {
+			polarity = fmt.Sprintf("Make A%d bipolar (-128 to 128)", slot+1)
+		}
 	}
 	reset := tracker.MakeFuncAction(func() {
 		// the right click put the cursor on the parameter
@@ -258,6 +263,7 @@ func (p ParamWidget) layoutContextMenu(gtx C) {
 		item.Reset()
 	}, nil)
 	children = append(children,
+		ActionMenuChild(a.TogglePolarity(&p.Parameter), polarity, "", nil),
 		ActionMenuChild(a.RemoveLane(&p.Parameter), remove, "", nil),
 		DividerMenuChild(),
 		ActionMenuChild(reset, "Reset value", "", nil),

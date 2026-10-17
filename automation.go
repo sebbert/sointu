@@ -40,13 +40,21 @@ type (
 	// Name is what a plugin host shows for the slot; without one, the
 	// tracker names it by what it is bound to.
 	//
+	// Unipolar tells how a plugin host moves the slot: a unipolar slot
+	// goes from 0 to AutomationRange steps over the range of the host (its
+	// default, at the bottom, is 0), a bipolar one from -AutomationRange to
+	// AutomationRange (0 in the middle); see HostSteps. A unipolar slot
+	// suits a parameter whose unit is at the bottom of its range, so that
+	// the host moves it all the way up.
+	//
 	// Songs saved before lanes had targets have the one parameter of a lane
 	// in Unit and Param of the lane: they are read as its target.
 	Lane struct {
-		Slot    int
-		Name    string          `yaml:",omitempty" json:",omitempty"`
-		Targets []LaneTarget    `yaml:",omitempty" json:",omitempty"`
-		Points  AutomationCurve `yaml:",flow,omitempty" json:",omitempty"`
+		Slot     int
+		Name     string          `yaml:",omitempty" json:",omitempty"`
+		Unipolar bool            `yaml:",omitempty" json:",omitempty"`
+		Targets  []LaneTarget    `yaml:",omitempty" json:",omitempty"`
+		Points   AutomationCurve `yaml:",flow,omitempty" json:",omitempty"`
 	}
 
 	// LaneTarget is a parameter that a lane offsets: the parameter Param of
@@ -161,16 +169,17 @@ func (t *LaneTarget) UnmarshalJSON(data []byte) error {
 // laneFile is a Lane as files have it, also as it was saved before lanes
 // had targets: with its one parameter in Unit and Param.
 type laneFile struct {
-	Slot    int
-	Name    string          `yaml:",omitempty" json:",omitempty"`
-	Unit    int             `yaml:",omitempty" json:",omitempty"`
-	Param   string          `yaml:",omitempty" json:",omitempty"`
-	Targets []LaneTarget    `yaml:",omitempty" json:",omitempty"`
-	Points  AutomationCurve `yaml:",flow,omitempty" json:",omitempty"`
+	Slot     int
+	Name     string          `yaml:",omitempty" json:",omitempty"`
+	Unipolar bool            `yaml:",omitempty" json:",omitempty"`
+	Unit     int             `yaml:",omitempty" json:",omitempty"`
+	Param    string          `yaml:",omitempty" json:",omitempty"`
+	Targets  []LaneTarget    `yaml:",omitempty" json:",omitempty"`
+	Points   AutomationCurve `yaml:",flow,omitempty" json:",omitempty"`
 }
 
 func (f laneFile) lane() Lane {
-	l := Lane{Slot: f.Slot, Name: f.Name, Targets: f.Targets, Points: f.Points}
+	l := Lane{Slot: f.Slot, Name: f.Name, Unipolar: f.Unipolar, Targets: f.Targets, Points: f.Points}
 	if f.Unit != 0 {
 		l.Targets = append([]LaneTarget{{Unit: f.Unit, Param: f.Param, Amount: 1}}, l.Targets...)
 	}
@@ -193,6 +202,27 @@ func (l *Lane) UnmarshalJSON(data []byte) error {
 	}
 	*l = f.lane()
 	return nil
+}
+
+// HostSteps returns the value of a slot in steps for a value that a plugin
+// host gives it, which hosts have from -AutomationRange to AutomationRange
+// with 0 in the middle: the same for a bipolar slot, and for a unipolar one
+// from 0 at the bottom to AutomationRange at the top. HostValue is the
+// inverse.
+func HostSteps(host float64, unipolar bool) float64 {
+	if unipolar {
+		return (host + AutomationRange) / 2
+	}
+	return host
+}
+
+// HostValue returns the value that a plugin host has for a slot at the given
+// steps: see HostSteps.
+func HostValue(steps float64, unipolar bool) float64 {
+	if unipolar {
+		return steps*2 - AutomationRange
+	}
+	return steps
 }
 
 // AmountValue returns the amount of the target as the amount of a send: 64

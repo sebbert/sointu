@@ -46,7 +46,7 @@ func init() {
 				Value:             0.5,
 				Unit:              "steps",
 				GetNameFunc:       func() string { return p.ParamName(i) },
-				GetValueLabelFunc: func(v float32) string { return plugin.ParamText(toSteps(v)) },
+				GetValueLabelFunc: func(v float32) string { return p.ParamText(i, toSteps(v)) },
 			}
 			last[i] = 0.5
 		}

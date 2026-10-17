@@ -123,12 +123,13 @@ type (
 		Slot int `json:"slot" jsonschema:"the automation slot, 1 to 64 (A1 to A64)"`
 	}
 	automateArgs struct {
-		Unit   int      `json:"unit" jsonschema:"the ID of a unit of an instrument"`
-		Param  string   `json:"param" jsonschema:"the name of a parameter of the unit that a send can modulate, e.g. frequency; for a module unit p1 to p8"`
-		Slot   int      `json:"slot,omitempty" jsonschema:"the automation slot, 1 to 64; left out, a new lane in the first free one. A slot that has a lane gets the parameter as one more target, so that one slot moves several parameters (a macro); a parameter that is a target of another lane moves to this one"`
-		Amount *float64 `json:"amount,omitempty" jsonschema:"the part of the value of the lane that the parameter gets, -1 to 1 in steps of 1/64 (as the amount of a send): 0.5 half, -1 the other way. Left out, 1 for a new target, else what it has; also changes the amount of a target that is there"`
-		Remove bool     `json:"remove,omitempty" jsonschema:"removes the parameter from its lane, and the lane with its points if it was its last target"`
-		Name   *string  `json:"name,omitempty" jsonschema:"what the host shows for the slot, e.g. Bass cutoff; also names the lane of a parameter that is a target already. Left out or empty, the slot is named by its first target (A3 Bass: filter frequency +2, with two more targets)"`
+		Unit     int      `json:"unit" jsonschema:"the ID of a unit of an instrument"`
+		Param    string   `json:"param" jsonschema:"the name of a parameter of the unit that a send can modulate, e.g. frequency; for a module unit p1 to p8"`
+		Slot     int      `json:"slot,omitempty" jsonschema:"the automation slot, 1 to 64; left out, a new lane in the first free one. A slot that has a lane gets the parameter as one more target, so that one slot moves several parameters (a macro); a parameter that is a target of another lane moves to this one"`
+		Amount   *float64 `json:"amount,omitempty" jsonschema:"the part of the value of the lane that the parameter gets, -1 to 1 in steps of 1/64 (as the amount of a send): 0.5 half, -1 the other way. Left out, 1 for a new target, else what it has; also changes the amount of a target that is there"`
+		Remove   bool     `json:"remove,omitempty" jsonschema:"removes the parameter from its lane, and the lane with its points if it was its last target"`
+		Name     *string  `json:"name,omitempty" jsonschema:"what the host shows for the slot, e.g. Bass cutoff; also names the lane of a parameter that is a target already. Left out or empty, the slot is named by its first target (A3 Bass: filter frequency +2, with two more targets)"`
+		Unipolar *bool    `json:"unipolar,omitempty" jsonschema:"how the host moves the slot: true from 0 to 128 steps (its bottom adds nothing: for a parameter whose unit is at the bottom of its range, e.g. a gain at 0), false from -128 to 128 (the middle adds nothing: offsets either way around the unit's value). Left out, as it is (bipolar for a new lane); also changes the lane of a parameter that is a target already"`
 	}
 	setAutomationArgs struct {
 		Slot   int          `json:"slot" jsonschema:"the automation slot, 1 to 64"`
@@ -280,7 +281,7 @@ func Tools() []Tool {
 			func(r *tracker.Remote, a automationArgs) (string, error) { return r.Automation(a.Slot) }),
 		modelTool("automate", "Makes a parameter of a unit a target of the lane of an automation slot, or removes it. A slot is a parameter of the plugin in the host (A1 to A64), which the user automates there; its value, times the amount of each target, is added to the target parameters, in steps of each parameter, on top of the values the units have. A lane can have many targets: one slot then moves several parameters at once, like a macro. Targets are no units: they do not count toward the 63 units of an instrument. When the user records in the plugin, the automation of the host becomes the points of the lane, which the compiled song plays. One step of the undo history.", false,
 			func(r *tracker.Remote, a automateArgs) (string, error) {
-				return r.Automate(a.Unit, a.Param, a.Slot, a.Remove, a.Name, a.Amount)
+				return r.Automate(a.Unit, a.Param, a.Slot, a.Remove, a.Name, a.Amount, a.Unipolar)
 			}),
 		modelTool("set_automation", "Sets the points of the lane of an automation slot: how the offset of its parameter moves over the rows of the song, as the song plays it when it is played in the tracker and compiled (not while the host plays the plugin, which then gives the values itself). Replaces all points of the lane. One step of the undo history.", false,
 			func(r *tracker.Remote, a setAutomationArgs) (string, error) {

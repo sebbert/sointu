@@ -1294,8 +1294,21 @@ has fractions, so it is 16 bits unless the points are rounded.
   in 64ths, a right click sets it to 1; the amount is a minor change, like
   turning a knob. A right click on a knob opens its context menu: automate
   in a new slot, add to (or move to) the lane of each other slot, remove
-  from its lane, and reset the value, which a right click on the knob under
-  the cursor did before.
+  from its lane, make its lane unipolar or bipolar, and reset the value,
+  which a right click on the knob under the cursor did before.
+- Polarity: a lane is bipolar (default) or unipolar (`unipolar: true` in
+  the song, the context menu of a knob, `automate` with `unipolar`). The
+  host's range of a slot stays the same in every format (-128 to 128, or 0
+  to 1 normalized); the plugin maps it to steps (`sointu.HostSteps`):
+  bipolar as it is, 0 in the middle, unipolar from 0 steps at the bottom
+  to 128 at the top. The text of a value is in those steps (CLAP
+  `value_to_text`/`text_to_value`, VST3 `getParamStringByValue`/
+  `getParamValueByString`, AU `ParameterStringFromValue`, VST2 label).
+  The values saved with the song are steps and are turned back into the
+  host's when a state loads; when a lane changes polarity the plugin gives
+  the player every slot again (`output.repeat`). The default of the host
+  stays the middle, which is 64 steps for a unipolar slot: the plugin
+  cannot change the range or default of a parameter while it runs.
 - The plugins have a parameter for each slot, -128 to 128 with the default
   0, named by the slot and what it is bound to (`A3 Bass: filter
   frequency`, with `+2` for a lane with two more targets), or by the

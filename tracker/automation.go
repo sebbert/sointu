@@ -438,6 +438,52 @@ func (m *AutomationModel) Rename(slot int, name string) error {
 	return nil
 }
 
+// SetUnipolar makes the slot, which must have a lane, unipolar or bipolar:
+// see sointu.Lane.
+func (m *AutomationModel) SetUnipolar(slot int, unipolar bool) error {
+	i, ok := m.d.Song.Automation.Find(slot)
+	if !ok {
+		return fmt.Errorf("automation slot %d has no lane", slot+1)
+	}
+	if m.d.Song.Automation[i].Unipolar == unipolar {
+		return nil
+	}
+	defer (*Model)(m).change("AutomationPolarity", PatchChange, MajorChange)()
+	a := m.d.Song.Automation.Copy()
+	a[i].Unipolar = unipolar
+	m.d.Song.Automation = a
+	return nil
+}
+
+// TogglePolarity returns an Action that makes the lane of the parameter
+// unipolar if it is bipolar, and bipolar if it is unipolar: enabled for a
+// parameter that is a target of a lane.
+func (m *AutomationModel) TogglePolarity(item *Parameter) Action {
+	unit, param, ok := m.targetOf(item)
+	return MakeFuncAction(func() {
+		if i, _, bound := m.d.Song.Automation.FindParam(unit, param); bound {
+			l := m.d.Song.Automation[i]
+			if err := m.SetUnipolar(l.Slot, !l.Unipolar); err != nil {
+				(*Model)(m).Alerts().Add(err.Error(), Warning)
+			}
+		}
+	}, func() bool {
+		_, _, bound := m.d.Song.Automation.FindParam(unit, param)
+		return ok && bound
+	})
+}
+
+// HostUnipolar tells for every slot whether a plugin host moves it as a
+// unipolar slot: see sointu.Lane.
+func (m *AutomationModel) HostUnipolar() (unipolar [sointu.AutomationSlots]bool) {
+	for _, l := range m.d.Song.Automation {
+		if l.Slot >= 0 && l.Slot < len(unipolar) {
+			unipolar[l.Slot] = l.Unipolar
+		}
+	}
+	return unipolar
+}
+
 // SlotName returns the name of the slot, as a host shows it: the name of
 // its lane, or without one DefaultSlotName.
 func (m *AutomationModel) SlotName(slot int) string {

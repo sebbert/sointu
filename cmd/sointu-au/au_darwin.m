@@ -222,6 +222,9 @@ static OSStatus property_info(AudioUnitPropertyID id, AudioUnitScope scope, Audi
 		if (scope != kAudioUnitScope_Global)
 			return kAudioUnitErr_InvalidScope;
 		return elem < num_params() ? noErr : kAudioUnitErr_InvalidParameter;
+	case kAudioUnitProperty_ParameterStringFromValue:
+		*size = sizeof(AudioUnitParameterStringFromValue);
+		break;
 	case kAudioUnitProperty_ElementCount:
 		*size = sizeof(UInt32);
 		global = false;
@@ -291,9 +294,22 @@ static void parameter_info(sointu_au_t *p, AudioUnitParameterID id, AudioUnitPar
 	info->minValue = -sointuParamRange();
 	info->maxValue = sointuParamRange();
 	info->defaultValue = 0;
-	info->flags = kAudioUnitParameterFlag_IsReadable | kAudioUnitParameterFlag_IsWritable | kAudioUnitParameterFlag_IsHighResolution;
+	// the text of a value is in steps of its slot: see parameter_string
+	info->flags = kAudioUnitParameterFlag_IsReadable | kAudioUnitParameterFlag_IsWritable | kAudioUnitParameterFlag_IsHighResolution | kAudioUnitParameterFlag_ValuesHaveStrings;
 	if (info->cfNameString != NULL)
 		info->flags |= kAudioUnitParameterFlag_HasCFNameString | kAudioUnitParameterFlag_CFNameRelease;
+}
+
+// parameter_string gives the text of a value of a parameter, or of its
+// value now: the steps of its slot, from 0 for a unipolar slot.
+static OSStatus parameter_string(sointu_au_t *p, AudioUnitParameterStringFromValue *s) {
+	if (s->inParamID >= num_params())
+		return kAudioUnitErr_InvalidParameter;
+	double v = s->inValue != NULL ? *s->inValue : sointuParamValue(p->handle, s->inParamID);
+	char *text = sointuParamText(p->handle, s->inParamID, v);
+	s->outString = CFStringCreateWithCString(NULL, text, kCFStringEncodingUTF8); // the caller releases it
+	free(text);
+	return noErr;
 }
 
 static void set_number(CFMutableDictionaryRef dict, CFStringRef key, SInt32 value) {
@@ -400,6 +416,8 @@ static OSStatus au_get_property(void *self, AudioUnitPropertyID id, AudioUnitSco
 	case kAudioUnitProperty_ParameterInfo:
 		parameter_info(p, elem, outData);
 		break;
+	case kAudioUnitProperty_ParameterStringFromValue:
+		return parameter_string(p, outData);
 	case kAudioUnitProperty_ElementCount:
 		*(UInt32 *)outData = scope == kAudioUnitScope_Input ? 0 : 1;
 		break;

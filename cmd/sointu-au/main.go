@@ -93,6 +93,22 @@ func sointuParamValue(h C.uintptr_t, id C.uint32_t) C.double {
 	return C.double(instance(h).ParamValue(int(id)))
 }
 
+// sointuParamText returns a value that the host has for a parameter as
+// text, in memory allocated with malloc, to be freed by the caller.
+//
+//export sointuParamText
+func sointuParamText(h C.uintptr_t, id C.uint32_t, value C.double) *C.char {
+	return C.CString(instance(h).ParamText(int(id), float64(value)))
+}
+
+// sointuParamFromSteps returns the value that the host has for a parameter
+// at the steps that sointuParamText shows.
+//
+//export sointuParamFromSteps
+func sointuParamFromSteps(h C.uintptr_t, id C.uint32_t, steps C.double) C.double {
+	return C.double(instance(h).ParamFromSteps(int(id), float64(steps)))
+}
+
 // sointuParamName returns the name of a parameter in memory allocated with
 // malloc, to be freed by the caller.
 //

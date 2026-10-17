@@ -21,7 +21,7 @@ func (r *Remote) describeAutomation() string {
 		return ""
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "automation (slot A1 to A%d: a parameter of the plugin in the host, offsetting a parameter in steps):\n", sointu.AutomationSlots)
+	fmt.Fprintf(&b, "automation (slot A1 to A%d: a parameter of the plugin in the host, offsetting a parameter in steps, -128 to 128, or 0 to 128 when unipolar):\n", sointu.AutomationSlots)
 	for _, l := range lanes {
 		fmt.Fprintf(&b, "  A%d ", l.Slot+1)
 		if l.Name != "" {
@@ -41,6 +41,9 @@ func (r *Remote) describeAutomation() string {
 				lo, hi = min(lo, p.Value), max(hi, p.Value)
 			}
 			fmt.Fprintf(&b, ", %d points, rows %.4g to %.4g, %+.4g to %+.4g steps", n, l.Points[0].Row, l.Points[n-1].Row, lo, hi)
+		}
+		if l.Unipolar {
+			b.WriteString(", unipolar")
 		}
 		if live := m.Automation().Live(l.Slot); live != 0 {
 			fmt.Fprintf(&b, ", the host has it at %+.4g now", live)
@@ -96,7 +99,7 @@ func (r *Remote) Automation(slot int) (string, error) {
 // points if it was the last target. With name, the slot gets the name,
 // which the host shows, also when the parameter is a target already; ""
 // gives it back the name by what it is bound to.
-func (r *Remote) Automate(unit int, param string, slot int, remove bool, name *string, amount *float64) (string, error) {
+func (r *Remote) Automate(unit int, param string, slot int, remove bool, name *string, amount *float64, unipolar *bool) (string, error) {
 	return r.edit(PatchChange, func() (remoteFocus, string, error) {
 		m := (*Model)(r)
 		loc, err := r.findUnit(unit)
@@ -121,15 +124,22 @@ func (r *Remote) Automate(unit int, param string, slot int, remove bool, name *s
 		}
 		i, j, bound := m.d.Song.Automation.FindParam(unit, param)
 		if bound && amount == nil && (slot == 0 || slot-1 == m.d.Song.Automation[i].Slot) {
-			if name == nil {
+			if name == nil && unipolar == nil {
 				return focus, "", fmt.Errorf("%s of unit %d is a target of slot A%d already", param, unit, m.Automation().slotOfLane(i)+1)
 			}
-			// the lane is there: naming it
+			// the lane is there: naming it, or making it unipolar or bipolar
 			s := m.d.Song.Automation[i].Slot
-			if err := m.Automation().Rename(s, *name); err != nil {
-				return focus, "", err
+			if name != nil {
+				if err := m.Automation().Rename(s, *name); err != nil {
+					return focus, "", err
+				}
 			}
-			return focus, fmt.Sprintf("automation slot A%d is named %q in the host", s+1, m.Automation().HostNames()[s]), nil
+			if unipolar != nil {
+				if err := m.Automation().SetUnipolar(s, *unipolar); err != nil {
+					return focus, "", err
+				}
+			}
+			return focus, fmt.Sprintf("automation slot A%d is named %q in the host, %s", s+1, m.Automation().HostNames()[s], polarityText(m.d.Song.Automation[i].Unipolar)), nil
 		}
 		a := 1.0
 		if amount != nil {
@@ -150,8 +160,13 @@ func (r *Remote) Automate(unit int, param string, slot int, remove bool, name *s
 				return focus, "", err
 			}
 		}
+		if unipolar != nil {
+			if err := m.Automation().SetUnipolar(s, *unipolar); err != nil {
+				return focus, "", err
+			}
+		}
 		l := m.d.Song.Automation[i]
-		return focus, fmt.Sprintf("automation slot A%d, named %q in the host, offsets %s", s+1, m.Automation().HostNames()[s], r.describeTargets(l.Targets)), nil
+		return focus, fmt.Sprintf("automation slot A%d, named %q in the host, %s, offsets %s", s+1, m.Automation().HostNames()[s], polarityText(l.Unipolar), r.describeTargets(l.Targets)), nil
 	})
 }
 
@@ -183,6 +198,8 @@ func automationChanges(old, now sointu.Automation) (lines []string) {
 			lines = append(lines, fmt.Sprintf("automation: slot A%d is named %q (was %q)", l.Slot+1, l.Name, old[i].Name))
 		case !reflect.DeepEqual(old[i].Targets, l.Targets):
 			lines = append(lines, fmt.Sprintf("automation: slot A%d offsets %s (was %s)", l.Slot+1, targetsShort(l.Targets), targetsShort(old[i].Targets)))
+		case old[i].Unipolar != l.Unipolar:
+			lines = append(lines, fmt.Sprintf("automation: slot A%d is %s", l.Slot+1, polarityText(l.Unipolar)))
 		case !reflect.DeepEqual(old[i].Points, l.Points):
 			lines = append(lines, fmt.Sprintf("automation: slot A%d has %d points (had %d): e.g. recorded from the host", l.Slot+1, len(l.Points), len(old[i].Points)))
 		}
@@ -193,6 +210,14 @@ func automationChanges(old, now sointu.Automation) (lines []string) {
 		}
 	}
 	return lines
+}
+
+// polarityText tells how the host moves a slot: see sointu.Lane.
+func polarityText(unipolar bool) string {
+	if unipolar {
+		return "unipolar (the host moves it from 0 to 128 steps)"
+	}
+	return "bipolar (the host moves it from -128 to 128 steps)"
 }
 
 // targetsShort lists the targets of a lane as unit and parameter, with the

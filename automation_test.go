@@ -104,6 +104,7 @@ func TestAutomationProblems(t *testing.T) {
 
 func TestAutomationSaved(t *testing.T) {
 	song := automationSong()
+	song.Automation[1].Unipolar = true
 	y, err := yaml.Marshal(song)
 	if err != nil {
 		t.Fatal(err)
@@ -221,5 +222,21 @@ func TestAutomationLegacy(t *testing.T) {
 	y, _ := yaml.Marshal(song.Automation)
 	if strings.Count(string(y), "amount") != 1 || !strings.Contains(string(y), "{unit: 13, param: decay, amount: -0.25}") {
 		t.Errorf("saved as\n%s", y)
+	}
+}
+
+// TestHostSteps checks how a slot maps the range of the host to steps: a
+// bipolar one as it is, a unipolar one from 0 at the bottom.
+func TestHostSteps(t *testing.T) {
+	for _, c := range []struct {
+		host, steps float64
+		unipolar    bool
+	}{{-128, -128, false}, {0, 0, false}, {128, 128, false}, {-128, 0, true}, {0, 64, true}, {128, 128, true}} {
+		if got := sointu.HostSteps(c.host, c.unipolar); got != c.steps {
+			t.Errorf("HostSteps(%v, %v) = %v, want %v", c.host, c.unipolar, got, c.steps)
+		}
+		if got := sointu.HostValue(c.steps, c.unipolar); got != c.host {
+			t.Errorf("HostValue(%v, %v) = %v, want %v", c.steps, c.unipolar, got, c.host)
+		}
 	}
 }

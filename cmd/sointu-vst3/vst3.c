@@ -670,8 +670,13 @@ static tresult controller_get_parameter_info(void *self, int32 index, struct Ste
 }
 
 static tresult controller_get_param_string_by_value(void *self, Steinberg_Vst_ParamID id, Steinberg_Vst_ParamValue v, Steinberg_Vst_String128 out) {
+	sointu_vst3_t *p = FROM(controller, self);
 	char text[32];
-	if (id < (Steinberg_Vst_ParamID)num_params())
+	if (id < (Steinberg_Vst_ParamID)num_params() && p->handle != 0) {
+		char *t = sointuParamText(p->handle, (int32)id, plain(v));
+		snprintf(text, sizeof(text), "%s", t);
+		free(t);
+	} else if (id < (Steinberg_Vst_ParamID)num_params())
 		snprintf(text, sizeof(text), "%+.2f", plain(v));
 	else if (is_cc(id))
 		snprintf(text, sizeof(text), "%d", (int)(v * 127 + 0.5));
@@ -688,8 +693,9 @@ static tresult controller_get_param_value_by_string(void *self, Steinberg_Vst_Pa
 	double x = strtod(text, &end);
 	if (end == text)
 		return FALSE_;
+	sointu_vst3_t *p = FROM(controller, self);
 	if (id < (Steinberg_Vst_ParamID)num_params())
-		*v = normalized(x);
+		*v = normalized(p->handle != 0 ? sointuParamFromSteps(p->handle, (int32)id, x) : x);
 	else if (is_cc(id))
 		*v = x < 0 ? 0 : x > 127 ? 1 : x / 127;
 	else

@@ -70,6 +70,11 @@ type (
 		// restored are the values of a state that was loaded, for the
 		// audio thread to take as paramValue
 		restored atomic.Pointer[[sointu.AutomationSlots]float32]
+		// unipolar tells which slots are unipolar (sointu.HostSteps), and
+		// repeat that the audio thread is to give the player the values of
+		// all slots again, after the polarity of a slot changed
+		unipolar atomic.Pointer[[sointu.AutomationSlots]bool]
+		repeat   atomic.Bool
 	}
 
 	// rateChange is a sample rate of the host and the resampler for it, nil
@@ -271,8 +276,20 @@ func (o *output) Param(delta, slot int, value float64, mod bool) {
 	if o.resampler != nil {
 		delta = o.resampler.Need(max(delta, 0))
 	}
+	o.automate(delta, slot)
+}
+
+// automate gives the player the value of a slot, in steps, delta frames of
+// the player into the next block.
+func (o *output) automate(delta, slot int) {
 	live := min(max(o.paramValue[slot]+o.paramMod[slot], -ParamRange), ParamRange)
-	o.player.Automate(int64(delta)+o.totalFrames, slot, live, o)
+	steps := sointu.HostSteps(float64(live), o.isUnipolar(slot))
+	o.player.Automate(int64(delta)+o.totalFrames, slot, float32(steps), o)
+}
+
+func (o *output) isUnipolar(slot int) bool {
+	u := o.unipolar.Load()
+	return u != nil && slot >= 0 && slot < len(u) && u[slot]
 }
 
 // ParamValue returns the value of a parameter, without the modulation. It
@@ -294,12 +311,33 @@ func (i *Instance) ParamName(slot int) string {
 	return fmt.Sprintf("A%d", slot+1)
 }
 
-// ParamText returns the value of a parameter as text: an offset in steps.
-func ParamText(value float64) string { return fmt.Sprintf("%+.2f", value) }
+// ParamText returns a value that the host has for a parameter as text: the
+// steps of its slot, from 0 for a unipolar slot, else signed. It can be
+// called from any thread.
+func (o *output) ParamText(slot int, value float64) string {
+	if o.isUnipolar(slot) {
+		return fmt.Sprintf("%.2f", sointu.HostSteps(value, true))
+	}
+	return fmt.Sprintf("%+.2f", value)
+}
+
+// ParamFromSteps returns the value that the host has for a parameter whose
+// slot is at the given steps, as ParamText shows them. It can be called from
+// any thread.
+func (o *output) ParamFromSteps(slot int, steps float64) float64 {
+	return min(max(sointu.HostValue(steps, o.isUnipolar(slot)), -ParamRange), ParamRange)
+}
 
 // updateParamNames tells the host if the automation slots are bound to
 // something else than it was last told. Called from the tracker's goroutine.
 func (i *Instance) updateParamNames() {
+	if u := i.model.Automation().HostUnipolar(); i.unipolar.Load() == nil || *i.unipolar.Load() != u {
+		i.unipolar.Store(&u)
+		i.repeat.Store(true)
+		if i.paramsChanged != nil {
+			i.paramsChanged(true) // their text
+		}
+	}
 	names := i.model.Automation().HostNames()
 	if old := i.paramNames.Load(); (old == nil && names == [NumParams]string{}) || (old != nil && *old == names) {
 		return
@@ -322,6 +360,11 @@ func (o *output) Process(left, right []float32, host Host) {
 	o.changeRate()
 	if r := o.restored.Swap(nil); r != nil {
 		o.paramValue = *r
+	}
+	if o.repeat.Swap(false) {
+		for slot := range o.paramValue {
+			o.automate(0, slot)
+		}
 	}
 	frames := len(left)
 	if o.resampler == nil {
@@ -387,10 +430,12 @@ func (i *Instance) State() []byte {
 func (i *Instance) SetState(data []byte) {
 	tracker.TrySend(i.broker.ToModel, tracker.MsgToModel{Data: func() {
 		i.tracker.History().UnmarshalRecovery(data)
-		// the values of the parameters are saved with the song
+		// the values of the parameters are saved with the song, in steps
 		values := i.model.Automation().HostValues()
+		unipolar := i.model.Automation().HostUnipolar()
 		for slot, v := range values {
-			i.params[slot].Store(math.Float32bits(v))
+			values[slot] = float32(sointu.HostValue(float64(v), unipolar[slot]))
+			i.params[slot].Store(math.Float32bits(values[slot]))
 		}
 		i.restored.Store(&values) // for the audio thread
 		i.updateParamNames()

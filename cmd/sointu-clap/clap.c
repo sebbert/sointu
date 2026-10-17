@@ -199,7 +199,13 @@ static bool params_get_value(const clap_plugin_t *plugin, clap_id id, double *va
 static bool params_value_to_text(const clap_plugin_t *plugin, clap_id id, double value, char *out, uint32_t capacity) {
 	if (id >= sointuParams() || capacity == 0)
 		return false;
-	snprintf(out, capacity, "%+.2f", value);
+	if (self(plugin)->handle == 0) {
+		snprintf(out, capacity, "%+.2f", value);
+		return true;
+	}
+	char *text = sointuParamText(self(plugin)->handle, id, value);
+	snprintf(out, capacity, "%s", text);
+	free(text);
 	return true;
 }
 
@@ -208,7 +214,7 @@ static bool params_text_to_value(const clap_plugin_t *plugin, clap_id id, const 
 	double v = strtod(text, &end);
 	if (id >= sointuParams() || end == text)
 		return false;
-	*value = v;
+	*value = self(plugin)->handle == 0 ? v : sointuParamFromSteps(self(plugin)->handle, id, v);
 	return true;
 }
 

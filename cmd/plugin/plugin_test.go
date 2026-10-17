@@ -274,3 +274,54 @@ func TestParam(t *testing.T) {
 		}
 	}
 }
+
+// TestParamUnipolar checks that the host moves a unipolar slot from 0 steps
+// at the bottom of its range, that the text of its values is in those
+// steps, and that the values of the host apply again when the slot becomes
+// bipolar.
+func TestParamUnipolar(t *testing.T) {
+	song := stepSong()
+	song.Patch[0].Units = []sointu.Unit{
+		{ID: 1, Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": 64}},
+		{ID: 2, Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
+	}
+	song.Automation = sointu.Automation{{Slot: 7, Unipolar: true, Targets: []sointu.LaneTarget{{Unit: 1, Param: "value", Amount: 1}}}}
+	expanded, _ := song.Expand()
+	broker := tracker.NewBroker()
+	player := tracker.NewPlayer(broker, vm.GoSynther{})
+	broker.ToPlayer <- expanded
+	o := &output{player: player}
+	o.SetSampleRate(44100)
+	host := testHost{44100}
+	var unipolar [NumParams]bool
+	unipolar[7] = true
+	o.unipolar.Store(&unipolar)
+	last := func() float32 {
+		l, r := make([]float32, 512), make([]float32, 512)
+		o.Process(l, r, host)
+		return l[511]
+	}
+	last()
+	o.Param(0, 7, -96, false) // a quarter of the way up: 16 steps, 0.25 at the output
+	last()
+	if got := last(); math.Abs(float64(got)-0.25) > 1e-3 {
+		t.Errorf("a unipolar slot a quarter of the way up gives %v, want 0.25", got)
+	}
+	if got := o.ParamText(7, -96); got != "16.00" {
+		t.Errorf("the text of a unipolar slot is %q, want 16.00", got)
+	}
+	if got := o.ParamText(8, -96); got != "-96.00" {
+		t.Errorf("the text of a bipolar slot is %q, want -96.00", got)
+	}
+	if got := o.ParamFromSteps(7, 16); got != -96 {
+		t.Errorf("16 steps of a unipolar slot are %v for the host, want -96", got)
+	}
+	// bipolar again: the same value of the host is -96 steps: the loadval
+	// at 64 - 96 steps, -1.5
+	o.unipolar.Store(&[NumParams]bool{})
+	o.repeat.Store(true)
+	last()
+	if got := last(); math.Abs(float64(got)+1.5) > 1e-3 {
+		t.Errorf("the slot made bipolar gives %v, want -1.5", got)
+	}
+}
