@@ -187,6 +187,39 @@ func (f *FFmpeg) Encode(data []byte, enc sointu.Encoding, channels int) ([]byte,
 	return f.convert(data, enc.Format, args...)
 }
 
+// EncodeTrimmed encodes data as Encode does, keeping only frames trim[0] up
+// to trim[1] of it decoded at 44100 Hz (trim[1] 0 is the end). A trimmed
+// sample without an encoding format is stored as 24-bit FLAC, losslessly.
+func (f *FFmpeg) EncodeTrimmed(data []byte, enc sointu.Encoding, channels int, trim [2]int) ([]byte, error) {
+	if trim == [2]int{} {
+		return f.Encode(data, enc, channels)
+	}
+	a, err := f.Decode(data, channels)
+	if err != nil {
+		return nil, fmt.Errorf("decoding: %w", err)
+	}
+	a = TrimAudio(a, trim)
+	if a.Frames() == 0 {
+		return nil, errors.New("the trim keeps nothing")
+	}
+	if enc.Format == "" {
+		return f.Store(a)
+	}
+	return f.Encode(FloatWav(a), enc, channels)
+}
+
+// TrimAudio returns frames trim[0] up to trim[1] of audio (trim[1] 0 or
+// beyond the end is the end).
+func TrimAudio(a sointu.BufferAudio, trim [2]int) sointu.BufferAudio {
+	n := a.Frames()
+	s, e := min(max(trim[0], 0), n), n
+	if trim[1] > 0 {
+		e = min(trim[1], n)
+	}
+	e = max(e, s)
+	return sointu.BufferAudio{Channels: a.Channels, Data: a.Data[s*a.Channels : e*a.Channels]}
+}
+
 // Decode decodes the first audio stream of data to interleaved 32-bit float
 // frames at 44100 Hz with the given number of channels.
 func (f *FFmpeg) Decode(data []byte, channels int) (sointu.BufferAudio, error) {

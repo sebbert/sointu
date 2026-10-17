@@ -41,6 +41,7 @@ type (
 		Data     []byte
 		Encoding sointu.Encoding
 		Channels int
+		Trim     [2]int
 	}
 
 	// bufferResult is the buffer worker's reply to a bufferJob.
@@ -110,14 +111,14 @@ func (m *Model) syncBuffers() {
 			}
 			continue
 		}
-		key := ffmpeg.KeyOf(buf.Sample.Data, enc, buf.Channels)
+		key := ffmpeg.KeyOf(buf.Sample.Data, enc, buf.Channels, buf.Sample.Trim())
 		if k, ok := b.keys[buf.ID]; ok && k == key {
 			continue
 		}
 		b.keys[buf.ID] = key
 		b.status[buf.ID] = BufferStatus{Processing: true}
 		// the old audio keeps playing until the new one is ready
-		job := bufferJob{ID: buf.ID, Key: key, Data: buf.Sample.Data, Encoding: enc, Channels: buf.Channels}
+		job := bufferJob{ID: buf.ID, Key: key, Data: buf.Sample.Data, Encoding: enc, Channels: buf.Channels, Trim: buf.Sample.Trim()}
 		if !TrySend(m.broker.ToBufferWorker, any(job)) {
 			b.status[buf.ID] = BufferStatus{Err: fmt.Errorf("buffer worker is busy")}
 		}
@@ -227,7 +228,7 @@ func runBufferWorker(broker *Broker) {
 			if cache != nil {
 				done := make(chan struct{})
 				go func() {
-					res.Result, res.Err = cache.Get(job.Data, job.Encoding, job.Channels)
+					res.Result, res.Err = cache.Get(job.Data, job.Encoding, job.Channels, job.Trim)
 					close(done)
 				}()
 				select {

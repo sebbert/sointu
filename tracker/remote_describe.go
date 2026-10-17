@@ -255,6 +255,9 @@ func (r *Remote) Song() string {
 				kind = "spectrum for spectral units"
 			case buf.Sample != nil:
 				kind = fmt.Sprintf("sample %s, %d bytes encoded", buf.Sample.FileName, len(buf.Sample.Data))
+				if tr := buf.Sample.Trim(); tr != [2]int{} {
+					kind += fmt.Sprintf(", trimmed to frames %d to %d of the file (0: its end)", tr[0], tr[1])
+				}
 				if f := (*Model)(r).bufferFrames(buf.ID); f > 0 {
 					kind += fmt.Sprintf(", %d frames", f)
 				}

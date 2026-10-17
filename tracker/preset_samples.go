@@ -185,7 +185,7 @@ func (m *Model) importSamples(samples presetSamples, mods sointu.Modules, unitLi
 			continue
 		}
 		if i := slices.IndexFunc(m.d.Song.Buffers, func(b sointu.Buffer) bool {
-			return b.Sample != nil && b.Sample.Data.Equal(buf.Sample.Data) && b.Channels == buf.Channels && slices.Equal(b.Slices, buf.Slices)
+			return b.Sample != nil && b.Sample.Data.Equal(buf.Sample.Data) && b.Sample.Trim() == buf.Sample.Trim() && b.Channels == buf.Channels && slices.Equal(b.Slices, buf.Slices)
 		}); i >= 0 {
 			newIDs[buf.ID] = m.d.Song.Buffers[i].ID
 			continue

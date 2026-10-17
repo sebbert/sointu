@@ -59,6 +59,12 @@ type (
 		Preset string `yaml:",omitempty"`
 		// Encoding overrides the preset for this sample only.
 		Encoding *Encoding `yaml:",omitempty"`
+		// TrimStart and TrimEnd keep frames TrimStart up to TrimEnd of the
+		// file decoded at 44100 Hz: only those are played and compiled,
+		// while Data keeps the whole file. TrimEnd 0 is the end of the
+		// file.
+		TrimStart int `yaml:",omitempty"`
+		TrimEnd   int `yaml:",omitempty"`
 	}
 
 	// Encoding describes how ffmpeg encodes an AudioSample for the compiled
@@ -86,6 +92,9 @@ type (
 	// Blobs are treated as immutable, so copies of songs can share them.
 	Blob []byte
 )
+
+// Trim returns TrimStart and TrimEnd.
+func (s *AudioSample) Trim() [2]int { return [2]int{s.TrimStart, s.TrimEnd} }
 
 const (
 	blobTag       = "!ascii85"
@@ -238,7 +247,9 @@ func WritesSpectrum(unitType string) bool { return unitType == "spfft" || unitTy
 // ReadsAudioBuffer reports whether units of the type read the audio buffer
 // in their buffer parameter: bufread plays it, and convolution takes its
 // impulse response from it.
-func ReadsAudioBuffer(unitType string) bool { return unitType == "bufread" || unitType == "convolution" }
+func ReadsAudioBuffer(unitType string) bool {
+	return unitType == "bufread" || unitType == "convolution"
+}
 
 // IsAudio reports whether the buffer holds audio, for bufread and bufwrite
 // units: it is neither a spectrum nor a bus.

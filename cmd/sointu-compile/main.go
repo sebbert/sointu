@@ -307,6 +307,9 @@ func encodeBuffers(song *sointu.Song, ffmpegPath string) (map[int]compiler.Encod
 			if enc, err := song.SampleEncoding(buf.Sample); err == nil {
 				format = enc.Format
 			}
+			if format == "" && buf.Sample.Trim() != [2]int{} {
+				format = "flac" // see ffmpeg.EncodeTrimmed
+			}
 		}
 		ret[id] = compiler.EncodedBuffer{Encoded: r.Encoded, Frames: r.Audio.Frames(), Channels: r.Audio.Channels, Format: format}
 	}

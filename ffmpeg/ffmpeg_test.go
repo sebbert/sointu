@@ -138,12 +138,12 @@ func TestCache(t *testing.T) {
 	f := find(t)
 	dir := t.TempDir()
 	data, enc := wav(1, 4410), sointu.Encoding{Format: "flac", Args: []string{"-c:a", "flac"}}
-	r1, err := ffmpeg.NewCache(f, dir).Get(data, enc, 1)
+	r1, err := ffmpeg.NewCache(f, dir).Get(data, enc, 1, [2]int{})
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
 	}
 	// a new cache with a broken ffmpeg must find the result on disk
-	r2, err := ffmpeg.NewCache(&ffmpeg.FFmpeg{Path: "/nonexistent"}, dir).Get(data, enc, 1)
+	r2, err := ffmpeg.NewCache(&ffmpeg.FFmpeg{Path: "/nonexistent"}, dir).Get(data, enc, 1, [2]int{})
 	if err != nil {
 		t.Fatalf("Get from disk failed: %v", err)
 	}
@@ -151,11 +151,11 @@ func TestCache(t *testing.T) {
 		t.Errorf("results from disk differ")
 	}
 	// different settings are different entries
-	if ffmpeg.KeyOf(data, enc, 1) == ffmpeg.KeyOf(data, enc, 2) {
+	if ffmpeg.KeyOf(data, enc, 1, [2]int{}) == ffmpeg.KeyOf(data, enc, 2, [2]int{}) {
 		t.Errorf("keys should depend on the number of channels")
 	}
 	enc2 := sointu.Encoding{Format: "flac", Args: []string{"-c:a", "flac", "-compression_level", "0"}}
-	if ffmpeg.KeyOf(data, enc, 1) == ffmpeg.KeyOf(data, enc2, 1) {
+	if ffmpeg.KeyOf(data, enc, 1, [2]int{}) == ffmpeg.KeyOf(data, enc2, 1, [2]int{}) {
 		t.Errorf("keys should depend on the arguments")
 	}
 }
@@ -208,5 +208,33 @@ func TestDecodeFile(t *testing.T) {
 	}
 	if _, err := f.DecodeFile(filepath.Join(t.TempDir(), "missing.wav"), 2, 1); err == nil {
 		t.Error("DecodeFile of a missing file did not fail")
+	}
+}
+
+// A trimmed sample keeps only the frames of its trim, stored as FLAC when it
+// has no encoding format, and is cached apart from the untrimmed one.
+func TestCacheTrim(t *testing.T) {
+	f := find(t)
+	data := wav(1, 4410)
+	c := ffmpeg.NewCache(f, "")
+	for _, enc := range []sointu.Encoding{{}, {Format: "flac", Args: []string{"-c:a", "flac"}}} {
+		for _, c2 := range []struct {
+			trim   [2]int
+			frames int
+		}{{[2]int{1000, 3000}, 2000}, {[2]int{1000, 0}, 3410}, {[2]int{0, 441}, 441}} {
+			r, err := c.Get(data, enc, 1, c2.trim)
+			if err != nil {
+				t.Fatalf("%v %v: %v", enc, c2.trim, err)
+			}
+			if n := r.Audio.Frames(); n != c2.frames {
+				t.Errorf("%v %v: %d frames, want %d", enc, c2.trim, n, c2.frames)
+			}
+		}
+	}
+	if ffmpeg.KeyOf(data, sointu.Encoding{}, 1, [2]int{}) == ffmpeg.KeyOf(data, sointu.Encoding{}, 1, [2]int{0, 441}) {
+		t.Error("keys should depend on the trim")
+	}
+	if _, err := c.Get(data, sointu.Encoding{}, 1, [2]int{5000, 0}); err == nil {
+		t.Error("a trim past the end keeps nothing, but got no error")
 	}
 }

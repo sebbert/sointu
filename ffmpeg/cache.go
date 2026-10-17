@@ -55,13 +55,16 @@ func DefaultCacheDir() (string, error) {
 	return filepath.Join(dir, "sointu", "buffers"), nil
 }
 
-// KeyOf returns the key of sample data processed with the given encoding and
-// number of channels.
-func KeyOf(data []byte, enc sointu.Encoding, channels int) Key {
+// KeyOf returns the key of sample data processed with the given encoding,
+// number of channels and trim (see sointu.AudioSample.Trim).
+func KeyOf(data []byte, enc sointu.Encoding, channels int, trim [2]int) Key {
 	h := sha256.New()
 	fmt.Fprintf(h, "sointu buffer v1\x00%d\x00%s\x00%d\x00", channels, enc.Format, len(enc.Args))
 	for _, a := range enc.Args {
 		fmt.Fprintf(h, "%d\x00%s", len(a), a)
+	}
+	if trim != [2]int{} { // untrimmed samples keep their keys
+		fmt.Fprintf(h, "trim\x00%d\x00%d\x00", trim[0], trim[1])
 	}
 	h.Write(data)
 	var k Key
@@ -71,10 +74,10 @@ func KeyOf(data []byte, enc sointu.Encoding, channels int) Key {
 
 func (k Key) String() string { return hex.EncodeToString(k[:]) }
 
-// Get returns the result for sample data processed with the given encoding
-// and number of channels, processing it if it is not cached yet.
-func (c *Cache) Get(data []byte, enc sointu.Encoding, channels int) (Result, error) {
-	key := KeyOf(data, enc, channels)
+// Get returns the result for sample data processed with the given encoding,
+// number of channels and trim, processing it if it is not cached yet.
+func (c *Cache) Get(data []byte, enc sointu.Encoding, channels int, trim [2]int) (Result, error) {
+	key := KeyOf(data, enc, channels, trim)
 	if r, ok := c.lookup(key); ok {
 		return r, nil
 	}
@@ -82,7 +85,7 @@ func (c *Cache) Get(data []byte, enc sointu.Encoding, channels int) (Result, err
 		c.remember(key, r)
 		return r, nil
 	}
-	encoded, err := c.FFmpeg.Encode(data, enc, channels)
+	encoded, err := c.FFmpeg.EncodeTrimmed(data, enc, channels, trim)
 	if err != nil {
 		return Result{}, fmt.Errorf("encoding: %w", err)
 	}
@@ -202,7 +205,7 @@ func (c *Cache) SongBuffers(song *sointu.Song, f func(sointu.Buffer, Result)) (m
 		if err != nil {
 			return nil, fmt.Errorf("buffer %q: %v", buf.Name, err)
 		}
-		r, err := c.Get(buf.Sample.Data, enc, buf.Channels)
+		r, err := c.Get(buf.Sample.Data, enc, buf.Channels, buf.Sample.Trim())
 		if err != nil {
 			return nil, fmt.Errorf("buffer %q: %v", buf.Name, err)
 		}

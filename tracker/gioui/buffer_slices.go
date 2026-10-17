@@ -31,6 +31,7 @@ type bufferSlices struct {
 	cropBtn, deleteBtn, trimBtn, fadeInBtn, fadeOut *Clickable
 	count, sensitivity, threshold, fadeLen, curve   *NumericUpDownState
 	perBeat                                         *NumericUpDownState
+	partBtns                                        [5]*Clickable // Full, 1/2, 1/4, 1/8, 1/16
 }
 
 // sliceGrabPx is how near, in pixels, a press is to a marker to grab it.
@@ -42,6 +43,7 @@ func newBufferSlices() *bufferSlices {
 		cropBtn: new(Clickable), deleteBtn: new(Clickable), trimBtn: new(Clickable), fadeInBtn: new(Clickable), fadeOut: new(Clickable),
 		count: NewNumericUpDownState(), sensitivity: NewNumericUpDownState(), threshold: NewNumericUpDownState(),
 		fadeLen: NewNumericUpDownState(), curve: NewNumericUpDownState(), perBeat: NewNumericUpDownState(),
+		partBtns: [5]*Clickable{new(Clickable), new(Clickable), new(Clickable), new(Clickable), new(Clickable)},
 	}
 }
 
@@ -207,12 +209,26 @@ func (bs *bufferSlices) Layout(gtx C) D {
 	} else if a, e, ok := b.Selection(); ok {
 		editing = fmt.Sprintf("%s selected", formatSeconds(e-a))
 	}
+	trimmed := "whole file"
+	if b.IsTrimmed() {
+		trimmed = "trimmed, the file is kept whole"
+	}
+	trimRow := []layout.FlexChild{}
+	for i, part := range []int{1, 2, 4, 8, 16} {
+		txt, tip := fmt.Sprintf("1/%d", part), fmt.Sprintf("Keep 1/%d of the length of the file,\nfrom the start of the trim", part)
+		if part == 1 {
+			txt, tip = "Full", "Play the whole file again"
+		}
+		trimRow = append(trimRow, layout.Rigid(btn(b.TrimPart(part), bs.partBtns[i], txt, tip)))
+	}
+	trimRow = append(trimRow, gap, layout.Rigid(label(trimmed)))
 	rows = append(rows,
+		row("Trim", trimRow...),
 		row("Edit",
-			layout.Rigid(btn(b.Crop(), bs.cropBtn, "Crop", "Keep only the selected range\n(shift+drag on the waveform)")),
+			layout.Rigid(btn(b.Crop(), bs.cropBtn, "Crop", "Keep only the selected range\n(shift+drag on the waveform);\nthe file is kept whole")),
 			layout.Rigid(btn(b.DeleteRange(), bs.deleteBtn, "Delete", "Delete the selected range")),
 			gap,
-			layout.Rigid(btn(b.TrimSilence(), bs.trimBtn, "Trim silence", "Remove the ends of the sample\nthat are below the level")),
+			layout.Rigid(btn(b.TrimSilence(), bs.trimBtn, "Trim silence", "Trim the ends of the sample\nthat are below the level;\nthe file is kept whole")),
 			layout.Rigid(upDown(b.TrimThreshold(), bs.threshold, "The level of Trim silence, in dB")),
 			layout.Rigid(label("dB")),
 			gap,

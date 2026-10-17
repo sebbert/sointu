@@ -401,3 +401,76 @@ func TestLoopBeats(t *testing.T) {
 		t.Errorf("8 beats at 133 BPM, 140 in the name: %d", got)
 	}
 }
+
+// Trims keep the stored file whole: Crop and the parts of the length set
+// the trim, markers move with the audio, the played audio is the trimmed
+// part, and Full gives the whole file back. Delete within a trim changes
+// the file and moves the end of the trim.
+func TestTrimIsNondestructive(t *testing.T) {
+	m, broker := newBufferTestModel(t)
+	samples := make([]int16, 1000)
+	for i := range samples {
+		samples[i] = int16(i * 16)
+	}
+	data := testWav(samples)
+	sample := &sointu.AudioSample{Data: data, Encoding: &sointu.Encoding{}}
+	setBuffers(m, sointu.Buffers{{ID: 1, Channels: 1, Sample: sample, Slices: []int{100, 300, 600}}})
+	processBufferResults(t, m, broker, 1)
+	b := m.Buffer()
+	run := func(a Action) {
+		t.Helper()
+		if !a.Enabled() {
+			t.Fatal("not enabled")
+		}
+		a.Do()
+		deadline := time.After(10 * time.Second)
+		for b.IsEditing() {
+			select {
+			case msg := <-broker.ToModel:
+				m.ProcessMsg(msg)
+			case <-deadline:
+				t.Fatal("timed out")
+			}
+		}
+		processBufferResults(t, m, broker, 1)
+	}
+	check := func(what string, trim [2]int, frames int, first int16, markers []int) {
+		t.Helper()
+		s := m.d.Song.Buffers[0].Sample
+		if s.Trim() != trim {
+			t.Errorf("%s: trim %v, want %v", what, s.Trim(), trim)
+		}
+		audio, _, _ := b.Waveform()
+		if audio.Frames() != frames || math.Abs(float64(audio.Data[0]-float32(first)/32768)) > 1e-4 {
+			t.Errorf("%s: %d frames, first %v, want %d frames, first %d", what, audio.Frames(), audio.Data[0]*32768, frames, first)
+		}
+		if got := b.Slices(); !slices.Equal(got, markers) {
+			t.Errorf("%s: markers %v, want %v", what, got, markers)
+		}
+	}
+	if b.TrimPart(1).Enabled() {
+		t.Error("Full is enabled for a whole file")
+	}
+	run(b.TrimPart(2))
+	check("1/2", [2]int{0, 500}, 500, 0, []int{100, 300})
+	if !bytes.Equal(m.d.Song.Buffers[0].Sample.Data, data) {
+		t.Error("the trim changed the stored file")
+	}
+	b.SetSelection(200, 400)
+	run(b.Crop())
+	check("crop", [2]int{200, 400}, 200, 200*16, []int{100})
+	run(b.TrimPart(4)) // a quarter of the file from the start of the trim
+	check("1/4", [2]int{200, 450}, 250, 200*16, []int{100})
+	run(b.TrimPart(1))
+	check("full", [2]int{}, 1000, 0, []int{300})
+	run(b.TrimPart(2))
+	b.SetSelection(100, 200)
+	run(b.DeleteRange())
+	check("delete", [2]int{0, 400}, 400, 0, []int{200})
+	run(b.TrimPart(1))
+	check("full after delete", [2]int{}, 900, 0, []int{200})
+	m.History().Undo().Do()
+	m.History().Undo().Do()
+	processBufferResults(t, m, broker, 1)
+	check("undo", [2]int{0, 500}, 500, 0, []int{300})
+}

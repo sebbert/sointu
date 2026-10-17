@@ -9,23 +9,28 @@ import (
 	"github.com/vsariola/sointu/ffmpeg"
 )
 
-// Sample edits change the audio of the sample of the selected buffer: the
-// stored file is decoded at 44100 Hz, edited, and stored again as 24-bit
-// FLAC, which is lossless, whatever the file was before. The slice markers
-// move with the audio they mark. Each edit is an undoable change.
+// Sample edits change the sample of the selected buffer. Crop, Trim silence
+// and the trims to a part of the length only change its trim (see
+// sointu.AudioSample.Trim): the stored file stays whole. Delete and the fades
+// change the audio: the stored file is decoded at 44100 Hz, edited, and
+// stored again as 24-bit FLAC, which is lossless, whatever the file was
+// before. The slice markers move with the audio they mark. Each edit is an
+// undoable change.
 
 type (
 	sampleEditKind int
 
 	// sampleEdit is an edit of the audio of a sample. start and end are
 	// frames for crop and delete, threshold the level of trim silence,
-	// length the frames of a fade and curve its exponent.
+	// length the frames of a fade and curve its exponent, and part the
+	// division of the whole file that a trim to a part keeps (1 keeps all).
 	sampleEdit struct {
 		kind       sampleEditKind
 		start, end int
 		threshold  float32
 		length     int
 		curve      float64
+		part       int
 	}
 )
 
@@ -35,6 +40,7 @@ const (
 	editTrimSilence
 	editFadeIn
 	editFadeOut
+	editTrimPart
 )
 
 var errSilent = errors.New("the sample is silent")
@@ -176,25 +182,43 @@ func (v *fadeCurve) SetValue(value int) bool {
 func (v *fadeCurve) Range() RangeInclusive { return RangeInclusive{-100, 100} }
 
 // Crop returns an Action to keep only the selected frames of the sample.
-func (m *BufferModel) Crop() Action { return MakeAction(sampleEditAction{m, editCrop}) }
+func (m *BufferModel) Crop() Action { return MakeAction(sampleEditAction{m: m, kind: editCrop}) }
 
 // DeleteRange returns an Action to delete the selected frames of the sample.
-func (m *BufferModel) DeleteRange() Action { return MakeAction(sampleEditAction{m, editDelete}) }
+func (m *BufferModel) DeleteRange() Action {
+	return MakeAction(sampleEditAction{m: m, kind: editDelete})
+}
 
 // TrimSilence returns an Action to remove the frames at the ends of the
 // sample that are below TrimThreshold.
-func (m *BufferModel) TrimSilence() Action { return MakeAction(sampleEditAction{m, editTrimSilence}) }
+func (m *BufferModel) TrimSilence() Action {
+	return MakeAction(sampleEditAction{m: m, kind: editTrimSilence})
+}
 
 // FadeIn returns an Action to fade in the start of the sample, over
 // FadeLength with FadeCurve.
-func (m *BufferModel) FadeIn() Action { return MakeAction(sampleEditAction{m, editFadeIn}) }
+func (m *BufferModel) FadeIn() Action { return MakeAction(sampleEditAction{m: m, kind: editFadeIn}) }
 
 // FadeOut returns an Action to fade out the end of the sample.
-func (m *BufferModel) FadeOut() Action { return MakeAction(sampleEditAction{m, editFadeOut}) }
+func (m *BufferModel) FadeOut() Action { return MakeAction(sampleEditAction{m: m, kind: editFadeOut}) }
+
+// TrimPart returns an Action to trim the sample to a part of the whole
+// file: from the start of its trim, the length of the file divided by part;
+// part 1 keeps all of the file. The file stays whole.
+func (m *BufferModel) TrimPart(part int) Action {
+	return MakeAction(sampleEditAction{m: m, kind: editTrimPart, part: part})
+}
+
+// IsTrimmed reports whether the selected sample is trimmed.
+func (m *BufferModel) IsTrimmed() bool {
+	s := m.selectedSample()
+	return s != nil && s.Trim() != [2]int{}
+}
 
 type sampleEditAction struct {
 	m    *BufferModel
 	kind sampleEditKind
+	part int
 }
 
 // IsEditing reports whether a sample edit is running.
@@ -203,6 +227,9 @@ func (m *BufferModel) IsEditing() bool { return m.tools().editing }
 func (a sampleEditAction) Enabled() bool {
 	if a.m.selectedSample() == nil || a.m.tools().editing {
 		return false
+	}
+	if a.kind == editTrimPart && a.part <= 1 {
+		return a.m.IsTrimmed()
 	}
 	if a.kind == editCrop || a.kind == editDelete {
 		_, _, ok := a.m.Selection()
@@ -215,58 +242,141 @@ func (a sampleEditAction) Do() {
 	m, t := a.m, a.m.tools()
 	buf := m.selected()
 	e := sampleEdit{kind: a.kind, threshold: float32(math.Pow(10, float64(t.threshold)/20)),
-		length: t.fadeLength * 44100 / 1000, curve: math.Pow(4, float64(t.fadeCurve)/100)}
+		length: t.fadeLength * 44100 / 1000, curve: math.Pow(4, float64(t.fadeCurve)/100), part: a.part}
 	e.start, e.end, _ = m.Selection()
-	id, data, channels := buf.ID, buf.Sample.Data, buf.Channels
+	id, sample, channels := buf.ID, *buf.Sample, buf.Channels
 	t.editing = true
 	go func() {
-		stored, move, frames, err := editSample(data, channels, e)
+		r, err := editSample(sample, channels, e)
 		TrySend(m.broker.ToModel, MsgToModel{Data: func() {
 			m.tools().editing = false
 			if err != nil {
 				(*Model)(m).Alerts().Add(fmt.Sprintf("Editing the sample: %v", err), Error)
 				return
 			}
-			m.applyEditedSample(id, data, stored, move, frames)
+			m.applyEditedSample(id, sample, r)
 		}})
 	}()
 }
 
-// editSample decodes a stored sample, edits it and stores it again.
-func editSample(data []byte, channels int, e sampleEdit) (stored []byte, move func(int) (int, bool), frames int, err error) {
+// editResult is what an edit makes of a sample: its stored file (nil if
+// it stays) and trim, and where the edit moves a frame of the audio played
+// before it, from the start of the trim, and the frames played after.
+type editResult struct {
+	stored []byte
+	trim   [2]int
+	move   func(int) (int, bool)
+	frames int
+}
+
+// isTrim reports whether an edit only changes the trim of the sample.
+func (k sampleEditKind) isTrim() bool {
+	return k == editCrop || k == editTrimSilence || k == editTrimPart
+}
+
+// editSample decodes a stored sample and edits it, within its trim: the
+// trims change only the trim, the others the audio, which is stored again.
+func editSample(sample sointu.AudioSample, channels int, e sampleEdit) (editResult, error) {
 	f, err := ffmpeg.Find("")
 	if err != nil {
-		return nil, nil, 0, err
+		return editResult{}, err
 	}
-	a, err := f.Decode(data, channels)
+	a, err := f.Decode(sample.Data, channels)
 	if err != nil {
-		return nil, nil, 0, err
+		return editResult{}, err
 	}
-	out, move, err := applySampleEdit(a, e)
+	n := a.Frames()
+	s0, e0 := trimRange(sample.Trim(), n)
+	played := ffmpeg.TrimAudio(a, [2]int{s0, e0})
+	if e.kind.isTrim() {
+		var s, t int // the frames of played to keep
+		switch e.kind {
+		case editTrimPart:
+			s, t = 0, min(int(int64(n)/int64(max(e.part, 1))), n-s0)
+			if e.part <= 1 {
+				s0, s, t = 0, 0, n // all of the file
+			}
+		default:
+			_, move, err := applySampleEdit(played, e)
+			if err != nil {
+				return editResult{}, err
+			}
+			s, t = keptRange(move, played.Frames())
+		}
+		if s >= t {
+			return editResult{}, errors.New("nothing to keep")
+		}
+		trim := [2]int{s0 + s, s0 + t}
+		if trim[0] == 0 && trim[1] >= n {
+			trim = [2]int{}
+		} else if trim[1] >= n {
+			trim[1] = 0
+		}
+		shift := s0 + s - (sample.TrimStart) // where the played audio starts now, from where it started
+		return editResult{trim: trim, frames: t - s, move: func(f int) (int, bool) {
+			g := f - shift
+			return g, g >= 0 && g < t-s
+		}}, nil
+	}
+	// the edit of the played audio, put back between the rest of the file
+	out, move, err := applySampleEdit(played, e)
 	if err != nil {
-		return nil, nil, 0, err
+		return editResult{}, err
 	}
-	stored, err = f.Store(out)
-	return stored, move, out.Frames(), err
+	whole := sointu.BufferAudio{Channels: a.Channels}
+	whole.Data = append(append(append(whole.Data, a.Data[:s0*a.Channels]...), out.Data...), a.Data[e0*a.Channels:]...)
+	stored, err := f.Store(whole)
+	trim := sample.Trim()
+	if trim[1] > 0 {
+		trim[1] = s0 + out.Frames()
+	}
+	return editResult{stored: stored, trim: trim, move: move, frames: out.Frames()}, err
+}
+
+// trimRange returns the frames that a trim keeps of n: from start up to end.
+func trimRange(trim [2]int, n int) (start, end int) {
+	start, end = min(max(trim[0], 0), n), n
+	if trim[1] > 0 {
+		end = min(trim[1], n)
+	}
+	return start, max(start, end)
+}
+
+// keptRange returns the frames of n that an edit keeps, given where it
+// moves them, for edits that keep one range.
+func keptRange(move func(int) (int, bool), n int) (start, end int) {
+	start, end = -1, -1
+	for f := range n {
+		if _, ok := move(f); ok {
+			if start < 0 {
+				start = f
+			}
+			end = f + 1
+		}
+	}
+	return max(start, 0), max(end, 0)
 }
 
 // applyEditedSample puts an edited sample in the buffer with the ID, unless
 // its sample has changed since the edit started, and moves its markers.
-func (m *BufferModel) applyEditedSample(id int, old, stored []byte, move func(int) (int, bool), frames int) {
+func (m *BufferModel) applyEditedSample(id int, old sointu.AudioSample, r editResult) {
 	for i := range m.d.Song.Buffers {
 		buf := &m.d.Song.Buffers[i]
 		if buf.ID != id {
 			continue
 		}
-		if buf.Sample == nil || !sointu.Blob(buf.Sample.Data).Equal(old) {
+		if buf.Sample == nil || !sointu.Blob(buf.Sample.Data).Equal(old.Data) || buf.Sample.Trim() != old.Trim() {
 			(*Model)(m).Alerts().Add("The sample changed while it was edited; the edit is dropped", Warning)
 			return
 		}
 		defer m.change("EditSample")()
 		s := *buf.Sample
-		s.Data = stored
+		if r.stored != nil {
+			s.Data = r.stored
+		}
+		s.TrimStart, s.TrimEnd = r.trim[0], r.trim[1]
 		buf.Sample = &s
-		buf.Slices = moveSlices(buf.Slices, move, frames)
+		buf.Slices = moveSlices(buf.Slices, r.move, r.frames)
 		if t := m.tools(); t.selectionOf == id {
 			t.selection = [2]int{}
 		}
