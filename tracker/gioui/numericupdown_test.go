@@ -19,9 +19,11 @@ import (
 
 type testIntValue struct{ v int }
 
-func (t *testIntValue) Value() int                    { return t.v }
-func (t *testIntValue) SetValue(v int) bool           { t.v = v; return true }
-func (t *testIntValue) Range() tracker.RangeInclusive { return tracker.RangeInclusive{Min: 0, Max: 200} }
+func (t *testIntValue) Value() int          { return t.v }
+func (t *testIntValue) SetValue(v int) bool { t.v = v; return true }
+func (t *testIntValue) Range() tracker.RangeInclusive {
+	return tracker.RangeInclusive{Min: 0, Max: 200}
+}
 
 // A click on the number of a NumericUpDown types a value: Enter sets it,
 // clamped to the range, Escape discards it, and a drag still changes it
