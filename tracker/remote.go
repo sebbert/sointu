@@ -1413,12 +1413,18 @@ func dryRouting(patch sointu.Patch, index int) (notes []string) {
 			continue
 		}
 		for j := range patch[i].Units {
-			if u := &patch[i].Units[j]; main(u) {
+			u := &patch[i].Units[j]
+			if main(u) {
 				if u.Type == "outaux" {
 					u.Parameters["outgain"] = 0
 				} else {
 					u.Parameters["gain"] = 0
 				}
+			}
+			// a bus reading main would clear what the instrument put out
+			// there: it reads silence instead
+			if !u.Disabled && u.Type == "in" && u.Parameters["channel"] < 2 {
+				*u = sointu.Unit{ID: u.ID, Type: "loadval", Parameters: sointu.ParamMap{"stereo": u.Parameters["stereo"], "value": 64}}
 			}
 		}
 	}

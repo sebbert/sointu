@@ -383,6 +383,24 @@ func TestRemoteRenderSource(t *testing.T) {
 	if patch[0].Units[1].Parameters["channel"] != 0 || len(notes) != 1 || patch[1].Units[1].Parameters["gain"] != 0 {
 		t.Errorf("the aux unit was not sent to the main output: %v %v", patch, notes)
 	}
+	// a master bus that reads main does not clear what the instrument put
+	// out there
+	patch = sointu.Patch{
+		{NumVoices: 1, Units: []sointu.Unit{{Type: "loadval", Parameters: sointu.ParamMap{"value": 96}}, {Type: "out", Parameters: sointu.ParamMap{"gain": 128}}}},
+		{NumVoices: 1, Units: []sointu.Unit{{Type: "in", Parameters: sointu.ParamMap{"channel": 0, "stereo": 1}}, {Type: "out", Parameters: sointu.ParamMap{"stereo": 1, "gain": 128}}}},
+	}
+	dryRouting(patch, 0)
+	synth, err := vm.GoSynther{}.Synth(patch, 120)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf := make(sointu.AudioBuffer, 16)
+	if _, _, err := synth.Render(buf, len(buf)); err != nil {
+		t.Fatal(err)
+	}
+	if buf[len(buf)-1][0] != 0.5 {
+		t.Errorf("behind a master bus, the dry render has %v, not the instrument's 0.5", buf[len(buf)-1])
+	}
 }
 
 func TestRemotePanicLeavesTheSong(t *testing.T) {
