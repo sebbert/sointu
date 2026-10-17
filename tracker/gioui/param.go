@@ -1,6 +1,7 @@
 package gioui
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"math"
@@ -29,6 +30,17 @@ type (
 		tipArea      TipArea
 		clickable    Clickable
 		menu         MenuState
+		// the context menu of the parameter: a right click opens it where
+		// the pointer is
+		ctxTag  bool
+		ctxMenu MenuState
+		ctxPos  image.Point
+		// the small knob of the amount of the automation of the parameter
+		amountTag      bool
+		amountDrag     gesture.Drag
+		amountStartPt  f32.Point
+		amountStartVal float64
+		amountTip      TipArea
 	}
 
 	ParamWidget struct {
@@ -183,7 +195,169 @@ func (p ParamWidget) Layout(gtx C) D {
 	}
 	title.Layout(gtx)
 	widget(gtx)
+	if p.Parameter.Type() == tracker.IntegerParameter && !t.Params().IsChoosingSendTarget() {
+		p.layoutContext(gtx)
+		if slot, ok := t.Automation().SlotOf(&p.Parameter); ok {
+			p.layoutAmount(gtx, slot)
+		}
+		p.layoutContextMenu(gtx)
+	}
 	return D{Size: image.Pt(gtx.Constraints.Max.X, gtx.Constraints.Max.Y)}
+}
+
+// layoutContext takes the right clicks on the parameter, which open its
+// context menu; the clicks also go on to the knob and the rack, which puts
+// the cursor on the parameter.
+func (p ParamWidget) layoutContext(gtx C) {
+	for {
+		ev, ok := gtx.Event(pointer.Filter{Target: &p.State.ctxTag, Kinds: pointer.Press})
+		if !ok {
+			break
+		}
+		if pe, ok := ev.(pointer.Event); ok && pe.Kind == pointer.Press && pe.Buttons == pointer.ButtonSecondary {
+			p.State.ctxMenu.visible = true
+			p.State.ctxPos = pe.Position.Round()
+			gtx.Execute(key.FocusCmd{Tag: &p.State.ctxMenu.tag})
+		}
+	}
+	pass := pointer.PassOp{}.Push(gtx.Ops)
+	area := clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Push(gtx.Ops)
+	event.Op(gtx.Ops, &p.State.ctxTag)
+	area.Pop()
+	pass.Pop()
+}
+
+// layoutContextMenu lays out the context menu of the parameter, while it is
+// open: automating it in a new slot, adding it to the lane of another slot
+// (a macro) or moving it there, removing it from its lane, and resetting it.
+func (p ParamWidget) layoutContextMenu(gtx C) {
+	if !p.State.ctxMenu.visible {
+		return
+	}
+	t := TrackerFromContext(gtx)
+	a := t.Automation()
+	slot, bound := a.SlotOf(&p.Parameter)
+	children := []MenuChild{ActionMenuChild(a.NewLane(&p.Parameter), "Automate in a new slot", "", nil)}
+	for _, l := range a.Lanes() {
+		if bound && l.Slot == slot {
+			continue
+		}
+		verb := "Add to"
+		if bound {
+			verb = "Move to"
+		}
+		children = append(children, ActionMenuChild(a.JoinLane(&p.Parameter, l.Slot), fmt.Sprintf("%s A%d %s", verb, l.Slot+1, a.SlotName(l.Slot)), "", nil))
+	}
+	remove := "Remove automation"
+	if bound {
+		remove = fmt.Sprintf("Remove from A%d", slot+1)
+	}
+	reset := tracker.MakeFuncAction(func() {
+		// the right click put the cursor on the parameter
+		item := t.Params().Item(t.Params().Table().Cursor())
+		item.Reset()
+	}, nil)
+	children = append(children,
+		ActionMenuChild(a.RemoveLane(&p.Parameter), remove, "", nil),
+		DividerMenuChild(),
+		ActionMenuChild(reset, "Reset value", "", nil),
+	)
+	gtx.Constraints.Min = image.Point{}
+	defer op.Offset(p.State.ctxPos).Push(gtx.Ops).Pop()
+	Menu(&p.State.ctxMenu).WithPopupStyle(&t.Theme.Popup.ContextMenu).Layout(gtx, children...)
+}
+
+// layoutAmount lays out the small knob of the amount of the automation of
+// the parameter, in the lower right corner, and the slot in the lower left
+// one. Dragging it changes the amount, -1 to 1; scrolling, in 64ths; a
+// right click sets it to 1.
+func (p ParamWidget) layoutAmount(gtx C, slot int) {
+	t := TrackerFromContext(gtx)
+	a := t.Automation()
+	st := p.State
+	amount, _ := a.AmountOf(&p.Parameter)
+	for {
+		e, ok := st.amountDrag.Update(gtx.Metric, gtx.Source, gesture.Both)
+		if !ok {
+			break
+		}
+		switch e.Kind {
+		case pointer.Press:
+			st.amountStartPt, st.amountStartVal = e.Position, amount
+		case pointer.Drag:
+			d := e.Position.Sub(st.amountStartPt)
+			speed := gtx.Dp(160)
+			if e.Modifiers.Contain(key.ModCtrl) {
+				speed = gtx.Dp(640)
+			}
+			a.SetAmountOf(&p.Parameter, st.amountStartVal+2*float64(d.X-d.Y)/float64(speed))
+			st.amountTip.Appear(gtx.Now)
+		}
+	}
+	for {
+		ev, ok := gtx.Event(pointer.Filter{Target: &st.amountTag, Kinds: pointer.Press | pointer.Scroll, ScrollY: pointer.ScrollRange{Min: -1e6, Max: 1e6}})
+		if !ok {
+			break
+		}
+		pe, ok := ev.(pointer.Event)
+		if !ok {
+			continue
+		}
+		switch {
+		case pe.Kind == pointer.Press && pe.Buttons == pointer.ButtonSecondary:
+			a.SetAmountOf(&p.Parameter, 1)
+		case pe.Kind == pointer.Scroll && pe.Scroll.Y != 0:
+			step := 1.0
+			if pe.Scroll.Y > 0 {
+				step = -1
+			}
+			a.SetAmountOf(&p.Parameter, amount+step/64)
+			st.amountTip.Appear(gtx.Now)
+		}
+	}
+	amount, _ = a.AmountOf(&p.Parameter)
+	style := &p.Theme.Knob
+	if p.Disabled {
+		style = &p.Theme.DisabledKnob
+	}
+	size := gtx.Dp(14)
+	margin := gtx.Dp(2)
+	cell := gtx.Constraints.Max
+	// the slot, lower left
+	slotStyle := style.Value
+	slotStyle.TextSize = 9
+	slotStyle.Color = style.Pos.Color
+	o := op.Offset(image.Pt(gtx.Dp(3), cell.Y-size-margin)).Push(gtx.Ops)
+	lgtx := gtx
+	lgtx.Constraints = layout.Constraints{Max: image.Pt(cell.X/2, size)}
+	Label(p.Theme, &slotStyle, fmt.Sprintf("A%d", slot+1)).Layout(lgtx)
+	o.Pop()
+	// the knob, lower right
+	defer op.Offset(image.Pt(cell.X-size-margin, cell.Y-size-margin)).Push(gtx.Ops).Pop()
+	knob := func(gtx C) D {
+		defer clip.Rect(image.Rectangle{Max: image.Pt(size, size)}).Push(gtx.Ops).Pop()
+		event.Op(gtx.Ops, &st.amountTag)
+		st.amountDrag.Add(gtx.Ops)
+		k := KnobWidget{}
+		sw := gtx.Dp(3)
+		pos := float32(amount+1) / 2
+		k.strokeKnobArc(gtx, style.Neg.Bg, sw, size, 0, 0.5)
+		k.strokeKnobArc(gtx, style.Pos.Bg, sw, size, 0.5, 1)
+		if pos > 0.5 {
+			k.strokeKnobArc(gtx, style.Pos.Color, sw, size, 0.5, pos)
+		} else if pos < 0.5 {
+			k.strokeKnobArc(gtx, style.Neg.Color, sw, size, pos, 0.5)
+		}
+		return D{Size: image.Pt(size, size)}
+	}
+	hint := fmt.Sprintf("%s: amount %.2f of A%d\nDrag or scroll to change it,\nright click for 1", a.SlotName(slot), amount, slot+1)
+	gtx.Constraints = layout.Exact(image.Pt(size, size))
+	c := gtx.Constraints
+	gtx.Constraints.Max = image.Pt(1e6, 1e6)
+	st.amountTip.Layout(gtx, Tooltip(p.Theme, hint), func(gtx C) D {
+		gtx.Constraints = c
+		return knob(gtx)
+	})
 }
 
 func (s *ParamState) update(gtx C, param tracker.Parameter, scroll bool) {
@@ -245,16 +419,6 @@ func (k *KnobWidget) Layout(gtx C) D {
 			}
 			amount := float32(d.X-d.Y) / float32(speed)
 			k.Value.SetValue(k.Value.Dragged(k.State.dragStartVal, amount))
-			k.State.tipArea.Appear(gtx.Now)
-		}
-	}
-	for k.Scroll {
-		ev, ok := gtx.Event(pointer.Filter{Target: k.State, Kinds: pointer.Press})
-		if !ok {
-			break
-		}
-		if pe, ok := ev.(pointer.Event); ok && pe.Kind == pointer.Press && pe.Buttons == pointer.ButtonSecondary {
-			k.Value.Reset()
 			k.State.tipArea.Appear(gtx.Now)
 		}
 	}

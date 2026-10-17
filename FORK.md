@@ -1288,6 +1288,14 @@ has fractions, so it is 16 bits unless the points are rounded.
   of the lane of that slot, for a macro; if it was the only target of its
   lane and the slot has no lane, the lane moves there with its points and
   name.
+- An automated knob has a small bipolar knob of its amount in its lower
+  right corner, and its slot (`A3`) in the lower left one: dragging the
+  small knob changes the amount (with Ctrl finer), scrolling it changes it
+  in 64ths, a right click sets it to 1; the amount is a minor change, like
+  turning a knob. A right click on a knob opens its context menu: automate
+  in a new slot, add to (or move to) the lane of each other slot, remove
+  from its lane, and reset the value, which a right click on the knob under
+  the cursor did before.
 - The plugins have a parameter for each slot, -128 to 128 with the default
   0, named by the slot and what it is bound to (`A3 Bass: filter
   frequency`, with `+2` for a lane with two more targets), or by the

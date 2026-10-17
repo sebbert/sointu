@@ -36,6 +36,21 @@ type (
 
 func MakeAction(doer Doer) Action { return Action{doer: doer} }
 
+// MakeFuncAction makes an Action of a function, enabled while enabled
+// returns true; with enabled nil, always.
+func MakeFuncAction(do func(), enabled func() bool) Action {
+	return Action{doer: funcDoer{do, enabled}}
+}
+
+type funcDoer struct {
+	do      func()
+	enabled func() bool
+}
+
+func (f funcDoer) Do() { f.do() }
+
+func (f funcDoer) Enabled() bool { return f.enabled == nil || f.enabled() }
+
 func (a Action) Do() {
 	e, ok := a.doer.(Enabler)
 	if ok && !e.Enabled() {

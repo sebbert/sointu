@@ -7,8 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"gioui.org/f32"
 	"gioui.org/gpu/headless"
 	"gioui.org/io/input"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
@@ -102,5 +104,88 @@ func TestAutomationNameField(t *testing.T) {
 	frame("automation-4-removed")
 	if ie.automationShown {
 		t.Error("the name field is shown after the lane was removed")
+	}
+}
+
+// TestAutomationAmountKnob lays out the cell of an automated parameter and
+// drives its small amount knob and its context menu with the pointer.
+func TestAutomationAmountKnob(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", home)
+	t.Setenv("AppData", home)
+	broker := tracker.NewBroker()
+	model := tracker.NewModel(broker, []sointu.Synther{vm.GoSynther{}}, tracker.NullMIDIContext{}, "")
+	defer model.Close()
+	tr := NewTracker(model)
+	auto := model.Automation().Automated()
+	var point tracker.Point
+	found := false
+	for y := 0; y < 8 && !found; y++ {
+		for x := 0; x < 8 && !found; x++ {
+			point = tracker.Point{X: x, Y: y}
+			model.Params().SetCursor(point)
+			item := model.Params().Item(point)
+			found = auto.Enabled() && item.Type() == tracker.IntegerParameter
+		}
+	}
+	if !found {
+		t.Fatal("no knob of the default instrument can be automated")
+	}
+	auto.SetValue(true)
+	size := image.Pt(60, 70)
+	state := &ParamState{}
+	var ops op.Ops
+	var router input.Router
+	now := time.Now()
+	clock := time.Second // a press at 0 would be a double click
+	frame := func() {
+		for range 2 {
+			ops.Reset()
+			gtx := layout.Context{Ops: &ops, Now: now.Add(clock), Source: router.Source(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1},
+				Constraints: layout.Exact(size), Values: map[string]any{"Tracker": tr}}
+			Param(model.Params().Item(point), tr.Theme, state, true, false).Layout(gtx)
+			router.Frame(gtx.Ops)
+		}
+	}
+	ptr := func(kind pointer.Kind, buttons pointer.Buttons, pos f32.Point) {
+		clock += 50 * time.Millisecond
+		router.Queue(pointer.Event{Kind: kind, Source: pointer.Mouse, Buttons: buttons, Position: pos, Time: clock})
+		frame()
+	}
+	amount := func() float64 {
+		item := model.Params().Item(point)
+		a, _ := model.Automation().AmountOf(&item)
+		return a
+	}
+	item := model.Params().Item(point)
+	model.Automation().SetAmountOf(&item, 0)
+	frame()
+	knob := f32.Pt(51, 61)
+	ptr(pointer.Press, pointer.ButtonPrimary, knob)
+	ptr(pointer.Move, pointer.ButtonPrimary, knob.Add(f32.Pt(0, -20)))
+	ptr(pointer.Release, 0, knob.Add(f32.Pt(0, -20)))
+	if a := amount(); a != 0.25 {
+		t.Errorf("dragged 20 up: amount %v, want 0.25", a)
+	}
+	ptr(pointer.Press, pointer.ButtonSecondary, knob)
+	ptr(pointer.Release, 0, knob)
+	if a := amount(); a != 1 {
+		t.Errorf("right click: amount %v, want 1", a)
+	}
+	if state.ctxMenu.visible {
+		t.Error("a right click on the amount knob opened the menu")
+	}
+	clock += 50 * time.Millisecond
+	router.Queue(pointer.Event{Kind: pointer.Scroll, Source: pointer.Mouse, Position: knob, Scroll: f32.Pt(0, 1), Time: clock})
+	frame()
+	if a := amount(); a != 63.0/64 {
+		t.Errorf("scrolled down: amount %v, want 63/64", a)
+	}
+	// a right click on the knob opens the context menu
+	ptr(pointer.Press, pointer.ButtonSecondary, f32.Pt(30, 35))
+	ptr(pointer.Release, 0, f32.Pt(30, 35))
+	if !state.ctxMenu.visible {
+		t.Error("a right click did not open the menu")
 	}
 }

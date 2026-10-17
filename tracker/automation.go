@@ -90,6 +90,75 @@ func (m *AutomationModel) AmountOf(item *Parameter) (amount float64, ok bool) {
 	return m.d.Song.Automation[i].Targets[j].Amount, true
 }
 
+// SetAmountOf sets the amount of the target of a lane that the parameter
+// is, -1 to 1 in 64ths, as turning a knob does: a minor change.
+func (m *AutomationModel) SetAmountOf(item *Parameter, amount float64) bool {
+	unit, param, ok := m.targetOf(item)
+	if !ok {
+		return false
+	}
+	i, j, ok := m.d.Song.Automation.FindParam(unit, param)
+	if !ok {
+		return false
+	}
+	amount = math.Round(min(max(amount, -1), 1)*64) / 64
+	if m.d.Song.Automation[i].Targets[j].Amount == amount {
+		return false
+	}
+	defer (*Model)(m).change("AutomationAmount", PatchChange, MinorChange)()
+	a := m.d.Song.Automation.Copy()
+	a[i].Targets[j].Amount = amount
+	m.d.Song.Automation = a
+	return true
+}
+
+// NewLane returns an Action that gives the parameter a lane of its own, in
+// the first free slot: enabled for a parameter that can be automated and is
+// not a target of a lane.
+func (m *AutomationModel) NewLane(item *Parameter) Action {
+	unit, param, ok := m.targetOf(item)
+	return MakeFuncAction(func() {
+		if err := m.Bind(unit, param, -1, 1); err != nil {
+			(*Model)(m).Alerts().Add(err.Error(), Warning)
+		}
+	}, func() bool {
+		_, _, bound := m.d.Song.Automation.FindParam(unit, param)
+		return ok && !bound
+	})
+}
+
+// JoinLane returns an Action that makes the parameter one more target of
+// the lane of the slot, with the amount it has if it is a target of
+// another lane, else 1: enabled for a parameter that can be automated and
+// is not a target of that lane.
+func (m *AutomationModel) JoinLane(item *Parameter, slot int) Action {
+	unit, param, ok := m.targetOf(item)
+	return MakeFuncAction(func() {
+		amount := 1.0
+		if i, j, bound := m.d.Song.Automation.FindParam(unit, param); bound {
+			amount = m.d.Song.Automation[i].Targets[j].Amount
+		}
+		if err := m.Bind(unit, param, slot, amount); err != nil {
+			(*Model)(m).Alerts().Add(err.Error(), Warning)
+		}
+	}, func() bool {
+		i, _, bound := m.d.Song.Automation.FindParam(unit, param)
+		_, exists := m.d.Song.Automation.Find(slot)
+		return ok && exists && (!bound || m.d.Song.Automation[i].Slot != slot)
+	})
+}
+
+// RemoveLane returns an Action that removes the parameter from its lane,
+// and the lane with its points if it was the last target: enabled for a
+// parameter that is a target of a lane.
+func (m *AutomationModel) RemoveLane(item *Parameter) Action {
+	unit, param, ok := m.targetOf(item)
+	return MakeFuncAction(func() { m.Unbind(unit, param) }, func() bool {
+		_, _, bound := m.d.Song.Automation.FindParam(unit, param)
+		return ok && bound
+	})
+}
+
 // Automated returns a Bool telling whether the parameter under the cursor
 // is a target of a lane. Setting it gives the parameter a lane of its own,
 // in the first free slot, so that the host can automate it; clearing it

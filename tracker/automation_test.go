@@ -389,3 +389,35 @@ func TestAutomationMacro(t *testing.T) {
 		t.Error("an amount of 2")
 	}
 }
+
+// TestAutomationActions checks the actions of the context menu of a
+// parameter and the amount of the small knob.
+func TestAutomationActions(t *testing.T) {
+	m, _, _, _ := automationModel(t)
+	a := m.Automation()
+	m.Params().SetCursor(Point{X: 1, Y: 0})
+	value := m.Params().Item(m.Params().Table().Cursor())
+	m.Params().SetCursor(Point{X: 1, Y: 1})
+	gain := m.Params().Item(m.Params().Table().Cursor())
+	if !a.NewLane(&value).Enabled() || a.RemoveLane(&value).Enabled() || a.JoinLane(&value, 0).Enabled() {
+		t.Fatal("the actions of a parameter without a lane")
+	}
+	a.NewLane(&value).Do()
+	if a.NewLane(&value).Enabled() || !a.RemoveLane(&value).Enabled() || a.JoinLane(&value, 0).Enabled() || !a.JoinLane(&gain, 0).Enabled() {
+		t.Error("the actions after a new lane")
+	}
+	a.JoinLane(&gain, 0).Do()
+	if l := a.Lanes(); len(l) != 1 || len(l[0].Targets) != 2 {
+		t.Fatalf("after joining: %v", l)
+	}
+	undo := len(m.undoStack)
+	a.SetAmountOf(&gain, 0.3)
+	a.SetAmountOf(&gain, -0.5)
+	if got, _ := a.AmountOf(&gain); got != -0.5 || len(m.undoStack) > undo+1 {
+		t.Errorf("amount %v, %d undo steps", got, len(m.undoStack)-undo)
+	}
+	a.RemoveLane(&value).Do()
+	if l := a.Lanes(); len(l) != 1 || l[0].Targets[0].Unit != 2 {
+		t.Errorf("after removing the value: %v", l)
+	}
+}
