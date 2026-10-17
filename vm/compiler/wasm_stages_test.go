@@ -225,6 +225,43 @@ func TestStagedWasmMatchesOneShot(t *testing.T) {
 	}
 }
 
+// TestStagedWasmManyVoices renders in stages a song of more than 32 voices,
+// whose sends have addresses of 3 bytes, with a send in every instrument: the
+// code of a stage must start where it is in the bytecode of the whole patch,
+// not in that of the instruments before it alone, which has 2-byte addresses.
+func TestStagedWasmManyVoices(t *testing.T) {
+	t.Parallel()
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not found")
+	}
+	wat2wasm, err := exec.LookPath("wat2wasm")
+	if err != nil {
+		t.Skip("wat2wasm not found")
+	}
+	var instruments [][]sointu.Unit
+	for i := 0; i < 34; i++ {
+		id := 100 * (i + 1)
+		instruments = append(instruments, []sointu.Unit{
+			{ID: id, Type: "envelope", Parameters: sointu.ParamMap{"stereo": 0, "attack": 32, "decay": 64, "sustain": 64, "release": 64, "gain": 128}},
+			{ID: id + 1, Type: "send", Parameters: sointu.ParamMap{"stereo": 0, "amount": 80, "voice": 0, "target": id + 2, "port": 1, "sendpop": 0}},
+			{ID: id + 2, Type: "oscillator", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "phase": 0, "color": 128, "shape": 64, "gain": 32, "type": sointu.Sine}},
+			{ID: id + 3, Type: "mulp", Parameters: sointu.ParamMap{"stereo": 0}},
+			{ID: id + 4, Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 16}},
+		})
+	}
+	song := stageTestSong(instruments...)
+	if n := song.Patch.NumVoices(); n <= 32 {
+		t.Fatalf("the song has %d voices: it must have more than 32", n)
+	}
+	oneshot, _ := compileWasm(t, wat2wasm, song, nil, nil)
+	for _, n := range []int{2, 3, 4} {
+		if _, err := renderStages(t, node, wat2wasm, oneshot, song, func(c *compiler.Compiler) { c.Stages = n }); err != nil {
+			t.Fatalf("%d stages: %v", n, err)
+		}
+	}
+}
+
 // stageTestSong is a song of instruments that play a chord of the given
 // units, each a voice.
 func stageTestSong(instruments ...[]sointu.Unit) sointu.Song {

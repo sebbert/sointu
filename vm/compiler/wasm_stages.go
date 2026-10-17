@@ -424,14 +424,15 @@ func wasmStages(song *sointu.Song, features vm.FeatureSet, numStages int, cuts [
 		}
 		return
 	}
-	starts := make([][2]int, len(patch)) // offsets of the code and operands of the instruments
-	for i := range patch {
-		b, bcErr := vm.NewBytecode(patch[:i], features, song.BPM)
-		if bcErr != nil {
-			return ret, nil, bcErr
-		}
-		starts[i] = [2]int{len(b.Opcodes), len(b.Operands)}
+	// the offsets of the code and operands of the instruments, from the
+	// bytecode of the whole patch: that of the instruments before one alone
+	// can be encoded otherwise, e.g. with 2 bytes for the address of a send
+	// where the patch has more than 32 voices and takes 3
+	full, bcErr := vm.NewBytecode(patch, features, song.BPM)
+	if bcErr != nil {
+		return ret, nil, bcErr
 	}
+	starts := full.InstrumentStarts
 	stage := func(first, end int) wasmStage {
 		s := wasmStage{First: first, End: end,
 			Opcodes: starts[voiceInstr[first]][0], Operands: starts[voiceInstr[first]][1],

@@ -76,6 +76,11 @@ type (
 		// NumVoices is the total number of voices in the patch
 		NumVoices uint32
 
+		// InstrumentStarts are the offsets in Opcodes and Operands where the
+		// code of each instrument starts, for players that run a part of the
+		// voices (the stages of the wasm player).
+		InstrumentStarts [][2]int
+
 		// StereoPan is true when the patch has stereo pan units. The wasm
 		// player then pans mono signals with the same code, computing the
 		// right channel as (1-p)·s instead of s-p·s, which rounds
@@ -280,6 +285,7 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 		if instr.NumVoices < 1 {
 			return nil, errors.New("Each instrument must have at least 1 voice")
 		}
+		b.InstrumentStarts = append(b.InstrumentStarts, [2]int{len(b.Opcodes), len(b.Operands)})
 		var instrConvs []int // the convolution units of the instrument, as indices in Convs
 		for unitIndex, unit := range instr.Units {
 			if unit.Type == "" || unit.Disabled { // empty units are just ignored & skipped
