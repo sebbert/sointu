@@ -90,6 +90,7 @@ type (
 		length   uint32                       // length of a spawned note in frames, 0 if none
 		released uint32                       // global time when the note was released
 		args     [sointu.MaxSpawnArgs]float32 // values passed by the spawn unit
+		quiet    float32                      // 1 - the velocity of the note, 0 to 1: the zero value is full velocity
 		units    [MAX_UNITS]unit
 	}
 
@@ -185,6 +186,13 @@ func (s *GoSynth) Trigger(voiceIndex int, note byte) {
 	s.state.voices[voiceIndex] = voice{}
 	s.state.voices[voiceIndex].note = note
 	s.state.voices[voiceIndex].sustain = true
+}
+
+// TriggerVelocity triggers a note with a velocity, 1 to 127, which velocity
+// units push over 127.
+func (s *GoSynth) TriggerVelocity(voiceIndex int, note byte, velocity byte) {
+	s.Trigger(voiceIndex, note)
+	s.state.voices[voiceIndex].quiet = 1 - float32(min(max(velocity, 1), 127))/127
 }
 
 func (s *GoSynth) Release(voiceIndex int) {
@@ -617,6 +625,12 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 				stack = append(stack, noteFloat)
 				if stereo {
 					stack = append(stack, noteFloat)
+				}
+			case opVelocity:
+				v := 1 - voice.quiet
+				stack = append(stack, v)
+				if stereo {
+					stack = append(stack, v)
 				}
 			case opPan:
 				if !stereo && !s.bytecode.StereoPan { // like the mono only pan of the wasm player
@@ -1288,7 +1302,7 @@ func (s *GoSynth) spawn(unit *unit, own *voice, first, count int, flags byte, ra
 		target = busy
 	}
 	v := &s.state.voices[target]
-	*v = voice{note: byte(math.Floor(float64(n))), sustain: true, spawned: s.state.globalTime + 1}
+	*v = voice{note: byte(math.Floor(float64(n))), sustain: true, spawned: s.state.globalTime + 1, quiet: own.quiet}
 	if length > 0 {
 		v.length = uint32(max(lengthFrames(length), 1))
 		v.release = s.state.globalTime + v.length

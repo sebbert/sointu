@@ -65,7 +65,10 @@ func renderNote(h *Host, raw json.RawMessage) (string, error) {
 		return "", fmt.Errorf("instrument %d %q has %d voices: at most that many notes at once", src.Instrument, src.Name, src.NumVoices)
 	}
 	hold := a.HoldMs * int(sampleRate) / 1000
-	buf, err := Render(src, a.Notes, hold, a.TailMs*int(sampleRate)/1000)
+	if a.Velocity < 0 || a.Velocity > 127 {
+		return "", errors.New("a velocity is 1 to 127")
+	}
+	buf, err := RenderVelocity(src, a.Notes, a.Velocity, hold, a.TailMs*int(sampleRate)/1000)
 	if err != nil {
 		return "", err
 	}
@@ -96,6 +99,12 @@ func renderNote(h *Host, raw json.RawMessage) (string, error) {
 // Render plays notes of the instrument of src for hold frames, releases
 // them and goes on for tail frames.
 func Render(src tracker.RemoteRender, notes []int, hold, tail int) (sointu.AudioBuffer, error) {
+	return RenderVelocity(src, notes, 0, hold, tail)
+}
+
+// RenderVelocity is Render with notes of a MIDI velocity, 1 to 127; 0 is
+// none, which plays as 127.
+func RenderVelocity(src tracker.RemoteRender, notes []int, velocity, hold, tail int) (sointu.AudioBuffer, error) {
 	if err := src.Song.CheckUnitTypes(); err != nil {
 		return nil, err
 	}
@@ -130,7 +139,11 @@ func Render(src tracker.RemoteRender, notes []int, hold, tail int) (sointu.Audio
 		return nil
 	}
 	for i, note := range notes {
-		synth.Trigger(src.FirstVoice+i, byte(note))
+		if t, ok := synth.(sointu.VelocityTriggerer); ok && velocity > 0 {
+			t.TriggerVelocity(src.FirstVoice+i, byte(note), byte(velocity))
+		} else {
+			synth.Trigger(src.FirstVoice+i, byte(note))
+		}
 	}
 	if err := fill(buf[:hold]); err != nil {
 		return nil, err

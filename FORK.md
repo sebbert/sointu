@@ -182,6 +182,7 @@ All of these are Go and wasm only.
 | `spawn` | Triggers voices of another instrument: at a `rate`, synced to the beat, or on a rising edge. Transpose, note length, up to 4 `args`, `steal` |
 | `arg` | Pushes a value passed by the `spawn` that triggered the voice |
 | `automation` | Pushes the value of the lane of an automation slot at the time of the song. The tracker puts one, with a send, before every parameter that a slot is bound to. See [Automation](#automation) |
+| `velocity` | Pushes the velocity of the note of the voice, 0 to 1: the MIDI velocity over 127. Notes of the score, and every note of a compiled song, have 1. Unlike the units above, it also compiles for x86 (as 1). See [Velocity](#velocity) |
 | `window` | A smoothstep window over the spawned note, for click-free grains; timed by pitch, whole cycles of an oscillator |
 | `spfft`, `spifft`, `spcopy` | Spectral analysis and resynthesis (Hann, 4× overlap, 256 to 8192 samples, mono or stereo), copying spectra |
 | `spfilter`, `spcompress`, `spblur`, `spgate`, `spphase`, `spscale`, `spformant` | Change a spectrum in place: band cut and tilt, magnitudes pulled to their mean (with optional attack and release per bin), time smoothing and freeze, gate, phase dispersion/randomization/robot, bin scaling and shifting, formant shift |
@@ -1389,6 +1390,36 @@ envelope of the song has the curve operand. The Go synth, which encodes with
     `SongMacros.VoiceTracks`) instead of the polyphony and voice-track
     bitmasks;
   - the voice memory is sized by the number of voices.
+
+## Velocity
+
+The `velocity` unit pushes the velocity of the note of its voice, 0 to 1,
+mono or stereo, for sends: to a `gain` for dynamics, to a filter or a
+module parameter for brightness.
+
+- *Where it comes from.* The player passes the velocity of a MIDI note on
+  (`NoteEvent.Velocity`) to synths that have `sointu.VelocityTriggerer`
+  (`TriggerVelocity(voice, note, velocity)`): the Go synth and the
+  multithreaded one. `Trigger` is velocity 127, and so are notes of the
+  score, notes played from the keyboard of the tracker and synths without
+  the interface. The plugins already send 1 for a note on of velocity 0
+  (CLAP, VST3, AU); the player now takes a note on of velocity 0 from any
+  other source (VST2, MIDI input of the tracker) as a note off, as MIDI has
+  it, which it took as a note on before.
+- *In the voice.* The Go synth keeps 1 - velocity (`voice.quiet`), so that
+  a voice that is reset or never triggered, and so every path that makes a
+  new voice, has velocity 1. A voice that a `spawn` unit triggers has the
+  velocity of the voice that spawned it.
+- *Compiled songs* have no velocities: the wasm and x86 players push 1
+  (`f32.const 1`, `fld1`), so a song renders in them as in the Go synth
+  (`TestVelocityWasmMatchesGoSynth`, no sample differs). The x86 code
+  compiles, but was not assembled here (no nasm).
+- *MCP:* `render_note` and `play_note` take `velocity`, 1 to 127.
+
+Tests: `vm/velocity_test.go` (the values, 1 without a velocity, after a
+release, for spawned voices), `vm/compiler/wasm_velocity_test.go`,
+`cmd/plugin/velocity_test.go` (MIDI note ons of several velocities, and of
+velocity 0, through the player).
 
 ## Output channels
 

@@ -205,6 +205,14 @@ var UnitTypes = map[string]UnitType{
 		Params:   []UnitParameter{{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false}},
 		StackUse: stackUseSource,
 	},
+	"velocity": {
+		// velocity pushes the velocity of the note of the voice, 0 to 1: the
+		// MIDI velocity over 127. Notes without one, those of the score and
+		// of the compiled players, have 1; a voice that a spawn unit
+		// triggers has the velocity of the voice that spawned it.
+		Params:   []UnitParameter{{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false}},
+		StackUse: stackUseSource,
+	},
 	"distort": {
 		Params: []UnitParameter{
 			{Name: "stereo", MinValue: 0, MaxValue: 1, CanSet: true, CanModulate: false},

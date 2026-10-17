@@ -40,6 +40,13 @@ type (
 		pos    int
 	}
 
+	// VelocityTriggerer is a Synth that can trigger a note with a velocity,
+	// which velocity units push: 1 to 127, as MIDI has it. A synth without
+	// it plays every note at velocity 127.
+	VelocityTriggerer interface {
+		TriggerVelocity(voice int, note byte, velocity byte)
+	}
+
 	// Synth represents a state of a synthesizer, compiled from a Patch.
 	Synth interface {
 		// Render tries to fill a stereo signal buffer with sound from the
@@ -59,6 +66,7 @@ type (
 		Update(patch Patch, bpm int) error
 
 		// Trigger triggers a note for a given voice. Called between synth.Renders.
+		// The note has the velocity 1 (127).
 		Trigger(voice int, note byte)
 
 		// Release releases the currently playing note for a given voice. Called

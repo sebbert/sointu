@@ -96,8 +96,12 @@ type (
 		On        bool
 		Channel   int // which track or instrument is triggered, depending on IsTrack
 		Note      byte
-		IsTrack   bool // true if "Channel" means track number, false if it means instrument number
-		Source    any
+		// Velocity is the MIDI velocity of a note on, 1 to 127, which
+		// velocity units push; 0 for notes without one (the score), which
+		// play at 127.
+		Velocity byte
+		IsTrack  bool // true if "Channel" means track number, false if it means instrument number
+		Source   any
 		// Automation is true for an event that gives an automation slot,
 		// Channel, the live Value, instead of triggering or releasing a note.
 		Automation bool
@@ -468,7 +472,7 @@ loop:
 					chn := m.channel() + 1
 					note := m.Data[1]
 					velocity := m.Data[2]
-					on := m.Data[0] >= 0x90
+					on := m.Data[0] >= 0x90 && velocity > 0 // a note on with velocity 0 is a note off
 					cb := func(i int, v byte) {
 						if i < 0 || i >= len(p.song.Patch) {
 							return
@@ -481,7 +485,7 @@ loop:
 						if instr.MIDI.NoRetrigger && on && i < len(p.prevVal) && p.prevVal[i] == n {
 							return // the instrument is configured to respond only to changes in values and there was no change
 						}
-						p.events = append(p.events, NoteEvent{Timestamp: m.Timestamp, Channel: i, Note: n, On: on, Source: m.Source})
+						p.events = append(p.events, NoteEvent{Timestamp: m.Timestamp, Channel: i, Note: n, On: on, Velocity: velocity, Source: m.Source})
 						for len(p.prevVal) <= i {
 							p.prevVal = append(p.prevVal, 0)
 						}
@@ -790,6 +794,10 @@ func (p *Player) processNoteEvent(ev NoteEvent) {
 	}
 	p.voices[oldestVoice] = voice{triggerEvent: ev, sustain: true, samplesSinceEvent: 0}
 	p.status.VoiceLevels[oldestVoice] = 1.0
-	p.synth.Trigger(oldestVoice, ev.Note)
+	if t, ok := p.synth.(sointu.VelocityTriggerer); ok && ev.Velocity > 0 {
+		t.TriggerVelocity(oldestVoice, ev.Note, ev.Velocity)
+	} else {
+		p.synth.Trigger(oldestVoice, ev.Note)
+	}
 	TrySend(p.broker.ToModel, MsgToModel{TriggerChannel: instrIndex + 1, TriggerVoice: oldestVoice - p.song.Patch.FirstVoiceForInstrument(instrIndex) + 1})
 }

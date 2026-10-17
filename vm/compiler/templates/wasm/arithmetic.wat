@@ -111,6 +111,21 @@
 )
 {{end}}
 
+{{- if .HasOp "velocity"}}
+;;-------------------------------------------------------------------------------
+;;   VELOCITY opcode: the velocity of the note, which is 1: the notes of a
+;;   compiled song have none (the Go synth has the velocity of MIDI notes)
+;;-------------------------------------------------------------------------------
+(func $su_op_velocity (param $stereo i32)
+{{- if .Stereo "velocity"}}
+    (if (local.get $stereo) (then
+        (call $push (f32.const 1))
+    ))
+{{- end}}
+    (call $push (f32.const 1))
+)
+{{end}}
+
 {{- if .HasOp "mul"}}
 ;;-------------------------------------------------------------------------------
 ;;   MUL opcode: multiply the two top most signals on the stack
