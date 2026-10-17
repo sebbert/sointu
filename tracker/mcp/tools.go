@@ -141,11 +141,13 @@ type (
 		Output     string                   `json:"output,omitempty" jsonschema:"dry (the default): only what the instrument itself puts out, the outputs of the other instruments silenced. master: the song's output with only this instrument playing, through the instruments it sends to (buses, reverb, mastering)"`
 		Edits      []tracker.RemoteUnitEdit `json:"edits,omitempty" jsonschema:"unit changes, as for edit_units, made only to the copy that is rendered: the song stays as it is. For comparing variants, e.g. a unit disabled, before changing the song"`
 		Wav        bool                     `json:"wav,omitempty" jsonschema:"also writes the render to a temporary 32-bit float stereo wav file at 44100 Hz and returns its path, for analysis with other tools"`
+		Velocity   int                      `json:"velocity,omitempty" jsonschema:"the MIDI velocity of the notes, 1 to 127, which velocity units push over 127; 127 if left out, as notes of the score have"`
 	}
 	playNoteArgs struct {
 		Instrument string `json:"instrument" jsonschema:"the index of the instrument, from 0, or its name"`
 		Note       int    `json:"note,omitempty" jsonschema:"a note as the tracker and MIDI input number them: 60 is C-3 in the tracker (130.8 Hz with transpose 64); 60 if left out"`
 		DurationMs int    `json:"duration_ms,omitempty" jsonschema:"how long the note is held, 500 if left out"`
+		Velocity   int    `json:"velocity,omitempty" jsonschema:"the MIDI velocity of the note, 1 to 127; 127 if left out"`
 	}
 )
 
@@ -298,7 +300,7 @@ func Tools() []Tool {
 				if ms == 0 {
 					ms = 500
 				}
-				return r.PlayNote(a.Instrument, note, time.Duration(ms)*time.Millisecond)
+				return r.PlayNote(a.Instrument, note, a.Velocity, time.Duration(ms)*time.Millisecond)
 			}),
 	}
 }

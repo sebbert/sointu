@@ -9,7 +9,7 @@ var Guide = strings.TrimSpace(`
 
 ## The stack
 Each instrument is a list of units that run from top to bottom, once per sample, for each of its voices. Units take signals from a stack and push signals onto it:
-- sources push: envelope, oscillator, noise, loadval, loadnote, in, receive, bufread
+- sources push: envelope, oscillator, noise, loadval, loadnote, velocity, in, receive, bufread
 - effects change the top signal: filter, distort, delay, compressor (pushes a gain), belleq, ladder, softclip, limiter, ...
 - mulp / addp merge the two top signals into one (oscillator times envelope), mul / add keep both, push duplicates, xch swaps, pop drops
 - sinks pop: out (main output), outaux (main and aux), aux (to any output channel), send (with sendpop)

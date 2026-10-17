@@ -109,6 +109,27 @@ su_op_addp_mono:
 {{end}}
 
 
+{{- if .HasOp "velocity"}}
+;-------------------------------------------------------------------------------
+;   VELOCITY opcode: the velocity of the note, which is 1: the notes of a
+;   compiled song have none
+;-------------------------------------------------------------------------------
+{{if (.Mono "velocity") -}}  ;   Mono:   (empty) -> 1{{end}}
+{{if (.Stereo "velocity") -}};   Stereo: (empty) -> 1 1{{end}}
+;-------------------------------------------------------------------------------
+{{.Func "su_op_velocity" "Opcode"}}
+{{- if .StereoAndMono "velocity"}}
+    jnc     su_op_velocity_mono
+{{- end}}
+{{- if .Stereo "velocity"}}
+    fld1
+    su_op_velocity_mono:
+{{- end}}
+    fld1
+    ret
+{{end}}
+
+
 {{- if .HasOp "mul"}}
 ;-------------------------------------------------------------------------------
 ;   MUL opcode: multiply the two top most signals on the stack

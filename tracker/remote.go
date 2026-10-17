@@ -1444,7 +1444,7 @@ var remoteNotes = new(struct{ _ int })
 
 // PlayNote plays a note of an instrument in the running synth, so that the
 // user hears it, for the given time.
-func (r *Remote) PlayNote(ref string, note int, duration time.Duration) (string, error) {
+func (r *Remote) PlayNote(ref string, note, velocity int, duration time.Duration) (string, error) {
 	m := (*Model)(r)
 	index, err := r.instrument(ref)
 	if err != nil {
@@ -1453,10 +1453,13 @@ func (r *Remote) PlayNote(ref string, note int, duration time.Duration) (string,
 	if note < 2 || note > 255 {
 		return "", errors.New("a note is 2 to 255: 60 is C-3 in the tracker")
 	}
+	if velocity < 0 || velocity > 127 {
+		return "", errors.New("a velocity is 1 to 127")
+	}
 	duration = min(max(duration, 10*time.Millisecond), 30*time.Second)
 	frames := func() int64 { return time.Now().UnixMicro() * 441 / 10000 } // the clock of the source, in frames
 	broker := m.broker
-	if !TrySend(broker.ToPlayer, any(&NoteEvent{Timestamp: frames(), Channel: index, Note: byte(note), On: true, Source: remoteNotes})) {
+	if !TrySend(broker.ToPlayer, any(&NoteEvent{Timestamp: frames(), Channel: index, Note: byte(note), Velocity: byte(velocity), On: true, Source: remoteNotes})) {
 		return "", errors.New("the player is busy")
 	}
 	time.AfterFunc(duration, func() {

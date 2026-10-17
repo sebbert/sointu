@@ -224,6 +224,18 @@ func (s *MultithreadSynth) Trigger(voiceIndex int, note byte) {
 	}
 }
 
+func (s *MultithreadSynth) TriggerVelocity(voiceIndex int, note byte, velocity byte) {
+	for i, synth := range s.synths {
+		if ind := s.voiceMapping[i][voiceIndex]; ind >= 0 {
+			if t, ok := synth.(sointu.VelocityTriggerer); ok {
+				t.TriggerVelocity(ind, note, velocity)
+			} else {
+				synth.Trigger(ind, note)
+			}
+		}
+	}
+}
+
 func (s *MultithreadSynth) Release(voiceIndex int) {
 	for i, synth := range s.synths {
 		if ind := s.voiceMapping[i][voiceIndex]; ind >= 0 {

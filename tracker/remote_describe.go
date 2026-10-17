@@ -51,6 +51,7 @@ var unitDescriptions = map[string]string{
 	"ladder":      "a low-pass of 24 dB per octave with resonance up to self-oscillation, like a Moog ladder",
 	"limiter":     "a lookahead peak limiter",
 	"loadnote":    "pushes the note of the voice, -1 to 1",
+	"velocity":    "pushes the velocity of the note of the voice, 0 to 1 (MIDI velocity over 127); 1 for notes of the score and in compiled songs. Send it to a gain, a filter or a module knob for dynamics",
 	"loadval":     "pushes a constant, -1 to 1",
 	"mcdelay":     "a delay line for each of the 8 channels of a bus",
 	"mcfilter":    "a one-pole filter on each channel of a bus",
