@@ -1350,12 +1350,66 @@ func (r *Remote) history(steps int, redo bool) (string, error) {
 // the outputs of the other instruments are silenced, and if the instrument
 // only writes to aux channels, those go to the output.
 func (r *Remote) RenderSource(ref string, dry bool, whatIf *RemoteWhatIf) (ret RemoteRender, err error) {
-	m := (*Model)(r)
 	index, err := r.instrument(ref)
 	if err != nil {
 		return RemoteRender{}, err
 	}
-	var song sointu.Song
+	song, err := r.renderSong(whatIf)
+	if err != nil {
+		return RemoteRender{}, err
+	}
+	ret = RemoteRender{
+		Song:       song,
+		Buffers:    (*Model)(r).BufferAudio(),
+		Synther:    vm.GoSynther{},
+		Instrument: index,
+		Name:       song.Patch[index].Name,
+		FirstVoice: song.Patch.FirstVoiceForInstrument(index),
+		NumVoices:  max(song.Patch[index].NumVoices, 1),
+	}
+	if dry {
+		ret.Notes = dryRouting(song.Patch, index)
+	}
+	return ret, nil
+}
+
+// RenderMixSource returns what rendering notes of several instruments
+// together needs: a copy of the song as the synths play it, with the
+// changes of whatIf made to the copy only, and each instrument of refs as
+// a RemoteRender of that song, in the order of refs.
+func (r *Remote) RenderMixSource(refs []string, whatIf *RemoteWhatIf) ([]RemoteRender, error) {
+	indexes := make([]int, len(refs))
+	for i, ref := range refs {
+		index, err := r.instrument(ref)
+		if err != nil {
+			return nil, err
+		}
+		indexes[i] = index
+	}
+	song, err := r.renderSong(whatIf)
+	if err != nil {
+		return nil, err
+	}
+	buffers := (*Model)(r).BufferAudio()
+	ret := make([]RemoteRender, len(refs))
+	for i, index := range indexes {
+		ret[i] = RemoteRender{
+			Song:       song,
+			Buffers:    buffers,
+			Synther:    vm.GoSynther{},
+			Instrument: index,
+			Name:       song.Patch[index].Name,
+			FirstVoice: song.Patch.FirstVoiceForInstrument(index),
+			NumVoices:  max(song.Patch[index].NumVoices, 1),
+		}
+	}
+	return ret, nil
+}
+
+// renderSong returns a copy of the song as the synths play it, with the
+// changes of whatIf made to the copy only.
+func (r *Remote) renderSong(whatIf *RemoteWhatIf) (song sointu.Song, err error) {
+	m := (*Model)(r)
 	defer r.recoverChange(len(m.undoStack), &err)
 	// the changes are made like any others, and cancelled: the model, the
 	// undo history and the player never see them
@@ -1384,22 +1438,7 @@ func (r *Remote) RenderSource(ref string, dry bool, whatIf *RemoteWhatIf) (ret R
 	}
 	m.changeCancel = true
 	done()
-	if err != nil {
-		return RemoteRender{}, err
-	}
-	ret = RemoteRender{
-		Song:       song,
-		Buffers:    m.BufferAudio(),
-		Synther:    vm.GoSynther{},
-		Instrument: index,
-		Name:       song.Patch[index].Name,
-		FirstVoice: song.Patch.FirstVoiceForInstrument(index),
-		NumVoices:  max(song.Patch[index].NumVoices, 1),
-	}
-	if dry {
-		ret.Notes = dryRouting(song.Patch, index)
-	}
-	return ret, nil
+	return song, err
 }
 
 // dryRouting changes a patch so that only what one instrument itself puts

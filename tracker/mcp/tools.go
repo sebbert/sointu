@@ -293,6 +293,8 @@ func Tools() []Tool {
 			func(r *tracker.Remote, a stepsArgs) (string, error) { return r.Redo(a.Steps) }),
 		{Name: "render_note", Description: "Renders notes of one instrument offline, on a copy of the song, and measures the result: peak, rms, crest factor, DC, stereo correlation, pitch over time, octave bands, envelope, attack and tail. Nothing is heard and the song is not changed. This is how to hear: measure before and after a change. With edits, the copy is changed first, to compare variants.",
 			Args: reflect.TypeFor[renderNoteArgs](), ReadOnly: true, call: renderNote},
+		{Name: "render_mix", Description: "Renders notes of several instruments at their times in beats, e.g. a few bars of the arrangement, offline through the whole song: buses, ducking, the master chain. Measures the result as render_note does, and the peak and rms of each beat. For judging the mix and the mastering, which notes of one instrument alone do not show. Nothing is heard and the song is not changed; with edits, a copy is changed first.",
+			Args: reflect.TypeFor[renderMixArgs](), ReadOnly: true, call: renderMix},
 		modelTool("play_note", "Plays a note of an instrument in the running tracker, so that the user hears it.", true,
 			func(r *tracker.Remote, a playNoteArgs) (string, error) {
 				note, ms := a.Note, a.DurationMs
