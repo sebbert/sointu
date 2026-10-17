@@ -1,13 +1,20 @@
 name: Horror riser noise
-comment: 'A rising wind of noise, 6.5 s, swelling: the air before the scare. Suggested note: C-4. Knobs: length, whistle adds a rising sine at the note, resonance narrows the band. Go synth and wasm player only.'
+comment: 'A rising wind of noise, 6.5 s, swelling: the air before the scare. Suggested note: C-4. Knobs: length, whistle adds a rising sine at the note, resonance narrows the band. Go synth and wasm player only. Velocity turns the level down (-6 dB at 64).'
 numvoices: 1
 units:
     - type: module
       id: 1
       parameters: {module: 1, p1: 96, p2: 0, p3: 48}
       comment: 'The Horror noise riser module; its knobs: length, whistle, resonance'
-    - type: outaux
+    - type: velocity
       id: 2
+      parameters: {stereo: 1}
+      comment: 'Velocity: the level follows it, -6 dB at 64, -12 dB at 32; delete this and the mulp for a level that ignores velocity'
+    - type: mulp
+      id: 3
+      parameters: {stereo: 1}
+    - type: outaux
+      id: 4
       parameters: {auxgain: 19, outgain: 25, stereo: 1}
       comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
 modules:

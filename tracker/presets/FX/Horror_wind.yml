@@ -1,13 +1,35 @@
 name: Horror wind
-comment: 'A cold wind around the house, howling in gusts. Hold the note. Knob: howl, how much it whistles. Go synth and wasm player only.'
+comment: 'A cold wind around the house, howling in gusts. Hold the note. Knob: howl, how much it whistles. Go synth and wasm player only. Velocity turns the level down (-6 dB at 64) and howl down.'
 numvoices: 1
 units:
-    - type: module
+    - type: velocity
       id: 1
+      parameters: {stereo: 0}
+      comment: 'Velocity: below 127 it turns howl down, by up to 48 steps at the softest...'
+    - type: loadval
+      id: 2
+      parameters: {stereo: 0, value: 0}
+    - type: addp
+      id: 3
+      parameters: {stereo: 0}
+      comment: '(velocity - 1: 0 at full velocity, so that 127 plays the knob as set)'
+    - type: send
+      id: 4
+      parameters: {amount: 88, port: 0, sendpop: 1, stereo: 0, target: 5, voice: 0}
+      comment: '...here: amount 64 makes howl ignore velocity'
+    - type: module
+      id: 5
       parameters: {module: 1, p1: 72}
       comment: 'The Horror wind module; its knobs: howl'
+    - type: velocity
+      id: 6
+      parameters: {stereo: 1}
+      comment: 'Velocity: the level follows it, -6 dB at 64, -12 dB at 32; delete this and the mulp for a level that ignores velocity'
+    - type: mulp
+      id: 7
+      parameters: {stereo: 1}
     - type: outaux
-      id: 2
+      id: 8
       parameters: {auxgain: 30, outgain: 61, stereo: 1}
       comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
 modules:

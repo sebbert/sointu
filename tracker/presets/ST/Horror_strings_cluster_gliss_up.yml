@@ -1,13 +1,20 @@
 name: Horror strings cluster gliss up
-comment: 'A string cluster sliding up 6 semitones over 5 s after each note, the scream of Threnody. Suggested notes: C-2 to C-4. Knobs: gliss is how far and which way, in steps of 2 semitones (64: none, 0: 24 down, 128: 24 up), dissonance how wide the cluster is, time how long the slide takes (5 s at 94). Go synth and wasm player only.'
+comment: 'A string cluster sliding up 6 semitones over 5 s after each note, the scream of Threnody. Suggested notes: C-2 to C-4. Knobs: gliss is how far and which way, in steps of 2 semitones (64: none, 0: 24 down, 128: 24 up), dissonance how wide the cluster is, time how long the slide takes (5 s at 94). Go synth and wasm player only. Velocity turns the level down (-6 dB at 64).'
 numvoices: 4
 units:
     - type: module
       id: 1
       parameters: {module: 1, p1: 82, p2: 64, p3: 94, p4: 82, p5: 92}
       comment: 'The Horror cluster glissando module; its knobs: gliss, dissonance, time, attack, release'
-    - type: outaux
+    - type: velocity
       id: 2
+      parameters: {stereo: 1}
+      comment: 'Velocity: the level follows it, -6 dB at 64, -12 dB at 32; delete this and the mulp for a level that ignores velocity'
+    - type: mulp
+      id: 3
+      parameters: {stereo: 1}
+    - type: outaux
+      id: 4
       parameters: {auxgain: 39, outgain: 62, stereo: 1}
       comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
 modules:

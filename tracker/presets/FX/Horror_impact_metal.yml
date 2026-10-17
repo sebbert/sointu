@@ -1,5 +1,5 @@
 name: Horror impact metal
-comment: 'A metallic impact: the drop and burst with a clang of inharmonic partials ringing over it, into a large hall. Suggested notes: C-1 to C-2. It has its own hall (reverb unit): no send. One voice: each hit cuts the tail of the last; give it two voices for overlapping tails (each a hall: 0.8 MB, 0.3 µs a sample). Curved envelopes, softclip and reverb: Go synth and wasm player only.'
+comment: 'A metallic impact: the drop and burst with a clang of inharmonic partials ringing over it, into a large hall. Suggested notes: C-1 to C-2. Velocity turns the level down (-6 dB at 64). It has its own hall (reverb unit): no send. One voice: each hit cuts the tail of the last; give it two voices for overlapping tails (each a hall: 0.8 MB, 0.3 µs a sample). Curved envelopes, softclip and reverb: Go synth and wasm player only.'
 numvoices: 1
 units:
     - type: envelope
@@ -89,7 +89,14 @@ units:
       id: 25
       parameters: {bandpass: 0, frequency: 6, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
       comment: Low cut at 15 Hz
-    - type: out
+    - type: velocity
       id: 26
+      parameters: {stereo: 1}
+      comment: 'Velocity: the level follows it, -6 dB at 64'
+    - type: mulp
+      id: 27
+      parameters: {stereo: 1}
+    - type: out
+      id: 28
       parameters: {gain: 104, stereo: 1}
       comment: The level

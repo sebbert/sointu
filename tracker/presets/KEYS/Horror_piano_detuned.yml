@@ -1,13 +1,35 @@
 name: Horror piano detuned
-comment: 'An old piano out of tune: the two strings of each note a quarter tone apart, beating. Suggested notes: C-2 to C-6. Knobs: tone is the hammer, sustain how long the strings ring. Curved envelopes and width: Go synth and wasm player only.'
+comment: 'An old piano out of tune: the two strings of each note a quarter tone apart, beating. Suggested notes: C-2 to C-6. Knobs: tone is the hammer, sustain how long the strings ring. Curved envelopes and width: Go synth and wasm player only. Velocity turns the level down (-6 dB at 64) and tone down.'
 numvoices: 8
 units:
-    - type: module
+    - type: velocity
       id: 1
+      parameters: {stereo: 0}
+      comment: 'Velocity: below 127 it turns tone down, by up to 48 steps at the softest...'
+    - type: loadval
+      id: 2
+      parameters: {stereo: 0, value: 0}
+    - type: addp
+      id: 3
+      parameters: {stereo: 0}
+      comment: '(velocity - 1: 0 at full velocity, so that 127 plays the knob as set)'
+    - type: send
+      id: 4
+      parameters: {amount: 88, port: 0, sendpop: 1, stereo: 0, target: 5, voice: 0}
+      comment: '...here: amount 64 makes tone ignore velocity'
+    - type: module
+      id: 5
       parameters: {module: 1, p1: 64, p2: 124}
       comment: 'The Horror piano detuned module; its knobs: tone, sustain'
+    - type: velocity
+      id: 6
+      parameters: {stereo: 1}
+      comment: 'Velocity: the level follows it, -6 dB at 64, -12 dB at 32; delete this and the mulp for a level that ignores velocity'
+    - type: mulp
+      id: 7
+      parameters: {stereo: 1}
     - type: outaux
-      id: 2
+      id: 8
       parameters: {auxgain: 86, outgain: 114, stereo: 1}
       comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
 modules:

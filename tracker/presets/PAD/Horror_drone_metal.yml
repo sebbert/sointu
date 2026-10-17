@@ -1,13 +1,35 @@
 name: Horror drone metal
-comment: 'A grinding metallic drone: ring modulation makes tones that are not harmonics of the note, which glide slowly against each other; two combs give it the ring of a metal plate. Suggested notes: C-2 to C-4. intensity is how long and loud the combs ring, dissonance moves the ratio of the ring modulator. Go synth and wasm player only.'
+comment: 'A grinding metallic drone: ring modulation makes tones that are not harmonics of the note, which glide slowly against each other; two combs give it the ring of a metal plate. Suggested notes: C-2 to C-4. intensity is how long and loud the combs ring, dissonance moves the ratio of the ring modulator. Go synth and wasm player only. Velocity turns the level down (-6 dB at 64) and intensity down.'
 numvoices: 2
 units:
-    - type: module
+    - type: velocity
       id: 1
+      parameters: {stereo: 0}
+      comment: 'Velocity: below 127 it turns intensity down, by up to 48 steps at the softest...'
+    - type: loadval
+      id: 2
+      parameters: {stereo: 0, value: 0}
+    - type: addp
+      id: 3
+      parameters: {stereo: 0}
+      comment: '(velocity - 1: 0 at full velocity, so that 127 plays the knob as set)'
+    - type: send
+      id: 4
+      parameters: {amount: 88, port: 0, sendpop: 1, stereo: 0, target: 5, voice: 0}
+      comment: '...here: amount 64 makes intensity ignore velocity'
+    - type: module
+      id: 5
       parameters: {module: 1, p1: 48, p2: 48, p3: 64, p4: 90, p5: 96}
       comment: 'The Horror metal drone module; its knobs: intensity, dissonance, movement, swell, release'
+    - type: velocity
+      id: 6
+      parameters: {stereo: 1}
+      comment: 'Velocity: the level follows it, -6 dB at 64, -12 dB at 32; delete this and the mulp for a level that ignores velocity'
+    - type: mulp
+      id: 7
+      parameters: {stereo: 1}
     - type: outaux
-      id: 2
+      id: 8
       parameters: {auxgain: 46, outgain: 93, stereo: 1}
       comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
 modules:

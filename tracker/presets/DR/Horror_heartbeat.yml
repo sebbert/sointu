@@ -1,13 +1,20 @@
 name: Horror heartbeat
-comment: 'A heartbeat, lub-dub, felt more than heard. One note a beat (60 to 140 BPM: faster is fear); suggested notes: F-1 to C-2. Knobs: tone, dub the level of the second beat. Go synth and wasm player only.'
+comment: 'A heartbeat, lub-dub, felt more than heard. One note a beat (60 to 140 BPM: faster is fear); suggested notes: F-1 to C-2. Knobs: tone, dub the level of the second beat. Go synth and wasm player only. Velocity turns the level down (-6 dB at 64).'
 numvoices: 2
 units:
     - type: module
       id: 1
       parameters: {module: 1, p1: 40, p2: 104}
       comment: 'The Horror heartbeat module; its knobs: tone, dub'
-    - type: outaux
+    - type: velocity
       id: 2
+      parameters: {stereo: 1}
+      comment: 'Velocity: the level follows it, -6 dB at 64, -12 dB at 32; delete this and the mulp for a level that ignores velocity'
+    - type: mulp
+      id: 3
+      parameters: {stereo: 1}
+    - type: outaux
+      id: 4
       parameters: {auxgain: 24, outgain: 98, stereo: 1}
       comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
 modules:

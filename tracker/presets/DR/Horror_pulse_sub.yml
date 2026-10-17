@@ -1,13 +1,20 @@
 name: Horror pulse sub
-comment: 'A throbbing sub pulse: dread under the floor, a slow heartbeat of the room. Hold the note. Suggested notes: C-1 to C-2. Knob: rate, 0.5 to 4 pulses a second (not synced: set it to the tempo). Go synth and wasm player only.'
+comment: 'A throbbing sub pulse: dread under the floor, a slow heartbeat of the room. Hold the note. Suggested notes: C-1 to C-2. Knob: rate, 0.5 to 4 pulses a second (not synced: set it to the tempo). Go synth and wasm player only. Velocity turns the level down (-6 dB at 64).'
 numvoices: 1
 units:
     - type: module
       id: 1
       parameters: {module: 1, p1: 64}
       comment: 'The Horror pulse module; its knobs: rate'
-    - type: outaux
+    - type: velocity
       id: 2
+      parameters: {stereo: 1}
+      comment: 'Velocity: the level follows it, -6 dB at 64, -12 dB at 32; delete this and the mulp for a level that ignores velocity'
+    - type: mulp
+      id: 3
+      parameters: {stereo: 1}
+    - type: outaux
+      id: 4
       parameters: {auxgain: 0, outgain: 90, stereo: 1}
       comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
 modules:

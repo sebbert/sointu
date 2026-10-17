@@ -12,7 +12,7 @@ import (
 
 // The Horror presets: every one is a complete instrument in the directory
 // of its kind, expands, encodes and renders a held note without NaNs and
-// below full scale; with SOINTU_TEST_LONG=1 also that it stops within 20 s
+// below full scale, the same at velocity 127, and quieter at 64; with SOINTU_TEST_LONG=1 also that it stops within 20 s
 // of the note (the hall of an impact lasts 11 s). Presets that share a module share
 // it exactly, so that a song with several of them gets the module once;
 // every parameter of each module is bound to a unit.
@@ -92,6 +92,30 @@ func TestHorrorPresets(t *testing.T) {
 		}
 		if peak >= 1 || peak < 0.001 { // the long risers are still quiet after 2 s
 			t.Errorf("%s peaks at %.3f, want between -60 and 0 dB", name, peak)
+		}
+		// velocity 127 is the note as calibrated, velocity 64 about 6 dB
+		// quieter
+		peakAt := func(velocity byte) float64 {
+			synth, _ := vm.GoSynther{}.Synth(song.Patch, song.BPM)
+			synth.(sointu.VelocityTriggerer).TriggerVelocity(0, 48, velocity)
+			buf := make(sointu.AudioBuffer, 2*44100)
+			synth.Render(buf, len(buf))
+			var p float64
+			for _, f := range buf {
+				p = math.Max(p, math.Max(math.Abs(float64(f[0])), math.Abs(float64(f[1]))))
+			}
+			return p
+		}
+		if full := peakAt(127); full != func() float64 {
+			var p float64
+			for _, f := range held {
+				p = math.Max(p, math.Max(math.Abs(float64(f[0])), math.Abs(float64(f[1]))))
+			}
+			return p
+		}() {
+			t.Errorf("%s: velocity 127 is not the note without velocity", name)
+		} else if db := 20 * math.Log10(peakAt(64)/full); db > -4 || db < -12 {
+			t.Errorf("%s: velocity 64 is %.1f dB from 127, want -4 to -12", name, db)
 		}
 		if !long {
 			continue

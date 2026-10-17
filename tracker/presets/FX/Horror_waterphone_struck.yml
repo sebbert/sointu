@@ -1,13 +1,20 @@
 name: Horror waterphone struck
-comment: 'A struck waterphone: a ringing hit of high rods, the pitch sliding as it decays. Suggested notes: C-4 to C-6; leave space for the hall. Knobs: water is how far the pitch slides, attack and sustain shape the stroke. Go synth and wasm player only.'
+comment: 'A struck waterphone: a ringing hit of high rods, the pitch sliding as it decays. Suggested notes: C-4 to C-6; leave space for the hall. Knobs: water is how far the pitch slides, attack and sustain shape the stroke. Go synth and wasm player only. Velocity turns the level down (-6 dB at 64).'
 numvoices: 4
 units:
     - type: module
       id: 1
       parameters: {module: 1, p1: 96, p2: 0, p3: 0}
       comment: 'The Horror waterphone module; its knobs: water, attack, sustain'
-    - type: outaux
+    - type: velocity
       id: 2
+      parameters: {stereo: 1}
+      comment: 'Velocity: the level follows it, -6 dB at 64, -12 dB at 32; delete this and the mulp for a level that ignores velocity'
+    - type: mulp
+      id: 3
+      parameters: {stereo: 1}
+    - type: outaux
+      id: 4
       parameters: {auxgain: 90, outgain: 72, stereo: 1}
       comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
 modules:

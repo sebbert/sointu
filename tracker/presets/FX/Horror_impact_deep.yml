@@ -1,5 +1,5 @@
 name: Horror impact deep
-comment: 'A deep, slow impact: a long sub drop and a dark thud, into a huge dark hall of 11 s. Suggested notes: C-1 to F-1. It has its own hall (reverb unit): no send. One voice: each hit cuts the tail of the last; give it two voices for overlapping tails (each a hall: 0.8 MB, 0.3 µs a sample). Curved envelopes, softclip and reverb: Go synth and wasm player only.'
+comment: 'A deep, slow impact: a long sub drop and a dark thud, into a huge dark hall of 11 s. Suggested notes: C-1 to F-1. Velocity turns the level down (-6 dB at 64). It has its own hall (reverb unit): no send. One voice: each hit cuts the tail of the last; give it two voices for overlapping tails (each a hall: 0.8 MB, 0.3 µs a sample). Curved envelopes, softclip and reverb: Go synth and wasm player only.'
 numvoices: 1
 units:
     - type: envelope
@@ -63,7 +63,14 @@ units:
       id: 17
       parameters: {bandpass: 0, frequency: 6, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
       comment: Low cut at 15 Hz
-    - type: out
+    - type: velocity
       id: 18
+      parameters: {stereo: 1}
+      comment: 'Velocity: the level follows it, -6 dB at 64'
+    - type: mulp
+      id: 19
+      parameters: {stereo: 1}
+    - type: out
+      id: 20
       parameters: {gain: 58, stereo: 1}
       comment: The level

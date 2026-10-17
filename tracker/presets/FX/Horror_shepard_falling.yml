@@ -1,13 +1,35 @@
 name: Horror shepard falling
-comment: 'An endless fall, soft triangles, an octave in 6 s: sinking, losing hope. Hold the note as long as the rise should last: it never arrives anywhere. Suggested notes: C-3 to C-5 (the tones span two octaves either side of the note). Knobs: speed (0: an octave in 6 s, 128: an octave a second), direction 128 up, 0 down, 64 up and down, timbre from triangles to saws, brightness the low-pass. Go synth and wasm player only.'
+comment: 'An endless fall, soft triangles, an octave in 6 s: sinking, losing hope. Hold the note as long as the rise should last: it never arrives anywhere. Suggested notes: C-3 to C-5 (the tones span two octaves either side of the note). Knobs: speed (0: an octave in 6 s, 128: an octave a second), direction 128 up, 0 down, 64 up and down, timbre from triangles to saws, brightness the low-pass. Go synth and wasm player only. Velocity turns the level down (-6 dB at 64) and brightness down.'
 numvoices: 1
 units:
-    - type: module
+    - type: velocity
       id: 1
+      parameters: {stereo: 0}
+      comment: 'Velocity: below 127 it turns brightness down, by up to 48 steps at the softest...'
+    - type: loadval
+      id: 2
+      parameters: {stereo: 0, value: 0}
+    - type: addp
+      id: 3
+      parameters: {stereo: 0}
+      comment: '(velocity - 1: 0 at full velocity, so that 127 plays the knob as set)'
+    - type: send
+      id: 4
+      parameters: {amount: 88, port: 3, sendpop: 1, stereo: 0, target: 5, voice: 0}
+      comment: '...here: amount 64 makes brightness ignore velocity'
+    - type: module
+      id: 5
       parameters: {module: 1, p1: 0, p2: 0, p3: 32, p4: 36, p5: 88, p6: 92}
       comment: 'The Horror shepard module; its knobs: speed, direction, timbre, brightness, attack, release'
+    - type: velocity
+      id: 6
+      parameters: {stereo: 1}
+      comment: 'Velocity: the level follows it, -6 dB at 64, -12 dB at 32; delete this and the mulp for a level that ignores velocity'
+    - type: mulp
+      id: 7
+      parameters: {stereo: 1}
     - type: outaux
-      id: 2
+      id: 8
       parameters: {auxgain: 28, outgain: 38, stereo: 1}
       comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
 modules:

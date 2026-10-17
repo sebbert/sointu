@@ -1,13 +1,20 @@
 name: Horror music box warped
-comment: 'A music box on a melted tape: strong wow and wobble, the notes sagging as the spring runs down. Suggested notes: C-4 to C-7; a lullaby. Knobs: wow is how much the pitch wanders and wobbles, detune adds a second tine out of tune, sag how far each note falls as it rings. Curved envelopes and width: Go synth and wasm player only.'
+comment: 'A music box on a melted tape: strong wow and wobble, the notes sagging as the spring runs down. Suggested notes: C-4 to C-7; a lullaby. Knobs: wow is how much the pitch wanders and wobbles, detune adds a second tine out of tune, sag how far each note falls as it rings. Curved envelopes and width: Go synth and wasm player only. Velocity turns the level down (-6 dB at 64).'
 numvoices: 8
 units:
     - type: module
       id: 1
       parameters: {module: 1, p1: 96, p2: 32, p3: 80}
       comment: 'The Horror music box module; its knobs: wow, detune, sag'
-    - type: outaux
+    - type: velocity
       id: 2
+      parameters: {stereo: 1}
+      comment: 'Velocity: the level follows it, -6 dB at 64, -12 dB at 32; delete this and the mulp for a level that ignores velocity'
+    - type: mulp
+      id: 3
+      parameters: {stereo: 1}
+    - type: outaux
+      id: 4
       parameters: {auxgain: 59, outgain: 79, stereo: 1}
       comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
 modules:
