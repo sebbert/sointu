@@ -1,0 +1,75 @@
+name: Horror riser noise
+comment: 'A rising wind of noise, 6.5 s, swelling: the air before the scare. Suggested note: C-4. Knobs: length, whistle adds a rising sine at the note, resonance narrows the band. Go synth and wasm player only.'
+numvoices: 1
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 96, p2: 0, p3: 48}
+      comment: 'The Horror noise riser module; its knobs: length, whistle, resonance'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 19, outgain: 25, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror noise riser
+      comment: 'Noise through a resonant band that rises with a swelling level, with a rising whistle. Stereo out. width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: length, default: 96}
+        - {name: whistle, default: 0}
+        - {name: resonance, default: 64}
+      units:
+        - type: envelope
+          id: 1
+          parameters: {attack: 96, curve: 0, decay: 64, gain: 128, release: 64, stereo: 0, sustain: 128}
+          bind: {attack: 1}
+          comment: 'The rise, over length (6.5 s at 96)'
+        - type: send
+          id: 2
+          parameters: {amount: 104, port: 0, sendpop: 0, stereo: 0, target: 5, voice: 0}
+          comment: The band rises from 400 Hz to 7 kHz
+        - type: send
+          id: 3
+          parameters: {amount: 64, port: 0, sendpop: 1, stereo: 0, target: 6, voice: 0}
+          bind: {amount: {p: 2, min: 64, max: 76}}
+          comment: 'whistle: the whistle rises up to 24 semitones'
+        - type: noise
+          id: 4
+          parameters: {gain: 128, shape: 64, stereo: 1}
+        - type: filter
+          id: 5
+          parameters: {bandpass: 1, frequency: 36, highpass: 0, lowpass: 0, resonance: 38, stereo: 1}
+          bind: {resonance: {p: 3, min: 64, max: 12}}
+          comment: A resonant band of noise; resonance makes it whistle
+        - type: oscillator
+          id: 6
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 0, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+          bind: {gain: {p: 2, min: 0, max: 30}}
+          comment: 'whistle: a sine at the note, rising'
+        - type: pan
+          id: 7
+          parameters: {panning: 64, stereo: 0}
+        - type: addp
+          id: 8
+          parameters: {stereo: 1}
+        - type: filter
+          id: 9
+          parameters: {bandpass: 0, frequency: 120, highpass: 0, lowpass: 1, resonance: 128, stereo: 1}
+          comment: High cut at 6.4 kHz
+        - type: envelope
+          id: 10
+          parameters: {attack: 96, curve: 0, decay: 64, gain: 128, release: 50, stereo: 1, sustain: 128}
+          bind: {attack: 1}
+        - type: push
+          id: 11
+          parameters: {stereo: 1}
+        - type: mulp
+          id: 12
+          parameters: {stereo: 1}
+        - type: mulp
+          id: 13
+          parameters: {stereo: 1}
+        - type: width
+          id: 14
+          parameters: {lowcut: 19, width: 44}

@@ -1,0 +1,83 @@
+name: Horror reverse swell tonal
+comment: 'A reversed chord, 4 s: the note and its fifth swelling backwards into a stop. Suggested notes: C-2 to C-4. Go synth and wasm player only.'
+numvoices: 1
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 40, p2: 100, p3: 93}
+      comment: 'The Horror reverse swell module; its knobs: tone, tonal, length'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 23, outgain: 46, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror reverse swell
+      comment: 'A reversed swell: noise, or a chord, rising slowly then rushing in, stopping dead at its peak. Stereo out. width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: tone, default: 56}
+        - {name: tonal, default: 0}
+        - {name: length, default: 90}
+      units:
+        - type: noise
+          id: 1
+          parameters: {gain: 128, shape: 64, stereo: 1}
+          comment: 'Noise: the cymbal'
+        - type: filter
+          id: 2
+          parameters: {bandpass: 0, frequency: 59, highpass: 1, lowpass: 0, resonance: 96, stereo: 1}
+          bind: {frequency: {p: 1, min: 30, max: 96}}
+          comment: 'tone: its low cut, 600 Hz to 4 kHz'
+        - type: oscillator
+          id: 3
+          parameters: {bandlimit: 1, color: 128, detune: 70, gain: 0, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 2}
+          bind: {gain: {p: 2, min: 0, max: 48}}
+          comment: 'tonal: saws at the note, a reversed chord or piano'
+        - type: oscillator
+          id: 4
+          parameters: {bandlimit: 1, color: 128, detune: 60, gain: 0, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 71, type: 1, unison: 2}
+          bind: {gain: {p: 2, min: 0, max: 30}}
+          comment: 'and a fifth above, for the chord: change transpose for another interval'
+        - type: addp
+          id: 5
+          parameters: {stereo: 1}
+        - type: filter
+          id: 6
+          parameters: {bandpass: 0, frequency: 64, highpass: 0, lowpass: 1, resonance: 110, stereo: 1}
+          comment: softened
+        - type: addp
+          id: 7
+          parameters: {stereo: 1}
+        - type: filter
+          id: 8
+          parameters: {bandpass: 0, frequency: 124, highpass: 0, lowpass: 1, resonance: 128, stereo: 1}
+          comment: High cut at 6.8 kHz
+        - type: filter
+          id: 9
+          parameters: {bandpass: 0, frequency: 124, highpass: 0, lowpass: 1, resonance: 128, stereo: 1}
+          comment: 'twice: 24 dB an octave'
+        - type: envelope
+          id: 10
+          parameters: {attack: 90, curve: 0, decay: 20, gain: 128, release: 20, stereo: 1, sustain: 0}
+          bind: {attack: 3}
+          comment: 'length: the swell (3 s at 90), then it stops dead in 2 ms, at its loudest'
+        - type: push
+          id: 11
+          parameters: {stereo: 1}
+        - type: mulp
+          id: 12
+          parameters: {stereo: 1}
+        - type: push
+          id: 13
+          parameters: {stereo: 1}
+        - type: mulp
+          id: 14
+          parameters: {stereo: 1}
+          comment: 'The fourth power of the swell: silent for long, then rushing in, as a reversed sound does'
+        - type: mulp
+          id: 15
+          parameters: {stereo: 1}
+        - type: width
+          id: 16
+          parameters: {lowcut: 19, width: 44}

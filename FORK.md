@@ -2436,6 +2436,197 @@ no host was run with the plugins.
   `tracker/hardstyle_test.go` (each expands, compiles, peaks between -2.2
   and -1 dB, has the side at least 6 dB under the mid, and is silent after
   the note).
+- **Horror presets:** a sound set for horror scores, for building tension:
+  80 instrument presets whose names start with `Horror`, in PAD (drones,
+  pads, glass, choirs), ST (strings), FX (risers, braams, impacts, metal,
+  textures), KEYS and DR (heartbeat, pulse, clock), several variations of
+  each kind; two Global presets with the space they are made for; and two
+  module presets, `Horror shepard` and `Horror echoes`. Like the Club
+  presets they are **tuned by measurement, not by ear**. They use units
+  that only the Go synth and the wasm player have (ladder, softclip, width,
+  reverb, curved envelopes, bandlimited oscillators); not tested in the
+  wasm player.
+  - *Knobs.* Every instrument but the impacts is one `module` unit and an
+    `outaux`: the module holds the sound, its parameters are the knobs, up
+    to six, named for what they do: mostly intensity (brightness, drive,
+    bow noise), dissonance (a section a semitone above, a tritone, a wider
+    cluster), movement (how far the LFOs move things), and swell or attack
+    and release. Knobs are module parameters, so a send or an automation
+    slot can move them (a DAW maps the mod wheel to a slot). The variations
+    of a kind share their module and differ in the knob values and the
+    send; a song with several of them gets the module once (the test checks
+    that modules of the same name are equal). The synth has no note
+    velocity: dynamics come from the knobs and automation.
+  - *Space.* **Global horror space** (UTIL, 16 units) is the bus they are
+    made for: aux 2/3 into a large dark hall (reverb unit: 8 s, the highs
+    dying three times faster, the lows 1.4 times slower, 62 ms predelay,
+    `mod` 48 against ringing, input at 0 dB as long tails pile up, tail
+    width 100 % instead of 150 %), aux 6/7 into the `Horror echoes` module
+    (a dotted quarter, 60 % feedback, each echo darker and thinner, moving
+    between the sides) of which a half goes on into the hall. **Global
+    horror space mastering** (23 units) adds a low cut at 20 Hz, a slow
+    1.5:1 compressor and a limiter at -1 dB without drive: it keeps the
+    dynamics. The presets send with `outaux`; `auxgain` is set relative to
+    `outgain` (equal: the hall about as loud as the dry sound), as `outaux`
+    sends do not follow `outgain`. Measured as the energy of the hall
+    against the dry sound: -12 dB for the sub rumble and the col legno,
+    -5 to -8 dB for strings, braams and drones, about 0 dB for the
+    waterphone and the distant piano, +3 dB for the distant bell. The
+    impacts (FX Horror impact, deep, metal, boom distant, hit) have a hall
+    of their own instead (one voice: 0.8 MB of state).
+  - *Levels.* A held note of a drone -20 LUFS (integrated), a chord of
+    three strings or pads -18, glass -22, breath -24, whispers -23.5,
+    the Shepard tones -18; peaks: braams and impacts -3 dB, risers and
+    reverse swells -4, sub drops and pianos -6, music box and toy piano -8.
+    Through Global horror space mastering no render peaked above -0.9 dB.
+
+  Measured with the Go synth (a note, chord or phrase each; loudness after
+  ITU-R BS.1770). Columns: voices, units (after expansion), level (LUFS
+  integrated / peak dB), correlation of left and right and the loudness lost
+  in mono (dB), and how many voices one core of an Apple M3 Pro runs in real
+  time (every voice runs all the time, sounding or not).
+
+  | Preset | Voices | Units | What it is for | Listen for | Level | Corr / mono | Voices a core |
+  |---|---|---|---|---|---|---|---|
+  | PAD drone sub rumble | 2 | 26 | the floor under a scene: a sub and a moving rumble of noise | the rumble breathing without a pattern; on small speakers, whether intensity makes the sub audible | -20 / -10 | 1.0 / -0.1 | 37 |
+  | PAD drone beating | 2 | 23 | dark detuned saws beating slowly, the low-pass breathing | the speed of the beating; dissonance turning it sick | -20 / -8 | 0.4 / -2.1 | 32 |
+  | PAD drone cluster | 2 | 27 | a Ligeti cluster of four tones a semitone apart, each swelling by itself | whether the shimmer feels alive or busy; intensity from soft to reedy | -20 / -11 | 0.9 / -0.2 | 35 |
+  | PAD drone tritone | 2 | 21 | a dark organ: note, tritone, octave below, moving pulse widths | the slow phasing of the pulses | -20 / -8 | 0.8 / -0.7 | 47 |
+  | PAD drone metal | 2 | 21 | a grinding bell-like drone: ring modulation and two combs | the inharmonic tones gliding (movement), the ring of the combs (intensity) | -20 / -8 | 0.9 / -0.2 | 49 |
+  | PAD drone abyss | 2 | 19 | a resonant growl an octave below, the pitch drifting out of tune | the seasick drift; whether the growl at intensity 128 is too much | -20 / -10 | 1.0 / -0.1 | 43 |
+  | PAD glass harmonica | 6 | 16 | a glass harmonica: pure, piercing, a séance | the tremolo; whether it pierces too much | -22 / -15 | 1.0 / -0.1 | 69 |
+  | PAD glass rub | 6 | 16 | a wine glass rubbed with a wet finger, beating | the squeak (friction) | -22 / -13 | 0.8 / -0.8 | 68 |
+  | PAD choir moan | 6 | 24 | a low wordless choir moaning oo and ah | the vowel moving; chords | -18 / -5 | 0.7 / -0.9 | 44 |
+  | PAD choir ghost | 6 | 24 | a high breathy choir of children or ghosts | the breath | -19 / -3 | 0.3 / -1.7 | 43 |
+  | PAD pad dissonant | 4 | 22 | a slow pad, every note against the semitone above | chords turning sour | -18 / -5 | 0.7 / -0.8 | 26 |
+  | PAD pad dark | 4 | 22 | a dark muffled pad, slowly breathing | warmth | -18 / -5 | 0.7 / -0.8 | 26 |
+  | PAD pad hollow | 4 | 22 | a hollow pad with squares an octave below | emptiness | -18 / -5 | 0.8 / -0.7 | 26 |
+  | ST strings tremolo | 6 | 21 | the standard suspense bed: a section in tremolo | the realism of the bow strokes; speed and depth | -18 / -5 | 0.6 / -1.0 | 31 |
+  | ST strings tremolo frantic | 6 | 21 | the same bright, fast and deep, a section a semitone above: panic | harshness at the top of the range | -18 / -6 | 0.1 / -2.4 | 29 |
+  | ST strings tremolo distant | 6 | 21 | the same dark, slow, soft, swelling in: unease far off | whether it sits behind the mix | -21 / -8 | 0.7 / -0.9 | 31 |
+  | ST strings ponticello | 6 | 20 | sul ponticello: thin, glassy, hissing, quick tremolo | the glassy whistle (glass) and the bow hiss; it is meant to be uncomfortable | -18 / -6 | 0.2 / -2.2 | 37 |
+  | ST strings ponticello sustained | 6 | 20 | ponticello without tremolo, slowly bowed | the whistle on long notes | -18 / -8 | 0.2 / -2.2 | 38 |
+  | ST strings col legno | 8 | 16 | col legno battuto: a dry pitched click for ticking ostinatos | the click against the pitch; repeated 16ths | -32 / -8 | 0.9 / -0.3 | 77 |
+  | ST strings col legno ringing | 8 | 16 | the same, a hollow tuned knock | how long the knock rings | -29 / -8 | 0.9 / -0.3 | 78 |
+  | ST strings cluster gliss up | 4 | 22 | Penderecki: a quarter-tone cluster sliding up 6 semitones in 5 s | the scream of the slide; gliss and time | -18 / -5 | 0.6 / -1.0 | 26 |
+  | ST strings cluster gliss down | 4 | 22 | the cluster sliding down 8 semitones in 9 s | the sinking | -18 / -6 | 0.6 / -1.1 | 27 |
+  | ST strings cluster | 4 | 22 | the cluster without a slide: a dense block | its width (dissonance) | -18 / -4 | 0.7 / -0.8 | 27 |
+  | ST strings screech | 4 | 21 | Psycho stabs: high strings scooping into a harsh accent | the scoop and the attack on short repeated notes at C-5 to C-7 | -13 / -6 | 0.1 / -2.5 | 28 |
+  | ST strings screech cluster | 4 | 21 | the screech with a semitone above, driven: a shriek | harshness | -13 / -6 | 0.2 / -2.4 | 27 |
+  | ST strings low swell | 4 | 22 | cellos and basses in a 3 s crescendo that opens up | the brightening as it grows; something approaching | -18 / -6 | 0.7 / -1.0 | 28 |
+  | ST strings low swell slow | 4 | 22 | the same over 8 s with a semitone above: dread | the long build | -18 / -2 | 0.8 / -1.0 | 27 |
+  | ST strings harmonics | 6 | 16 | violin harmonics flautando: pale, airy, wide | the air (bow noise) and the faint tritone | -20 / -10 | 0.1 / -2.4 | 45 |
+  | ST strings staccato | 8 | 15 | short accented low strings for chase ostinatos | the accent at 8ths and 16ths; length | -22 / -8 | 0.6 / -1.5 | 41 |
+  | FX shepard riser | 1 | 56 | an endless rise (Dunkirk), an octave in 6 s | whether the rise feels endless or you hear tones entering at the bottom | -18 / -8 | 0.7 / -0.6 | 24 |
+  | FX shepard riser fast | 1 | 56 | the endless rise, an octave in 1.5 s, saws | panic; the same illusion at speed | -18 / -7 | 0.7 / -0.6 | 24 |
+  | FX shepard falling | 1 | 56 | an endless fall, triangles | the sinking illusion | -18 / -9 | 0.7 / -0.6 | 24 |
+  | FX riser cluster | 1 | 24 | a cluster of saws climbing 12 semitones in 8 s while it opens and swells | release where the hit lands; the last second | -14 / -4 | 0.3 / -2.3 | 32 |
+  | FX riser cluster long | 1 | 24 | the same over 16 s, 24 semitones | the long build | -16 / -4 | 0.4 / -2.0 | 32 |
+  | FX riser noise | 1 | 15 | a rising wind of noise, 6.5 s | the swell into the hit | -16 / -6 | 0.3 / -1.8 | 94 |
+  | FX riser noise whistle | 1 | 15 | the noise riser narrow, with a rising sine, 10 s | the whistle | -17 / -6 | 0.3 / -1.7 | 94 |
+  | FX reverse swell | 1 | 17 | a reversed cymbal, 3 s, stopping dead | the suck before a hit; place the note 3 s ahead | -14 / -4 | 0.3 / -1.8 | 49 |
+  | FX reverse swell tonal | 1 | 17 | a reversed chord (note and fifth), 4 s | the chord rushing in | -16 / -4 | 0.5 / -1.6 | 49 |
+  | FX reverse swell long | 1 | 17 | a long reversed swell of bright noise, 8 s | the length | -14 / -4 | 0.3 / -1.7 | 49 |
+  | FX braam | 2 | 19 | the trailer braam: brass and tuba blaring open and closed | the blare and its tail at G-1/G-2 | -18 / -3 | 0.8 / -0.9 | 26 |
+  | FX braam dissonant | 2 | 19 | the braam with a semitone and a tritone | ugliness | -18 / -3 | 0.8 / -1.0 | 26 |
+  | FX braam distorted | 2 | 19 | the braam driven hard, wide open | the rasp | -18 / -3 | 0.8 / -1.1 | 26 |
+  | FX braam swell | 2 | 19 | the braam crescendo over 2 s | the approach | -19 / -3 | 0.8 / -1.0 | 26 |
+  | FX impact | 1 | 18 | a cinematic impact into its own 8 s hall | the drop and the tail | -18 / -3 | 0.3 / -2.3 | 41 |
+  | FX impact deep | 1 | 18 | a slow, deep impact into an 11 s dark hall | the sub on big speakers | -19 / -3 | 0.6 / -1.1 | 41 |
+  | FX impact metal | 1 | 26 | the impact with a clang of inharmonic partials | the clang | -18 / -3 | 0.4 / -2.3 | 29 |
+  | FX boom distant | 1 | 18 | a boom far away, mostly hall | distance | -22 / -6 | 0.1 / -3.1 | 41 |
+  | FX hit | 1 | 18 | a short hard hit in a short room: a slammed door | the punch | -24 / -4 | 0.8 / -0.4 | 43 |
+  | FX sub drop | 1 | 8 | a clean sine falling two octaves in 1.5 s | under impacts and cuts; on big speakers | -14 / -6 | 1.0 / 0.0 | 128 |
+  | FX sub drop long | 1 | 8 | three octaves in 4 s | the same | -14 / -6 | 1.0 / 0.0 | 118 |
+  | FX bowed metal | 2 | 35 | a bowed cymbal: singing inharmonic partials | the partials swelling by themselves; the bow noise | -20 / -9 | 0.7 / -0.8 | 30 |
+  | FX bowed metal screech | 2 | 35 | a cymbal bowed hard: a shriek of metal | harshness | -20 / -9 | 0.6 / -1.3 | 31 |
+  | FX bowed metal gong | 2 | 35 | a bowed gong, dark and slow | played low | -20 / -7 | 0.9 / -0.4 | 31 |
+  | FX waterphone | 4 | 33 | a bowed waterphone: high rods wailing, sliding in pitch | the slides (water) in the hall | -20 / -7 | 0.8 / -0.4 | 39 |
+  | FX waterphone struck | 4 | 33 | a struck waterphone | the slide as it decays | -21 / -8 | 0.8 / -0.4 | 39 |
+  | FX scrape | 2 | 21 | metal on metal: a dragged blade, a gate | the jumping band and the stutter | -20 / -6 | 0.1 / -2.5 | 70 |
+  | FX scrape screech | 2 | 21 | a high fast scrape with a screech at the note: nails on a blackboard | unpleasantness | -20 / -6 | 0.1 / -2.5 | 71 |
+  | FX scrape grind | 2 | 21 | a slow low grind: a heavy door, a coffin lid | the grip | -20 / -6 | 0.1 / -2.4 | 72 |
+  | FX metal resonance | 4 | 38 | a struck plate or pipe: a clank and a 10 s ring | the ring | -23 / -6 | 0.9 / -0.2 | 31 |
+  | FX metal resonance short | 4 | 38 | the same shorter and harder: a boiler room | the clank | -24 / -6 | 0.9 / -0.4 | 31 |
+  | FX bell distant | 2 | 45 | a church bell far away, its minor-third tierce | distance (the high cut) and the hall | -23 / -8 | 0.9 / -0.2 | 19 |
+  | FX bell near | 2 | 45 | the bell close by | the strike | -21 / -6 | 0.9 / -0.2 | 18 |
+  | FX breath | 1 | 18 | slow breathing close to the ear | whether it reads as breath | -24 / -9 | 0.4 / -1.5 | 99 |
+  | FX breath panic | 1 | 18 | fast panicked breathing | the same | -24 / -9 | 0.4 / -1.5 | 99 |
+  | FX whispers | 1 | 44 | wordless whispering voices, one each side | whether it reads as voices; speed | -23 / -6 | 0.6 / -1.1 | 43 |
+  | FX whispers frantic | 1 | 44 | the whispers fast and urgent | the same | -24 / -6 | 0.6 / -1.1 | 43 |
+  | FX wind | 1 | 18 | a cold wind howling in gusts | the howl | -22 / -2 | 0.4 / -1.5 | 95 |
+  | KEYS music box | 8 | 32 | a music box, a little warped: innocence gone wrong | the wow; a lullaby at C-4 to C-7 | -17 / -8 | 0.9 / -0.1 | 33 |
+  | KEYS music box detuned | 8 | 32 | a music box out of tune, beating | the beating of the second tine | -18 / -8 | 0.9 / -0.1 | 33 |
+  | KEYS music box warped | 8 | 32 | a music box on a melted tape, the notes sagging | whether the wow is too seasick | -18 / -8 | 0.9 / -0.1 | 33 |
+  | KEYS toy piano | 8 | 29 | a toy piano in an empty nursery | the clunk and the inharmonic ring | -22 / -8 | 1.0 / -0.1 | 34 |
+  | KEYS toy piano detuned | 8 | 29 | the toy piano broken and ringing | the detune | -21 / -8 | 1.0 / -0.1 | 33 |
+  | KEYS piano distant | 8 | 17 | a piano in another room, blurred by the hall | distance | -24 / -6 | 0.7 / -0.7 | 74 |
+  | KEYS piano detuned | 8 | 16 | an old piano, its two strings a quarter tone apart | the beating; it is not a realistic piano | -24 / -6 | 0.2 / -2.4 | 77 |
+  | KEYS piano prepared | 8 | 22 | a prepared piano, bolts rattling and buzzing | the buzz on low clusters | -29 / -6 | 0.2 / -2.4 | 56 |
+  | KEYS piano low | 8 | 16 | the lowest piano notes struck hard: stingers, ostinatos | the thud | -28 / -6 | 0.5 / -1.8 | 76 |
+  | DR heartbeat | 2 | 14 | lub-dub, one note a beat | tempo up for fear | -23 / -6 | 1.0 / 0.0 | 95 |
+  | DR heartbeat muffled | 2 | 14 | a heartbeat from inside the body | whether it is felt | -24 / -8 | 1.0 / 0.0 | 95 |
+  | DR pulse sub | 1 | 17 | a throbbing sub pulse at a free rate | set rate to the tempo | -18 / -2 | 1.0 / 0.0 | 82 |
+  | DR clock tick | 2 | 15 | a clock in an empty house: tick and tock on two notes | the tick | -38 / -10 | 1.0 / -0.0 | 75 |
+
+  **What was measured, besides the table.**
+  - *Every knob* at 0 and 128, one at a time, on every module: nothing above
+    -0.5 dBFS, no offset above 0.002, no NaN; each changes the loudness or
+    the spectrum, except the ones that move things in time (speed, vibrato,
+    wow, clank, rate) and those whose 0 is the default; those were checked
+    on the pitch or the level over time.
+  - *Movement and loops.* 60 s of each drone, pad, choir and texture: the
+    correlation of the octave-band levels with themselves at lags of 2 to
+    30 s is 0.1 to 0.6 (0.76 for the metal drone, whose bands move by
+    0.4 dB); the drones with LFOs at fixed rates (beating, cluster,
+    tritone) are the 0.56 to 0.59. The filter movements are an LFO plus a second one 1.6 times as
+    fast plus low-passed noise, so they do not repeat.
+  - *Shepard tones.* The pitch classes rotate steadily, +2.0 semitones a
+    second for Horror shepard riser (an octave in 6 s), +8.0 for the fast
+    one, -2.0 for the falling one, while the centre of the spectrum stays
+    between 260 and 390 Hz: the rise does not arrive anywhere.
+  - *Pitch.* Cluster gliss up: C-2 rises 6 semitones in 5 s; down: C-3
+    falls 8 in 9 s. Sub drop: from 131 Hz to the note (C-1) in 1.5 s; long:
+    262 to 50 Hz in 4 s. Music box warped: the pitch wanders by up to half
+    a semitone. Waterphone: the rods slide by about a semitone.
+  - *Aliasing.* For the brightest strings at the top of their range
+    (screech at C-7, ponticello and frantic tremolo at C-5) the energy
+    between the harmonics is -11 to -24 dB, and is the same with the
+    oscillators' `bandlimit` off: it is the bow noise, not aliasing.
+    `bandlimit` lowers what lies above 16 kHz by 2 to 9 dB.
+  - *Clicks and ends.* No note starts with a step above what its attack
+    makes; every preset is silent (below -60 dB) within 20 s of its note
+    off.
+
+  **What the measurements changed.**
+  - *Ladders after resonance boosts* made an offset of 0.005 and 13 Hz
+    wobble (the ponticello: +15 dB of resonance into the saturator of a
+    ladder). That high cut is a `filter` now; ladders that are driven on
+    purpose have a low cut after them.
+  - *Sines detuned between the sides* (partials of metal, glass) cancel in
+    mono, losing 3 dB: such partials are mono and panned apart instead.
+    Detuned saws at `width` above 52 went negative in correlation at high
+    notes; the string sections have `width` 40 to 52.
+  - *`hold` on noise is not random at slow rates*: with `holdfreq` 1, 2 or
+    4 the hold samples the shared noise generator every 2^14, 2^12 or 2^10
+    samples, and those samples of a multiplicative generator step almost
+    linearly: the "random" gusts of the wind repeated every 9 to 30 s (a
+    correlation of 0.85). Slow random movement is low-passed noise raised
+    by a `dbgain` instead.
+  - *A send to `delaytime`* moves it by 32767 samples per 1: a chorus needs
+    an LFO with a small `gain` (8: 0.7 ms) and amount 65.
+  - *The reverb tail at its default width* correlates by -0.4 between the
+    sides; the hall has `tailwidth` 64.
+
+  Known: Horror boom distant is mostly hall and loses 3.1 dB in mono;
+  ponticello, scrape, glass rub and the noise risers have -18 to -32 dB of
+  their energy above 16 kHz, as their bow noise and friction are meant to
+  be harsh (the reverse swells, -8 dB, are cymbals); the glissando moves in
+  steps of 2 semitones of its knob; LFO rates are in Hz, not synced to the
+  tempo; Horror heartbeat muffled peaks at -8 dB at full gain. Tests:
+  `tracker/horror_test.go` (each expands, compiles, renders a note without
+  NaN below full scale; shared modules are equal; every module parameter
+  is bound; with `SOINTU_TEST_LONG=1` also silent 20 s after the note).
 - **Drum bus** (UTIL): Global mastering 2 drumbus, and Global mastering 2
   drumbus reverb with the reverb unit (15 units; 37 with the Reverb
   module), are Global mastering 2 with a

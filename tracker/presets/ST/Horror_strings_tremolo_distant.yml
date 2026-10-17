@@ -1,0 +1,104 @@
+name: Horror strings tremolo distant
+comment: 'The tremolo strings dark, slow and soft, swelling in over 1.5 s: unease in the distance. Send more to the hall. Suggested notes: C-2 to C-4. Go synth and wasm player only.'
+numvoices: 6
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 8, p2: 0, p3: 40, p4: 30, p5: 84, p6: 88}
+      comment: 'The Horror tremolo strings module; its knobs: intensity, dissonance, depth, speed, attack, release'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 32, outgain: 28, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror tremolo strings
+      comment: 'A string section playing tremolo: detuned saws whose level falls between the bow strokes, vibrato, bow noise, a body resonance. Stereo out. Bandlimited oscillators, ladder and width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: intensity, default: 48}
+        - {name: dissonance, default: 0}
+        - {name: depth, default: 56}
+        - {name: speed, default: 64}
+        - {name: attack, default: 76}
+        - {name: release, default: 82}
+      units:
+        - type: oscillator
+          id: 1
+          parameters: {bandlimit: 1, color: 128, detune: 70, gain: 30, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 2}
+          comment: 'Saws, the players of the section: detune is how far apart they are'
+        - type: oscillator
+          id: 2
+          parameters: {bandlimit: 1, color: 128, detune: 58, gain: 30, lfo: 0, phase: 76, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 2}
+          comment: 'More, detuned the other way and a little further, half a cycle later: the two sides equally loud from the start of a note'
+        - type: addp
+          id: 3
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 4
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 1, phase: 0, shape: 64, stereo: 0, transpose: 95, type: 0, unison: 0}
+          bind: {transpose: {p: 4, min: 86, max: 103}}
+          comment: 'Tremolo: the bow back and forth, 6 to 16 times a second (speed)'
+        - type: send
+          id: 5
+          parameters: {amount: 71, port: 5, sendpop: 0, stereo: 0, target: 1, voice: 0}
+          bind: {amount: {p: 3, min: 64, max: 79}}
+        - type: send
+          id: 6
+          parameters: {amount: 71, port: 5, sendpop: 1, stereo: 0, target: 2, voice: 0}
+          bind: {amount: {p: 3, min: 64, max: 79}}
+          comment: 'depth: how far the level falls between the strokes'
+        - type: oscillator
+          id: 7
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 1, phase: 0, shape: 64, stereo: 0, transpose: 84, type: 0, unison: 0}
+          comment: 'Vibrato, 5.3 Hz'
+        - type: send
+          id: 8
+          parameters: {amount: 66, port: 1, sendpop: 0, stereo: 0, target: 1, voice: 0}
+        - type: send
+          id: 9
+          parameters: {amount: 66, port: 1, sendpop: 1, stereo: 0, target: 2, voice: 0}
+        - type: oscillator
+          id: 10
+          parameters: {bandlimit: 1, color: 128, detune: 67, gain: 0, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 65, type: 1, unison: 1}
+          bind: {gain: {p: 2, min: 0, max: 26}}
+          comment: 'dissonance: a second section a semitone above'
+        - type: addp
+          id: 11
+          parameters: {stereo: 1}
+        - type: noise
+          id: 12
+          parameters: {gain: 9, shape: 64, stereo: 1}
+          bind: {gain: {p: 1, min: 2, max: 20}}
+          comment: 'Bow noise: the hiss of the hair on the strings'
+        - type: filter
+          id: 13
+          parameters: {bandpass: 1, frequency: 70, highpass: 0, lowpass: 0, resonance: 64, stereo: 1}
+          comment: 'a band of it, around the brightness of the strings'
+        - type: addp
+          id: 14
+          parameters: {stereo: 1}
+        - type: belleq
+          id: 15
+          parameters: {bandwidth: 24, frequency: 22, gain: 74, stereo: 1}
+          comment: 'The body: a resonance near 400 Hz'
+        - type: ladder
+          id: 16
+          parameters: {drive: 0, frequency: 43, resonance: 8, stereo: 1}
+          bind: {frequency: {p: 1, min: 30, max: 64}}
+          comment: 'intensity: the brightness, 1.2 to 4.5 kHz'
+        - type: filter
+          id: 17
+          parameters: {bandpass: 0, frequency: 10, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: Low cut at 43 Hz
+        - type: envelope
+          id: 18
+          parameters: {attack: 76, curve: 0, decay: 80, gain: 128, release: 82, stereo: 1, sustain: 128}
+          bind: {attack: 5, release: 6}
+          comment: 'swell is the fade in, release the fade out after the note'
+        - type: mulp
+          id: 19
+          parameters: {stereo: 1}
+        - type: width
+          id: 20
+          parameters: {lowcut: 19, width: 40}

@@ -1,0 +1,96 @@
+name: Horror piano prepared
+comment: 'A prepared piano: bolts between the strings rattle and buzz, inharmonic and metallic. Suggested notes: C-1 to C-4; low clusters for stingers. Knobs: tone is the hammer, sustain how long the strings ring. Curved envelopes and width: Go synth and wasm player only.'
+numvoices: 8
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 72, p2: 122}
+      comment: 'The Horror piano prepared module; its knobs: tone, sustain'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 73, outgain: 97, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror piano prepared
+      comment: 'A prepared piano: bolts between the strings rattle and buzz, inharmonic and metallic. Suggested notes: C-1 to C-4; low clusters for stingers. Stereo out. Curved envelopes and width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: tone, default: 72}
+        - {name: sustain, default: 122}
+      units:
+        - type: envelope
+          id: 1
+          parameters: {attack: 0, curve: 80, decay: 40, gain: 128, release: 40, stereo: 0, sustain: 0}
+          comment: 'The hammer: a short burst'
+        - type: push
+          id: 2
+          parameters: {stereo: 0}
+        - type: oscillator
+          id: 3
+          parameters: {bandlimit: 1, color: 128, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 1, unison: 0}
+          comment: of a saw at the note
+        - type: noise
+          id: 4
+          parameters: {gain: 96, shape: 64, stereo: 0}
+          comment: and noise
+        - type: addp
+          id: 5
+          parameters: {stereo: 0}
+        - type: mulp
+          id: 6
+          parameters: {stereo: 0}
+        - type: filter
+          id: 7
+          parameters: {bandpass: 0, frequency: 69, highpass: 0, lowpass: 1, resonance: 128, stereo: 0}
+          bind: {frequency: {p: 1, min: 30, max: 100}}
+          comment: 'tone: how hard the hammer strikes'
+        - type: xch
+          id: 8
+          parameters: {stereo: 0}
+        - type: pop
+          id: 9
+          parameters: {stereo: 0}
+        - type: pan
+          id: 10
+          parameters: {panning: 64, stereo: 0}
+        - type: delay
+          id: 11
+          parameters: {damp: 24, dry: 0, feedback: 126, notetracking: 1, pregain: 128, stereo: 1}
+          varargs: [10788, 10766]
+          bind: {feedback: {p: 2, min: 116, max: 127}}
+          comment: 'The strings: a comb on the note per side, the right one a little sharp; sustain is how long they ring'
+        - type: oscillator
+          id: 12
+          parameters: {bandlimit: 0, color: 64, detune: 86, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 81, type: 0, unison: 0}
+          comment: 'Prepared: a bolt between the strings rattles, ring modulating them at an inharmonic ratio'
+        - type: mulp
+          id: 13
+          parameters: {stereo: 1}
+        - type: push
+          id: 14
+          parameters: {stereo: 1}
+        - type: distort
+          id: 15
+          parameters: {drive: 96, stereo: 1}
+          comment: and buzzes
+        - type: gain
+          id: 16
+          parameters: {gain: 48, stereo: 1}
+        - type: addp
+          id: 17
+          parameters: {stereo: 1}
+        - type: filter
+          id: 18
+          parameters: {bandpass: 0, frequency: 10, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: Low cut
+        - type: envelope
+          id: 19
+          parameters: {attack: 0, curve: 40, decay: 64, gain: 128, release: 72, stereo: 1, sustain: 128}
+          comment: 'The damper: the note stops when released'
+        - type: mulp
+          id: 20
+          parameters: {stereo: 1}
+        - type: width
+          id: 21
+          parameters: {lowcut: 19, width: 60}

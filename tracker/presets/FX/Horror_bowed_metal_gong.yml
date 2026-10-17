@@ -1,0 +1,146 @@
+name: Horror bowed metal gong
+comment: 'A bowed gong: the partials closer together, slow, dark; play it low. Suggested notes: C-2 to C-3. Suggested notes: C-3 to C-5. Knobs: intensity is the bow noise and the upper partials, stretch spreads the partials apart (64: as a plate), movement how much each swells by itself. Go synth and wasm player only.'
+numvoices: 2
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 20, p2: 40, p3: 48, p4: 94, p5: 100}
+      comment: 'The Horror bowed metal module; its knobs: intensity, stretch, movement, swell, release'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 41, outgain: 55, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror bowed metal
+      comment: 'A bowed cymbal or plate: inharmonic partials, each swelling by itself, beating slowly, with singing bow noise. Stereo out. width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: intensity, default: 48}
+        - {name: stretch, default: 64}
+        - {name: movement, default: 64}
+        - {name: swell, default: 88}
+        - {name: release, default: 96}
+      units:
+        - type: oscillator
+          id: 1
+          parameters: {bandlimit: 0, color: 64, detune: 62, gain: 70, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+          comment: 'The partials: sines at 1.00, 1.47, 2.09, 2.56, 3.93, 5.10 times the note, not harmonics, each in its own place'
+        - type: pan
+          id: 2
+          parameters: {panning: 64, stereo: 0}
+        - type: oscillator
+          id: 3
+          parameters: {bandlimit: 0, color: 64, detune: 45, gain: 56, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 71, type: 0, unison: 0}
+          bind: {transpose: {p: 2, min: 70, max: 72}}
+        - type: pan
+          id: 4
+          parameters: {panning: 36, stereo: 0}
+        - type: addp
+          id: 5
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 6
+          parameters: {bandlimit: 0, color: 64, detune: 47, gain: 50, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 77, type: 0, unison: 0}
+          bind: {transpose: {p: 2, min: 75, max: 79}}
+        - type: pan
+          id: 7
+          parameters: {panning: 92, stereo: 0}
+        - type: addp
+          id: 8
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 9
+          parameters: {bandlimit: 0, color: 64, detune: 84, gain: 15, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 80, type: 0, unison: 0}
+          bind: {gain: {p: 1, min: 0, max: 40}, transpose: {p: 2, min: 77, max: 83}}
+        - type: pan
+          id: 10
+          parameters: {panning: 50, stereo: 0}
+        - type: addp
+          id: 11
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 12
+          parameters: {bandlimit: 0, color: 64, detune: 42, gain: 11, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 88, type: 0, unison: 0}
+          bind: {gain: {p: 1, min: 0, max: 30}, transpose: {p: 2, min: 84, max: 92}}
+        - type: pan
+          id: 13
+          parameters: {panning: 80, stereo: 0}
+        - type: addp
+          id: 14
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 15
+          parameters: {bandlimit: 0, color: 64, detune: 79, gain: 9, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 92, type: 0, unison: 0}
+          bind: {gain: {p: 1, min: 0, max: 24}, transpose: {p: 2, min: 87, max: 97}}
+        - type: pan
+          id: 16
+          parameters: {panning: 28, stereo: 0}
+        - type: addp
+          id: 17
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 18
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 1, phase: 20, shape: 64, stereo: 0, transpose: 20, type: 0, unison: 0}
+          comment: Each partial swells by itself as the bow catches it
+        - type: send
+          id: 19
+          parameters: {amount: 72, port: 5, sendpop: 1, stereo: 0, target: 3, voice: 0}
+          bind: {amount: {p: 3, min: 64, max: 80}}
+          comment: 'movement: how much'
+        - type: oscillator
+          id: 20
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 1, phase: 60, shape: 64, stereo: 0, transpose: 13, type: 0, unison: 0}
+        - type: send
+          id: 21
+          parameters: {amount: 72, port: 5, sendpop: 1, stereo: 0, target: 9, voice: 0}
+          bind: {amount: {p: 3, min: 64, max: 80}}
+        - type: oscillator
+          id: 22
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 1, phase: 80, shape: 64, stereo: 0, transpose: 28, type: 0, unison: 0}
+        - type: send
+          id: 23
+          parameters: {amount: 72, port: 5, sendpop: 1, stereo: 0, target: 12, voice: 0}
+          bind: {amount: {p: 3, min: 64, max: 80}}
+        - type: noise
+          id: 24
+          parameters: {gain: 21, shape: 64, stereo: 1}
+          bind: {gain: {p: 1, min: 4, max: 48}}
+          comment: 'intensity: the bow noise, and the upper partials'
+        - type: filter
+          id: 25
+          parameters: {bandpass: 1, frequency: 60, highpass: 0, lowpass: 0, resonance: 20, stereo: 1}
+          comment: 'a narrow band of it, singing'
+        - type: noise
+          id: 26
+          parameters: {gain: 128, shape: 64, stereo: 0}
+          comment: 'The band wanders, as the bow pressure changes'
+        - type: filter
+          id: 27
+          parameters: {bandpass: 0, frequency: 3, highpass: 0, lowpass: 1, resonance: 128, stereo: 0}
+          comment: ...low-passed at 3.9 Hz...
+        - type: dbgain
+          id: 28
+          parameters: {decibels: 115, stereo: 0}
+          comment: ...and raised to a useful level
+        - type: send
+          id: 29
+          parameters: {amount: 72, port: 0, sendpop: 1, stereo: 0, target: 25, voice: 0}
+        - type: addp
+          id: 30
+          parameters: {stereo: 1}
+        - type: filter
+          id: 31
+          parameters: {bandpass: 0, frequency: 10, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: Low cut
+        - type: envelope
+          id: 32
+          parameters: {attack: 88, curve: 0, decay: 80, gain: 128, release: 96, stereo: 1, sustain: 128}
+          bind: {attack: 4, release: 5}
+          comment: 'swell is the fade in, release the fade out after the note'
+        - type: mulp
+          id: 33
+          parameters: {stereo: 1}
+        - type: width
+          id: 34
+          parameters: {lowcut: 19, width: 60}

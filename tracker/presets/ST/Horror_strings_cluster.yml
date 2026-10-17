@@ -1,0 +1,106 @@
+name: Horror strings cluster
+comment: 'The string cluster without a slide: a dense, quarter-tone wide block of strings. Suggested notes: C-2 to C-5. Go synth and wasm player only.'
+numvoices: 4
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 64, p2: 96, p3: 94, p4: 86, p5: 92}
+      comment: 'The Horror cluster glissando module; its knobs: gliss, dissonance, time, attack, release'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 41, outgain: 65, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror cluster glissando
+      comment: 'A string cluster that slides: three groups of saws a semitone apart, spread to quarter tones, all gliding up or down after the note starts, the Penderecki sound. Stereo out. Bandlimited oscillators, ladder and width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: gliss, default: 88}
+        - {name: dissonance, default: 64}
+        - {name: time, default: 94}
+        - {name: attack, default: 82}
+        - {name: release, default: 92}
+      units:
+        - type: envelope
+          id: 1
+          parameters: {attack: 94, curve: 0, decay: 64, gain: 128, release: 96, stereo: 0, sustain: 128}
+          bind: {attack: 3}
+          comment: 'The glissando: rises from 0 to 1 in time (5 s), then stays'
+        - type: send
+          id: 2
+          parameters: {amount: 69, port: 0, sendpop: 0, stereo: 0, target: 5, voice: 0}
+          bind: {amount: {p: 1, min: 52, max: 76}}
+        - type: send
+          id: 3
+          parameters: {amount: 69, port: 0, sendpop: 0, stereo: 0, target: 6, voice: 0}
+          bind: {amount: {p: 1, min: 52, max: 76}}
+        - type: send
+          id: 4
+          parameters: {amount: 69, port: 0, sendpop: 1, stereo: 0, target: 8, voice: 0}
+          bind: {amount: {p: 1, min: 52, max: 76}}
+          comment: 'gliss: how far the cluster slides, 24 semitones down at 0, none at 64, 24 up at 128, in steps of 2'
+        - type: oscillator
+          id: 5
+          parameters: {bandlimit: 1, color: 128, detune: 76, gain: 22, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 3}
+          bind: {detune: {p: 2, min: 64, max: 88}}
+          comment: Four players a side; dissonance spreads them from unison to quarter tones apart
+        - type: oscillator
+          id: 6
+          parameters: {bandlimit: 1, color: 128, detune: 55, gain: 22, lfo: 0, phase: 40, shape: 64, stereo: 1, transpose: 65, type: 1, unison: 3}
+          bind: {detune: {p: 2, min: 64, max: 46}}
+          comment: 'Four players a side, a semitone above; dissonance spreads them from unison to quarter tones apart'
+        - type: addp
+          id: 7
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 8
+          parameters: {bandlimit: 1, color: 128, detune: 73, gain: 22, lfo: 0, phase: 80, shape: 64, stereo: 1, transpose: 63, type: 1, unison: 3}
+          bind: {detune: {p: 2, min: 64, max: 82}}
+          comment: 'Four players a side, a semitone below; dissonance spreads them from unison to quarter tones apart'
+        - type: addp
+          id: 9
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 10
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 1, phase: 0, shape: 64, stereo: 0, transpose: 85, type: 0, unison: 0}
+          comment: 'Vibrato, 5.7 Hz'
+        - type: send
+          id: 11
+          parameters: {amount: 65, port: 1, sendpop: 0, stereo: 0, target: 5, voice: 0}
+        - type: send
+          id: 12
+          parameters: {amount: 65, port: 1, sendpop: 0, stereo: 0, target: 6, voice: 0}
+        - type: send
+          id: 13
+          parameters: {amount: 65, port: 1, sendpop: 1, stereo: 0, target: 8, voice: 0}
+        - type: noise
+          id: 14
+          parameters: {gain: 8, shape: 64, stereo: 1}
+          comment: 'Bow noise: the hiss of the hair on the strings'
+        - type: filter
+          id: 15
+          parameters: {bandpass: 1, frequency: 72, highpass: 0, lowpass: 0, resonance: 64, stereo: 1}
+          comment: 'a band of it, around the brightness of the strings'
+        - type: addp
+          id: 16
+          parameters: {stereo: 1}
+        - type: ladder
+          id: 17
+          parameters: {drive: 0, frequency: 46, resonance: 10, stereo: 1}
+          comment: 'Brightness, 2 kHz'
+        - type: filter
+          id: 18
+          parameters: {bandpass: 0, frequency: 10, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: Low cut
+        - type: envelope
+          id: 19
+          parameters: {attack: 82, curve: 0, decay: 80, gain: 128, release: 92, stereo: 1, sustain: 128}
+          bind: {attack: 4, release: 5}
+          comment: 'swell is the fade in, release the fade out after the note'
+        - type: mulp
+          id: 20
+          parameters: {stereo: 1}
+        - type: width
+          id: 21
+          parameters: {lowcut: 19, width: 52}

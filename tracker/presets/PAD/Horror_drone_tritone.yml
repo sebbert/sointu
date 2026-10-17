@@ -1,0 +1,102 @@
+name: Horror drone tritone
+comment: 'A dark organ drone of the note, the tritone above and the octave below, the pulse widths moving slowly. Suggested notes: C-2 to C-3. dissonance adds a thin minor ninth. ladder and width: Go synth and wasm player only.'
+numvoices: 2
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 40, p2: 0, p3: 64, p4: 88, p5: 94}
+      comment: 'The Horror tritone drone module; its knobs: intensity, dissonance, movement, swell, release'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 17, outgain: 39, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror tritone drone
+      comment: 'An organ-like drone of pulses on the note, a tritone above and an octave below, their widths slowly moving. Stereo out. ladder and width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: intensity, default: 40}
+        - {name: dissonance, default: 0}
+        - {name: movement, default: 64}
+        - {name: swell, default: 88}
+        - {name: release, default: 94}
+      units:
+        - type: oscillator
+          id: 1
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 50, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 2, unison: 0}
+          comment: 'The note: a pulse whose width an LFO moves'
+        - type: oscillator
+          id: 2
+          parameters: {bandlimit: 0, color: 64, detune: 65, gain: 36, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 70, type: 2, unison: 0}
+          comment: A tritone above
+        - type: addp
+          id: 3
+          parameters: {stereo: 0}
+        - type: oscillator
+          id: 4
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 44, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 52, type: 2, unison: 0}
+          comment: An octave below
+        - type: addp
+          id: 5
+          parameters: {stereo: 0}
+        - type: oscillator
+          id: 6
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 0, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 77, type: 0, unison: 0}
+          bind: {gain: {p: 2, min: 0, max: 40}}
+          comment: 'dissonance: a minor ninth above, thin'
+        - type: addp
+          id: 7
+          parameters: {stereo: 0}
+        - type: oscillator
+          id: 8
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 1, phase: 0, shape: 64, stereo: 0, transpose: 12, type: 0, unison: 0}
+          comment: 'movement: the widths of the pulses move, at their own rates'
+        - type: send
+          id: 9
+          parameters: {amount: 74, port: 3, sendpop: 1, stereo: 0, target: 1, voice: 0}
+          bind: {amount: {p: 3, min: 64, max: 84}}
+        - type: oscillator
+          id: 10
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 1, phase: 0, shape: 64, stereo: 0, transpose: 6, type: 0, unison: 0}
+          comment: An LFO of 0.059 Hz
+        - type: send
+          id: 11
+          parameters: {amount: 74, port: 3, sendpop: 1, stereo: 0, target: 2, voice: 0}
+          bind: {amount: {p: 3, min: 64, max: 84}}
+        - type: oscillator
+          id: 12
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 1, phase: 0, shape: 64, stereo: 0, transpose: 1, type: 0, unison: 0}
+          comment: An LFO of 0.043 Hz
+        - type: send
+          id: 13
+          parameters: {amount: 72, port: 3, sendpop: 1, stereo: 0, target: 4, voice: 0}
+          bind: {amount: {p: 3, min: 64, max: 80}}
+        - type: filter
+          id: 14
+          parameters: {bandpass: 0, frequency: 8, highpass: 1, lowpass: 0, resonance: 128, stereo: 0}
+          comment: 'Low cut at 27 Hz: the moving pulse widths move the mean of the signal'
+        - type: pan
+          id: 15
+          parameters: {panning: 64, stereo: 0}
+        - type: ladder
+          id: 16
+          parameters: {drive: 8, frequency: 24, resonance: 40, stereo: 1}
+          bind: {frequency: {p: 1, min: 14, max: 46}}
+          comment: 'intensity: a dark organ at 0, reedy at 128'
+        - type: delay
+          id: 17
+          parameters: {damp: 0, dry: 110, feedback: 0, notetracking: 0, pregain: 128, stereo: 1}
+          varargs: [970, 1290]
+          comment: A short chorus that makes it wide
+        - type: envelope
+          id: 18
+          parameters: {attack: 88, curve: 0, decay: 80, gain: 128, release: 94, stereo: 1, sustain: 128}
+          bind: {attack: 4, release: 5}
+          comment: 'swell is the fade in, release the fade out after the note'
+        - type: mulp
+          id: 19
+          parameters: {stereo: 1}
+        - type: width
+          id: 20
+          parameters: {lowcut: 19, width: 72}

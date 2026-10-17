@@ -1,0 +1,104 @@
+name: Horror scrape grind
+comment: 'A slow, low grinding scrape: a heavy door, a coffin lid. Knobs: pitch is the band of the scrape, speed how fast it stutters, stutter how much, tone adds a screech at the note (C-3 to C-5). Go synth and wasm player only.'
+numvoices: 2
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 20, p2: 16, p3: 112, p4: 0, p5: 72, p6: 84}
+      comment: 'The Horror scrape module; its knobs: pitch, speed, stutter, tone, attack, release'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 49, outgain: 78, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror scrape
+      comment: 'Metal scraped on metal: noise through a narrow band that jumps and slides, stuttering, with a screech at the note. Stereo out. width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: pitch, default: 64}
+        - {name: speed, default: 64}
+        - {name: stutter, default: 64}
+        - {name: tone, default: 0}
+        - {name: attack, default: 64}
+        - {name: release, default: 80}
+      units:
+        - type: noise
+          id: 1
+          parameters: {gain: 36, shape: 64, stereo: 1}
+          comment: 'Noise: the friction'
+        - type: filter
+          id: 2
+          parameters: {bandpass: 1, frequency: 64, highpass: 0, lowpass: 0, resonance: 16, stereo: 1}
+          bind: {frequency: {p: 1, min: 32, max: 96}}
+          comment: 'pitch: a narrow resonant band, 900 Hz to 4 kHz'
+        - type: noise
+          id: 3
+          parameters: {gain: 128, shape: 64, stereo: 0}
+          comment: 'The band jumps and slides, as metal catches on metal'
+        - type: filter
+          id: 4
+          parameters: {bandpass: 0, frequency: 5, highpass: 0, lowpass: 1, resonance: 128, stereo: 0}
+          comment: ...low-passed at 10.7 Hz...
+        - type: dbgain
+          id: 5
+          parameters: {decibels: 108, stereo: 0}
+          comment: ...and raised to a useful level
+        - type: send
+          id: 6
+          parameters: {amount: 80, port: 0, sendpop: 1, stereo: 0, target: 2, voice: 0}
+        - type: noise
+          id: 7
+          parameters: {gain: 128, shape: 64, stereo: 0}
+          comment: 'The grip: the level stutters...'
+        - type: filter
+          id: 8
+          parameters: {bandpass: 0, frequency: 9, highpass: 0, lowpass: 1, resonance: 128, stereo: 0}
+          bind: {frequency: {p: 2, min: 4, max: 14}}
+          comment: ...low-passed at 27.4 Hz...
+        - type: dbgain
+          id: 9
+          parameters: {decibels: 107, stereo: 0}
+          comment: ...and raised to a useful level
+        - type: send
+          id: 10
+          parameters: {amount: 82, port: 0, sendpop: 1, stereo: 0, target: 14, voice: 0}
+          bind: {amount: {p: 3, min: 64, max: 100}}
+          comment: 'stutter: how much'
+        - type: oscillator
+          id: 11
+          parameters: {bandlimit: 1, color: 128, detune: 64, gain: 0, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 1, unison: 0}
+          bind: {gain: {p: 4, min: 0, max: 12}}
+          comment: 'tone: a saw at the note, the screech of the scrape'
+        - type: pan
+          id: 12
+          parameters: {panning: 64, stereo: 0}
+        - type: addp
+          id: 13
+          parameters: {stereo: 1}
+        - type: loadval
+          id: 14
+          parameters: {stereo: 1, value: 128}
+          comment: The stuttering level
+        - type: mulp
+          id: 15
+          parameters: {stereo: 1}
+        - type: filter
+          id: 16
+          parameters: {bandpass: 0, frequency: 14, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: Low cut
+        - type: filter
+          id: 17
+          parameters: {bandpass: 0, frequency: 124, highpass: 0, lowpass: 1, resonance: 128, stereo: 1}
+          comment: High cut
+        - type: envelope
+          id: 18
+          parameters: {attack: 64, curve: 0, decay: 80, gain: 128, release: 80, stereo: 1, sustain: 128}
+          bind: {attack: 5, release: 6}
+          comment: 'swell is the fade in, release the fade out after the note'
+        - type: mulp
+          id: 19
+          parameters: {stereo: 1}
+        - type: width
+          id: 20
+          parameters: {lowcut: 19, width: 56}

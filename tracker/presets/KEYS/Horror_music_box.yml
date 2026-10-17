@@ -1,0 +1,132 @@
+name: Horror music box
+comment: 'A music box, a little warped: the innocence gone wrong. Suggested notes: C-4 to C-7; a lullaby. Knobs: wow is how much the pitch wanders and wobbles, detune adds a second tine out of tune, sag how far each note falls as it rings. Curved envelopes and width: Go synth and wasm player only.'
+numvoices: 8
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 32, p2: 0, p3: 0}
+      comment: 'The Horror music box module; its knobs: wow, detune, sag'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 66, outgain: 88, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror music box
+      comment: 'A music box: tines with an octave and an inharmonic ping, wow and wobble like a warped tape, a second tine out of tune, notes that sag. Stereo out. Curved envelopes and width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: wow, default: 32}
+        - {name: detune, default: 0}
+        - {name: sag, default: 0}
+      units:
+        - type: envelope
+          id: 1
+          parameters: {attack: 0, curve: 0, decay: 96, gain: 128, release: 96, stereo: 0, sustain: 0}
+          comment: 'Winding down: each note sags in pitch as it rings'
+        - type: send
+          id: 2
+          parameters: {amount: 64, port: 0, sendpop: 0, stereo: 0, target: 5, voice: 0}
+          bind: {amount: {p: 3, min: 64, max: 62}}
+        - type: send
+          id: 3
+          parameters: {amount: 64, port: 0, sendpop: 0, stereo: 0, target: 8, voice: 0}
+          bind: {amount: {p: 3, min: 64, max: 62}}
+        - type: send
+          id: 4
+          parameters: {amount: 64, port: 0, sendpop: 1, stereo: 0, target: 12, voice: 0}
+          bind: {amount: {p: 3, min: 64, max: 62}}
+          comment: 'sag: how far, up to 4 semitones'
+        - type: oscillator
+          id: 5
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 80, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+          comment: 'The tine: a sine, its octave and an inharmonic ping at 5.4 times the note, each with its own decay'
+        - type: envelope
+          id: 6
+          parameters: {attack: 0, curve: 96, decay: 92, gain: 128, release: 92, stereo: 0, sustain: 0}
+        - type: mulp
+          id: 7
+          parameters: {stereo: 0}
+        - type: oscillator
+          id: 8
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 30, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 76, type: 0, unison: 0}
+        - type: envelope
+          id: 9
+          parameters: {attack: 0, curve: 96, decay: 84, gain: 128, release: 84, stereo: 0, sustain: 0}
+        - type: mulp
+          id: 10
+          parameters: {stereo: 0}
+        - type: addp
+          id: 11
+          parameters: {stereo: 0}
+        - type: oscillator
+          id: 12
+          parameters: {bandlimit: 0, color: 64, detune: 77, gain: 24, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 93, type: 0, unison: 0}
+        - type: envelope
+          id: 13
+          parameters: {attack: 0, curve: 96, decay: 66, gain: 128, release: 66, stereo: 0, sustain: 0}
+        - type: mulp
+          id: 14
+          parameters: {stereo: 0}
+        - type: addp
+          id: 15
+          parameters: {stereo: 0}
+        - type: oscillator
+          id: 16
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 0, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+          bind: {detune: {p: 2, min: 64, max: 96}, gain: {p: 2, min: 0, max: 70}}
+          comment: 'detune: a second tine, out of tune by up to half a semitone, beating against the first'
+        - type: envelope
+          id: 17
+          parameters: {attack: 0, curve: 96, decay: 90, gain: 128, release: 90, stereo: 0, sustain: 0}
+        - type: mulp
+          id: 18
+          parameters: {stereo: 0}
+        - type: addp
+          id: 19
+          parameters: {stereo: 0}
+        - type: noise
+          id: 20
+          parameters: {gain: 32, shape: 64, stereo: 0}
+          bind: {gain: {p: 1, min: 0, max: 128}}
+          comment: 'wow: the pitch wanders like a warped tape, up to half a semitone...'
+        - type: filter
+          id: 21
+          parameters: {bandpass: 0, frequency: 3, highpass: 0, lowpass: 1, resonance: 128, stereo: 0}
+          comment: ...low-passed at 3.9 Hz...
+        - type: dbgain
+          id: 22
+          parameters: {decibels: 115, stereo: 0}
+          comment: ...and raised to a useful level
+        - type: oscillator
+          id: 23
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 8, lfo: 1, phase: 0, shape: 64, stereo: 0, transpose: 49, type: 0, unison: 0}
+          bind: {gain: {p: 1, min: 0, max: 32}}
+          comment: '...and wobbles slowly, up to a quarter semitone'
+        - type: addp
+          id: 24
+          parameters: {stereo: 0}
+        - type: send
+          id: 25
+          parameters: {amount: 65, port: 0, sendpop: 0, stereo: 0, target: 5, voice: 0}
+        - type: send
+          id: 26
+          parameters: {amount: 65, port: 0, sendpop: 0, stereo: 0, target: 8, voice: 0}
+        - type: send
+          id: 27
+          parameters: {amount: 65, port: 0, sendpop: 1, stereo: 0, target: 16, voice: 0}
+        - type: pan
+          id: 28
+          parameters: {panning: 64, stereo: 0}
+        - type: filter
+          id: 29
+          parameters: {bandpass: 0, frequency: 16, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: 'Low cut at 110 Hz: a small box'
+        - type: delay
+          id: 30
+          parameters: {damp: 0, dry: 128, feedback: 0, notetracking: 0, pregain: 60, stereo: 1}
+          varargs: [331, 487]
+          comment: 'The box: two short reflections'
+        - type: width
+          id: 31
+          parameters: {lowcut: 19, width: 64}

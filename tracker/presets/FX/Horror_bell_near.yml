@@ -1,0 +1,157 @@
+name: Horror bell near
+comment: 'The church bell close by, bright and heavy. Suggested notes: C-2 to C-4. Go synth and wasm player only.'
+numvoices: 2
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 100}
+      comment: 'The Horror bell module; its knobs: distance'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 44, outgain: 58, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror bell
+      comment: 'A church bell: its partials (hum, prime, minor third, fifth, octave...) each decaying at its own rate, a clapper, a high cut for the distance. Stereo out. Curved envelopes, ladder and width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: distance, default: 48}
+      units:
+        - type: oscillator
+          id: 1
+          parameters: {bandlimit: 0, color: 64, detune: 63, gain: 60, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 52, type: 0, unison: 0}
+          comment: 'A church bell: hum (an octave below), prime, minor third (the tierce), fifth, octave and upper partials, each with its own decay'
+        - type: envelope
+          id: 2
+          parameters: {attack: 0, curve: 88, decay: 104, gain: 128, release: 104, stereo: 1, sustain: 0}
+        - type: mulp
+          id: 3
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 4
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 50, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 64, type: 0, unison: 0}
+        - type: envelope
+          id: 5
+          parameters: {attack: 0, curve: 88, decay: 100, gain: 128, release: 100, stereo: 1, sustain: 0}
+        - type: mulp
+          id: 6
+          parameters: {stereo: 1}
+        - type: addp
+          id: 7
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 8
+          parameters: {bandlimit: 0, color: 64, detune: 75, gain: 54, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 67, type: 0, unison: 0}
+        - type: envelope
+          id: 9
+          parameters: {attack: 0, curve: 88, decay: 98, gain: 128, release: 98, stereo: 1, sustain: 0}
+        - type: mulp
+          id: 10
+          parameters: {stereo: 1}
+        - type: addp
+          id: 11
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 12
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 30, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 71, type: 0, unison: 0}
+        - type: envelope
+          id: 13
+          parameters: {attack: 0, curve: 88, decay: 94, gain: 128, release: 94, stereo: 1, sustain: 0}
+        - type: mulp
+          id: 14
+          parameters: {stereo: 1}
+        - type: addp
+          id: 15
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 16
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 50, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 76, type: 0, unison: 0}
+        - type: envelope
+          id: 17
+          parameters: {attack: 0, curve: 88, decay: 96, gain: 128, release: 96, stereo: 1, sustain: 0}
+        - type: mulp
+          id: 18
+          parameters: {stereo: 1}
+        - type: addp
+          id: 19
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 20
+          parameters: {bandlimit: 0, color: 64, detune: 56, gain: 26, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 80, type: 0, unison: 0}
+        - type: envelope
+          id: 21
+          parameters: {attack: 0, curve: 88, decay: 88, gain: 128, release: 88, stereo: 1, sustain: 0}
+        - type: mulp
+          id: 22
+          parameters: {stereo: 1}
+        - type: addp
+          id: 23
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 24
+          parameters: {bandlimit: 0, color: 64, detune: 63, gain: 22, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 81, type: 0, unison: 0}
+        - type: envelope
+          id: 25
+          parameters: {attack: 0, curve: 88, decay: 86, gain: 128, release: 86, stereo: 1, sustain: 0}
+        - type: mulp
+          id: 26
+          parameters: {stereo: 1}
+        - type: addp
+          id: 27
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 28
+          parameters: {bandlimit: 0, color: 64, detune: 65, gain: 20, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 83, type: 0, unison: 0}
+        - type: envelope
+          id: 29
+          parameters: {attack: 0, curve: 88, decay: 84, gain: 128, release: 84, stereo: 1, sustain: 0}
+        - type: mulp
+          id: 30
+          parameters: {stereo: 1}
+        - type: addp
+          id: 31
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 32
+          parameters: {bandlimit: 0, color: 64, detune: 65, gain: 14, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 88, type: 0, unison: 0}
+        - type: envelope
+          id: 33
+          parameters: {attack: 0, curve: 88, decay: 80, gain: 128, release: 80, stereo: 1, sustain: 0}
+        - type: mulp
+          id: 34
+          parameters: {stereo: 1}
+        - type: addp
+          id: 35
+          parameters: {stereo: 1}
+        - type: noise
+          id: 36
+          parameters: {gain: 60, shape: 64, stereo: 0}
+          comment: The clapper
+        - type: envelope
+          id: 37
+          parameters: {attack: 0, curve: 80, decay: 48, gain: 128, release: 48, stereo: 0, sustain: 0}
+        - type: mulp
+          id: 38
+          parameters: {stereo: 0}
+        - type: filter
+          id: 39
+          parameters: {bandpass: 1, frequency: 64, highpass: 0, lowpass: 0, resonance: 60, stereo: 0}
+        - type: pan
+          id: 40
+          parameters: {panning: 64, stereo: 0}
+        - type: addp
+          id: 41
+          parameters: {stereo: 1}
+        - type: filter
+          id: 42
+          parameters: {bandpass: 0, frequency: 8, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: Low cut
+        - type: ladder
+          id: 43
+          parameters: {drive: 0, frequency: 46, resonance: 0, stereo: 1}
+          bind: {frequency: {p: 1, min: 20, max: 90}}
+          comment: 'distance: the high cut, far (0) to near (128)'
+        - type: width
+          id: 44
+          parameters: {lowcut: 19, width: 56}

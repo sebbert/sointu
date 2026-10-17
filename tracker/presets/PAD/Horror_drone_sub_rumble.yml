@@ -1,0 +1,121 @@
+name: Horror drone sub rumble
+comment: 'A sub drone with a slowly moving rumble of noise: the floor under a scene. Suggested notes: C-1 to C-2. Knobs: intensity opens and drives the rumble, dissonance adds a minor second and a tritone, movement is how far the rumble moves; swell and release are the fades (3.5 s and 4.6 s). ladder, softclip and width: Go synth and wasm player only.'
+numvoices: 2
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 40, p2: 0, p3: 64, p4: 92, p5: 94}
+      comment: 'The Horror sub rumble module; its knobs: intensity, dissonance, movement, swell, release'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 17, outgain: 45, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror sub rumble
+      comment: 'A sub drone with a rumble of low-passed noise above it that moves slowly. Stereo out. ladder, softclip and width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: intensity, default: 40}
+        - {name: dissonance, default: 0}
+        - {name: movement, default: 64}
+        - {name: swell, default: 92}
+        - {name: release, default: 94}
+      units:
+        - type: oscillator
+          id: 1
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 100, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+          comment: 'The sub: a sine at the note'
+        - type: oscillator
+          id: 2
+          parameters: {bandlimit: 0, color: 64, detune: 67, gain: 22, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 76, type: 0, unison: 0}
+          comment: 'An octave above, a little sharp: it beats slowly against the sub''s harmonics'
+        - type: addp
+          id: 3
+          parameters: {stereo: 0}
+        - type: oscillator
+          id: 4
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 0, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 65, type: 0, unison: 0}
+          bind: {gain: {p: 2, min: 0, max: 40}}
+          comment: 'dissonance: a sine a semitone above the note, which grinds against the sub'
+        - type: addp
+          id: 5
+          parameters: {stereo: 0}
+        - type: oscillator
+          id: 6
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 0, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 70, type: 0, unison: 0}
+          bind: {gain: {p: 2, min: 0, max: 28}}
+          comment: 'dissonance: and a tritone above'
+        - type: addp
+          id: 7
+          parameters: {stereo: 0}
+        - type: pan
+          id: 8
+          parameters: {panning: 64, stereo: 0}
+        - type: noise
+          id: 9
+          parameters: {gain: 128, shape: 64, stereo: 1}
+          comment: 'The rumble: noise, different on each side'
+        - type: oscillator
+          id: 10
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 44, lfo: 1, phase: 0, shape: 64, stereo: 0, transpose: 2, type: 0, unison: 0}
+          comment: 'movement: a slow LFO (21 s) that moves the rumble up and down...'
+        - type: oscillator
+          id: 11
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 36, lfo: 1, phase: 40, shape: 64, stereo: 0, transpose: 10, type: 0, unison: 0}
+          comment: ...another 1.6 times as fast...
+        - type: addp
+          id: 12
+          parameters: {stereo: 0}
+        - type: noise
+          id: 13
+          parameters: {gain: 128, shape: 64, stereo: 0}
+          comment: '...plus a random wander, so that the movement never repeats'
+        - type: filter
+          id: 14
+          parameters: {bandpass: 0, frequency: 3, highpass: 0, lowpass: 1, resonance: 128, stereo: 0}
+          comment: ...low-passed at 3.9 Hz...
+        - type: dbgain
+          id: 15
+          parameters: {decibels: 113, stereo: 0}
+          comment: ...and raised to a useful level
+        - type: addp
+          id: 16
+          parameters: {stereo: 0}
+        - type: send
+          id: 17
+          parameters: {amount: 70, port: 0, sendpop: 1, stereo: 0, target: 20, voice: 0}
+          bind: {amount: {p: 3, min: 64, max: 76}}
+        - type: oscillator
+          id: 18
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 1, phase: 0, shape: 64, stereo: 0, transpose: 20, type: 1, unison: 0}
+          comment: and a faster one (8 s) on its resonance
+        - type: send
+          id: 19
+          parameters: {amount: 68, port: 1, sendpop: 1, stereo: 0, target: 20, voice: 0}
+          bind: {amount: {p: 3, min: 64, max: 72}}
+        - type: ladder
+          id: 20
+          parameters: {drive: 20, frequency: 14, resonance: 72, stereo: 1}
+          bind: {frequency: {p: 1, min: 8, max: 26}}
+          comment: 'intensity: the rumble opens from 55 Hz to 500 Hz'
+        - type: addp
+          id: 21
+          parameters: {stereo: 1}
+        - type: softclip
+          id: 22
+          parameters: {drive: 13, knee: 64, oversample: 0, stereo: 1}
+          bind: {drive: {p: 1, min: 0, max: 40}}
+          comment: 'intensity: and is driven harder, which adds harmonics to the sub that small speakers can play'
+        - type: envelope
+          id: 23
+          parameters: {attack: 92, curve: 0, decay: 80, gain: 128, release: 94, stereo: 1, sustain: 128}
+          bind: {attack: 4, release: 5}
+          comment: 'swell is the fade in, release the fade out after the note'
+        - type: mulp
+          id: 24
+          parameters: {stereo: 1}
+        - type: width
+          id: 25
+          parameters: {lowcut: 19, width: 72}
+          comment: 'Wide above 150 Hz, mono below it'

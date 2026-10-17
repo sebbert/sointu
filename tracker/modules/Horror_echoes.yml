@@ -1,0 +1,56 @@
+modules:
+    - id: 1
+      name: Horror echoes
+      comment: 'Long tempo-synced echoes that wander from side to side and get darker and thinner each time, wet only. Stereo in. Uses the delay unit with BPM timing, which is in every player.'
+      inputs: 2
+      params:
+        - {name: time, default: 72}
+        - {name: feedback, default: 100}
+        - {name: tone, default: 70}
+        - {name: lowcut, default: 24}
+        - {name: spread, default: 24}
+      units:
+        - type: addp
+          id: 1
+          parameters: {stereo: 0}
+          comment: Left plus right
+        - type: pan
+          id: 2
+          parameters: {panning: 24, stereo: 0}
+          bind: {panning: 5}
+          comment: 'spread: where the first echo starts; 0 left, 64 the middle (no ping-pong)'
+        - type: receive
+          id: 3
+          parameters: {stereo: 1}
+          comment: 'The echoes coming back, a sample late'
+        - type: addp
+          id: 4
+          parameters: {stereo: 1}
+        - type: delay
+          id: 5
+          parameters: {damp: 0, dry: 0, feedback: 0, notetracking: 2, pregain: 128, stereo: 1}
+          varargs: [72, 72]
+          bind: {delaytime1: 1, delaytime2: 1}
+          comment: 'One line a side, the same time: 72 is a dotted quarter, 96 a half note. The lines are at most 1.48 s long'
+        - type: push
+          id: 6
+          parameters: {stereo: 1}
+        - type: filter
+          id: 7
+          parameters: {bandpass: 0, frequency: 74, highpass: 0, lowpass: 1, resonance: 128, stereo: 1}
+          bind: {frequency: {p: 3, min: 30, max: 110}}
+          comment: 'tone: each echo darker, as in a large space'
+        - type: filter
+          id: 8
+          parameters: {bandpass: 0, frequency: 12, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          bind: {frequency: {p: 4, min: 0, max: 64}}
+          comment: 'lowcut: each echo thinner'
+        - type: xch
+          id: 9
+          parameters: {stereo: 0}
+          comment: Left to right and right to left
+        - type: send
+          id: 10
+          parameters: {amount: 102, port: 0, sendpop: 1, stereo: 1, target: 3, voice: 0}
+          bind: {amount: {p: 2, min: 64, max: 112}}
+          comment: 'feedback: the level of each echo against the one before, up to 75 %'

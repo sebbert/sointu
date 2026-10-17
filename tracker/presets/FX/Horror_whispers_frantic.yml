@@ -1,0 +1,176 @@
+name: Horror whispers frantic
+comment: 'The whispers fast and urgent. Hold the note; the pitch does not matter. Knob: speed of the syllables. Go synth and wasm player only.'
+numvoices: 1
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 120}
+      comment: 'The Horror whispers module; its knobs: speed'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 20, outgain: 32, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror whispers
+      comment: 'Whispering voices without words: noise through two wandering formants, syllables of random level, two whisperers left and right. Stereo out. Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: speed, default: 64}
+      units:
+        - type: noise
+          id: 1
+          parameters: {gain: 128, shape: 64, stereo: 0}
+          comment: 'A whisper: noise'
+        - type: filter
+          id: 2
+          parameters: {bandpass: 1, frequency: 40, highpass: 0, lowpass: 0, resonance: 40, stereo: 0}
+          comment: through two formants that wander like syllables
+        - type: filter
+          id: 3
+          parameters: {bandpass: 1, frequency: 72, highpass: 0, lowpass: 0, resonance: 48, stereo: 0}
+        - type: noise
+          id: 4
+          parameters: {gain: 128, shape: 64, stereo: 0}
+          comment: 'The formants wander, syllable by syllable'
+        - type: filter
+          id: 5
+          parameters: {bandpass: 0, frequency: 4, highpass: 0, lowpass: 1, resonance: 128, stereo: 0}
+          comment: ...low-passed at 6.9 Hz...
+        - type: dbgain
+          id: 6
+          parameters: {decibels: 111, stereo: 0}
+          comment: ...and raised to a useful level
+        - type: send
+          id: 7
+          parameters: {amount: 76, port: 0, sendpop: 1, stereo: 0, target: 2, voice: 0}
+        - type: noise
+          id: 8
+          parameters: {gain: 128, shape: 64, stereo: 0}
+          comment: 'A random wander: noise...'
+        - type: filter
+          id: 9
+          parameters: {bandpass: 0, frequency: 5, highpass: 0, lowpass: 1, resonance: 128, stereo: 0}
+          comment: ...low-passed at 10.7 Hz...
+        - type: dbgain
+          id: 10
+          parameters: {decibels: 108, stereo: 0}
+          comment: ...and raised to a useful level
+        - type: send
+          id: 11
+          parameters: {amount: 80, port: 0, sendpop: 1, stereo: 0, target: 3, voice: 0}
+        - type: noise
+          id: 12
+          parameters: {gain: 128, shape: 64, stereo: 0}
+          comment: 'The syllables: the level jumps...'
+        - type: filter
+          id: 13
+          parameters: {bandpass: 0, frequency: 10, highpass: 0, lowpass: 1, resonance: 128, stereo: 0}
+          bind: {frequency: {p: 1, min: 6, max: 14}}
+          comment: ...low-passed at 34.7 Hz...
+        - type: dbgain
+          id: 14
+          parameters: {decibels: 115, stereo: 0}
+          comment: ...and raised to a useful level
+        - type: push
+          id: 15
+          parameters: {stereo: 0}
+        - type: mulp
+          id: 16
+          parameters: {stereo: 0}
+        - type: clip
+          id: 17
+          parameters: {stereo: 0}
+          comment: 'squared and clipped: from silence to a loud syllable'
+        - type: mulp
+          id: 18
+          parameters: {stereo: 0}
+        - type: pan
+          id: 19
+          parameters: {panning: 30, stereo: 0}
+        - type: noise
+          id: 20
+          parameters: {gain: 128, shape: 64, stereo: 0}
+          comment: A second whisperer on the other side
+        - type: filter
+          id: 21
+          parameters: {bandpass: 1, frequency: 40, highpass: 0, lowpass: 0, resonance: 40, stereo: 0}
+        - type: filter
+          id: 22
+          parameters: {bandpass: 1, frequency: 72, highpass: 0, lowpass: 0, resonance: 48, stereo: 0}
+        - type: noise
+          id: 23
+          parameters: {gain: 128, shape: 64, stereo: 0}
+          comment: 'The formants wander, syllable by syllable'
+        - type: filter
+          id: 24
+          parameters: {bandpass: 0, frequency: 4, highpass: 0, lowpass: 1, resonance: 128, stereo: 0}
+          comment: ...low-passed at 6.9 Hz...
+        - type: dbgain
+          id: 25
+          parameters: {decibels: 111, stereo: 0}
+          comment: ...and raised to a useful level
+        - type: send
+          id: 26
+          parameters: {amount: 76, port: 0, sendpop: 1, stereo: 0, target: 21, voice: 0}
+        - type: noise
+          id: 27
+          parameters: {gain: 128, shape: 64, stereo: 0}
+          comment: 'A random wander: noise...'
+        - type: filter
+          id: 28
+          parameters: {bandpass: 0, frequency: 4, highpass: 0, lowpass: 1, resonance: 128, stereo: 0}
+          comment: ...low-passed at 6.9 Hz...
+        - type: dbgain
+          id: 29
+          parameters: {decibels: 111, stereo: 0}
+          comment: ...and raised to a useful level
+        - type: send
+          id: 30
+          parameters: {amount: 80, port: 0, sendpop: 1, stereo: 0, target: 22, voice: 0}
+        - type: noise
+          id: 31
+          parameters: {gain: 128, shape: 64, stereo: 0}
+          comment: 'The syllables: the level jumps...'
+        - type: filter
+          id: 32
+          parameters: {bandpass: 0, frequency: 9, highpass: 0, lowpass: 1, resonance: 128, stereo: 0}
+          bind: {frequency: {p: 1, min: 5, max: 13}}
+          comment: ...low-passed at 27.4 Hz...
+        - type: dbgain
+          id: 33
+          parameters: {decibels: 116, stereo: 0}
+          comment: ...and raised to a useful level
+        - type: push
+          id: 34
+          parameters: {stereo: 0}
+        - type: mulp
+          id: 35
+          parameters: {stereo: 0}
+        - type: clip
+          id: 36
+          parameters: {stereo: 0}
+          comment: 'squared and clipped: from silence to a loud syllable'
+        - type: mulp
+          id: 37
+          parameters: {stereo: 0}
+        - type: pan
+          id: 38
+          parameters: {panning: 98, stereo: 0}
+        - type: addp
+          id: 39
+          parameters: {stereo: 1}
+        - type: filter
+          id: 40
+          parameters: {bandpass: 0, frequency: 36, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: Low cut at 360 Hz
+        - type: gain
+          id: 41
+          parameters: {gain: 128, stereo: 1}
+        - type: envelope
+          id: 42
+          parameters: {attack: 80, curve: 0, decay: 80, gain: 128, release: 86, stereo: 1, sustain: 128}
+          comment: 'swell is the fade in, release the fade out after the note'
+        - type: mulp
+          id: 43
+          parameters: {stereo: 1}

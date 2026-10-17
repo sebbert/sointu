@@ -1,0 +1,97 @@
+name: Horror strings screech
+comment: 'Screeching high strings for stabs, the shower scene kind: each note scoops up into a harsh accent. Suggested notes: C-5 to C-7, short repeated notes. Knobs: intensity is the drive, dissonance adds a section a semitone above, vibrato its depth. Go synth and wasm player only.'
+numvoices: 4
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 48, p2: 0, p3: 64}
+      comment: 'The Horror screech strings module; its knobs: intensity, dissonance, vibrato'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 23, outgain: 37, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror screech strings
+      comment: 'High strings stabbing: a scoop into each note, a fast wide vibrato, a lot of bow noise, a harsh peak and drive. Stereo out. Bandlimited oscillators, ladder and width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: intensity, default: 48}
+        - {name: dissonance, default: 0}
+        - {name: vibrato, default: 64}
+      units:
+        - type: envelope
+          id: 1
+          parameters: {attack: 0, curve: 64, decay: 60, gain: 128, release: 60, stereo: 0, sustain: 0}
+          comment: 'The scoop: each note starts 3 semitones flat and bends up in 60 ms'
+        - type: send
+          id: 2
+          parameters: {amount: 58, port: 0, sendpop: 0, stereo: 0, target: 4, voice: 0}
+        - type: send
+          id: 3
+          parameters: {amount: 58, port: 0, sendpop: 1, stereo: 0, target: 5, voice: 0}
+        - type: oscillator
+          id: 4
+          parameters: {bandlimit: 1, color: 128, detune: 74, gain: 36, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 2}
+          comment: 'Saws, the players of the section: detune is how far apart they are'
+        - type: oscillator
+          id: 5
+          parameters: {bandlimit: 1, color: 128, detune: 53, gain: 36, lfo: 0, phase: 76, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 2}
+          comment: 'More, detuned the other way and a little further, half a cycle later: the two sides equally loud from the start of a note'
+        - type: addp
+          id: 6
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 7
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 1, phase: 0, shape: 64, stereo: 0, transpose: 89, type: 0, unison: 0}
+          comment: 'A fast, wide vibrato'
+        - type: send
+          id: 8
+          parameters: {amount: 70, port: 1, sendpop: 0, stereo: 0, target: 4, voice: 0}
+          bind: {amount: {p: 3, min: 64, max: 76}}
+        - type: send
+          id: 9
+          parameters: {amount: 70, port: 1, sendpop: 1, stereo: 0, target: 5, voice: 0}
+          bind: {amount: {p: 3, min: 64, max: 76}}
+        - type: oscillator
+          id: 10
+          parameters: {bandlimit: 1, color: 128, detune: 74, gain: 0, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 65, type: 1, unison: 1}
+          bind: {gain: {p: 2, min: 0, max: 34}}
+          comment: 'dissonance: a section a semitone above'
+        - type: addp
+          id: 11
+          parameters: {stereo: 1}
+        - type: noise
+          id: 12
+          parameters: {gain: 26, shape: 64, stereo: 1}
+          comment: 'Bow noise: the hiss of the hair on the strings'
+        - type: filter
+          id: 13
+          parameters: {bandpass: 1, frequency: 96, highpass: 0, lowpass: 0, resonance: 64, stereo: 1}
+          comment: 'a band of it, around the brightness of the strings'
+        - type: addp
+          id: 14
+          parameters: {stereo: 1}
+        - type: belleq
+          id: 15
+          parameters: {bandwidth: 20, frequency: 58, gain: 84, stereo: 1}
+          comment: A harsh peak at 2.9 kHz
+        - type: ladder
+          id: 16
+          parameters: {drive: 36, frequency: 80, resonance: 20, stereo: 1}
+          bind: {drive: {p: 1, min: 0, max: 96}}
+          comment: 'intensity: drive, the bow pressed hard'
+        - type: filter
+          id: 17
+          parameters: {bandpass: 0, frequency: 24, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: 'Low cut at 250 Hz: high strings'
+        - type: envelope
+          id: 18
+          parameters: {attack: 32, curve: 40, decay: 80, gain: 128, release: 72, stereo: 1, sustain: 72}
+          comment: 'Fast attack, a short accent, then a lower sustain'
+        - type: mulp
+          id: 19
+          parameters: {stereo: 1}
+        - type: width
+          id: 20
+          parameters: {lowcut: 19, width: 52}

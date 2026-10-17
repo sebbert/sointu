@@ -1,0 +1,106 @@
+name: Horror pad hollow
+comment: 'A hollow pad with squares an octave below, a little dissonant: emptiness. Suggested notes: C-2 to C-4. Knobs: brightness, dissonance (a semitone above every note), movement of the filter, hollow (squares an octave below). Go synth and wasm player only.'
+numvoices: 4
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 28, p2: 24, p3: 64, p4: 100, p5: 88, p6: 94}
+      comment: 'The Horror pad module; its knobs: brightness, dissonance, movement, hollow, attack, release'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 32, outgain: 42, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror pad
+      comment: 'A slow pad of 16 detuned saws, optionally a semitone above each note and squares below, through a drifting low-pass. Stereo out. Bandlimited oscillators, ladder and width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: brightness, default: 40}
+        - {name: dissonance, default: 48}
+        - {name: movement, default: 64}
+        - {name: hollow, default: 0}
+        - {name: attack, default: 86}
+        - {name: release, default: 92}
+      units:
+        - type: oscillator
+          id: 1
+          parameters: {bandlimit: 1, color: 128, detune: 76, gain: 24, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 3}
+          comment: 'Saws, four a side'
+        - type: oscillator
+          id: 2
+          parameters: {bandlimit: 1, color: 128, detune: 51, gain: 24, lfo: 0, phase: 76, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 3}
+          comment: 'four more, the other way'
+        - type: addp
+          id: 3
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 4
+          parameters: {bandlimit: 1, color: 128, detune: 70, gain: 14, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 65, type: 1, unison: 1}
+          bind: {gain: {p: 2, min: 0, max: 36}}
+          comment: 'dissonance: saws a semitone above: every note becomes a minor second'
+        - type: addp
+          id: 5
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 6
+          parameters: {bandlimit: 1, color: 64, detune: 62, gain: 0, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 52, type: 2, unison: 0}
+          bind: {gain: {p: 4, min: 0, max: 48}}
+          comment: 'hollow: a square an octave below'
+        - type: addp
+          id: 7
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 8
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 44, lfo: 1, phase: 0, shape: 64, stereo: 0, transpose: 9, type: 0, unison: 0}
+          comment: 'movement: the filter drifts, about once in 14 s...'
+        - type: oscillator
+          id: 9
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 36, lfo: 1, phase: 40, shape: 64, stereo: 0, transpose: 17, type: 0, unison: 0}
+          comment: ...another 1.6 times as fast...
+        - type: addp
+          id: 10
+          parameters: {stereo: 0}
+        - type: noise
+          id: 11
+          parameters: {gain: 128, shape: 64, stereo: 0}
+          comment: '...plus a random wander, so that the movement never repeats'
+        - type: filter
+          id: 12
+          parameters: {bandpass: 0, frequency: 3, highpass: 0, lowpass: 1, resonance: 128, stereo: 0}
+          comment: ...low-passed at 3.9 Hz...
+        - type: dbgain
+          id: 13
+          parameters: {decibels: 113, stereo: 0}
+          comment: ...and raised to a useful level
+        - type: addp
+          id: 14
+          parameters: {stereo: 0}
+        - type: send
+          id: 15
+          parameters: {amount: 68, port: 1, sendpop: 0, stereo: 0, target: 1, voice: 0}
+          comment: 'The drift also moves the spread of the saws a little, so that their beating does not repeat'
+        - type: send
+          id: 16
+          parameters: {amount: 67, port: 0, sendpop: 1, stereo: 0, target: 17, voice: 0}
+          bind: {amount: {p: 3, min: 64, max: 70}}
+        - type: ladder
+          id: 17
+          parameters: {drive: 0, frequency: 30, resonance: 24, stereo: 1}
+          bind: {frequency: {p: 1, min: 16, max: 60}}
+          comment: 'brightness: 220 Hz to 3.5 kHz'
+        - type: filter
+          id: 18
+          parameters: {bandpass: 0, frequency: 10, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: Low cut
+        - type: envelope
+          id: 19
+          parameters: {attack: 86, curve: 0, decay: 80, gain: 128, release: 92, stereo: 1, sustain: 128}
+          bind: {attack: 5, release: 6}
+          comment: 'swell is the fade in, release the fade out after the note'
+        - type: mulp
+          id: 20
+          parameters: {stereo: 1}
+        - type: width
+          id: 21
+          parameters: {lowcut: 19, width: 48}

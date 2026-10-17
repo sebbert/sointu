@@ -1,0 +1,103 @@
+name: Horror strings low swell
+comment: 'Low strings in a long crescendo (3 s) that darkly opens up as it grows: something approaching. Suggested notes: C-1 to C-3. Knobs: intensity is how far the swell brightens, dissonance adds a section a semitone above, attack the length of the crescendo. Go synth and wasm player only.'
+numvoices: 4
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 64, p2: 0, p3: 90, p4: 88}
+      comment: 'The Horror low swell strings module; its knobs: intensity, dissonance, attack, release'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 22, outgain: 43, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror low swell strings
+      comment: 'Cellos and basses in a long crescendo that brightens as it grows. Stereo out. Bandlimited oscillators, ladder and width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: intensity, default: 64}
+        - {name: dissonance, default: 0}
+        - {name: attack, default: 90}
+        - {name: release, default: 88}
+      units:
+        - type: envelope
+          id: 1
+          parameters: {attack: 90, curve: 0, decay: 80, gain: 128, release: 88, stereo: 0, sustain: 128}
+          bind: {attack: 3, release: 4}
+          comment: The crescendo opens the filter as it gets louder
+        - type: send
+          id: 2
+          parameters: {amount: 78, port: 0, sendpop: 1, stereo: 0, target: 17, voice: 0}
+          bind: {amount: {p: 1, min: 64, max: 92}}
+          comment: 'intensity: how far the crescendo brightens'
+        - type: oscillator
+          id: 3
+          parameters: {bandlimit: 1, color: 128, detune: 68, gain: 34, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 2}
+          comment: 'Saws, the players of the section: detune is how far apart they are'
+        - type: oscillator
+          id: 4
+          parameters: {bandlimit: 1, color: 128, detune: 60, gain: 34, lfo: 0, phase: 76, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 2}
+          comment: 'More, detuned the other way and a little further, half a cycle later: the two sides equally loud from the start of a note'
+        - type: addp
+          id: 5
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 6
+          parameters: {bandlimit: 1, color: 128, detune: 60, gain: 24, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 52, type: 1, unison: 1}
+          comment: Basses an octave below
+        - type: addp
+          id: 7
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 8
+          parameters: {bandlimit: 1, color: 128, detune: 70, gain: 0, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 65, type: 1, unison: 1}
+          bind: {gain: {p: 2, min: 0, max: 26}}
+          comment: 'dissonance: a section a semitone above'
+        - type: addp
+          id: 9
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 10
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 1, phase: 0, shape: 64, stereo: 0, transpose: 82, type: 0, unison: 0}
+          comment: 'Vibrato, 4.8 Hz'
+        - type: send
+          id: 11
+          parameters: {amount: 65, port: 1, sendpop: 0, stereo: 0, target: 3, voice: 0}
+        - type: send
+          id: 12
+          parameters: {amount: 65, port: 1, sendpop: 1, stereo: 0, target: 4, voice: 0}
+        - type: noise
+          id: 13
+          parameters: {gain: 8, shape: 64, stereo: 1}
+          comment: 'Bow noise: the hiss of the hair on the strings'
+        - type: filter
+          id: 14
+          parameters: {bandpass: 1, frequency: 56, highpass: 0, lowpass: 0, resonance: 64, stereo: 1}
+          comment: 'a band of it, around the brightness of the strings'
+        - type: addp
+          id: 15
+          parameters: {stereo: 1}
+        - type: belleq
+          id: 16
+          parameters: {bandwidth: 24, frequency: 16, gain: 76, stereo: 1}
+          comment: 'The body of cellos and basses, near 220 Hz'
+        - type: ladder
+          id: 17
+          parameters: {drive: 16, frequency: 14, resonance: 16, stereo: 1}
+          comment: Dark at the start of the swell
+        - type: filter
+          id: 18
+          parameters: {bandpass: 0, frequency: 6, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: Low cut at 15 Hz
+        - type: envelope
+          id: 19
+          parameters: {attack: 90, curve: 0, decay: 80, gain: 128, release: 88, stereo: 1, sustain: 128}
+          bind: {attack: 3, release: 4}
+          comment: 'The crescendo: attack is how long it takes'
+        - type: mulp
+          id: 20
+          parameters: {stereo: 1}
+        - type: width
+          id: 21
+          parameters: {lowcut: 22, width: 52}

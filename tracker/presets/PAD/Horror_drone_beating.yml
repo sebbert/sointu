@@ -1,0 +1,109 @@
+name: Horror drone beating
+comment: 'A dark drone of detuned saws beating slowly against each other, the low-pass breathing. Suggested notes: C-1 to C-3. dissonance adds saws a semitone above: the beating gets fast and sick. Go synth and wasm player only.'
+numvoices: 2
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 40, p2: 0, p3: 64, p4: 90, p5: 94}
+      comment: 'The Horror beating drone module; its knobs: intensity, dissonance, movement, swell, release'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 11, outgain: 29, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror beating drone
+      comment: 'Detuned saws that beat against each other through a slowly breathing low-pass. Stereo out. Bandlimited oscillators, ladder, softclip and width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: intensity, default: 40}
+        - {name: dissonance, default: 0}
+        - {name: movement, default: 64}
+        - {name: swell, default: 90}
+        - {name: release, default: 94}
+      units:
+        - type: oscillator
+          id: 1
+          parameters: {bandlimit: 1, color: 128, detune: 67, gain: 32, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 2}
+          comment: 'Three saws a side at the note, a few cents apart: they beat slowly'
+        - type: oscillator
+          id: 2
+          parameters: {bandlimit: 1, color: 128, detune: 60, gain: 0, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 65, type: 1, unison: 1}
+          bind: {gain: {p: 2, min: 0, max: 34}}
+          comment: 'dissonance: two more a semitone above, which beat fast against the first'
+        - type: addp
+          id: 3
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 4
+          parameters: {bandlimit: 1, color: 128, detune: 63, gain: 22, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 52, type: 1, unison: 0}
+          comment: An octave below
+        - type: addp
+          id: 5
+          parameters: {stereo: 1}
+        - type: filter
+          id: 6
+          parameters: {bandpass: 0, frequency: 8, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: 'Low cut at 27 Hz, against an offset that the drive below would make'
+        - type: oscillator
+          id: 7
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 44, lfo: 1, phase: 0, shape: 64, stereo: 0, transpose: 7, type: 0, unison: 0}
+          comment: 'movement: the filter breathes, about once in 16 s...'
+        - type: oscillator
+          id: 8
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 36, lfo: 1, phase: 40, shape: 64, stereo: 0, transpose: 15, type: 0, unison: 0}
+          comment: ...another 1.6 times as fast...
+        - type: addp
+          id: 9
+          parameters: {stereo: 0}
+        - type: noise
+          id: 10
+          parameters: {gain: 128, shape: 64, stereo: 0}
+          comment: '...plus a random wander, so that the movement never repeats'
+        - type: filter
+          id: 11
+          parameters: {bandpass: 0, frequency: 3, highpass: 0, lowpass: 1, resonance: 128, stereo: 0}
+          comment: ...low-passed at 3.9 Hz...
+        - type: dbgain
+          id: 12
+          parameters: {decibels: 113, stereo: 0}
+          comment: ...and raised to a useful level
+        - type: addp
+          id: 13
+          parameters: {stereo: 0}
+        - type: send
+          id: 14
+          parameters: {amount: 67, port: 0, sendpop: 1, stereo: 0, target: 17, voice: 0}
+          bind: {amount: {p: 3, min: 64, max: 70}}
+        - type: oscillator
+          id: 15
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 1, phase: 0, shape: 64, stereo: 0, transpose: -10, type: 1, unison: 0}
+          comment: 'and its resonance, once in 43 s'
+        - type: send
+          id: 16
+          parameters: {amount: 72, port: 1, sendpop: 1, stereo: 0, target: 17, voice: 0}
+          bind: {amount: {p: 3, min: 64, max: 80}}
+        - type: ladder
+          id: 17
+          parameters: {drive: 24, frequency: 27, resonance: 56, stereo: 1}
+          bind: {frequency: {p: 1, min: 18, max: 46}}
+          comment: 'intensity: the low-pass opens from 280 Hz to 2 kHz'
+        - type: softclip
+          id: 18
+          parameters: {drive: 8, knee: 64, oversample: 0, stereo: 1}
+          bind: {drive: {p: 1, min: 0, max: 24}}
+        - type: filter
+          id: 19
+          parameters: {bandpass: 0, frequency: 6, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: 'Low cut again: the drive bends the saws unevenly'
+        - type: envelope
+          id: 20
+          parameters: {attack: 90, curve: 0, decay: 80, gain: 128, release: 94, stereo: 1, sustain: 128}
+          bind: {attack: 4, release: 5}
+          comment: 'swell is the fade in, release the fade out after the note'
+        - type: mulp
+          id: 21
+          parameters: {stereo: 1}
+        - type: width
+          id: 22
+          parameters: {lowcut: 19, width: 80}

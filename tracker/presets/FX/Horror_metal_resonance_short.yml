@@ -1,0 +1,144 @@
+name: Horror metal resonance short
+comment: 'The struck metal shorter and harder: a pipe hit in a boiler room. Suggested notes: C-3 to C-5. Go synth and wasm player only.'
+numvoices: 4
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 16, p2: 112}
+      comment: 'The Horror metal resonance module; its knobs: ring, clank'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 56, outgain: 75, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror metal resonance
+      comment: 'A struck metal plate: inharmonic partials, the high ones dying first, and a clank. Stereo out. Curved envelopes and width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: ring, default: 64}
+        - {name: clank, default: 64}
+      units:
+        - type: oscillator
+          id: 1
+          parameters: {bandlimit: 0, color: 64, detune: 62, gain: 80, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+          comment: 'Partials of a struck plate: sines at 1.00, 1.59, 2.14, 2.83, 3.50, 4.67 times the note'
+        - type: envelope
+          id: 2
+          parameters: {attack: 0, curve: 80, decay: 98, gain: 128, release: 100, stereo: 0, sustain: 0}
+          bind: {decay: {p: 1, min: 88, max: 108}}
+          comment: 'Each decays: the higher, the sooner. ring: how long'
+        - type: mulp
+          id: 3
+          parameters: {stereo: 0}
+        - type: pan
+          id: 4
+          parameters: {panning: 64, stereo: 0}
+        - type: oscillator
+          id: 5
+          parameters: {bandlimit: 0, color: 64, detune: 68, gain: 60, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 72, type: 0, unison: 0}
+        - type: envelope
+          id: 6
+          parameters: {attack: 0, curve: 80, decay: 94, gain: 128, release: 96, stereo: 0, sustain: 0}
+          bind: {decay: {p: 1, min: 84, max: 104}}
+        - type: mulp
+          id: 7
+          parameters: {stereo: 0}
+        - type: pan
+          id: 8
+          parameters: {panning: 36, stereo: 0}
+        - type: addp
+          id: 9
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 10
+          parameters: {bandlimit: 0, color: 64, detune: 73, gain: 54, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 77, type: 0, unison: 0}
+        - type: envelope
+          id: 11
+          parameters: {attack: 0, curve: 80, decay: 90, gain: 128, release: 92, stereo: 0, sustain: 0}
+          bind: {decay: {p: 1, min: 80, max: 100}}
+        - type: mulp
+          id: 12
+          parameters: {stereo: 0}
+        - type: pan
+          id: 13
+          parameters: {panning: 92, stereo: 0}
+        - type: addp
+          id: 14
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 15
+          parameters: {bandlimit: 0, color: 64, detune: 67, gain: 44, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 82, type: 0, unison: 0}
+        - type: envelope
+          id: 16
+          parameters: {attack: 0, curve: 80, decay: 86, gain: 128, release: 88, stereo: 0, sustain: 0}
+          bind: {decay: {p: 1, min: 76, max: 96}}
+        - type: mulp
+          id: 17
+          parameters: {stereo: 0}
+        - type: pan
+          id: 18
+          parameters: {panning: 50, stereo: 0}
+        - type: addp
+          id: 19
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 20
+          parameters: {bandlimit: 0, color: 64, detune: 42, gain: 34, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 86, type: 0, unison: 0}
+        - type: envelope
+          id: 21
+          parameters: {attack: 0, curve: 80, decay: 82, gain: 128, release: 84, stereo: 0, sustain: 0}
+          bind: {decay: {p: 1, min: 72, max: 92}}
+        - type: mulp
+          id: 22
+          parameters: {stereo: 0}
+        - type: pan
+          id: 23
+          parameters: {panning: 80, stereo: 0}
+        - type: addp
+          id: 24
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 25
+          parameters: {bandlimit: 0, color: 64, detune: 46, gain: 26, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 91, type: 0, unison: 0}
+        - type: envelope
+          id: 26
+          parameters: {attack: 0, curve: 80, decay: 78, gain: 128, release: 80, stereo: 0, sustain: 0}
+          bind: {decay: {p: 1, min: 68, max: 88}}
+        - type: mulp
+          id: 27
+          parameters: {stereo: 0}
+        - type: pan
+          id: 28
+          parameters: {panning: 28, stereo: 0}
+        - type: addp
+          id: 29
+          parameters: {stereo: 1}
+        - type: noise
+          id: 30
+          parameters: {gain: 128, shape: 64, stereo: 0}
+          comment: The clank
+        - type: filter
+          id: 31
+          parameters: {bandpass: 1, frequency: 72, highpass: 0, lowpass: 0, resonance: 40, stereo: 0}
+        - type: envelope
+          id: 32
+          parameters: {attack: 0, curve: 80, decay: 52, gain: 64, release: 52, stereo: 0, sustain: 0}
+          bind: {gain: {p: 2, min: 0, max: 128}}
+          comment: 'clank: the level of the strike'
+        - type: mulp
+          id: 33
+          parameters: {stereo: 0}
+        - type: pan
+          id: 34
+          parameters: {panning: 64, stereo: 0}
+        - type: addp
+          id: 35
+          parameters: {stereo: 1}
+        - type: filter
+          id: 36
+          parameters: {bandpass: 0, frequency: 12, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: Low cut
+        - type: width
+          id: 37
+          parameters: {lowcut: 19, width: 60}

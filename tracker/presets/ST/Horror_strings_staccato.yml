@@ -1,0 +1,75 @@
+name: Horror strings staccato
+comment: 'Short accented low strings for pulsing ostinatos, the Herrmann chase. Suggested notes: C-1 to C-4, in 8ths and 16ths. intensity is the accent, length the stroke. Go synth and wasm player only.'
+numvoices: 8
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 64, p2: 64}
+      comment: 'The Horror staccato strings module; its knobs: intensity, length'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 16, outgain: 44, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror staccato strings
+      comment: 'Short, accented string strokes for ostinatos: detuned saws through a filter that opens on the accent. Stereo out. Bandlimited oscillators, ladder and width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: intensity, default: 64}
+        - {name: length, default: 64}
+      units:
+        - type: oscillator
+          id: 1
+          parameters: {bandlimit: 1, color: 128, detune: 68, gain: 34, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 2}
+          comment: 'Saws, the players of the section: detune is how far apart they are'
+        - type: oscillator
+          id: 2
+          parameters: {bandlimit: 1, color: 128, detune: 60, gain: 34, lfo: 0, phase: 76, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 2}
+          comment: 'More, detuned the other way and a little further, half a cycle later: the two sides equally loud from the start of a note'
+        - type: addp
+          id: 3
+          parameters: {stereo: 1}
+        - type: noise
+          id: 4
+          parameters: {gain: 20, shape: 64, stereo: 1}
+          bind: {gain: {p: 1, min: 6, max: 34}}
+          comment: 'Bow noise: the hiss of the hair on the strings'
+        - type: filter
+          id: 5
+          parameters: {bandpass: 1, frequency: 64, highpass: 0, lowpass: 0, resonance: 64, stereo: 1}
+          comment: 'a band of it, around the brightness of the strings'
+        - type: addp
+          id: 6
+          parameters: {stereo: 1}
+        - type: envelope
+          id: 7
+          parameters: {attack: 0, curve: 64, decay: 60, gain: 128, release: 60, stereo: 0, sustain: 0}
+          comment: The accent opens the filter for a moment
+        - type: send
+          id: 8
+          parameters: {amount: 84, port: 0, sendpop: 1, stereo: 0, target: 9, voice: 0}
+          bind: {amount: {p: 1, min: 72, max: 96}}
+          comment: 'intensity: how bright the accent is'
+        - type: ladder
+          id: 9
+          parameters: {drive: 24, frequency: 30, resonance: 12, stereo: 1}
+        - type: belleq
+          id: 10
+          parameters: {bandwidth: 24, frequency: 20, gain: 76, stereo: 1}
+          comment: The body
+        - type: filter
+          id: 11
+          parameters: {bandpass: 0, frequency: 8, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: Low cut
+        - type: envelope
+          id: 12
+          parameters: {attack: 36, curve: 48, decay: 72, gain: 128, release: 64, stereo: 1, sustain: 0}
+          bind: {decay: {p: 2, min: 60, max: 84}}
+          comment: 'length: short strokes, 140 ms at 64'
+        - type: mulp
+          id: 13
+          parameters: {stereo: 1}
+        - type: width
+          id: 14
+          parameters: {lowcut: 22, width: 64}

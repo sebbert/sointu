@@ -1,0 +1,73 @@
+name: Horror heartbeat
+comment: 'A heartbeat, lub-dub, felt more than heard. One note a beat (60 to 140 BPM: faster is fear); suggested notes: F-1 to C-2. Knobs: tone, dub the level of the second beat. Go synth and wasm player only.'
+numvoices: 2
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 40, p2: 104}
+      comment: 'The Horror heartbeat module; its knobs: tone, dub'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 24, outgain: 98, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror heartbeat
+      comment: 'A heartbeat: a thump dropping in pitch, and a second one 0.28 s later. One note a beat. Stereo out, mono. Curved envelopes and softclip: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: tone, default: 40}
+        - {name: dub, default: 104}
+      units:
+        - type: envelope
+          id: 1
+          parameters: {attack: 0, curve: 80, decay: 62, gain: 128, release: 62, stereo: 0, sustain: 0}
+          comment: 'The thump: the pitch drops'
+        - type: send
+          id: 2
+          parameters: {amount: 70, port: 0, sendpop: 1, stereo: 0, target: 3, voice: 0}
+          comment: an octave in 70 ms
+        - type: oscillator
+          id: 3
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+          comment: 'A sine at the note (A-1: 55 Hz)'
+        - type: noise
+          id: 4
+          parameters: {gain: 50, shape: 64, stereo: 0}
+          comment: and a little noise
+        - type: filter
+          id: 5
+          parameters: {bandpass: 0, frequency: 19, highpass: 0, lowpass: 1, resonance: 110, stereo: 0}
+          bind: {frequency: {p: 1, min: 10, max: 40}}
+          comment: 'tone: from muffled to close'
+        - type: addp
+          id: 6
+          parameters: {stereo: 0}
+        - type: envelope
+          id: 7
+          parameters: {attack: 8, curve: 72, decay: 68, gain: 128, release: 68, stereo: 0, sustain: 0}
+          comment: A short thump
+        - type: mulp
+          id: 8
+          parameters: {stereo: 0}
+        - type: softclip
+          id: 9
+          parameters: {drive: 8, knee: 72, oversample: 0, stereo: 0}
+        - type: pan
+          id: 10
+          parameters: {panning: 64, stereo: 0}
+        - type: delay
+          id: 11
+          parameters: {damp: 0, dry: 128, feedback: 0, notetracking: 0, pregain: 110, stereo: 1}
+          varargs: [12348, 12348]
+          bind: {pregain: {p: 2, min: 64, max: 120}}
+          comment: 'The second beat, 0.28 s later: lub-dub. dub is its level'
+        - type: filter
+          id: 12
+          parameters: {bandpass: 0, frequency: 6, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: Low cut
+        - type: filter
+          id: 13
+          parameters: {bandpass: 0, frequency: 32, highpass: 0, lowpass: 1, resonance: 128, stereo: 1}
+          bind: {frequency: {p: 1, min: 14, max: 70}}
+          comment: 'tone: the high cut, muffled at 0'

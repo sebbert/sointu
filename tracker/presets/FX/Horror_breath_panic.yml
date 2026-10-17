@@ -1,0 +1,80 @@
+name: Horror breath panic
+comment: 'Fast, panicked breathing. Hold the note; the pitch does not matter. Knob: rate. Go synth and wasm player only.'
+numvoices: 1
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 116}
+      comment: 'The Horror breath module; its knobs: rate'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 33, outgain: 87, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror breath
+      comment: 'Breathing: noise through a band near 1 kHz, swelling in and out, brighter on the inhale. Stereo out. width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: rate, default: 64}
+      units:
+        - type: noise
+          id: 1
+          parameters: {gain: 128, shape: 64, stereo: 1}
+          comment: 'Breath: noise'
+        - type: filter
+          id: 2
+          parameters: {bandpass: 1, frequency: 40, highpass: 0, lowpass: 0, resonance: 56, stereo: 1}
+          comment: 'through the mouth: a band near 1 kHz...'
+        - type: filter
+          id: 3
+          parameters: {bandpass: 0, frequency: 112, highpass: 0, lowpass: 1, resonance: 128, stereo: 1}
+          comment: ...softened
+        - type: oscillator
+          id: 4
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 1, phase: 96, shape: 64, stereo: 0, transpose: 38, type: 0, unison: 0}
+          bind: {transpose: {p: 1, min: 18, max: 58}}
+          comment: 'rate: one breath in 4 s at 64, from 8 s to 0.8 s'
+        - type: push
+          id: 5
+          parameters: {stereo: 0}
+        - type: send
+          id: 6
+          parameters: {amount: 76, port: 0, sendpop: 1, stereo: 0, target: 2, voice: 0}
+          comment: Breathing in is brighter than breathing out
+        - type: loadval
+          id: 7
+          parameters: {stereo: 0, value: 128}
+        - type: addp
+          id: 8
+          parameters: {stereo: 0}
+        - type: push
+          id: 9
+          parameters: {stereo: 0}
+        - type: mulp
+          id: 10
+          parameters: {stereo: 0}
+        - type: gain
+          id: 11
+          parameters: {gain: 32, stereo: 0}
+          comment: '(1 + sine)², the swell of each breath, peaks at 4'
+        - type: pan
+          id: 12
+          parameters: {panning: 64, stereo: 0}
+        - type: mulp
+          id: 13
+          parameters: {stereo: 1}
+        - type: filter
+          id: 14
+          parameters: {bandpass: 0, frequency: 16, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: Low cut
+        - type: envelope
+          id: 15
+          parameters: {attack: 76, curve: 0, decay: 80, gain: 128, release: 84, stereo: 1, sustain: 128}
+          comment: 'swell is the fade in, release the fade out after the note'
+        - type: mulp
+          id: 16
+          parameters: {stereo: 1}
+        - type: width
+          id: 17
+          parameters: {lowcut: 19, width: 40}

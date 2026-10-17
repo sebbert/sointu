@@ -1,0 +1,76 @@
+name: Horror strings col legno
+comment: 'Col legno battuto: the wood of the bow on the strings, a dry pitched click for ticking ostinatos. Suggested notes: C-2 to C-5, repeated notes. intensity is the sharpness of the click, ring how long the string rings. Go synth and wasm player only.'
+numvoices: 8
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 64, p2: 64}
+      comment: 'The Horror col legno module; its knobs: intensity, ring'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 28, outgain: 76, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror col legno
+      comment: 'Strings struck with the wood of the bow: a click and a short pitched ring. Stereo out. width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: intensity, default: 64}
+        - {name: ring, default: 64}
+      units:
+        - type: envelope
+          id: 1
+          parameters: {attack: 0, curve: 64, decay: 40, gain: 128, release: 40, stereo: 0, sustain: 0}
+          comment: 'The strike of the wood: very short'
+        - type: push
+          id: 2
+          parameters: {stereo: 0}
+        - type: noise
+          id: 3
+          parameters: {gain: 128, shape: 64, stereo: 0}
+        - type: mulp
+          id: 4
+          parameters: {stereo: 0}
+        - type: filter
+          id: 5
+          parameters: {bandpass: 1, frequency: 85, highpass: 0, lowpass: 0, resonance: 40, stereo: 0}
+          bind: {frequency: {p: 1, min: 60, max: 110}}
+          comment: 'intensity: the click, from a dull knock to a sharp crack'
+        - type: xch
+          id: 6
+          parameters: {stereo: 0}
+        - type: oscillator
+          id: 7
+          parameters: {bandlimit: 0, color: 128, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 1, unison: 0}
+          comment: 'The string, plucked by the strike'
+        - type: mulp
+          id: 8
+          parameters: {stereo: 0}
+        - type: addp
+          id: 9
+          parameters: {stereo: 0}
+        - type: pan
+          id: 10
+          parameters: {panning: 64, stereo: 0}
+        - type: delay
+          id: 11
+          parameters: {damp: 32, dry: 96, feedback: 99, notetracking: 1, pregain: 110, stereo: 1}
+          varargs: [10788, 10798]
+          bind: {feedback: {p: 2, min: 80, max: 118}}
+          comment: 'ring: a comb on the note, how long the string rings after the strike'
+        - type: filter
+          id: 12
+          parameters: {bandpass: 0, frequency: 10, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: Low cut
+        - type: envelope
+          id: 13
+          parameters: {attack: 0, curve: 80, decay: 72, gain: 128, release: 60, stereo: 1, sustain: 0}
+          bind: {decay: {p: 2, min: 60, max: 84}}
+          comment: 'The length of the note, with ring'
+        - type: mulp
+          id: 14
+          parameters: {stereo: 1}
+        - type: width
+          id: 15
+          parameters: {lowcut: 19, width: 64}

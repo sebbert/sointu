@@ -1,0 +1,76 @@
+name: Horror pulse sub
+comment: 'A throbbing sub pulse: dread under the floor, a slow heartbeat of the room. Hold the note. Suggested notes: C-1 to C-2. Knob: rate, 0.5 to 4 pulses a second (not synced: set it to the tempo). Go synth and wasm player only.'
+numvoices: 1
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 64}
+      comment: 'The Horror pulse module; its knobs: rate'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 0, outgain: 90, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror pulse
+      comment: 'A sub throbbing at a free rate: a sine at the note times the fourth power of a slow sine. Stereo out, mono. Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: rate, default: 64}
+      units:
+        - type: oscillator
+          id: 1
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+          comment: A sine at the note
+        - type: oscillator
+          id: 2
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 24, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 76, type: 0, unison: 0}
+          comment: 'and its octave, so small speakers play it'
+        - type: addp
+          id: 3
+          parameters: {stereo: 0}
+        - type: oscillator
+          id: 4
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 1, phase: 96, shape: 64, stereo: 0, transpose: 61, type: 0, unison: 0}
+          bind: {transpose: {p: 1, min: 43, max: 79}}
+          comment: 'The throb: rate 0.5 to 4 times a second, starting at its lowest'
+        - type: loadval
+          id: 5
+          parameters: {stereo: 0, value: 128}
+        - type: addp
+          id: 6
+          parameters: {stereo: 0}
+        - type: push
+          id: 7
+          parameters: {stereo: 0}
+        - type: mulp
+          id: 8
+          parameters: {stereo: 0}
+        - type: push
+          id: 9
+          parameters: {stereo: 0}
+        - type: mulp
+          id: 10
+          parameters: {stereo: 0}
+          comment: 'the fourth power of 1 + sine: a pulse with silence between, the shape set by the power'
+        - type: mulp
+          id: 11
+          parameters: {stereo: 0}
+        - type: gain
+          id: 12
+          parameters: {gain: 16, stereo: 0}
+          comment: '(1 + sine)⁴ peaks at 16: back to 2'
+        - type: pan
+          id: 13
+          parameters: {panning: 64, stereo: 0}
+        - type: filter
+          id: 14
+          parameters: {bandpass: 0, frequency: 6, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: Low cut
+        - type: envelope
+          id: 15
+          parameters: {attack: 60, curve: 0, decay: 80, gain: 128, release: 80, stereo: 1, sustain: 128}
+          comment: 'swell is the fade in, release the fade out after the note'
+        - type: mulp
+          id: 16
+          parameters: {stereo: 1}

@@ -1,0 +1,49 @@
+name: Horror sub drop long
+comment: 'A slow, deep sub drop: three octaves over 4 s. Suggested notes: C-1 to F-1. Go synth and wasm player only.'
+numvoices: 1
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 112, p2: 128}
+      comment: 'The Horror sub drop module; its knobs: time, depth'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 0, outgain: 128, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror sub drop
+      comment: 'A sine dropping in pitch to the note, long: the sub drop. Stereo out, mono. Curved envelopes and softclip: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: time, default: 64}
+        - {name: depth, default: 64}
+      units:
+        - type: envelope
+          id: 1
+          parameters: {attack: 0, curve: 40, decay: 88, gain: 128, release: 88, stereo: 0, sustain: 0}
+          bind: {decay: {p: 1, min: 76, max: 100}}
+          comment: 'time: how long the drop takes (1.5 s at 88)'
+        - type: send
+          id: 2
+          parameters: {amount: 76, port: 0, sendpop: 1, stereo: 0, target: 3, voice: 0}
+          bind: {amount: {p: 2, min: 70, max: 82}}
+          comment: 'depth: the sine starts up to 36 semitones above the note (24 at 64)'
+        - type: oscillator
+          id: 3
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+          comment: A sine
+        - type: envelope
+          id: 4
+          parameters: {attack: 12, curve: 56, decay: 96, gain: 128, release: 72, stereo: 0, sustain: 0}
+          comment: 'The level: a few ms in, then a long fade (5 s)'
+        - type: mulp
+          id: 5
+          parameters: {stereo: 0}
+        - type: softclip
+          id: 6
+          parameters: {drive: 4, knee: 80, oversample: 0, stereo: 0}
+          comment: A little warmth
+        - type: pan
+          id: 7
+          parameters: {panning: 64, stereo: 0}

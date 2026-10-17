@@ -1,0 +1,116 @@
+name: Horror toy piano
+comment: 'A toy piano in an empty nursery: clunky, bright, inharmonic. Suggested notes: C-4 to C-6. Knobs: detune adds a second rod out of tune, ring is the length. Go synth and wasm player only.'
+numvoices: 8
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 0, p2: 64}
+      comment: 'The Horror toy piano module; its knobs: detune, ring'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 67, outgain: 89, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror toy piano
+      comment: 'A toy piano: struck rods with the partials of a free bar, a wooden thunk, optionally a second rod out of tune. Stereo out. Curved envelopes and width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: detune, default: 0}
+        - {name: ring, default: 64}
+      units:
+        - type: oscillator
+          id: 1
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 80, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+          comment: 'The rod: sines at 1, 2.76, 5.4 and 8.93 times the note, the partials of a free bar, the high ones dying first'
+        - type: envelope
+          id: 2
+          parameters: {attack: 0, curve: 96, decay: 84, gain: 128, release: 84, stereo: 0, sustain: 0}
+          bind: {decay: {p: 2, min: 74, max: 94}}
+        - type: mulp
+          id: 3
+          parameters: {stereo: 0}
+        - type: oscillator
+          id: 4
+          parameters: {bandlimit: 0, color: 64, detune: 37, gain: 44, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 82, type: 0, unison: 0}
+        - type: envelope
+          id: 5
+          parameters: {attack: 0, curve: 96, decay: 74, gain: 128, release: 74, stereo: 0, sustain: 0}
+          bind: {decay: {p: 2, min: 64, max: 84}}
+        - type: mulp
+          id: 6
+          parameters: {stereo: 0}
+        - type: addp
+          id: 7
+          parameters: {stereo: 0}
+        - type: oscillator
+          id: 8
+          parameters: {bandlimit: 0, color: 64, detune: 77, gain: 24, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 93, type: 0, unison: 0}
+        - type: envelope
+          id: 9
+          parameters: {attack: 0, curve: 96, decay: 66, gain: 128, release: 66, stereo: 0, sustain: 0}
+          bind: {decay: {p: 2, min: 56, max: 76}}
+        - type: mulp
+          id: 10
+          parameters: {stereo: 0}
+        - type: addp
+          id: 11
+          parameters: {stereo: 0}
+        - type: oscillator
+          id: 12
+          parameters: {bandlimit: 0, color: 64, detune: 58, gain: 12, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 102, type: 0, unison: 0}
+        - type: envelope
+          id: 13
+          parameters: {attack: 0, curve: 96, decay: 60, gain: 128, release: 60, stereo: 0, sustain: 0}
+          bind: {decay: {p: 2, min: 50, max: 70}}
+        - type: mulp
+          id: 14
+          parameters: {stereo: 0}
+        - type: addp
+          id: 15
+          parameters: {stereo: 0}
+        - type: noise
+          id: 16
+          parameters: {gain: 64, shape: 64, stereo: 0}
+          comment: 'The hammer: a thunk'
+        - type: filter
+          id: 17
+          parameters: {bandpass: 0, frequency: 40, highpass: 0, lowpass: 1, resonance: 100, stereo: 0}
+        - type: envelope
+          id: 18
+          parameters: {attack: 0, curve: 80, decay: 44, gain: 128, release: 44, stereo: 0, sustain: 0}
+        - type: mulp
+          id: 19
+          parameters: {stereo: 0}
+        - type: addp
+          id: 20
+          parameters: {stereo: 0}
+        - type: oscillator
+          id: 21
+          parameters: {bandlimit: 0, color: 64, detune: 88, gain: 0, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+          bind: {gain: {p: 1, min: 0, max: 64}}
+          comment: 'detune: a second rod, a third of a semitone sharp'
+        - type: envelope
+          id: 22
+          parameters: {attack: 0, curve: 96, decay: 84, gain: 128, release: 84, stereo: 0, sustain: 0}
+        - type: mulp
+          id: 23
+          parameters: {stereo: 0}
+        - type: addp
+          id: 24
+          parameters: {stereo: 0}
+        - type: pan
+          id: 25
+          parameters: {panning: 64, stereo: 0}
+        - type: filter
+          id: 26
+          parameters: {bandpass: 0, frequency: 14, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: Low cut
+        - type: delay
+          id: 27
+          parameters: {damp: 0, dry: 128, feedback: 0, notetracking: 0, pregain: 50, stereo: 1}
+          varargs: [431, 613]
+          comment: A small wooden case
+        - type: width
+          id: 28
+          parameters: {lowcut: 19, width: 64}

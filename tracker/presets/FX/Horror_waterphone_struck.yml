@@ -1,0 +1,132 @@
+name: Horror waterphone struck
+comment: 'A struck waterphone: a ringing hit of high rods, the pitch sliding as it decays. Suggested notes: C-4 to C-6; leave space for the hall. Knobs: water is how far the pitch slides, attack and sustain shape the stroke. Go synth and wasm player only.'
+numvoices: 4
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 96, p2: 0, p3: 0}
+      comment: 'The Horror waterphone module; its knobs: water, attack, sustain'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 90, outgain: 72, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror waterphone
+      comment: 'A waterphone: high inharmonic rods, their pitch sliding as the water moves, shimmering. Stereo out. width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: water, default: 64}
+        - {name: attack, default: 72}
+        - {name: sustain, default: 64}
+      units:
+        - type: oscillator
+          id: 1
+          parameters: {bandlimit: 0, color: 64, detune: 61, gain: 60, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+          comment: 'The partials: sines at 1.00, 1.31, 1.83, 2.47, 2.93 times the note, not harmonics, each in its own place'
+        - type: pan
+          id: 2
+          parameters: {panning: 64, stereo: 0}
+        - type: oscillator
+          id: 3
+          parameters: {bandlimit: 0, color: 64, detune: 46, gain: 50, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 69, type: 0, unison: 0}
+        - type: pan
+          id: 4
+          parameters: {panning: 36, stereo: 0}
+        - type: addp
+          id: 5
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 6
+          parameters: {bandlimit: 0, color: 64, detune: 91, gain: 44, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 74, type: 0, unison: 0}
+        - type: pan
+          id: 7
+          parameters: {panning: 92, stereo: 0}
+        - type: addp
+          id: 8
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 9
+          parameters: {bandlimit: 0, color: 64, detune: 45, gain: 38, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 80, type: 0, unison: 0}
+        - type: pan
+          id: 10
+          parameters: {panning: 50, stereo: 0}
+        - type: addp
+          id: 11
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 12
+          parameters: {bandlimit: 0, color: 64, detune: 36, gain: 30, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 83, type: 0, unison: 0}
+        - type: pan
+          id: 13
+          parameters: {panning: 80, stereo: 0}
+        - type: addp
+          id: 14
+          parameters: {stereo: 1}
+        - type: noise
+          id: 15
+          parameters: {gain: 128, shape: 64, stereo: 0}
+          comment: 'The water: a random wander of the pitch of every rod...'
+        - type: filter
+          id: 16
+          parameters: {bandpass: 0, frequency: 4, highpass: 0, lowpass: 1, resonance: 128, stereo: 0}
+          comment: ...low-passed at 6.9 Hz...
+        - type: dbgain
+          id: 17
+          parameters: {decibels: 111, stereo: 0}
+          comment: ...and raised to a useful level
+        - type: send
+          id: 18
+          parameters: {amount: 65, port: 0, sendpop: 0, stereo: 0, target: 1, voice: 0}
+          bind: {amount: {p: 1, min: 64, max: 66}}
+          comment: 'water: how far the pitch slides, up to 2 semitones'
+        - type: send
+          id: 19
+          parameters: {amount: 65, port: 0, sendpop: 0, stereo: 0, target: 3, voice: 0}
+          bind: {amount: {p: 1, min: 64, max: 66}}
+        - type: send
+          id: 20
+          parameters: {amount: 65, port: 0, sendpop: 0, stereo: 0, target: 6, voice: 0}
+          bind: {amount: {p: 1, min: 64, max: 66}}
+        - type: send
+          id: 21
+          parameters: {amount: 65, port: 0, sendpop: 0, stereo: 0, target: 9, voice: 0}
+          bind: {amount: {p: 1, min: 64, max: 66}}
+        - type: send
+          id: 22
+          parameters: {amount: 65, port: 0, sendpop: 1, stereo: 0, target: 12, voice: 0}
+          bind: {amount: {p: 1, min: 64, max: 66}}
+        - type: oscillator
+          id: 23
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 40, lfo: 1, phase: 0, shape: 64, stereo: 0, transpose: 85, type: 0, unison: 0}
+          comment: A fast shimmer
+        - type: send
+          id: 24
+          parameters: {amount: 66, port: 1, sendpop: 0, stereo: 0, target: 1, voice: 0}
+        - type: send
+          id: 25
+          parameters: {amount: 66, port: 1, sendpop: 0, stereo: 0, target: 3, voice: 0}
+        - type: send
+          id: 26
+          parameters: {amount: 66, port: 1, sendpop: 0, stereo: 0, target: 6, voice: 0}
+        - type: send
+          id: 27
+          parameters: {amount: 66, port: 1, sendpop: 0, stereo: 0, target: 9, voice: 0}
+        - type: send
+          id: 28
+          parameters: {amount: 66, port: 1, sendpop: 1, stereo: 0, target: 12, voice: 0}
+        - type: filter
+          id: 29
+          parameters: {bandpass: 0, frequency: 14, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: Low cut
+        - type: envelope
+          id: 30
+          parameters: {attack: 72, curve: 40, decay: 88, gain: 128, release: 96, stereo: 1, sustain: 64}
+          bind: {attack: 2, sustain: 3}
+          comment: 'bowed: a slow attack; struck: attack 0 and sustain 0'
+        - type: mulp
+          id: 31
+          parameters: {stereo: 1}
+        - type: width
+          id: 32
+          parameters: {lowcut: 19, width: 64}

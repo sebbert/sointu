@@ -1,0 +1,101 @@
+name: Horror strings ponticello
+comment: 'Strings sul ponticello: thin, glassy and hissing, the fundamental almost gone, a quick tremolo. Suggested notes: C-3 to C-6. Knobs: intensity thins it further and adds bow noise, glass moves the whistling resonance, depth and speed are the tremolo. Go synth and wasm player only.'
+numvoices: 6
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 48, p2: 64, p3: 48, p4: 64, p5: 70, p6: 80}
+      comment: 'The Horror ponticello strings module; its knobs: intensity, glass, depth, speed, attack, release'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 8, outgain: 13, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror ponticello strings
+      comment: 'Strings bowed near the bridge: saws with the fundamental cut and narrow resonances high up, tremolo, a lot of bow noise. Stereo out. Bandlimited oscillators, ladder and width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: intensity, default: 48}
+        - {name: glass, default: 64}
+        - {name: depth, default: 48}
+        - {name: speed, default: 64}
+        - {name: attack, default: 70}
+        - {name: release, default: 80}
+      units:
+        - type: oscillator
+          id: 1
+          parameters: {bandlimit: 1, color: 128, detune: 69, gain: 28, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 2}
+          comment: 'Saws, the players of the section: detune is how far apart they are'
+        - type: oscillator
+          id: 2
+          parameters: {bandlimit: 1, color: 128, detune: 59, gain: 28, lfo: 0, phase: 76, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 2}
+          comment: 'More, detuned the other way and a little further, half a cycle later: the two sides equally loud from the start of a note'
+        - type: addp
+          id: 3
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 4
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 1, phase: 0, shape: 64, stereo: 0, transpose: 98, type: 0, unison: 0}
+          bind: {transpose: {p: 4, min: 89, max: 106}}
+          comment: 'Tremolo, 7 to 19 strokes a second (speed)'
+        - type: send
+          id: 5
+          parameters: {amount: 70, port: 5, sendpop: 0, stereo: 0, target: 1, voice: 0}
+          bind: {amount: {p: 3, min: 64, max: 79}}
+        - type: send
+          id: 6
+          parameters: {amount: 70, port: 5, sendpop: 1, stereo: 0, target: 2, voice: 0}
+          bind: {amount: {p: 3, min: 64, max: 79}}
+          comment: depth of the tremolo
+        - type: oscillator
+          id: 7
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 1, phase: 0, shape: 64, stereo: 0, transpose: 86, type: 0, unison: 0}
+          comment: 'Vibrato, 6.1 Hz'
+        - type: send
+          id: 8
+          parameters: {amount: 66, port: 1, sendpop: 0, stereo: 0, target: 1, voice: 0}
+        - type: send
+          id: 9
+          parameters: {amount: 66, port: 1, sendpop: 1, stereo: 0, target: 2, voice: 0}
+        - type: noise
+          id: 10
+          parameters: {gain: 14, shape: 64, stereo: 1}
+          bind: {gain: {p: 1, min: 4, max: 30}}
+          comment: 'Bow noise: the hiss of the hair on the strings'
+        - type: filter
+          id: 11
+          parameters: {bandpass: 1, frequency: 96, highpass: 0, lowpass: 0, resonance: 64, stereo: 1}
+          comment: 'a band of it, around the brightness of the strings'
+        - type: addp
+          id: 12
+          parameters: {stereo: 1}
+        - type: filter
+          id: 13
+          parameters: {bandpass: 0, frequency: 37, highpass: 1, lowpass: 0, resonance: 100, stereo: 1}
+          bind: {frequency: {p: 1, min: 26, max: 56}}
+          comment: 'intensity: the fundamental thinned away, 300 Hz to 1.4 kHz: bowing near the bridge leaves the upper harmonics'
+        - type: belleq
+          id: 14
+          parameters: {bandwidth: 12, frequency: 58, gain: 88, stereo: 1}
+          bind: {frequency: {p: 2, min: 40, max: 76}}
+          comment: 'glass: a narrow resonance, 1.4 to 5 kHz: the glassy whistle of ponticello'
+        - type: belleq
+          id: 15
+          parameters: {bandwidth: 20, frequency: 80, gain: 80, stereo: 1}
+          comment: and a second one near 5.5 kHz
+        - type: filter
+          id: 16
+          parameters: {bandpass: 0, frequency: 124, highpass: 0, lowpass: 1, resonance: 128, stereo: 1}
+          comment: High cut at 6.8 kHz
+        - type: envelope
+          id: 17
+          parameters: {attack: 70, curve: 0, decay: 80, gain: 128, release: 80, stereo: 1, sustain: 128}
+          bind: {attack: 5, release: 6}
+          comment: 'swell is the fade in, release the fade out after the note'
+        - type: mulp
+          id: 18
+          parameters: {stereo: 1}
+        - type: width
+          id: 19
+          parameters: {lowcut: 19, width: 52}

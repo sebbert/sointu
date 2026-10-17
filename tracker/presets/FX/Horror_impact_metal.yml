@@ -1,0 +1,95 @@
+name: Horror impact metal
+comment: 'A metallic impact: the drop and burst with a clang of inharmonic partials ringing over it, into a large hall. Suggested notes: C-1 to C-2. It has its own hall (reverb unit): no send. One voice: each hit cuts the tail of the last; give it two voices for overlapping tails (each a hall: 0.8 MB, 0.3 µs a sample). Curved envelopes, softclip and reverb: Go synth and wasm player only.'
+numvoices: 1
+units:
+    - type: envelope
+      id: 1
+      parameters: {attack: 0, curve: 96, decay: 70, gain: 128, release: 70, stereo: 0, sustain: 0}
+      comment: The pitch drop
+    - type: send
+      id: 2
+      parameters: {amount: 76, port: 0, sendpop: 1, stereo: 0, target: 3, voice: 0}
+      comment: The body starts 24 semitones above the note and drops to it
+    - type: oscillator
+      id: 3
+      parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+      comment: 'The body: a sine dropping to the note'
+    - type: noise
+      id: 4
+      parameters: {gain: 110, shape: 64, stereo: 0}
+      comment: The burst of noise
+    - type: filter
+      id: 5
+      parameters: {bandpass: 0, frequency: 80, highpass: 0, lowpass: 1, resonance: 110, stereo: 0}
+      comment: its brightness
+    - type: envelope
+      id: 6
+      parameters: {attack: 0, curve: 96, decay: 60, gain: 128, release: 60, stereo: 0, sustain: 0}
+    - type: mulp
+      id: 7
+      parameters: {stereo: 0}
+    - type: addp
+      id: 8
+      parameters: {stereo: 0}
+    - type: oscillator
+      id: 9
+      parameters: {bandlimit: 0, color: 64, detune: 70, gain: 44, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 81, type: 0, unison: 0}
+      comment: 'Metal: sines at ratios that are not harmonics'
+    - type: oscillator
+      id: 10
+      parameters: {bandlimit: 0, color: 64, detune: 53, gain: 36, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 86, type: 0, unison: 0}
+    - type: addp
+      id: 11
+      parameters: {stereo: 0}
+    - type: oscillator
+      id: 12
+      parameters: {bandlimit: 0, color: 64, detune: 75, gain: 28, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 93, type: 0, unison: 0}
+    - type: addp
+      id: 13
+      parameters: {stereo: 0}
+    - type: envelope
+      id: 14
+      parameters: {attack: 0, curve: 80, decay: 84, gain: 128, release: 84, stereo: 0, sustain: 0}
+      comment: The ring of the metal
+    - type: mulp
+      id: 15
+      parameters: {stereo: 0}
+    - type: addp
+      id: 16
+      parameters: {stereo: 0}
+    - type: envelope
+      id: 17
+      parameters: {attack: 0, curve: 72, decay: 90, gain: 128, release: 90, stereo: 0, sustain: 0}
+      comment: The length of the hit
+    - type: mulp
+      id: 18
+      parameters: {stereo: 0}
+    - type: softclip
+      id: 19
+      parameters: {drive: 16, knee: 48, oversample: 0, stereo: 0}
+      comment: 'drive: how hard it hits'
+    - type: pan
+      id: 20
+      parameters: {panning: 64, stereo: 0}
+    - type: push
+      id: 21
+      parameters: {stereo: 1}
+    - type: reverb
+      id: 22
+      parameters: {allpass: 0, bypass: 0, decay: 112, diffuser: 0, early: 52, earlywidth: 64, gain: 76, highcut: 60, highs: 40, loopgain: 0, loopmod: 0, looprate: 64, loopsize: 0, lowcut: 24, lows: 88, mod: 40, modrate: 56, network: 0, predelay: 24, pretime: 0, size: 120, spread: 77, steps: 4, tailwidth: 72}
+      comment: 'Its own space: a large hall, the tail of the hit'
+    - type: gain
+      id: 23
+      parameters: {gain: 56, stereo: 1}
+      comment: The level of the tail
+    - type: addp
+      id: 24
+      parameters: {stereo: 1}
+    - type: filter
+      id: 25
+      parameters: {bandpass: 0, frequency: 6, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+      comment: Low cut at 15 Hz
+    - type: out
+      id: 26
+      parameters: {gain: 104, stereo: 1}
+      comment: The level

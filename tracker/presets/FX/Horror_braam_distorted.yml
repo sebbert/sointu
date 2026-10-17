@@ -1,0 +1,95 @@
+name: Horror braam distorted
+comment: 'The braam driven hard, blaring wide open: a monster. Suggested notes: C-2 to G-2 (the tuba sounds an octave lower); hold it as long as it should sound. Knobs: intensity is how far the blare opens, dissonance adds a semitone and a tritone, attack from a hit to a 3 s crescendo, distortion the drive. Go synth and wasm player only.'
+numvoices: 2
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 104, p2: 32, p3: 0, p4: 100}
+      comment: 'The Horror braam module; its knobs: intensity, dissonance, attack, distortion'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 21, outgain: 34, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror braam
+      comment: 'A braam: brass and tuba stacked, blared through a ladder that opens and closes, distorted. Stereo out. Bandlimited oscillators, ladder, softclip and width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: intensity, default: 64}
+        - {name: dissonance, default: 0}
+        - {name: attack, default: 0}
+        - {name: distortion, default: 32}
+      units:
+        - type: envelope
+          id: 1
+          parameters: {attack: 30, curve: 64, decay: 84, gain: 128, release: 84, stereo: 0, sustain: 40}
+          bind: {attack: {p: 3, min: 30, max: 94}}
+          comment: 'The blare: the filter opens at once and closes over 1.5 s'
+        - type: send
+          id: 2
+          parameters: {amount: 92, port: 0, sendpop: 1, stereo: 0, target: 13, voice: 0}
+          bind: {amount: {p: 1, min: 80, max: 104}}
+          comment: 'intensity: how far it opens'
+        - type: oscillator
+          id: 3
+          parameters: {bandlimit: 1, color: 128, detune: 72, gain: 32, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 3}
+          comment: 'Brass: detuned saws at the note'
+        - type: oscillator
+          id: 4
+          parameters: {bandlimit: 1, color: 64, detune: 60, gain: 36, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 52, type: 2, unison: 1}
+          comment: 'Squares an octave below: the tuba'
+        - type: addp
+          id: 5
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 6
+          parameters: {bandlimit: 1, color: 128, detune: 68, gain: 24, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 71, type: 1, unison: 1}
+          comment: and a fifth above
+        - type: addp
+          id: 7
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 8
+          parameters: {bandlimit: 1, color: 128, detune: 70, gain: 0, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 65, type: 1, unison: 1}
+          bind: {gain: {p: 2, min: 0, max: 30}}
+          comment: 'dissonance: a semitone above'
+        - type: addp
+          id: 9
+          parameters: {stereo: 1}
+        - type: oscillator
+          id: 10
+          parameters: {bandlimit: 1, color: 128, detune: 58, gain: 0, lfo: 0, phase: 0, shape: 64, stereo: 1, transpose: 70, type: 1, unison: 1}
+          bind: {gain: {p: 2, min: 0, max: 24}}
+          comment: 'dissonance: and a tritone'
+        - type: addp
+          id: 11
+          parameters: {stereo: 1}
+        - type: filter
+          id: 12
+          parameters: {bandpass: 0, frequency: 8, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: Low cut at 27 Hz
+        - type: ladder
+          id: 13
+          parameters: {drive: 48, frequency: 12, resonance: 40, stereo: 1}
+          comment: 'The ladder, closed at rest; drive is the rasp'
+        - type: softclip
+          id: 14
+          parameters: {drive: 20, knee: 56, oversample: 1, stereo: 1}
+          bind: {drive: {p: 4, min: 0, max: 80}}
+          comment: 'distortion: the blare driven into a clipper, oversampled'
+        - type: filter
+          id: 15
+          parameters: {bandpass: 0, frequency: 6, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: 'Low cut again, against the offset of the clipper'
+        - type: envelope
+          id: 16
+          parameters: {attack: 30, curve: 64, decay: 88, gain: 128, release: 86, stereo: 1, sustain: 80}
+          bind: {attack: {p: 3, min: 30, max: 94}}
+          comment: 'attack: a hit at 0, a crescendo of 3 s at 128'
+        - type: mulp
+          id: 17
+          parameters: {stereo: 1}
+        - type: width
+          id: 18
+          parameters: {lowcut: 22, width: 56}

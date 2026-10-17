@@ -1,0 +1,113 @@
+name: Global horror space mastering
+comment: 'Global horror space with a gentle master chain: low cut, slow compressor, limiter at -1 dB, no added loudness. Set it as the last instrument. reverb and limiter units: Go synth and wasm player only.'
+numvoices: 1
+units:
+    - id: 1
+      parameters: {}
+      comment: 'Global horror space mastering - Global horror space with a gentle master chain: the hall and the echoes as in Global horror space, then a low cut, a slow compressor that only touches the loudest hits, and a limiter at -1 dB. It keeps the dynamics that build tension; it does not make the mix loud. Set it as the last instrument. reverb and limiter units: Go synth and wasm player only.'
+    - type: in
+      id: 2
+      parameters: {channel: 6, stereo: 1}
+      comment: 'The signal the instruments send to aux 6/7 with an aux unit: the long echoes'
+    - type: module
+      id: 3
+      parameters: {module: 1}
+      comment: 'The Horror echoes module: time (48ths of a beat), feedback, tone, lowcut and spread'
+    - type: outaux
+      id: 4
+      parameters: {auxgain: 64, outgain: 96, stereo: 1}
+      comment: 'outgain is the level of the echoes, auxgain how much of them goes on into the hall below: echoes that dissolve into the room'
+    - type: in
+      id: 5
+      parameters: {channel: 2, stereo: 1}
+      comment: 'The signal the instruments send with outaux (auxgain) or aux, channel 2'
+    - type: reverb
+      id: 6
+      parameters: {allpass: 0, bypass: 0, decay: 112, diffuser: 0, early: 52, earlywidth: 64, gain: 64, highcut: 64, highs: 40, loopgain: 0, loopmod: 0, looprate: 64, loopsize: 0, lowcut: 36, lows: 80, mod: 48, modrate: 56, network: 0, predelay: 40, pretime: 0, size: 120, spread: 77, steps: 4, tailwidth: 64}
+      comment: 'A large dark hall: 8 s, the highs dying three times faster than the mids, the lows lasting longer, 62 ms before the first reflection, more modulation than the default against ringing in long tails; the input at 0 dB, 7.5 dB lower than the default (gain 64), as long tails pile up; the tail less wide than the default (tailwidth 64), which keeps it mono-compatible. Shorter decay (100: 4.6 s) for a room that still breathes; decay 120 is 11 s'
+    - type: out
+      id: 7
+      parameters: {gain: 128, stereo: 1}
+      comment: The level of the hall
+    - type: in
+      id: 8
+      parameters: {channel: 0, stereo: 1}
+      comment: 'The mix, with the hall and the echoes'
+    - type: filter
+      id: 9
+      parameters: {bandpass: 0, frequency: 7, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+      comment: 'Low cut below 20 Hz: what the sub rumbles have that no speaker plays'
+    - type: compressor
+      id: 10
+      parameters: {attack: 60, invgain: 108, ratio: 40, release: 88, stereo: 1, threshold: 64}
+      comment: 'About 1.5:1 above -6 dB, slow (40 ms attack, 600 ms release), +1.5 dB makeup: glue for the hits, nothing for quiet passages'
+    - type: mulp
+      id: 11
+      parameters: {stereo: 1}
+    - type: limiter
+      id: 12
+      parameters: {drive: 0, lookahead: 32, release: 72, stereo: 1, threshold: 114}
+      comment: 'Peaks above -1 dB are turned down 2.9 ms ahead: the impacts and braams. No drive: the limiter does not add loudness'
+    - type: clip
+      id: 13
+      parameters: {stereo: 1}
+    - type: out
+      id: 14
+      parameters: {gain: 128, stereo: 1}
+      comment: Master gain
+modules:
+    - id: 1
+      name: Horror echoes
+      comment: 'Long tempo-synced echoes that wander from side to side and get darker and thinner each time, wet only. Stereo in. Uses the delay unit with BPM timing, which is in every player.'
+      inputs: 2
+      params:
+        - {name: time, default: 72}
+        - {name: feedback, default: 100}
+        - {name: tone, default: 70}
+        - {name: lowcut, default: 24}
+        - {name: spread, default: 24}
+      units:
+        - type: addp
+          id: 1
+          parameters: {stereo: 0}
+          comment: Left plus right
+        - type: pan
+          id: 2
+          parameters: {panning: 24, stereo: 0}
+          bind: {panning: 5}
+          comment: 'spread: where the first echo starts; 0 left, 64 the middle (no ping-pong)'
+        - type: receive
+          id: 3
+          parameters: {stereo: 1}
+          comment: 'The echoes coming back, a sample late'
+        - type: addp
+          id: 4
+          parameters: {stereo: 1}
+        - type: delay
+          id: 5
+          parameters: {damp: 0, dry: 0, feedback: 0, notetracking: 2, pregain: 128, stereo: 1}
+          varargs: [72, 72]
+          bind: {delaytime1: 1, delaytime2: 1}
+          comment: 'One line a side, the same time: 72 is a dotted quarter, 96 a half note. The lines are at most 1.48 s long'
+        - type: push
+          id: 6
+          parameters: {stereo: 1}
+        - type: filter
+          id: 7
+          parameters: {bandpass: 0, frequency: 74, highpass: 0, lowpass: 1, resonance: 128, stereo: 1}
+          bind: {frequency: {p: 3, min: 30, max: 110}}
+          comment: 'tone: each echo darker, as in a large space'
+        - type: filter
+          id: 8
+          parameters: {bandpass: 0, frequency: 12, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          bind: {frequency: {p: 4, min: 0, max: 64}}
+          comment: 'lowcut: each echo thinner'
+        - type: xch
+          id: 9
+          parameters: {stereo: 0}
+          comment: Left to right and right to left
+        - type: send
+          id: 10
+          parameters: {amount: 102, port: 0, sendpop: 1, stereo: 1, target: 3, voice: 0}
+          bind: {amount: {p: 2, min: 64, max: 112}}
+          comment: 'feedback: the level of each echo against the one before, up to 75 %'

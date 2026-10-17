@@ -1,0 +1,69 @@
+name: Horror clock tick
+comment: 'A clock in an empty house: alternate two notes for tick and tock (C-4 and G-3). Knob: ring. Curved envelopes: Go synth and wasm player only.'
+numvoices: 2
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 56}
+      comment: 'The Horror clock module; its knobs: ring'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 28, outgain: 56, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror clock
+      comment: 'A clock tick: a click, a metal ping and a wooden knock. Stereo out. Curved envelopes: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: ring, default: 56}
+      units:
+        - type: noise
+          id: 1
+          parameters: {gain: 128, shape: 64, stereo: 0}
+          comment: The click
+        - type: envelope
+          id: 2
+          parameters: {attack: 0, curve: 80, decay: 30, gain: 128, release: 30, stereo: 0, sustain: 0}
+        - type: mulp
+          id: 3
+          parameters: {stereo: 0}
+        - type: filter
+          id: 4
+          parameters: {bandpass: 1, frequency: 96, highpass: 0, lowpass: 0, resonance: 48, stereo: 0}
+        - type: oscillator
+          id: 5
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 60, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 88, type: 0, unison: 0}
+          comment: 'The ping of the escapement: two octaves above the note'
+        - type: envelope
+          id: 6
+          parameters: {attack: 0, curve: 80, decay: 56, gain: 128, release: 54, stereo: 0, sustain: 0}
+          bind: {decay: {p: 1, min: 44, max: 72}}
+          comment: 'ring: how long it rings'
+        - type: mulp
+          id: 7
+          parameters: {stereo: 0}
+        - type: addp
+          id: 8
+          parameters: {stereo: 0}
+        - type: oscillator
+          id: 9
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 50, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+          comment: 'The case: a knock at the note'
+        - type: envelope
+          id: 10
+          parameters: {attack: 0, curve: 80, decay: 48, gain: 128, release: 48, stereo: 0, sustain: 0}
+        - type: mulp
+          id: 11
+          parameters: {stereo: 0}
+        - type: addp
+          id: 12
+          parameters: {stereo: 0}
+        - type: pan
+          id: 13
+          parameters: {panning: 64, stereo: 0}
+        - type: delay
+          id: 14
+          parameters: {damp: 0, dry: 128, feedback: 0, notetracking: 0, pregain: 40, stereo: 1}
+          varargs: [713, 1021]
+          comment: A wooden case

@@ -1,0 +1,101 @@
+name: Horror drone metal
+comment: 'A grinding metallic drone: ring modulation makes tones that are not harmonics of the note, which glide slowly against each other; two combs give it the ring of a metal plate. Suggested notes: C-2 to C-4. intensity is how long and loud the combs ring, dissonance moves the ratio of the ring modulator. Go synth and wasm player only.'
+numvoices: 2
+units:
+    - type: module
+      id: 1
+      parameters: {module: 1, p1: 48, p2: 48, p3: 64, p4: 90, p5: 96}
+      comment: 'The Horror metal drone module; its knobs: intensity, dissonance, movement, swell, release'
+    - type: outaux
+      id: 2
+      parameters: {auxgain: 46, outgain: 93, stereo: 1}
+      comment: 'auxgain sends it to the hall of Global horror space (aux 2/3); as loud as outgain, the hall is about as loud as the dry sound'
+modules:
+    - id: 1
+      name: Horror metal drone
+      comment: 'Ring-modulated sines and two combs: a grinding, bell-like drone with tones that are not harmonics of the note. Stereo out. Bandlimited oscillator, softclip and width: Go synth and wasm player only.'
+      inputs: 0
+      params:
+        - {name: intensity, default: 48}
+        - {name: dissonance, default: 48}
+        - {name: movement, default: 64}
+        - {name: swell, default: 90}
+        - {name: release, default: 96}
+      units:
+        - type: oscillator
+          id: 1
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 100, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 64, type: 0, unison: 0}
+          comment: A sine at the note
+        - type: oscillator
+          id: 2
+          parameters: {bandlimit: 0, color: 64, detune: 86, gain: 100, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 72, type: 0, unison: 0}
+          bind: {transpose: {p: 2, min: 69, max: 77}}
+          comment: 'times a sine 6.3 semitones above (dissonance moves it from 5 to 13): ring modulation, tones at the sum and the difference, which are not harmonics of the note'
+        - type: oscillator
+          id: 3
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 64, lfo: 1, phase: 0, shape: 64, stereo: 0, transpose: -2, type: 0, unison: 0}
+          comment: 'movement: the ratio drifts by up to 2 semitones either way, once in 27 s: the inharmonic tones glide against each other'
+        - type: send
+          id: 4
+          parameters: {amount: 65, port: 0, sendpop: 1, stereo: 0, target: 2, voice: 0}
+          bind: {amount: {p: 3, min: 64, max: 66}}
+        - type: mulp
+          id: 5
+          parameters: {stereo: 0}
+        - type: pan
+          id: 6
+          parameters: {panning: 64, stereo: 0}
+        - type: oscillator
+          id: 7
+          parameters: {bandlimit: 1, color: 128, detune: 64, gain: 24, lfo: 0, phase: 0, shape: 64, stereo: 0, transpose: 52, type: 1, unison: 0}
+          comment: 'An octave below, a saw, which excites the combs'
+        - type: noise
+          id: 8
+          parameters: {gain: 12, shape: 64, stereo: 0}
+          comment: 'and a little noise: the friction of a bow'
+        - type: filter
+          id: 9
+          parameters: {bandpass: 0, frequency: 56, highpass: 0, lowpass: 1, resonance: 128, stereo: 0}
+          comment: low-passed at 1.4 kHz
+        - type: addp
+          id: 10
+          parameters: {stereo: 0}
+        - type: pan
+          id: 11
+          parameters: {panning: 64, stereo: 0}
+        - type: delay
+          id: 12
+          parameters: {damp: 24, dry: 0, feedback: 106, notetracking: 1, pregain: 72, stereo: 1}
+          varargs: [7192, 9589]
+          bind: {feedback: {p: 1, min: 96, max: 122}}
+          comment: 'intensity: two combs tuned to the note, a fifth and a whole tone above it, ring longer and louder: the ring of a metal plate'
+        - type: oscillator
+          id: 13
+          parameters: {bandlimit: 0, color: 64, detune: 64, gain: 128, lfo: 1, phase: 0, shape: 64, stereo: 0, transpose: 9, type: 0, unison: 0}
+          comment: 'movement: the combs get brighter and duller, once in 14 s'
+        - type: send
+          id: 14
+          parameters: {amount: 70, port: 3, sendpop: 1, stereo: 0, target: 12, voice: 0}
+          bind: {amount: {p: 3, min: 64, max: 76}}
+        - type: addp
+          id: 15
+          parameters: {stereo: 1}
+        - type: filter
+          id: 16
+          parameters: {bandpass: 0, frequency: 8, highpass: 1, lowpass: 0, resonance: 128, stereo: 1}
+          comment: Low cut at 27 Hz
+        - type: softclip
+          id: 17
+          parameters: {drive: 9, knee: 64, oversample: 0, stereo: 1}
+          bind: {drive: {p: 1, min: 0, max: 24}}
+        - type: envelope
+          id: 18
+          parameters: {attack: 90, curve: 0, decay: 80, gain: 128, release: 96, stereo: 1, sustain: 128}
+          bind: {attack: 4, release: 5}
+          comment: 'swell is the fade in, release the fade out after the note'
+        - type: mulp
+          id: 19
+          parameters: {stereo: 1}
+        - type: width
+          id: 20
+          parameters: {lowcut: 19, width: 72}
