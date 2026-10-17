@@ -371,3 +371,33 @@ func TestTempoOfPath(t *testing.T) {
 		}
 	}
 }
+
+// The beats of a loop: from its length, a power of two at 95 to 190 BPM,
+// or at the BPM in its name when that makes whole beats.
+func TestLoopBeats(t *testing.T) {
+	m, _ := newRemoteTestModel(t)
+	b := m.Buffer()
+	frames := func(beats int, bpm float64) int { return int(float64(beats) * 60 / bpm * 44100) }
+	for _, c := range []struct {
+		beats int
+		bpm   float64
+	}{{8, 140}, {16, 174}, {4, 128}, {32, 100}, {8, 189}, {2, 96}, {1, 120}} {
+		if got, _ := b.LoopBeats(1, frames(c.beats, c.bpm)); got != c.beats {
+			t.Errorf("%d beats at %v BPM: %d", c.beats, c.bpm, got)
+		}
+	}
+	if got, _ := b.LoopBeats(1, frames(8, 90)); got != 16 {
+		t.Errorf("8 beats at 90 BPM read as %d, want 16", got)
+	}
+	b.tools().tempo = map[int]loopTempo{1: {bpm: 90}, 2: {bpm: 140}}
+	if got, _ := b.LoopBeats(1, frames(8, 90)); got != 8 {
+		t.Errorf("8 beats at 90 BPM in the name: %d", got)
+	}
+	if got, _ := b.LoopBeats(1, frames(12, 90)); got != 12 {
+		t.Errorf("12 beats at 90 BPM in the name: %d", got)
+	}
+	// a name that does not fit the length is not used
+	if got, _ := b.LoopBeats(2, frames(8, 133)); got != 8 {
+		t.Errorf("8 beats at 133 BPM, 140 in the name: %d", got)
+	}
+}

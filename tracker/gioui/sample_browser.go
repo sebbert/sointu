@@ -155,8 +155,13 @@ func (sb *SampleBrowser) Layout(gtx C) D {
 		if title == "" || title == "." {
 			title = "Folder"
 		}
+		// one line, cut with an ellipsis, so that a narrow browser keeps a
+		// low header
+		titleStyle := th.Button.Text
+		titleStyle.MaxLines = 1
+		titleStyle.TextSize = 12
 		rootBtn := MenuBtn(sb.rootMenu, sb.rootBtn, title).
-			WithBtnStyle(&th.Button.Text).WithPopupStyle(&th.Popup.ContextMenu).
+			WithBtnStyle(&titleStyle).WithPopupStyle(&th.Popup.ContextMenu).
 			WithTip(b.Root() + "\nChoose the folder to browse")
 		parentBtn := ActionIconBtn(b.Parent(), th, sb.parentBtn, icons.NavigationArrowUpward, "Browse the folder above (Backspace)")
 		refreshBtn := ActionIconBtn(b.Refresh(), th, sb.refreshBtn, icons.NavigationRefresh, "Read the folders again")
@@ -168,13 +173,26 @@ func (sb *SampleBrowser) Layout(gtx C) D {
 		}
 		folderBtn := IconBtn(th, folderStyle, sb.folderBtn, icons.FileFolderOpen, "Choose the folder to browse")
 		playBtn := ActionIconBtn(b.PlaySelected(), th, sb.playBtn, icons.AVPlayArrow, "Play the selected file")
-		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-			layout.Flexed(1, func(gtx C) D { return rootBtn.Layout(gtx, roots...) }),
+		titleW := func(gtx C) D { return rootBtn.Layout(gtx, roots...) }
+		buttons := []layout.FlexChild{
 			layout.Rigid(playBtn.Layout),
 			layout.Rigid(autoBtn.Layout),
 			layout.Rigid(folderBtn.Layout),
 			layout.Rigid(parentBtn.Layout),
 			layout.Rigid(refreshBtn.Layout),
+		}
+		if gtx.Constraints.Max.X >= gtx.Dp(300) {
+			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+				append([]layout.FlexChild{layout.Flexed(1, titleW)}, buttons...)...)
+		}
+		// narrow: the title above the buttons
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(func(gtx C) D {
+				return layout.W.Layout(gtx, titleW)
+			}),
+			layout.Rigid(func(gtx C) D {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, buttons...)
+			}),
 		)
 	}
 

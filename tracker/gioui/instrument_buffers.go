@@ -374,7 +374,7 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 // sample browser. A side dragged below half its least size hides.
 var (
 	bufferListSplit    = SplitStyle{Bar: 4, MinSize1: 120, MinSize2: 360}
-	bufferBrowserSplit = SplitStyle{Bar: 4, MinSize1: 200, MinSize2: 160}
+	bufferBrowserSplit = SplitStyle{Bar: 4, MinSize1: 200, MinSize2: 190}
 )
 
 // releasedPlayheadFade is how many frames the playheads of released notes take

@@ -187,7 +187,7 @@ func (bs *bufferSlices) Layout(gtx C) D {
 			}),
 			layout.Rigid(func(gtx C) D {
 				tb := ToggleBtn(b.SlicePerBeat(), th, bs.perBeatBtn, "per beat",
-					"Slice equally makes the slices per beat:\nthe beats are those of an ACID loop, or at the BPM\nin the name of the file or its folder, or of the song.\nA loaded file that replaces a sample sliced equally\nis sliced equally too, by count or per beat")
+					"Slice equally makes the slices per beat. The beats are\nthose of an ACID loop, or at the BPM in the name of the\nfile or its folder if that makes whole beats, or else\na power of two at a tempo of 95 to 190 BPM.\nA loaded file that replaces a sample sliced equally\nis sliced equally too, by count or per beat")
 				return tb.Layout(gtx)
 			}),
 			layout.Rigid(btn(b.SliceEqually(), bs.equalBtn, "Slice equally", "Put markers that cut the buffer\ninto slices of equal length")),

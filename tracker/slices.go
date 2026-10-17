@@ -23,7 +23,8 @@ type sliceTools struct {
 	perBeat  bool // Slice equally makes perBeatN slices per beat instead of count
 	perBeatN int  // the slices per beat of Slice equally
 	// tempo is what an imported file told of its tempo, by buffer ID: the
-	// beats of an ACID loop, or a BPM in its name or its folder's
+	// beats of an ACID loop, or a BPM in its name or its folder's; see
+	// LoopBeats
 	tempo       map[int]loopTempo
 	sensitivity int    // of Detect transients, 0 to 100
 	selection   [2]int // the selected frames of the waveform, from the oldest valid frame; none if not start < end
@@ -240,22 +241,43 @@ func tempoOfPath(path string) float64 {
 	return 0
 }
 
+// loopTempoMin is the slowest tempo that the length of a loop is taken
+// to be at: loops are taken to be a power of two beats long, which a
+// tempo range of an octave, loopTempoMin up to twice it, tells apart for
+// any length. Slower loops read as twice as fast, with twice the beats.
+const loopTempoMin = 95.0
+
 // LoopBeats returns the length in beats of the buffer with the ID, of
-// frames: of an ACID loop as the file says, or else at the BPM in its name
-// or its folder's, or else at the BPM of the song; and where that came from.
+// frames, and where that came from: the beats of an ACID loop; or at the BPM
+// in the name of the file or its folder, if that makes close to a whole
+// number of beats; or else the power of two beats whose tempo is from
+// loopTempoMin up to twice it.
 func (m *BufferModel) LoopBeats(id, frames int) (beats int, from string) {
 	t := m.tools().tempo[id]
 	if t.beats > 0 {
 		return t.beats, "ACID"
 	}
-	bpm, from := t.bpm, "name"
-	if bpm <= 0 {
-		bpm, from = float64(m.d.Song.BPM), "song"
+	seconds := float64(frames) / 44100
+	if seconds <= 0 {
+		return 1, "length"
 	}
-	if bpm <= 0 {
-		return 1, from
+	if t.bpm > 0 {
+		b := seconds * t.bpm / 60
+		if r := math.Round(b); r >= 1 && math.Abs(b-r) < 0.05 {
+			return int(r), fmt.Sprintf("%g BPM in the name", t.bpm)
+		}
 	}
-	return max(int(math.Round(float64(frames)/44100*bpm/60)), 1), fmt.Sprintf("%s %g BPM", from, bpm)
+	return lengthBeats(seconds), fmt.Sprintf("%.1f BPM from the length", 60*float64(lengthBeats(seconds))/seconds)
+}
+
+// lengthBeats returns the power of two beats that a loop of seconds is at a
+// tempo from loopTempoMin up to twice it.
+func lengthBeats(seconds float64) int {
+	n := 1
+	for n < 1<<12 && 60*float64(n)/seconds < loopTempoMin {
+		n *= 2
+	}
+	return n
 }
 
 func (m *BufferModel) perBeatSlices(id, frames int) int {
