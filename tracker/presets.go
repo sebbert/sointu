@@ -283,6 +283,11 @@ type (
 		// userRoot is the folder with the presets folder of the user's
 		// presets; empty for <config dir>/sointu. Tests set it.
 		userRoot string
+		// source is the folder with the presets and modules folders of the
+		// presets that the tracker comes with, read from disk; empty, or
+		// without the folder, for those embedded in the binary. See
+		// presetSource.
+		source string
 
 		cache presetCache
 	}
@@ -390,7 +395,7 @@ func (m *presetData) userPresetsDir() (string, bool) {
 
 // reload reads the presets again, at once, keeping the selected preset.
 func (m *PresetModel) reload() {
-	p := presetData{userRoot: m.presetData.userRoot}
+	p := presetData{userRoot: m.presetData.userRoot, source: m.presetData.source}
 	p.load()
 	m.replacePresets(p)
 }
@@ -422,7 +427,7 @@ func (m *presetData) load() {
 	m.dirs = m.dirs[:0]
 	m.presets = m.presets[:0]
 	seenDir := make(map[string]bool)
-	m.loadPresetsFromFs(builtInPresetsFS, false, seenDir)
+	m.loadPresetsFromFs(builtinFS(m.source, "presets", builtInPresetsFS), false, seenDir)
 	if dir, ok := m.userPresetsDir(); ok {
 		m.loadPresetsFromFs(os.DirFS(filepath.Dir(dir)), true, seenDir)
 	}

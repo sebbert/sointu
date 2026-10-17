@@ -2,6 +2,7 @@ package tracker
 
 import (
 	"embed"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -64,13 +65,14 @@ func (m *Model) modulePresetDir() (string, bool) {
 // tracker comes with.
 func (m *Model) loadModulePresets() {
 	dir, ok := m.modulePresetDir()
-	m.modulePresets, m.userModulePresets = readModulePresets(dir, ok)
+	m.modulePresets, m.userModulePresets = readModulePresets(dir, ok, m.presetData.source)
 }
 
 // readModulePresets reads the module presets of the user from dir, if ok,
-// and those that the tracker comes with, and returns them with the number
-// of those of the user, which come first.
-func readModulePresets(dir string, ok bool) (presets []modulePreset, user int) {
+// and those that the tracker comes with, from the modules folder of source
+// if it has one, and returns them with the number of those of the user,
+// which come first.
+func readModulePresets(dir string, ok bool, source string) (presets []modulePreset, user int) {
 	if ok {
 		entries, _ := os.ReadDir(dir)
 		for _, e := range entries {
@@ -89,9 +91,13 @@ func readModulePresets(dir string, ok bool) (presets []modulePreset, user int) {
 		sort.Slice(presets, func(i, j int) bool { return presets[i].name < presets[j].name })
 		user = len(presets)
 	}
-	entries, _ := builtinModulePresets.ReadDir("modules") // in the order of the file names
+	builtin := builtinFS(source, "modules", builtinModulePresets)
+	entries, _ := fs.ReadDir(builtin, "modules") // in the order of the file names
 	for _, e := range entries {
-		data, err := builtinModulePresets.ReadFile("modules/" + e.Name())
+		if e.IsDir() || filepath.Ext(e.Name()) != ".yml" {
+			continue
+		}
+		data, err := fs.ReadFile(builtin, "modules/"+e.Name())
 		if err != nil {
 			continue
 		}

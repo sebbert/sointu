@@ -16,6 +16,13 @@ import (
 // folder of its own, watched every 10 ms, and that folder.
 func newPresetWatchModel(t *testing.T) (*Model, *Broker, string) {
 	t.Helper()
+	return newPresetWatchModelWithSource(t, "")
+}
+
+// newPresetWatchModelWithSource is newPresetWatchModel with the presets that
+// the tracker comes with read from source.
+func newPresetWatchModelWithSource(t *testing.T, source string) (*Model, *Broker, string) {
+	t.Helper()
 	old := presetWatchInterval
 	presetWatchInterval = 10 * time.Millisecond
 	t.Cleanup(func() { presetWatchInterval = old })
@@ -28,6 +35,7 @@ func newPresetWatchModel(t *testing.T) (*Model, *Broker, string) {
 	m.presetData.userRoot = root
 	m.modulePresetPath = filepath.Join(root, "modules")
 	m.encodingPresetPath = filepath.Join(root, "encoding-presets.yml")
+	m.presetData.source = source
 	m.watchPresets()
 	m.Preset().reload()
 	m.loadModulePresets()
@@ -210,5 +218,91 @@ func TestStampTree(t *testing.T) {
 	}
 	if stampTree(root) != renamed {
 		t.Error("the stamp changes with nothing changed")
+	}
+}
+
+func builtinPreset(m *Model, name string) (preset, bool) {
+	i := slices.IndexFunc(m.presetData.presets, func(p preset) bool { return !p.user && p.instr.Name == name })
+	if i < 0 {
+		return preset{}, false
+	}
+	return m.presetData.presets[i], true
+}
+
+func TestPresetWatchBuiltinPresetsFromSource(t *testing.T) {
+	source := t.TempDir()
+	writeFile(t, filepath.Join(source, "presets", "BA", "Source_bass.yml"), instrumentPresetFile(t, "first"), 1)
+	ducker, err := builtinModulePresets.ReadFile("modules/Ducker.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(source, "modules", "Source_module.yml"), ducker, 1)
+	m, broker, root := newPresetWatchModelWithSource(t, source)
+	// read from the source, not the binary
+	if _, ok := builtinPreset(m, "Source bass"); !ok || len(m.presetData.presets) != 1 {
+		t.Fatalf("got %d presets, want Source bass alone", len(m.presetData.presets))
+	}
+	if len(m.modulePresets) != 1 || m.modulePresets[0].name != "Source module" || m.modulePresets[0].file != "" {
+		t.Fatalf("module presets %v, want Source module, built-in", m.modulePresets)
+	}
+	// added and changed in the source
+	writeFile(t, filepath.Join(source, "presets", "BA", "Source_bass.yml"), instrumentPresetFile(t, "second"), 2)
+	writeFile(t, filepath.Join(source, "presets", "LEAD", "Source_lead.yml"), instrumentPresetFile(t, ""), 2)
+	waitFor(t, m, broker, "the presets of the source", func() bool {
+		p, _ := builtinPreset(m, "Source bass")
+		_, ok := builtinPreset(m, "Source lead")
+		return ok && p.instr.Comment == "second"
+	})
+	writeFile(t, filepath.Join(source, "modules", "Another_module.yml"), ducker, 2)
+	waitFor(t, m, broker, "the module preset of the source", func() bool { return len(m.modulePresets) == 2 })
+	// a preset of the user is listed before the built-in ones
+	writeFile(t, filepath.Join(root, "modules", "User_module.yml"), ducker, 3)
+	waitFor(t, m, broker, "the module preset of the user", func() bool { return m.userModulePresets == 1 })
+	if m.modulePresets[0].name != "User module" || m.modulePresets[1].name != "Another module" {
+		t.Errorf("module presets %v, want User module, then those of the source", m.modulePresets)
+	}
+	// built-in presets cannot be deleted
+	m.Preset().SearchTerm().SetValue("source bass")
+	if m.Preset().Delete().Enabled() {
+		t.Error("a built-in preset from the source can be deleted")
+	}
+}
+
+func TestPresetSourceFallsBackToTheBinary(t *testing.T) {
+	embedded := presetData{source: ""}
+	embedded.load()
+	missing := presetData{source: filepath.Join(t.TempDir(), "gone")}
+	missing.load()
+	if len(missing.presets) == 0 || len(missing.presets) != len(embedded.presets) {
+		t.Errorf("with the source missing, %d presets, want the %d embedded", len(missing.presets), len(embedded.presets))
+	}
+	mods, _ := readModulePresets("", false, filepath.Join(t.TempDir(), "gone"))
+	embeddedMods, _ := readModulePresets("", false, "")
+	if len(mods) == 0 || len(mods) != len(embeddedMods) {
+		t.Errorf("with the source missing, %d module presets, want the %d embedded", len(mods), len(embeddedMods))
+	}
+}
+
+func TestPresetSource(t *testing.T) {
+	t.Setenv(PresetSourceEnv, "off")
+	if s := presetSource(); s != "" {
+		t.Errorf("off: got %q", s)
+	}
+	t.Setenv(PresetSourceEnv, "/some/where")
+	if s := presetSource(); s != "/some/where" {
+		t.Errorf("a path: got %q", s)
+	}
+	os.Unsetenv(PresetSourceEnv)
+	s := presetSource()
+	if info, err := os.Stat(filepath.Join(s, "presets")); err != nil || !info.IsDir() {
+		t.Errorf("unset: got %q, want the tracker folder of the source tree", s)
+	}
+	// the source tree reads as the binary does
+	src := presetData{source: s}
+	src.load()
+	embedded := presetData{}
+	embedded.load()
+	if len(src.presets) != len(embedded.presets) {
+		t.Errorf("%d presets from the source tree, %d embedded", len(src.presets), len(embedded.presets))
 	}
 }

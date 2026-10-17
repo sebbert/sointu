@@ -1954,9 +1954,16 @@ no host was run with the plugins.
   (`tracker/preset_watch.go`). No file system events: polling works the
   same in every host. The search, the filters and the selected preset of
   the preset list stay; a selected preset that is gone leaves the selection
-  at its index. The presets that the tracker comes with
-  (`tracker/presets`, `tracker/modules`) are embedded in the binary and
-  change only with a new build.
+  at its index.
+  The presets that the tracker comes with (`tracker/presets`,
+  `tracker/modules`) are read from the source tree that the binary was
+  built from, the path that the compiler recorded, and watched the same
+  way: a preset added there shows up without a build. The tree's presets
+  are those of the branch checked out there, which need not be the one
+  built. Where a folder is missing (a binary built elsewhere, a worktree
+  deleted, a build with `-trimpath`), it is read from the binary, where
+  they are embedded as before. `SOINTU_PRESET_SOURCE` sets another folder
+  with `presets` and `modules` in it, or `off` for the embedded ones.
 - **Reverb:** the standard reverb is the [reverb unit](#reverb-unit) (Go
   synth and wasm player only): stereo in, the wet signal out. Its chain is
   low cut, high cut, predelay, a diffuser of four steps (the early

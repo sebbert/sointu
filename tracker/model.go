@@ -291,6 +291,7 @@ func NewModel(broker *Broker, synthers []sointu.Synther, midiContext MIDIContext
 	m.scopeData = scopeData{lengthInBeats: 4}
 	m.Scope().updateBufferLength()
 	m.updateDeriveData(SongChange)
+	m.presetData.source = presetSource()
 	m.watchPresets() // before the presets are read
 	m.presetData.load()
 	m.loadModulePresets()

@@ -7,32 +7,71 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/vsariola/sointu"
 	"github.com/vsariola/sointu/ffmpeg"
 )
 
-// The preset watcher picks up the presets of the user that were added,
-// changed or deleted on disk while the tracker runs: the instrument presets
+// The preset watcher picks up presets that were added, changed or deleted
+// on disk while the tracker runs: those of the user, the instrument presets
 // (<config dir>/sointu/presets, all of its folders), the module presets
 // (<config dir>/sointu/modules) and the encoding presets
-// (<config dir>/sointu/encoding-presets.yml). Every presetWatchInterval it
-// stats the files there, on a goroutine; when they differ from the last
-// time, it reads the presets of that kind again, also on the goroutine, and
-// the model puts them in place. The presets that the tracker comes with are
-// in the binary and do not change.
+// (<config dir>/sointu/encoding-presets.yml), and those that the tracker
+// comes with when they are read from the source tree (see presetSource).
+// Every presetWatchInterval it stats the files there, on a goroutine; when
+// they differ from the last time, it reads the presets of that kind again,
+// also on the goroutine, and the model puts them in place.
 
 // presetWatchInterval is how often the watcher looks at the preset folders.
 var presetWatchInterval = time.Second
 
+// PresetSourceEnv is the environment variable that sets the folder with the
+// presets and modules folders of the presets that the tracker comes with;
+// "off" uses those embedded in the binary.
+const PresetSourceEnv = "SOINTU_PRESET_SOURCE"
+
+// presetSource returns the folder that the presets that the tracker comes
+// with are read from, so that new and changed ones show up without a
+// build: that of PresetSourceEnv if it is set, otherwise the tracker folder
+// of the source tree that the binary was built from (the path that the
+// compiler recorded for this file). "" is the embedded presets. A presets
+// or modules folder missing there is read from the binary.
+func presetSource() string {
+	if s, ok := os.LookupEnv(PresetSourceEnv); ok {
+		if s == "off" {
+			return ""
+		}
+		return s
+	}
+	_, file, _, ok := runtime.Caller(0)
+	if !ok || !filepath.IsAbs(file) { // e.g. built with -trimpath
+		return ""
+	}
+	return filepath.Dir(file)
+}
+
+// builtinFS returns the file system to read the folder sub of the presets
+// that the tracker comes with from: source, if it has that folder, or else
+// embedded.
+func builtinFS(source, sub string, embedded fs.FS) fs.FS {
+	if source != "" {
+		if info, err := os.Stat(filepath.Join(source, sub)); err == nil && info.IsDir() {
+			return os.DirFS(source)
+		}
+	}
+	return embedded
+}
+
 type (
-	// presetPaths are the files and folders of the presets of the user that
-	// the watcher looks at; an empty one is not watched.
+	// presetPaths are the files and folders of presets that the watcher
+	// looks at; an empty one is not watched.
 	presetPaths struct {
 		instruments string // the root of presets/, as presetData.userRoot
 		modules     string
 		encoding    string
+		source      string // as presetData.source
 	}
 
 	// presetStamps tell whether the presets of each kind changed.
@@ -41,10 +80,9 @@ type (
 	}
 )
 
-// presetPaths returns the paths that the model reads the presets of the
-// user from.
+// presetPaths returns the paths that the model reads presets from.
 func (m *Model) presetPaths() presetPaths {
-	var p presetPaths
+	p := presetPaths{source: m.presetData.source}
 	if dir, ok := m.presetData.userPresetsDir(); ok {
 		p.instruments = filepath.Dir(dir)
 	}
@@ -63,6 +101,10 @@ func stampPresets(p presetPaths) presetStamps {
 	s := presetStamps{modules: stampTree(p.modules), encoding: stampTree(p.encoding)}
 	if p.instruments != "" {
 		s.instruments = stampTree(filepath.Join(p.instruments, "presets"))
+	}
+	if p.source != "" {
+		s.instruments = s.instruments*31 + stampTree(filepath.Join(p.source, "presets"))
+		s.modules = s.modules*31 + stampTree(filepath.Join(p.source, "modules"))
 	}
 	return s
 }
@@ -116,14 +158,14 @@ func (m *Model) watchPresets() {
 			// stamped before reading: a change while reading is seen next time
 			now := stampPresets(paths)
 			if now.instruments != last.instruments {
-				p := presetData{userRoot: paths.instruments}
+				p := presetData{userRoot: paths.instruments, source: paths.source}
 				p.load()
 				if !TrySend(broker.ToModel, MsgToModel{Data: func() { m.Preset().replacePresets(p) }}) {
 					now.instruments = last.instruments // try again
 				}
 			}
 			if now.modules != last.modules {
-				presets, user := readModulePresets(paths.modules, paths.modules != "")
+				presets, user := readModulePresets(paths.modules, paths.modules != "", paths.source)
 				if !TrySend(broker.ToModel, MsgToModel{Data: func() { m.modulePresets, m.userModulePresets = presets, user }}) {
 					now.modules = last.modules
 				}
