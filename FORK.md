@@ -1827,8 +1827,14 @@ no host was run with the plugins.
   its parameters, 3 cells wide (`tracker.OscillatorInlineCells`; the comment
   follows it): its type, color, shape, phase, gain, unison voices, gate
   pattern and bandlimit, as played (for an inner unit, with the values of
-  its bound parameters), without modulation, from -1 to 1 or its peak, with
-  a line at 0. `vm.OscillatorCycle` computes it with the waveform functions
+  its bound parameters), with what sends and automation add to them in the
+  voice of the last note of the instrument, from -1 to 1 or its peak, with
+  a line at 0. The live values come from a tap before the unit of that
+  voice: the Go synth keeps the ports of the unit there as it last ran
+  (`sointu.PortTapper`), the player sends them with the tap audio, and the
+  model adds them, rounded to steps and kept in range
+  (`Model.liveParams`); until they come, and with synths without taps, the
+  knob values. `vm.OscillatorCycle` computes it with the waveform functions
   of the Go synth (`oscillatorWave`, `oscillatorGate`, `oscillatorFlags`),
   512 points, as if a cycle were 512 samples for the corrections of
   bandlimit. Left out: the detune of the unison voices and channels, which

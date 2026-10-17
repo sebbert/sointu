@@ -187,32 +187,10 @@ func (v analysisVoice) StringOf(value int) string {
 // stands for (those of a module or an eq unit, the sends that a send to a
 // module unit becomes), or before them, if it leaves nothing on the stack.
 func (m *Model) analysisPoint(row int) (point sointu.TapPoint, before bool, ok bool) {
-	u, r, ok := m.rowUnit(row)
-	id := m.playedID(row)
-	if !ok || id == 0 || m.expansion == nil {
+	u, _, ok := m.rowUnit(row)
+	span, ok2 := m.playedSpan(row)
+	if !ok || !ok2 {
 		return sointu.TapPoint{}, false, false
-	}
-	instr := m.d.InstrIndex
-	if r.module >= 0 {
-		instr = m.expansion.Units[id].Instrument
-	}
-	span, ok := m.expansion.EQs[id]
-	if !ok {
-		span, ok = m.expansion.Spans[id]
-	}
-	if !ok {
-		if instr < 0 || instr >= len(m.expanded) {
-			return sointu.TapPoint{}, false, false
-		}
-		for i := range m.expanded[instr].Units {
-			if m.expanded[instr].Units[i].ID == id {
-				span, ok = sointu.ExpandedEQ{Instrument: instr, First: i, Count: 1}, true
-				break
-			}
-		}
-		if !ok {
-			return sointu.TapPoint{}, false, false
-		}
 	}
 	use := m.d.Song.Modules.StackUse(u)
 	before = use.NumOutputs == 0 && len(use.Inputs) > 0
@@ -221,6 +199,36 @@ func (m *Model) analysisPoint(row int) (point sointu.TapPoint, before bool, ok b
 		point.Unit = span.First
 	}
 	return point, before, true
+}
+
+// playedSpan returns the units that the unit on a row stands for in the
+// patch that the synth plays: those of a module or an eq unit, the sends
+// that a send to a module unit becomes, or the unit itself.
+func (m *Model) playedSpan(row int) (sointu.ExpandedEQ, bool) {
+	_, r, ok := m.rowUnit(row)
+	id := m.playedID(row)
+	if !ok || id == 0 || m.expansion == nil {
+		return sointu.ExpandedEQ{}, false
+	}
+	instr := m.d.InstrIndex
+	if r.module >= 0 {
+		instr = m.expansion.Units[id].Instrument
+	}
+	if span, ok := m.expansion.EQs[id]; ok {
+		return span, true
+	}
+	if span, ok := m.expansion.Spans[id]; ok {
+		return span, true
+	}
+	if instr < 0 || instr >= len(m.expanded) {
+		return sointu.ExpandedEQ{}, false
+	}
+	for i := range m.expanded[instr].Units {
+		if m.expanded[instr].Units[i].ID == id {
+			return sointu.ExpandedEQ{Instrument: instr, First: i, Count: 1}, true
+		}
+	}
+	return sointu.ExpandedEQ{}, false
 }
 
 // analysisStereo reports whether the signal after a unit is a stereo one:
@@ -258,11 +266,7 @@ func (m *UnitModel) AnalysisOf(row int) (ret UnitAnalysis, ok bool) {
 	}
 	point.Voice = min(state.voice, voices)
 	if state.voice == AnalysisVoiceLast {
-		last := 0
-		if point.Instrument < len(mm.lastVoices) {
-			last = mm.lastVoices[point.Instrument]
-		}
-		point.Voice = min(max(last, 1), voices)
+		point.Voice = mm.lastVoice(point.Instrument)
 	}
 	ret.Stereo, ret.Before, ret.Voice = mm.analysisStereo(u), before, point.Voice
 	w := mm.watchTap(tapKey{Unit: key.unit, Call: key.call, Analysis: true}, point)
@@ -282,6 +286,20 @@ func (m *UnitModel) AnalysisOf(row int) (ret UnitAnalysis, ok bool) {
 	w.scope.ring.Cursor = min(w.scope.ring.Cursor, max(len(w.scope.ring.Buffer)-1, 0))
 	ret.Scope = w.scope.ring
 	return ret, true
+}
+
+// lastVoice returns the voice of an instrument, from 1, that its last note
+// played, as the player picked it; 1 before any note.
+func (m *Model) lastVoice(instr int) int {
+	voices := 1
+	if instr >= 0 && instr < len(m.expanded) {
+		voices = m.expanded[instr].NumVoices
+	}
+	last := 0
+	if instr >= 0 && instr < len(m.lastVoices) {
+		last = m.lastVoices[instr]
+	}
+	return min(max(last, 1), max(voices, 1))
 }
 
 // scopeLength returns how many frames the oscilloscope of the song has.

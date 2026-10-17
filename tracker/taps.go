@@ -32,6 +32,10 @@ type (
 	TapAudio struct {
 		Point  sointu.TapPoint
 		Buffer *sointu.AudioBuffer
+		// Ports are those of the unit at a tap of one voice, if HasPorts:
+		// see sointu.PortTapper.
+		Ports    [8]float32
+		HasPorts bool
 	}
 
 	// tapKey is what a watch watches: the signal before or after the unit
@@ -43,6 +47,7 @@ type (
 		After    bool
 		Call     int
 		Analysis bool
+		Ports    bool // of the cycle of an oscillator: see OscillatorCycle
 	}
 
 	tapWatch struct {
@@ -50,6 +55,7 @@ type (
 		asked    time.Time
 		spectrum *tapSpectrum
 		scope    *tapScope
+		ports    *[8]float32 // the latest, if the player sent any
 	}
 
 	// tapSpectrum is the spectrum of the signal of a tap, smoothed over
@@ -87,10 +93,15 @@ func (p *Player) reportTaps() {
 	if !ok {
 		return
 	}
+	pt, _ := p.synth.(sointu.PortTapper)
 	for i, point := range p.taps {
 		buf := p.broker.GetAudioBuffer()
 		*buf = t.Tapped(i, (*buf)[:0])
-		if len(*buf) == 0 || !TrySend(p.broker.ToModel, MsgToModel{Data: TapAudio{Point: point, Buffer: buf}}) {
+		msg := TapAudio{Point: point, Buffer: buf}
+		if pt != nil {
+			msg.Ports, msg.HasPorts = pt.TappedPorts(i)
+		}
+		if len(*buf) == 0 || !TrySend(p.broker.ToModel, MsgToModel{Data: msg}) {
 			p.broker.PutAudioBuffer(buf)
 		}
 	}
@@ -110,6 +121,7 @@ func (m *Model) watchTap(key tapKey, point sointu.TapPoint) *tapWatch {
 		m.sendTaps()
 	} else if w.point != point {
 		w.point = point
+		w.ports = nil // of another voice or unit
 		m.sendTaps()
 	}
 	w.asked = time.Now()
@@ -145,6 +157,10 @@ func (m *Model) tapped(e TapAudio) {
 		}
 		if w.point == e.Point && w.scope != nil {
 			w.scope.write(*e.Buffer)
+		}
+		if w.point == e.Point && e.HasPorts {
+			ports := e.Ports
+			w.ports = &ports
 		}
 	}
 	if ended {

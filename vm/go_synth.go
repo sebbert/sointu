@@ -389,7 +389,7 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 				continue
 			}
 			if s.taps != nil {
-				s.tapUnit(int(s.bytecode.NumVoices-voicesRemaining), MAX_UNITS-len(units), stack)
+				s.tapUnit(int(s.bytecode.NumVoices-voicesRemaining), MAX_UNITS-len(units), stack, &units[0].ports)
 			}
 			tcount := transformCounts[opNoStereo-1]
 			if len(operands) < tcount {

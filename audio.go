@@ -167,6 +167,18 @@ type (
 		Tapped(i int, dst AudioBuffer) AudioBuffer
 	}
 
+	// PortTapper is implemented by Tappers that also keep the ports of the
+	// unit at a tap of one voice: what is added to its parameters (sends,
+	// automation) as the unit last ran, in the order of Ports of its type. A
+	// port of 1 adds 128 steps to its parameter.
+	PortTapper interface {
+		// TappedPorts returns the ports of the unit at tap i (of those last
+		// set), as the voice of the tap last ran it, and whether it has
+		// run since the taps were set. A tap of all voices (Voice 0) has
+		// none.
+		TappedPorts(i int) (ports [8]float32, ok bool)
+	}
+
 	// UnitSpectrumReporter is implemented by Synths that can report the
 	// spectrum right after each spectral unit processed it.
 	UnitSpectrumReporter interface {

@@ -231,3 +231,44 @@ func TestSyncsWithTapsAndUpdate(t *testing.T) {
 		}
 	}
 }
+
+// TestTapPorts checks that a tap of one voice keeps the ports of the unit
+// at it, as that voice last ran it: what a send there added to its
+// parameters, and that a tap of all voices keeps none.
+func TestTapPorts(t *testing.T) {
+	osc := sointu.Unit{ID: 3, Type: "oscillator", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "phase": 0, "color": 32, "shape": 64, "gain": 128, "type": sointu.Trisaw}}
+	units := []sointu.Unit{
+		{ID: 1, Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": 128}},
+		{ID: 2, Type: "send", Parameters: sointu.ParamMap{"stereo": 0, "amount": 96, "voice": 0, "target": 3, "port": 3, "sendpop": 1}}, // +0.5 to color
+		osc,
+		{ID: 4, Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
+	}
+	for _, synther := range []sointu.Synther{vm.GoSynther{}, vm.MakeMultithreadSynther(vm.GoSynther{})} {
+		synth, err := synther.Synth(sointu.Patch{{NumVoices: 2, Units: units}}, 120)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tapper := synth.(sointu.PortTapper)
+		synth.(sointu.Tapper).SetTaps([]sointu.TapPoint{{Unit: 2, Voice: 2}, {Unit: 2}})
+		if _, ok := tapper.TappedPorts(0); ok {
+			t.Error("a tap has ports before the synth ran")
+		}
+		synth.Trigger(1, 60)
+		tapRender(t, synth, 10)
+		ports, ok := tapper.TappedPorts(0)
+		if !ok || ports[3] != 0.5 {
+			t.Errorf("%T: the ports of the oscillator are %v (%v), not 0.5 at color", synther, ports, ok)
+		}
+		for i, p := range ports {
+			if i != 3 && p != 0 {
+				t.Errorf("%T: port %d is %v", synther, i, p)
+			}
+		}
+		if _, ok := tapper.TappedPorts(1); ok {
+			t.Errorf("%T: a tap of all voices has ports", synther)
+		}
+		if _, ok := tapper.TappedPorts(2); ok {
+			t.Errorf("%T: a tap that is not there has ports", synther)
+		}
+	}
+}

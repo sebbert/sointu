@@ -130,7 +130,12 @@ func TestEQEditorInTracker(t *testing.T) {
 		select {
 		case msg := <-broker.ToPlayer:
 			if m, ok := msg.(tracker.TapsMsg); ok {
-				taps = m
+				taps = taps[:0]
+				for _, p := range m { // not that of the cycle of the oscillator, of one voice
+					if p.Voice == 0 {
+						taps = append(taps, p)
+					}
+				}
 			}
 		default:
 			more = false

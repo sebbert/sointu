@@ -11,6 +11,8 @@ type tap struct {
 	firstVoice, endVoice, slot int
 	sum                        [2]float32 // of the voices, in the frame being rendered
 	frames                     sointu.AudioBuffer
+	ports                      [8]float32 // of the unit, as the voice last ran it: see sointu.PortTapper
+	hasPorts                   bool
 }
 
 // maxTapFrames is how many frames a tap keeps if nobody takes them.
@@ -63,13 +65,17 @@ func (s *GoSynth) resolveTaps() {
 }
 
 // tapUnit is called before a voice runs a unit, while there are taps: the
-// taps at that place take the two signals on top of the stack.
-func (s *GoSynth) tapUnit(voice, slot int, stack []float32) {
+// taps at that place take the two signals on top of the stack, and a tap of
+// one voice the ports of the unit.
+func (s *GoSynth) tapUnit(voice, slot int, stack []float32, ports *[8]float32) {
 	for i := range s.taps {
 		if t := &s.taps[i]; slot == t.slot && voice >= t.firstVoice && voice < t.endVoice {
 			l := len(stack) // at least 4: see Render
 			t.sum[0] += stack[l-1]
 			t.sum[1] += stack[l-2]
+			if t.point.Voice > 0 {
+				t.ports, t.hasPorts = *ports, true
+			}
 		}
 	}
 }
@@ -95,6 +101,14 @@ func (s *GoSynth) Tapped(i int, dst sointu.AudioBuffer) sointu.AudioBuffer {
 	dst = append(dst, t.frames...)
 	t.frames = t.frames[:0]
 	return dst
+}
+
+// TappedPorts implements sointu.PortTapper.
+func (s *GoSynth) TappedPorts(i int) ([8]float32, bool) {
+	if i < 0 || i >= len(s.taps) {
+		return [8]float32{}, false
+	}
+	return s.taps[i].ports, s.taps[i].hasPorts
 }
 
 // multithreadTap is a tap of a MultithreadSynth: the synth that has the
@@ -138,6 +152,17 @@ func (s *MultithreadSynth) Tapped(i int, dst sointu.AudioBuffer) sointu.AudioBuf
 		return t.Tapped(s.taps[i].tap, dst)
 	}
 	return dst
+}
+
+// TappedPorts implements sointu.PortTapper.
+func (s *MultithreadSynth) TappedPorts(i int) ([8]float32, bool) {
+	if i < 0 || i >= len(s.taps) || s.taps[i].synth < 0 || s.taps[i].synth >= len(s.synths) {
+		return [8]float32{}, false
+	}
+	if t, ok := s.synths[s.taps[i].synth].(sointu.PortTapper); ok {
+		return t.TappedPorts(s.taps[i].tap)
+	}
+	return [8]float32{}, false
 }
 
 // threadInstruments returns, for each instrument of a patch, the first
