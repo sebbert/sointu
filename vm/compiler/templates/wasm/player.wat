@@ -187,14 +187,26 @@
 {{- end}}
 {{- end}}
 
-{{- if .HasOp "automation"}}
+{{- if or (.HasOp "automation") .AutomationLanes}}
 {{- /*
 ;-------------------------------------------------------------------------------
-;    The lanes of the automation units: see vm/automation.go
+;    The lanes of the automation units and of the automation targets: see
+;    vm/automation.go
 ;-------------------------------------------------------------------------------
 */}}
 {{- .SetDataLabel "su_automation"}}
 {{- range .Automation}}
+{{- $.DataB .}}
+{{- end}}
+{{- end}}
+{{- if .AutomationLanes}}
+{{- /*
+;-------------------------------------------------------------------------------
+;    The parameters that the lanes offset: see vm/automation.go
+;-------------------------------------------------------------------------------
+*/}}
+{{- .SetDataLabel "su_automation_targets"}}
+{{- range .AutomationTargets}}
 {{- $.DataB .}}
 {{- end}}
 {{- end}}
@@ -271,6 +283,11 @@
 {{- end}}
 {{- .SetBlockLabel "su_voices"}}
 {{- .Block .VoiceBytes}}
+{{- if .AutomationLanes}}
+{{- /* the states of the lanes of the automation targets, 8 bytes each */}}
+{{- .SetBlockLabel "su_automation_state"}}
+{{- .Block (int (mul .AutomationLanes 8))}}
+{{- end}}
 {{- .Align}}
 {{- .SetBlockLabel "su_delaylines"}}
 {{- .Block (int (mul 262156 .Song.Patch.NumDelayLines))}}
@@ -601,6 +618,9 @@
                 (global.set $convWRK (i32.add (i32.const {{add (index .Labels "su_conv") (mul 3 .ConvSpectrum)}}) (i32.load offset={{.StageConvAt}} (global.get $stage))))
 {{- end}}
                 (call $stageIn)
+{{- if .AutomationLanes}}
+                (call $su_automate)
+{{- end}}
                 (call $su_run_vm)
                 (call $stageOut)
                 (if (i32.eqz (i32.load offset=16 (global.get $stage))) (then ;; the stage with the last voice writes the audio
@@ -630,6 +650,9 @@
 {{- end}}
 {{- if .HasOp "convolution"}}
                 (global.set $convWRK (i32.const {{add (index .Labels "su_conv") (mul 3 .ConvSpectrum)}}))
+{{- end}}
+{{- if .AutomationLanes}}
+                (call $su_automate)
 {{- end}}
                 (call $su_run_vm)
                 {{- template "output_sound.wat" .}}

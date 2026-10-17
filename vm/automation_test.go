@@ -123,3 +123,83 @@ func TestAutomationLive(t *testing.T) {
 		t.Errorf("playing: %v, want the lane", got)
 	}
 }
+
+// TestAutomationTargetsMatchUnits renders a patch whose lanes offset
+// parameters through the automation table of its instruments, and the same
+// patch with an automation unit and a send before each target, as the
+// expansion made them before: from the points of the lanes and from the
+// live values, in several voices, with amounts and a second instrument.
+func TestAutomationTargetsMatchUnits(t *testing.T) {
+	ramp := []int{0, 0, 8000, 40 * 128, 16000, -20 * 128}
+	saw := []int{0, 10 * 128, 4000, -64 * 128, 12000, 64 * 128}
+	voice := func(id int) []sointu.Unit {
+		return []sointu.Unit{
+			{Type: "envelope", Parameters: sointu.ParamMap{"stereo": 0, "attack": 32, "decay": 64, "sustain": 96, "release": 64, "gain": 128}},
+			{Type: "oscillator", ID: id, Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "phase": 0, "color": 64, "shape": 64, "gain": 128, "type": sointu.Sine}},
+			{Type: "mulp", Parameters: sointu.ParamMap{"stereo": 0}},
+			{Type: "filter", ID: id + 1, Parameters: sointu.ParamMap{"stereo": 0, "frequency": 64, "resonance": 64, "lowpass": 1}},
+			{Type: "out", ID: id + 2, Parameters: sointu.ParamMap{"stereo": 0, "gain": 64}},
+		}
+	}
+	table := sointu.Patch{
+		{NumVoices: 3, Units: voice(10), Automation: []sointu.AutomationTarget{
+			{Slot: 1, Unit: 10, Port: sointu.PortOf("oscillator", "detune"), Amount: 128, Points: ramp},
+			{Slot: 1, Unit: 11, Port: sointu.PortOf("filter", "frequency"), Amount: 32, Points: ramp},
+			{Slot: 2, Unit: 12, Port: sointu.PortOf("out", "gain"), Amount: 96, Points: saw},
+		}},
+		{NumVoices: 1, Units: voice(20), Automation: []sointu.AutomationTarget{
+			{Slot: 1, Unit: 21, Port: sointu.PortOf("filter", "frequency"), Amount: 0, Points: ramp},
+		}},
+	}
+	// the same with units: a pair before each target
+	units := table.Copy()
+	for i := range units {
+		for _, at := range units[i].Automation {
+			for j, u := range units[i].Units {
+				if u.ID != at.Unit {
+					continue
+				}
+				pair := []sointu.Unit{
+					{Type: "automation", Parameters: sointu.ParamMap{"slot": at.Slot}, VarArgs: at.Points},
+					{Type: "send", Parameters: sointu.ParamMap{"stereo": 0, "amount": at.Amount, "voice": 0, "target": at.Unit, "port": at.Port, "sendpop": 1}},
+				}
+				units[i].Units = append(units[i].Units[:j], append(pair, units[i].Units[j:]...)...)
+				break
+			}
+		}
+		units[i].Automation = nil
+	}
+	render := func(patch sointu.Patch, live bool) []float32 {
+		synth, err := GoSynther{}.Synth(patch, 120)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if live {
+			synth.(*GoSynth).SetSongTime(-1)
+			synth.(*GoSynth).SetAutomation(1, 30)
+			synth.(*GoSynth).SetAutomation(2, -50)
+		}
+		for v, note := range []byte{60, 64, 67, 48} {
+			synth.Trigger(v, note)
+		}
+		return renderAutomation(t, synth, 20000)
+	}
+	for _, live := range []bool{false, true} {
+		want, got := render(units, live), render(table, live)
+		differ := 0
+		for i := range want {
+			if want[i] != got[i] {
+				differ++
+			}
+		}
+		if differ > 0 {
+			t.Errorf("live %v: %d of %d frames differ", live, differ, len(want))
+		}
+	}
+	// the targets are no units
+	a, _ := NewBytecode(table, AllFeatures{}, 120)
+	b, _ := NewBytecode(units, AllFeatures{}, 120)
+	if len(b.Opcodes)-len(a.Opcodes) != 8 || a.AutomationLanes != 2 {
+		t.Errorf("opcodes %d with the table, %d with units; %d lanes", len(a.Opcodes), len(b.Opcodes), a.AutomationLanes)
+	}
+}

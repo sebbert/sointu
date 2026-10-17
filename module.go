@@ -622,9 +622,10 @@ func (s *Song) HasModules() bool {
 // modules using themselves, bindings that are not allowed, and sends from
 // outside a module to one of its units, as they are ambiguous.
 //
-// Before that, every unit that a lane of the automation is bound to gets an
-// automation unit and a send before it; after it, the automation units have
-// the points of their lanes, and the song no automation.
+// The targets of the lanes of the automation become the automation tables
+// of the instruments of their units (Instrument.Automation), resolved as
+// sends to those parameters would be; the automation units have the points
+// of their lanes, and the song no automation.
 func (s *Song) Expand() (Song, *Expansion) {
 	exp := &Expansion{}
 	src := s
@@ -633,6 +634,7 @@ func (s *Song) Expand() (Song, *Expansion) {
 		src = &inserted
 	}
 	ret := src.expandModules(exp)
+	ret.extractAutomation(s.Automation, exp)
 	ret.fillAutomation(s.Automation)
 	return ret, exp
 }
@@ -931,20 +933,24 @@ func (e *expander) span(id, first, end int) {
 // moveSpans moves the spans of an instrument after its units were replaced:
 // unit j by counts[j] units.
 func (exp *Expansion) moveSpans(instr int, counts []int) {
-	if len(exp.Spans) == 0 {
+	if len(exp.Spans) == 0 && len(exp.EQs) == 0 {
 		return
 	}
 	at := make([]int, len(counts)+1) // where each unit is now
 	for j, c := range counts {
 		at[j+1] = at[j] + c
 	}
-	for id, s := range exp.Spans {
-		if s.Instrument != instr || s.First+s.Count >= len(at) {
-			continue
+	move := func(spans map[int]ExpandedEQ) {
+		for id, s := range spans {
+			if s.Instrument != instr || s.First+s.Count >= len(at) {
+				continue
+			}
+			s.First, s.Count = at[s.First], at[s.First+s.Count]-at[s.First]
+			spans[id] = s
 		}
-		s.First, s.Count = at[s.First], at[s.First+s.Count]-at[s.First]
-		exp.Spans[id] = s
 	}
+	move(exp.Spans)
+	move(exp.EQs)
 }
 
 func (e *expander) problem(format string, args ...any) {

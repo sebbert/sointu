@@ -45,6 +45,10 @@ type (
 		// automationEditor edits the name of the automation slot of the
 		// parameter under the cursor
 		automationEditor *Editor
+		// automationSlot and automationAmount set the slot of the lane that
+		// the parameter under the cursor is a target of, and its amount
+		automationSlot   *NumericUpDownState
+		automationAmount *NumericUpDownState
 		automationShown  bool // it was laid out in the last frame
 		caser            cases.Caser
 
@@ -94,6 +98,8 @@ func NewInstrumentEditor(m *tracker.Model) *InstrumentEditor {
 		SelectTypeBtn:    new(Clickable),
 		commentEditor:    NewEditor(true, true, text.Start),
 		automationEditor: NewEditor(true, true, text.Start),
+		automationSlot:   NewNumericUpDownState(),
+		automationAmount: NewNumericUpDownState(),
 		paramTable:       NewScrollTable(m.Params().Table(), m.Params().Columns(), m.Unit().List()),
 		searchList:       NewDragList(m.Unit().SearchResults(), layout.Vertical),
 		searching:        m.Unit().Searching(),
@@ -919,11 +925,18 @@ func (pe *InstrumentEditor) layoutFooter(gtx C) D {
 		for pe.automationEditor.Update(gtx, name) != EditorEventNone {
 			t.FocusPrev(gtx, false)
 		}
-		label := Label(t.Theme, &t.Theme.InstrumentEditor.UnitList.Comment, fmt.Sprintf("A%d", slot+1))
+		label := Label(t.Theme, &t.Theme.InstrumentEditor.UnitList.Comment, "A")
+		slotNumber := NumUpDown(t.Automation().SlotNumber(), t.Theme, pe.automationSlot, "The automation slot of the lane that\noffsets the parameter: another slot\nmakes it one more target of that lane")
+		amount := NumUpDown(t.Automation().Amount(), t.Theme, pe.automationAmount, "How much of the lane the parameter\ngets: 1 all of it, -1 the other way")
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx C) D {
-				return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(4)}.Layout(gtx, label.Layout)
+				return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(2)}.Layout(gtx, label.Layout)
 			}),
+			layout.Rigid(slotNumber.Layout),
+			layout.Rigid(func(gtx C) D {
+				return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, Label(t.Theme, &t.Theme.InstrumentEditor.UnitList.Comment, "×").Layout)
+			}),
+			layout.Rigid(amount.Layout),
 			layout.Rigid(func(gtx C) D {
 				gtx.Constraints.Min.X, gtx.Constraints.Max.X = gtx.Dp(120), gtx.Dp(220)
 				gtx.Constraints.Min.Y = 0

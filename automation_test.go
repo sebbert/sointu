@@ -26,10 +26,10 @@ func automationSong() sointu.Song {
 			{Type: "out", ID: 3, Parameters: sointu.ParamMap{"gain": 64}},
 		}}},
 		Automation: sointu.Automation{
-			{Slot: 2, Unit: 1, Param: "detune", Points: sointu.AutomationCurve{{0, 1.5}, {4, -200}}},
-			{Slot: 4, Unit: 2, Param: "p1", Points: sointu.AutomationCurve{{1, 3}}},
+			{Slot: 2, Targets: []sointu.LaneTarget{{Unit: 1, Param: "detune", Amount: 1}}, Points: sointu.AutomationCurve{{0, 1.5}, {4, -200}}},
+			{Slot: 4, Targets: []sointu.LaneTarget{{Unit: 2, Param: "p1", Amount: 1}}, Points: sointu.AutomationCurve{{1, 3}}},
 			{Slot: 9, Points: sointu.AutomationCurve{{2, 7}}},
-			{Slot: 10, Unit: 3, Param: "gain"},
+			{Slot: 10, Targets: []sointu.LaneTarget{{Unit: 3, Param: "gain", Amount: 1}}},
 		},
 	}
 }
@@ -54,28 +54,33 @@ func TestAutomationExpand(t *testing.T) {
 	for _, u := range x.Patch[0].Units {
 		got = append(got, u.Type)
 	}
-	want := []string{"automation", "send", "oscillator", "automation", "send", "filter", "automation", "pop", "automation", "send", "out"}
+	// the targets of the lanes are no units
+	want := []string{"oscillator", "filter", "automation", "pop", "out"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("units %v, want %v", got, want)
 	}
 	u := x.Patch[0].Units
 	spr := song.SamplesPerRow()
-	if !reflect.DeepEqual(u[0].VarArgs, []int{0, 192, 4 * spr, -128 * 128}) || u[0].Parameters["slot"] != 2 {
-		t.Errorf("the lane of slot 3: %v", u[0])
+	a := x.Patch[0].Automation
+	if len(a) != 3 {
+		t.Fatalf("the automation table: %v", a)
 	}
-	if s := u[1].Parameters; s["target"] != 1 || s["port"] != sointu.PortOf("oscillator", "detune") || s["amount"] != 128 || s["sendpop"] != 1 {
-		t.Errorf("the send to the oscillator: %v", s)
+	if !reflect.DeepEqual(a[0], sointu.AutomationTarget{Slot: 2, Unit: 1, Port: sointu.PortOf("oscillator", "detune"), Amount: 128, Points: []int{0, 192, 4 * spr, -128 * 128}}) {
+		t.Errorf("the target of slot 3: %v", a[0])
 	}
-	// the send to the module unit is a send to the filter of its copy
-	if s := u[4].Parameters; s["target"] != u[5].ID || s["port"] != 0 || !reflect.DeepEqual(u[3].VarArgs, []int{spr, 3 * 128}) {
-		t.Errorf("the send to the module unit: %v, lane %v", s, u[3].VarArgs)
+	// the target of the module unit is the filter of its copy
+	if a[1].Slot != 4 || a[1].Unit != u[1].ID || a[1].Port != 0 || !reflect.DeepEqual(a[1].Points, []int{spr, 3 * 128}) {
+		t.Errorf("the target of the module unit: %v, the filter #%d", a[1], u[1].ID)
 	}
 	// the unit placed by hand in the module has the lane of its slot
-	if !reflect.DeepEqual(u[6].VarArgs, []int{2 * spr, 7 * 128}) {
-		t.Errorf("the unit of the module: %v", u[6].VarArgs)
+	if !reflect.DeepEqual(u[2].VarArgs, []int{2 * spr, 7 * 128}) {
+		t.Errorf("the unit of the module: %v", u[2].VarArgs)
 	}
-	if len(u[8].VarArgs) != 0 {
-		t.Errorf("a lane without points: %v", u[8].VarArgs)
+	if a[2].Slot != 10 || a[2].Unit != 3 || len(a[2].Points) != 0 {
+		t.Errorf("a lane without points: %v", a[2])
+	}
+	if sp, ok := exp.Spans[2]; !ok || sp.First != 1 || sp.Count != 3 {
+		t.Errorf("the span of the module unit: %v", sp)
 	}
 	if a := song.Automation.Active(); len(a) != 3 || a[2].Slot != 9 {
 		t.Errorf("Active: %v", a)
@@ -84,10 +89,10 @@ func TestAutomationExpand(t *testing.T) {
 
 func TestAutomationProblems(t *testing.T) {
 	for name, lane := range map[string]sointu.Lane{
-		"a missing unit":             {Slot: 0, Unit: 99, Param: "gain"},
-		"a parameter without port":   {Slot: 0, Unit: 1, Param: "type"},
-		"a slot that does not exist": {Slot: sointu.AutomationSlots, Unit: 1, Param: "detune"},
-		"a slot with a lane":         {Slot: 2, Unit: 3, Param: "gain"},
+		"a missing unit":             {Slot: 0, Targets: []sointu.LaneTarget{{Unit: 99, Param: "gain", Amount: 1}}},
+		"a parameter without port":   {Slot: 0, Targets: []sointu.LaneTarget{{Unit: 1, Param: "type", Amount: 1}}},
+		"a slot that does not exist": {Slot: sointu.AutomationSlots, Targets: []sointu.LaneTarget{{Unit: 1, Param: "detune", Amount: 1}}},
+		"a slot with a lane":         {Slot: 2, Targets: []sointu.LaneTarget{{Unit: 3, Param: "gain", Amount: 1}}},
 	} {
 		song := automationSong()
 		song.Automation = append(song.Automation, lane)
@@ -162,5 +167,59 @@ func TestReduceAutomation(t *testing.T) {
 	}
 	if got := (sointu.AutomationCurve{{1, 2}, {3, 6}}); got.Value(0) != 2 || got.Value(2) != 4 || got.Value(9) != 6 || (sointu.AutomationCurve{}).Value(1) != 0 {
 		t.Error("Value")
+	}
+}
+
+// TestAutomationTargets checks a lane with several targets and amounts,
+// through a scaled binding of a module.
+func TestAutomationTargets(t *testing.T) {
+	song := automationSong()
+	song.Modules[0].Units[0].Bind = map[string]sointu.Binding{"frequency": {Param: 1, Scaled: true, Min: 64, Max: 96}}
+	song.Automation = sointu.Automation{{Slot: 0, Targets: []sointu.LaneTarget{
+		{Unit: 1, Param: "detune", Amount: 1},
+		{Unit: 3, Param: "gain", Amount: -0.5},
+		{Unit: 2, Param: "p1", Amount: 1},
+	}, Points: sointu.AutomationCurve{{0, 10}}}}
+	x, exp := song.Expand()
+	if len(exp.Problems) > 0 {
+		t.Fatal(exp.Problems)
+	}
+	a := x.Patch[0].Automation
+	if len(a) != 3 {
+		t.Fatalf("the automation table: %v", a)
+	}
+	amounts := map[int]int{}
+	for _, at := range a {
+		amounts[at.Unit] = at.Amount
+	}
+	// -0.5 is 32 as the amount of a send, and the binding scales by a
+	// quarter: 64 + 64/4
+	if amounts[1] != 128 || amounts[3] != 32 || amounts[x.Patch[0].Units[1].ID] != 80 {
+		t.Errorf("the amounts: %v", amounts)
+	}
+}
+
+// TestAutomationLegacy reads a lane as songs had them before lanes had
+// targets, and saves the amount only when it is not 1.
+func TestAutomationLegacy(t *testing.T) {
+	var song sointu.Song
+	if err := yaml.Unmarshal([]byte("automation:\n  - slot: 3\n    unit: 12\n    param: gain\n    points: [[0, 1]]\n"), &song); err != nil {
+		t.Fatal(err)
+	}
+	want := sointu.Automation{{Slot: 3, Targets: []sointu.LaneTarget{{Unit: 12, Param: "gain", Amount: 1}}, Points: sointu.AutomationCurve{{0, 1}}}}
+	if !reflect.DeepEqual(song.Automation, want) {
+		t.Errorf("YAML: %v", song.Automation)
+	}
+	var fromJSON sointu.Song
+	if err := json.Unmarshal([]byte(`{"Automation":[{"Slot":3,"Unit":12,"Param":"gain","Points":[[0,1]]}]}`), &fromJSON); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(fromJSON.Automation, want) {
+		t.Errorf("JSON: %v", fromJSON.Automation)
+	}
+	song.Automation[0].Targets = append(song.Automation[0].Targets, sointu.LaneTarget{Unit: 13, Param: "decay", Amount: -0.25})
+	y, _ := yaml.Marshal(song.Automation)
+	if strings.Count(string(y), "amount") != 1 || !strings.Contains(string(y), "{unit: 13, param: decay, amount: -0.25}") {
+		t.Errorf("saved as\n%s", y)
 	}
 }

@@ -114,6 +114,12 @@ type (
 		Automation     []byte
 		AutomationFine bool
 		AutomationSlot []byte
+
+		// AutomationTargets is the table of the parameters that the lanes
+		// offset, in the order of the lanes, and AutomationLanes the number
+		// of lanes in it: see automation.go.
+		AutomationTargets []byte
+		AutomationLanes   int
 	}
 
 	// Spectrum is a spectrum buffer: the ID of the buffer, the base 2
@@ -464,7 +470,7 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 				b.operand(min(max(p["index"], 0), sointu.MaxSpawnArgs-1))
 			case "automation":
 				// operand: the offset of its lane in Automation
-				offset := b.automationOffsets[automationKey(unit)]
+				offset := b.automationOffsets[automationKey(unit.Parameters["slot"], unit.VarArgs)]
 				b.op(opcode)
 				b.operand(offset&255, offset>>8)
 			case "aux", "in":
@@ -595,6 +601,7 @@ func NewBytecode(patch sointu.Patch, featureSet FeatureSet, bpm int) (*Bytecode,
 		}
 		b.opFinish(instr)
 	}
+	b.buildAutomationTargets(patch)
 	return &b.Bytecode, nil
 }
 

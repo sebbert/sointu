@@ -495,14 +495,19 @@ response; `examples/convolution.yml` uses it. See
 [FORK.md](FORK.md#convolution-unit).
 
 The plugins show their host 64 parameters, the automation slots. Edit →
-Automate parameter binds the parameter under the cursor to a slot, which then
-offsets it, in steps of the parameter, by what the host gives it; the value
-of the unit stays. The host shows the slot by what it is bound to, or by the
-name typed into the field that the toolbar under the units then has. Recording in the plugin records the automation of the
-host with the notes, as a few points for each slot (`automation:` in the
-song), and the song plays them when it is played in the tracker and
-compiled: an `automation` unit and a send before each automated unit.
-`examples/automation.yml` has four such lanes. See
+Automate parameter gives the parameter under the cursor a lane in a slot,
+which then offsets it, in steps of the parameter, by what the host gives it;
+the value of the unit stays. With the parameter under the cursor, the
+toolbar under the units has the slot, the amount and the name: another slot
+makes the parameter one more target of that lane, so that one slot moves
+several parameters at once (a macro), each by its amount. The host shows the
+slot by what it is bound to, or by the name typed into the field. Recording
+in the plugin records the automation of the host with the notes, as a few
+points for each slot (`automation:` in the song), and the song plays them
+when it is played in the tracker and compiled. The targets are no units:
+the synth adds the lanes to their parameters before the units run, so they
+do not count toward the 63 units of an instrument. `examples/automation.yml`
+has four such lanes, one of them with two targets. See
 [FORK.md](FORK.md#automation).
 
 For patterns of units used again and again, e.g. a supersaw or a reverb, a

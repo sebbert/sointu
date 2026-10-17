@@ -266,7 +266,7 @@ func (r *Recording) Lanes(lanes sointu.Automation, rowsPerBeat int) sointu.Autom
 	// lanes that were bound to nothing and got no points are gone
 	out := ret[:0]
 	for _, l := range ret {
-		if l.Unit != 0 || len(l.Points) > 0 {
+		if len(l.Targets) > 0 || len(l.Points) > 0 {
 			out = append(out, l)
 		}
 	}

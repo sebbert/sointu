@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/bits"
+	"slices"
 	"sort"
 	"strconv"
 
@@ -30,6 +31,28 @@ type (
 		ThreadMaskM1 int    `yaml:",omitempty"`
 		MIDI         MIDI   `yaml:",flow,omitempty"` // MIDI contains info on how MIDI events should trigger this instrument.
 		Units        []Unit // Units contains all the units of the instrument
+		// Automation is the automation table of the instrument in an
+		// expanded song (Song.Expand): the parameters of its units that
+		// lanes offset. The synths add the value of each lane to its
+		// targets, in every voice, every sample before the units run, as a
+		// send would; the targets are no units. Songs as saved have none:
+		// their lanes are in Song.Automation.
+		Automation []AutomationTarget `yaml:",omitempty" json:",omitempty"`
+	}
+
+	// AutomationTarget is a parameter that a lane offsets, in the automation
+	// table of an instrument: the port Port (as a send has it) of the unit
+	// with the ID Unit, of the instrument. Amount is as the amount of a
+	// send: 128 adds the value of the lane, 64 nothing, 0 subtracts it.
+	// Points are the points of the lane of the slot, as an automation unit
+	// has them in its VarArgs: for each, the time in samples from the start
+	// of the song and the value in 1/AutomationScale steps.
+	AutomationTarget struct {
+		Slot   int
+		Unit   int
+		Port   int
+		Amount int
+		Points []int `yaml:",flow,omitempty" json:",omitempty"`
 	}
 
 	// Unit is one small component of an instrument—e.g. a filter, an
@@ -1864,6 +1887,13 @@ func (instr *Instrument) Copy() Instrument {
 	ret.Units = make([]Unit, len(instr.Units))
 	for i, u := range instr.Units {
 		ret.Units[i] = u.Copy()
+	}
+	if instr.Automation != nil {
+		ret.Automation = make([]AutomationTarget, len(instr.Automation))
+		for i, t := range instr.Automation {
+			ret.Automation[i] = t
+			ret.Automation[i].Points = slices.Clone(t.Points)
+		}
 	}
 	return ret
 }

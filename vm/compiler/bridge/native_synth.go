@@ -41,6 +41,11 @@ func Synth(patch sointu.Patch, bpm int) (*NativeSynth, error) {
 	if n := patch.MaxChannel(); n >= sointu.NarrowChannels {
 		return nil, fmt.Errorf("native bridge supports output channels up to %v; patch uses channel %v", sointu.NarrowChannels-1, n)
 	}
+	for _, instr := range patch {
+		if len(instr.Automation) > 0 {
+			return nil, errors.New("native bridge does not support automation")
+		}
+	}
 	comPatch, err := vm.NewBytecode(patch, vm.AllFeatures{}, bpm)
 	if err != nil {
 		return nil, fmt.Errorf("error compiling patch: %v", err)

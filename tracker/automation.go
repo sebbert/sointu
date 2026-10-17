@@ -3,6 +3,7 @@ package tracker
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 
 	"github.com/vsariola/sointu"
@@ -65,17 +66,35 @@ func (m *AutomationModel) SlotOf(item *Parameter) (slot int, ok bool) {
 	if !ok {
 		return 0, false
 	}
-	i, ok := m.d.Song.Automation.FindParam(unit, param)
+	i, _, ok := m.d.Song.Automation.FindParam(unit, param)
 	if !ok {
 		return 0, false
 	}
 	return m.d.Song.Automation[i].Slot, true
 }
 
+// AmountOf returns the amount of the target of a lane that the parameter
+// is, if it is one: see sointu.LaneTarget.
+func (m *AutomationModel) AmountOf(item *Parameter) (amount float64, ok bool) {
+	if len(m.d.Song.Automation) == 0 {
+		return 0, false
+	}
+	unit, param, ok := m.targetOf(item)
+	if !ok {
+		return 0, false
+	}
+	i, j, ok := m.d.Song.Automation.FindParam(unit, param)
+	if !ok {
+		return 0, false
+	}
+	return m.d.Song.Automation[i].Targets[j].Amount, true
+}
+
 // Automated returns a Bool telling whether the parameter under the cursor
-// has a lane. Setting it binds the first free slot to the parameter, so
-// that the host can automate it; clearing it removes the lane and its
-// points.
+// is a target of a lane. Setting it gives the parameter a lane of its own,
+// in the first free slot, so that the host can automate it; clearing it
+// removes it from its lane, and the lane with its points if it was the last
+// target.
 func (m *AutomationModel) Automated() Bool { return MakeBool((*automated)(m)) }
 
 type automated AutomationModel
@@ -90,7 +109,7 @@ func (m *automated) Value() bool {
 	if !ok {
 		return false
 	}
-	_, ok = m.d.Song.Automation.FindParam(unit, param)
+	_, _, ok = m.d.Song.Automation.FindParam(unit, param)
 	return ok
 }
 
@@ -100,7 +119,7 @@ func (m *automated) SetValue(val bool) {
 		return
 	}
 	if val {
-		if err := (*AutomationModel)(m).Bind(unit, param, -1); err != nil {
+		if err := (*AutomationModel)(m).Bind(unit, param, -1, 1); err != nil {
 			(*Model)(m).Alerts().Add(err.Error(), Warning)
 		}
 		return
@@ -108,14 +127,15 @@ func (m *automated) SetValue(val bool) {
 	(*AutomationModel)(m).Unbind(unit, param)
 }
 
-// Bind gives the parameter of the unit with the ID a lane: that of the
-// slot, which is then bound to nothing else, or with a negative slot the
-// first free one, or a lane without a binding that has no points.
-func (m *AutomationModel) Bind(unit int, param string, slot int) error {
+// Bind makes the parameter of the unit with the ID a target of the lane of
+// the slot, with the amount (-1 to 1, see sointu.LaneTarget): with a
+// negative slot, of a new lane in the first free slot, or a lane without
+// targets that has no points. A slot that has a lane gets the parameter as
+// one more target, so that it offsets several parameters at once. A
+// parameter that is a target of the lane already gets the amount; one that
+// is a target of another lane moves to this one.
+func (m *AutomationModel) Bind(unit int, param string, slot int, amount float64) error {
 	a := m.d.Song.Automation
-	if _, ok := a.FindParam(unit, param); ok {
-		return fmt.Errorf("the parameter has a lane already")
-	}
 	i, j, err := m.d.Song.Patch.FindUnit(unit)
 	if err != nil {
 		return fmt.Errorf("automation reaches the units of the instruments only: %w", err)
@@ -123,40 +143,144 @@ func (m *AutomationModel) Bind(unit int, param string, slot int) error {
 	if !sointu.CanAutomate(m.d.Song.Patch[i].Units[j].Type, param) {
 		return fmt.Errorf("%v of a %v unit cannot be modulated, so not automated", param, m.d.Song.Patch[i].Units[j].Type)
 	}
+	if math.IsNaN(amount) || amount < -1 || amount > 1 {
+		return fmt.Errorf("the amount of a target is -1 to 1")
+	}
 	if slot >= sointu.AutomationSlots {
 		return fmt.Errorf("there are %d automation slots", sointu.AutomationSlots)
 	}
+	li, ti, bound := a.FindParam(unit, param)
 	if slot < 0 {
+		if bound {
+			return fmt.Errorf("the parameter has a lane already")
+		}
 		var ok bool
 		if slot, ok = a.FreeSlot(); !ok {
 			return fmt.Errorf("all %d automation slots are in use", sointu.AutomationSlots)
 		}
 	}
+	if bound && a[li].Slot == slot && a[li].Targets[ti].Amount == amount {
+		return nil
+	}
 	defer (*Model)(m).change("AutomationBind", PatchChange, MajorChange)()
 	a = a.Copy()
+	if bound && a[li].Slot == slot {
+		a[li].Targets[ti].Amount = amount
+		m.d.Song.Automation = a
+		return nil
+	}
+	if bound { // from another lane
+		a = a.RemoveTarget(li, ti)
+	}
+	t := sointu.LaneTarget{Unit: unit, Param: param, Amount: amount}
 	if k, ok := a.Find(slot); ok {
-		a[k].Unit, a[k].Param = unit, param
+		a[k].Targets = append(a[k].Targets, t)
 	} else {
-		a = append(a, sointu.Lane{Slot: slot, Unit: unit, Param: param})
+		a = append(a, sointu.Lane{Slot: slot, Targets: []sointu.LaneTarget{t}})
 	}
 	m.d.Song.Automation = a
 	(*Model)(m).Alerts().Add(fmt.Sprintf("Automation slot %d offsets %s", slot+1, m.SlotName(slot)), Info)
 	return nil
 }
 
-// Unbind removes the lane of the parameter, with its points.
+// Unbind removes the parameter from its lane, and the lane with its points
+// if it was its last target.
 func (m *AutomationModel) Unbind(unit int, param string) bool {
-	i, ok := m.d.Song.Automation.FindParam(unit, param)
+	i, j, ok := m.d.Song.Automation.FindParam(unit, param)
 	if !ok {
 		return false
 	}
 	defer (*Model)(m).change("AutomationUnbind", PatchChange, MajorChange)()
-	a := m.d.Song.Automation.Copy()
-	m.d.Song.Automation = append(a[:i], a[i+1:]...)
-	if len(m.d.Song.Automation) == 0 {
-		m.d.Song.Automation = nil
-	}
+	m.d.Song.Automation = m.d.Song.Automation.Copy().RemoveTarget(i, j)
 	return true
+}
+
+// slotOfLane returns the slot of lane i.
+func (m *AutomationModel) slotOfLane(i int) int { return m.d.Song.Automation[i].Slot }
+
+// SlotNumber returns an Int with the number of the slot (from 1) of the
+// lane that the parameter under the cursor is a target of. Setting it moves
+// the parameter to the lane of that slot, as one more target of it; a lane
+// that the parameter was the only target of moves along with its points
+// and name, if the slot has no lane.
+func (m *AutomationModel) SlotNumber() Int { return MakeInt((*slotNumber)(m)) }
+
+type slotNumber AutomationModel
+
+func (v *slotNumber) Value() int {
+	if slot, ok := (*AutomationModel)(v).Slot(); ok {
+		return slot + 1
+	}
+	return 0
+}
+
+func (v *slotNumber) Range() RangeInclusive { return RangeInclusive{1, sointu.AutomationSlots} }
+
+func (v *slotNumber) Enabled() bool {
+	_, ok := (*AutomationModel)(v).Slot()
+	return ok
+}
+
+func (v *slotNumber) SetValue(value int) bool {
+	unit, param, ok := (*AutomationModel)(v).target()
+	if !ok {
+		return false
+	}
+	a := v.d.Song.Automation
+	i, j, ok := a.FindParam(unit, param)
+	slot := value - 1
+	if !ok || slot < 0 || slot >= sointu.AutomationSlots || a[i].Slot == slot {
+		return false
+	}
+	if _, taken := a.Find(slot); !taken && len(a[i].Targets) == 1 {
+		defer (*Model)(v).change("AutomationSlot", PatchChange, MajorChange)()
+		a = a.Copy()
+		a[i].Slot = slot
+		v.d.Song.Automation = a
+		return true
+	}
+	return (*AutomationModel)(v).Bind(unit, param, slot, a[i].Targets[j].Amount) == nil
+}
+
+// Amount returns an Int with the amount of the parameter under the cursor
+// in the lane that it is a target of, in 64ths: from -64 to 64.
+func (m *AutomationModel) Amount() Int { return MakeInt((*laneAmount)(m)) }
+
+type laneAmount AutomationModel
+
+func (v *laneAmount) Value() int {
+	unit, param, ok := (*AutomationModel)(v).target()
+	if !ok {
+		return 0
+	}
+	i, j, ok := v.d.Song.Automation.FindParam(unit, param)
+	if !ok {
+		return 0
+	}
+	return int(math.Round(v.d.Song.Automation[i].Targets[j].Amount * 64))
+}
+
+func (v *laneAmount) Range() RangeInclusive { return RangeInclusive{-64, 64} }
+
+func (v *laneAmount) Enabled() bool {
+	_, ok := (*AutomationModel)(v).Slot()
+	return ok
+}
+
+func (v *laneAmount) StringOf(value int) string {
+	return fmt.Sprintf("%.2f", float64(value)/64)
+}
+
+func (v *laneAmount) SetValue(value int) bool {
+	unit, param, ok := (*AutomationModel)(v).target()
+	if !ok {
+		return false
+	}
+	i, _, ok := v.d.Song.Automation.FindParam(unit, param)
+	if !ok {
+		return false
+	}
+	return (*AutomationModel)(v).Bind(unit, param, v.d.Song.Automation[i].Slot, float64(value)/64) == nil
 }
 
 // SetPoints sets the points of the lane of the slot, which is made if it
@@ -182,7 +306,7 @@ func (m *AutomationModel) SetPoints(slot int, points sointu.AutomationCurve) err
 	a[k].Points = append(sointu.AutomationCurve{}, points...)
 	if len(points) == 0 {
 		a[k].Points = nil
-		if a[k].Unit == 0 {
+		if len(a[k].Targets) == 0 {
 			a = append(a[:k], a[k+1:]...) // nothing is left of it
 		}
 	}
@@ -205,7 +329,8 @@ func (v *automationName) lane() (int, bool) {
 	if !ok {
 		return 0, false
 	}
-	return v.d.Song.Automation.FindParam(unit, param)
+	i, _, ok := v.d.Song.Automation.FindParam(unit, param)
+	return i, ok
 }
 
 func (v *automationName) Value() string {
@@ -254,25 +379,39 @@ func (m *AutomationModel) SlotName(slot int) string {
 }
 
 // DefaultSlotName returns what the slot offsets: the instrument, the unit
-// and the parameter, or "" for a slot that is bound to nothing.
+// and the parameter of its first target, and how many more it has, or ""
+// for a slot that is bound to nothing.
 func (m *AutomationModel) DefaultSlotName(slot int) string {
 	k, ok := m.d.Song.Automation.Find(slot)
-	if !ok || m.d.Song.Automation[k].Unit == 0 {
+	if !ok || len(m.d.Song.Automation[k].Targets) == 0 {
 		return ""
 	}
 	l := m.d.Song.Automation[k]
-	i, j, err := m.d.Song.Patch.FindUnit(l.Unit)
+	name := m.targetName(l.Targets[0])
+	if name == "" {
+		return ""
+	}
+	if n := len(l.Targets) - 1; n > 0 {
+		name += fmt.Sprintf(" +%d", n)
+	}
+	return name
+}
+
+// targetName returns the instrument, the unit and the parameter of a
+// target, e.g. "Bass: filter frequency", or "" if the unit is gone.
+func (m *AutomationModel) targetName(t sointu.LaneTarget) string {
+	i, j, err := m.d.Song.Patch.FindUnit(t.Unit)
 	if err != nil {
 		return ""
 	}
 	u := &m.d.Song.Patch[i].Units[j]
-	what, param := u.Type, l.Param
+	what, param := u.Type, t.Param
 	if u.Type == "module" {
 		if mi, ok := m.d.Song.Modules.Find(u.Parameters["module"]); ok {
 			mod := &m.d.Song.Modules[mi]
 			what = mod.Name
 			var k int
-			if _, err := fmt.Sscanf(l.Param, "p%d", &k); err == nil && k >= 1 && k <= len(mod.Params) && mod.Params[k-1].Name != "" {
+			if _, err := fmt.Sscanf(t.Param, "p%d", &k); err == nil && k >= 1 && k <= len(mod.Params) && mod.Params[k-1].Name != "" {
 				param = mod.Params[k-1].Name
 			}
 		}
@@ -320,49 +459,52 @@ func (m *AutomationModel) HostNames() (names [sointu.AutomationSlots]string) {
 	return names
 }
 
-// fixAutomation removes the lanes that are bound to units that are gone,
-// or to parameters that they do not have, and those of slots that do not
-// exist or have a lane already.
+// fixAutomation removes the targets of the lanes whose units are gone, or
+// that are parameters that their units do not have, and the lanes that had
+// targets and have none left, and those of slots that do not exist or have
+// a lane already.
 func (m *Model) fixAutomation() {
 	a := m.d.Song.Automation
 	if len(a) == 0 {
 		return
 	}
-	seen := map[int]bool{}
-	valid := func(l sointu.Lane) bool {
-		if l.Slot < 0 || l.Slot >= sointu.AutomationSlots || seen[l.Slot] {
-			return false
-		}
-		seen[l.Slot] = true
-		if l.Unit == 0 {
-			return true
-		}
-		// disabled units keep their lanes
+	valid := func(t sointu.LaneTarget) bool {
+		// disabled units keep their targets
 		for _, instr := range m.d.Song.Patch {
 			for _, u := range instr.Units {
-				if u.ID == l.Unit {
-					return sointu.CanAutomate(u.Type, l.Param)
+				if u.ID == t.Unit {
+					return sointu.CanAutomate(u.Type, t.Param)
 				}
 			}
 		}
 		return false
 	}
+	seen := map[int]bool{}
 	var out sointu.Automation
-	for i, l := range a {
-		if valid(l) {
-			if out != nil {
-				out = append(out, l)
-			}
+	changed := false
+	for _, l := range a {
+		if l.Slot < 0 || l.Slot >= sointu.AutomationSlots || seen[l.Slot] {
+			changed = true
 			continue
 		}
-		if out == nil {
-			out = append(sointu.Automation{}, a[:i]...)
+		seen[l.Slot] = true
+		if !slices.ContainsFunc(l.Targets, func(t sointu.LaneTarget) bool { return !valid(t) }) {
+			out = append(out, l)
+			continue
+		}
+		changed = true
+		var targets []sointu.LaneTarget
+		for _, t := range l.Targets {
+			if valid(t) {
+				targets = append(targets, t)
+			}
+		}
+		if len(targets) > 0 {
+			l.Targets = targets
+			out = append(out, l)
 		}
 	}
-	if out != nil || len(a) == 0 {
+	if changed {
 		m.d.Song.Automation = out
-		if len(out) == 0 {
-			m.d.Song.Automation = nil
-		}
 	}
 }

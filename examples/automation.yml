@@ -26,7 +26,7 @@ patch:
         - type: filter
           id: 4
           parameters: {frequency: 32, lowpass: 1, resonance: 60}
-          comment: 'Slot A1 opens it over the song, and closes it in a step at the last pattern'
+          comment: 'Slot A1 opens it over the song, and closes it in a step at the last pattern; slot A2 closes it by half of what it widens the pad'
         - type: pan
           id: 5
           parameters: {panning: 64}
@@ -42,7 +42,7 @@ patch:
         - type: oscillator
           id: 8
           parameters: {color: 0, detune: 70, gain: 96, shape: 64, stereo: 1, transpose: 64, type: 1, unison: 3}
-          comment: 'Slot A2 widens the detune; slot A3 bends the pitch by less than a semitone, which needs values of 16 bits'
+          comment: 'Slot A2 (a macro with two targets) widens the detune; slot A3 bends the pitch by less than a semitone, which needs values of 16 bits'
         - type: mulp
           id: 9
           parameters: {stereo: 1}
@@ -52,18 +52,20 @@ patch:
           comment: 'Slot A4 fades the pad in'
 automation:
     - slot: 0
-      unit: 4
-      param: frequency
+      targets:
+        - {unit: 4, param: frequency}
       points: [[0, 0], [32, 40], [48, 70], [48, 10], [64, 30]]
     - slot: 1
-      unit: 8
-      param: detune
+      name: Width
+      targets:
+        - {unit: 8, param: detune}
+        - {unit: 4, param: frequency, amount: -0.5}
       points: [[16, 0], [64, 30]]
     - slot: 2
-      unit: 8
-      param: transpose
+      targets:
+        - {unit: 8, param: transpose}
       points: [[0, 0], [28, 0], [30, 0.35], [32, 0], [60, 0], [62, -0.35], [64, 0]]
     - slot: 3
-      unit: 10
-      param: gain
+      targets:
+        - {unit: 10, param: gain}
       points: [[0, -40], [16, 0]]

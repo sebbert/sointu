@@ -53,7 +53,8 @@ type (
 		songPlaying     bool   // the units read their lanes, not the live values
 		automationEpoch uint32 // counts the changes of the table
 		live            [sointu.AutomationSlots]automationLive
-		liveRamps       bool // some live value is on its way
+		liveRamps       bool             // some live value is on its way
+		automationLanes []automationLane // the lanes of Bytecode.AutomationTargets
 	}
 
 	// GoSynther is a Synther implementation that can converts patches into
@@ -153,6 +154,7 @@ func (s GoSynther) Synth(patch sointu.Patch, bpm int) (sointu.Synth, error) {
 	ret.setSpectra(nil)
 	ret.setMC(nil)
 	ret.loadConvs(false)
+	ret.loadAutomationTargets()
 	return ret, nil
 }
 
@@ -309,6 +311,7 @@ func (s *GoSynth) Update(patch sointu.Patch, bpm int) error {
 	old := s.bytecode
 	s.bytecode = *bytecode
 	s.automationEpoch++ // the automation units find their records anew
+	s.loadAutomationTargets()
 	s.makeVoiceBuffers()
 	s.setSpectra(&old)
 	s.setMC(&old)
@@ -352,6 +355,9 @@ func (s *GoSynth) Render(buffer sointu.AudioBuffer, maxtime int) (samples int, r
 	stack = append(stack, []float32{0, 0, 0, 0}...)
 	synth := &s.state
 	for renderTime < maxtime && len(buffer) > 0 {
+		if s.automationLanes != nil {
+			s.applyAutomation()
+		}
 		opcodesInstr := s.bytecode.Opcodes
 		operandsInstr := s.bytecode.Operands
 		opcodes, operands := opcodesInstr, operandsInstr

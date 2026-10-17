@@ -67,7 +67,7 @@ func TestAutomationBind(t *testing.T) {
 		t.Fatalf("the target under the cursor: %v %v %v (%v)", unit, param, ok, item.Name())
 	}
 	a.Automated().SetValue(true)
-	if l := a.Lanes(); len(l) != 1 || l[0].Slot != 0 || l[0].Unit != 1 || l[0].Param != "value" {
+	if l := a.Lanes(); len(l) != 1 || l[0].Slot != 0 || len(l[0].Targets) != 1 || l[0].Targets[0] != (sointu.LaneTarget{Unit: 1, Param: "value", Amount: 1}) {
 		t.Fatalf("lanes %v", l)
 	}
 	if got := a.SlotName(0); got != "Lead: loadval value" {
@@ -77,13 +77,13 @@ func TestAutomationBind(t *testing.T) {
 	if hint := item.Hint().Label; !strings.HasPrefix(hint, "A1 +0.0: ") {
 		t.Errorf("hint %q", hint)
 	}
-	if err := a.Bind(1, "value", -1); err == nil {
+	if err := a.Bind(1, "value", -1, 1); err == nil {
 		t.Error("a second lane on a parameter")
 	}
-	if err := a.Bind(2, "stereo", -1); err == nil {
+	if err := a.Bind(2, "stereo", -1, 1); err == nil {
 		t.Error("a lane on a parameter without a port")
 	}
-	if err := a.Bind(2, "gain", 5); err != nil || len(a.Lanes()) != 2 || a.Lanes()[1].Slot != 5 {
+	if err := a.Bind(2, "gain", 5, 1); err != nil || len(a.Lanes()) != 2 || a.Lanes()[1].Slot != 5 {
 		t.Errorf("binding slot 6: %v, %v", err, a.Lanes())
 	}
 	if err := a.SetPoints(5, sointu.AutomationCurve{{Row: 0, Value: 1}, {Row: 4, Value: 200}}); err == nil {
@@ -97,16 +97,17 @@ func TestAutomationBind(t *testing.T) {
 		t.Error("undo left the points")
 	}
 	m.History().Redo().Do()
-	// the player has the lanes as units
-	if got := len(m.playerSong().Patch[0].Units); got != 6 {
-		t.Errorf("the player's instrument has %d units, want 6", got)
+	// the player has the lanes in the automation table of the instrument,
+	// not as units
+	if ps := m.playerSong(); len(ps.Patch[0].Units) != 2 || len(ps.Patch[0].Automation) != 2 {
+		t.Errorf("the player's instrument has %d units and %d targets, want 2 and 2", len(ps.Patch[0].Units), len(ps.Patch[0].Automation))
 	}
 	// a lane goes with its unit
 	func() {
 		defer m.change("test", PatchChange, MajorChange)()
 		m.d.Song.Patch[0].Units = m.d.Song.Patch[0].Units[:1]
 	}()
-	if l := a.Lanes(); len(l) != 1 || l[0].Unit != 1 {
+	if l := a.Lanes(); len(l) != 1 || l[0].Targets[0].Unit != 1 {
 		t.Errorf("after deleting the out unit: %v", l)
 	}
 	a.Automated().SetValue(false)
@@ -118,7 +119,7 @@ func TestAutomationBind(t *testing.T) {
 func TestAutomationLiveAndRecording(t *testing.T) {
 	m, p, sync, render := automationModel(t)
 	a := m.Automation()
-	if err := a.Bind(1, "value", 3); err != nil {
+	if err := a.Bind(1, "value", 3, 1); err != nil {
 		t.Fatal(err)
 	}
 	render(64)
@@ -164,7 +165,7 @@ func TestAutomationLiveAndRecording(t *testing.T) {
 	render(64)
 	sync()
 	lanes := a.Lanes()
-	if len(lanes) != 2 || lanes[0].Slot != 3 || lanes[0].Unit != 1 || lanes[1].Slot != 10 || lanes[1].Unit != 0 {
+	if len(lanes) != 2 || lanes[0].Slot != 3 || lanes[0].Targets[0].Unit != 1 || lanes[1].Slot != 10 || len(lanes[1].Targets) != 0 {
 		t.Fatalf("lanes after recording: %+v", lanes)
 	}
 	rows := func(frames float64) float64 { return frames / 44100 / 60 * 120 * 4 }
@@ -217,8 +218,8 @@ func TestRemoteAutomation(t *testing.T) {
 	m, _, _, _ := automationModel(t)
 	r := (*Remote)(m)
 	undo := len(m.undoStack)
-	text, err := r.Call(func() (string, error) { return r.Automate(1, "value", 0, false, nil) })
-	if err != nil || !strings.Contains(text, "A1 offsets value of unit 1") {
+	text, err := r.Call(func() (string, error) { return r.Automate(1, "value", 0, false, nil, nil) })
+	if err != nil || !strings.Contains(text, "slot A1, named \"A1 Lead: loadval value\" in the host, offsets #1 value") {
 		t.Fatalf("automate: %v\n%s", err, text)
 	}
 	if len(m.undoStack) != undo+1 {
@@ -239,12 +240,12 @@ func TestRemoteAutomation(t *testing.T) {
 	// refused without changing the song or the history
 	undo = len(m.undoStack)
 	for name, call := range map[string]func() (string, error){
-		"a parameter without a port": func() (string, error) { return r.Automate(2, "stereo", 0, false, nil) },
-		"a missing unit":             func() (string, error) { return r.Automate(77, "gain", 0, false, nil) },
-		"a lane that is there":       func() (string, error) { return r.Automate(1, "value", 0, false, nil) },
-		"a slot that is not":         func() (string, error) { return r.Automate(2, "gain", 65, false, nil) },
+		"a parameter without a port": func() (string, error) { return r.Automate(2, "stereo", 0, false, nil, nil) },
+		"a missing unit":             func() (string, error) { return r.Automate(77, "gain", 0, false, nil, nil) },
+		"a lane that is there":       func() (string, error) { return r.Automate(1, "value", 0, false, nil, nil) },
+		"a slot that is not":         func() (string, error) { return r.Automate(2, "gain", 65, false, nil, nil) },
 		"points out of order":        func() (string, error) { return r.SetAutomation(1, [][2]float64{{4, 0}, {2, 1}}) },
-		"a missing lane":             func() (string, error) { return r.Automate(2, "gain", 0, true, nil) },
+		"a missing lane":             func() (string, error) { return r.Automate(2, "gain", 0, true, nil, nil) },
 	} {
 		if _, err := call(); err == nil {
 			t.Errorf("%s: no error", name)
@@ -255,11 +256,11 @@ func TestRemoteAutomation(t *testing.T) {
 	}
 	// what the user changed
 	before := m.d.Song.Copy()
-	m.Automation().Bind(2, "gain", 9)
+	m.Automation().Bind(2, "gain", 9, 1)
 	if lines := strings.Join(automationChanges(before.Automation, m.d.Song.Automation), "\n"); !strings.Contains(lines, "slot A10 added (#2 gain") {
 		t.Errorf("changes: %s", lines)
 	}
-	if _, err := r.Automate(1, "value", 0, true, nil); err != nil || len(m.d.Song.Automation) != 1 {
+	if _, err := r.Automate(1, "value", 0, true, nil, nil); err != nil || len(m.d.Song.Automation) != 1 {
 		t.Errorf("removing: %v, %v", err, m.d.Song.Automation)
 	}
 }
@@ -271,7 +272,7 @@ func TestAutomationNames(t *testing.T) {
 	if a.Name().SetValue("x") {
 		t.Error("named a parameter without a lane")
 	}
-	if err := a.Bind(1, "value", 2); err != nil {
+	if err := a.Bind(1, "value", 2, 1); err != nil {
 		t.Fatal(err)
 	}
 	if got := a.HostNames()[2]; got != "A3 Lead: loadval value" {
@@ -305,18 +306,86 @@ func TestAutomationNames(t *testing.T) {
 	// through the remote tools: naming a lane that is there, and a new one
 	r := m.Remote()
 	name := "Cutoff"
-	if text, err := r.Automate(1, "value", 0, false, &name); err != nil || !strings.Contains(text, `A3 is named "Cutoff"`) {
+	if text, err := r.Automate(1, "value", 0, false, &name, nil); err != nil || !strings.Contains(text, `A3 is named "Cutoff"`) {
 		t.Errorf("renaming: %v\n%s", err, text)
 	}
 	name = "Level"
-	if text, err := r.Automate(2, "gain", 0, false, &name); err != nil || !strings.Contains(text, `named "Level"`) || a.HostNames()[0] != "Level" {
+	if text, err := r.Automate(2, "gain", 0, false, &name, nil); err != nil || !strings.Contains(text, `named "Level"`) || a.HostNames()[0] != "Level" {
 		t.Errorf("binding with a name: %v\n%s", err, text)
 	}
 	if text := r.Song(); !strings.Contains(text, `A3 "Cutoff" offsets #1 value`) {
 		t.Errorf("get_song:\n%s", text)
 	}
 	name = ""
-	if _, err := r.Automate(1, "value", 0, false, &name); err != nil || a.HostNames()[2] != "A3 Lead: loadval value" {
+	if _, err := r.Automate(1, "value", 0, false, &name, nil); err != nil || a.HostNames()[2] != "A3 Lead: loadval value" {
 		t.Errorf("clearing the name: %v, %q", err, a.HostNames()[2])
+	}
+}
+
+// TestAutomationMacro gives a lane two targets, one of them with a negative
+// amount, and moves a target between lanes.
+func TestAutomationMacro(t *testing.T) {
+	m, p, _, render := automationModel(t)
+	a := m.Automation()
+	if err := a.Bind(1, "value", 0, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Bind(2, "gain", 0, -0.5); err != nil {
+		t.Fatal(err)
+	}
+	if l := a.Lanes(); len(l) != 1 || len(l[0].Targets) != 2 || l[0].Targets[1] != (sointu.LaneTarget{Unit: 2, Param: "gain", Amount: -0.5}) {
+		t.Fatalf("lanes %v", l)
+	}
+	if got := a.DefaultSlotName(0); got != "Lead: loadval value +1" {
+		t.Errorf("DefaultSlotName %q", got)
+	}
+	// 32 steps: the loadval at 0.5, the gain of the out 16 steps down
+	render(64)
+	p.Automate(p.frame, 0, 32, new(int))
+	if out := render(400); math.Abs(float64(out[399])-0.5*112/128) > 1e-6 {
+		t.Errorf("live: %v, want %v", out[399], 0.5*112/128)
+	}
+	// the amount and the slot of the parameter under the cursor
+	m.Params().SetCursor(Point{X: 1, Y: 0})
+	if v := a.Amount().Value(); v != 64 {
+		t.Errorf("Amount %d, want 64", v)
+	}
+	a.Amount().SetValue(32)
+	if l := a.Lanes(); l[0].Targets[0].Amount != 0.5 {
+		t.Errorf("after setting the amount: %v", l)
+	}
+	if !a.SlotNumber().SetValue(5) {
+		t.Fatal("moving to slot 5")
+	}
+	if l := a.Lanes(); len(l) != 2 || len(l[0].Targets) != 1 || l[1].Slot != 4 || l[1].Targets[0] != (sointu.LaneTarget{Unit: 1, Param: "value", Amount: 0.5}) {
+		t.Errorf("after moving to slot 5: %v", l)
+	}
+	// alone in its lane, the target takes the lane along
+	a.SetPoints(4, sointu.AutomationCurve{{Row: 0, Value: 3}})
+	if !a.SlotNumber().SetValue(7) {
+		t.Fatal("moving to slot 7")
+	}
+	if l := a.Lanes(); len(l) != 2 || l[1].Slot != 6 || len(l[1].Points) != 1 {
+		t.Errorf("after moving the lane to slot 7: %v", l)
+	}
+	// back into the lane of slot 1, and out again
+	if err := a.Bind(1, "value", 0, 1); err != nil || len(a.Lanes()) != 1 || len(a.Lanes()[0].Targets) != 2 {
+		t.Errorf("back to slot 1: %v %v", err, a.Lanes())
+	}
+	if !a.Unbind(2, "gain") || len(a.Lanes()) != 1 || a.Lanes()[0].Targets[0].Unit != 1 {
+		t.Errorf("after unbinding the gain: %v", a.Lanes())
+	}
+	// through the remote tools, with an amount
+	r := m.Remote()
+	amount := -0.25
+	if text, err := r.Automate(2, "gain", 1, false, nil, &amount); err != nil || !strings.Contains(text, "#2 gain times -0.25") {
+		t.Errorf("automate with an amount: %v\n%s", err, text)
+	}
+	if text, _ := r.Instrument("0", false); !strings.Contains(text, "gain=128(A1×-0.25 ") {
+		t.Errorf("get_instrument:\n%s", text)
+	}
+	amount = 2
+	if _, err := r.Automate(2, "gain", 1, false, nil, &amount); err == nil {
+		t.Error("an amount of 2")
 	}
 }

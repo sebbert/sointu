@@ -70,9 +70,9 @@ func automationTestSong(fine bool) sointu.Song {
 			}},
 		},
 		Automation: sointu.Automation{
-			{Slot: 0, Unit: 10, Param: "frequency", Points: sointu.AutomationCurve{{0, f(0)}, {8, f(50)}, {8, f(10)}, {20.5, f(-20)}, {31, f(30)}}},
-			{Slot: 3, Unit: 20, Param: "transpose", Points: sointu.AutomationCurve{{2.25, f(0)}, {14, f(12)}, {24, f(-7)}}},
-			{Slot: 4, Unit: 21, Param: "p1", Points: sointu.AutomationCurve{{0, f(-30)}, {32, f(40)}}},
+			{Slot: 0, Targets: []sointu.LaneTarget{{Unit: 10, Param: "frequency", Amount: 1}}, Points: sointu.AutomationCurve{{0, f(0)}, {8, f(50)}, {8, f(10)}, {20.5, f(-20)}, {31, f(30)}}},
+			{Slot: 3, Targets: []sointu.LaneTarget{{Unit: 20, Param: "transpose", Amount: 1}}, Points: sointu.AutomationCurve{{2.25, f(0)}, {14, f(12)}, {24, f(-7)}}},
+			{Slot: 4, Targets: []sointu.LaneTarget{{Unit: 21, Param: "p1", Amount: 1}}, Points: sointu.AutomationCurve{{0, f(-30)}, {32, f(40)}}},
 			{Slot: 5, Points: sointu.AutomationCurve{{0, f(0)}, {4, f(64)}, {12, f(-10)}, {30, f(100)}}},
 		},
 	}
@@ -153,8 +153,8 @@ func TestAutomationOnlyWhenUsed(t *testing.T) {
 	plain.Patch[2].Units = append(plain.Patch[2].Units[:3:3], plain.Patch[2].Units[5:]...) // without the units placed by hand
 	idle := plain
 	idle.Automation = sointu.Automation{
-		{Slot: 0, Unit: 10, Param: "frequency"},
-		{Slot: 1, Unit: 20, Param: "transpose", Points: sointu.AutomationCurve{{0, 0}, {8, 0}}},
+		{Slot: 0, Targets: []sointu.LaneTarget{{Unit: 10, Param: "frequency", Amount: 1}}},
+		{Slot: 1, Targets: []sointu.LaneTarget{{Unit: 20, Param: "transpose", Amount: 1}}, Points: sointu.AutomationCurve{{0, 0}, {8, 0}}},
 		{Slot: 2, Points: sointu.AutomationCurve{{0, 0.001}}},
 	}
 	for _, arch := range []string{"wasm", "386", "amd64"} {
@@ -264,7 +264,7 @@ func TestAutomationSizes(t *testing.T) {
 		x := float64(row) / 64
 		curve = append(curve, sointu.AutomationPoint{Row: float64(row), Value: math.Round(128*60*x*x) / 128})
 	}
-	many.Automation = sointu.Automation{{Slot: 0, Unit: 4, Param: "frequency", Points: curve}}
+	many.Automation = sointu.Automation{{Slot: 0, Targets: []sointu.LaneTarget{{Unit: 4, Param: "frequency", Amount: 1}}, Points: curve}}
 	log("1 lane, 64 points of a curve (16 bits)", many)
 	for i := range curve {
 		curve[i].Value = math.Round(curve[i].Value)

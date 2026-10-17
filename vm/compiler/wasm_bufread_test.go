@@ -158,7 +158,7 @@ func encodeTestBuffers(t *testing.T, ff *ffmpeg.FFmpeg, song sointu.Song) (encod
 		if err != nil {
 			t.Fatal(err)
 		}
-		r, err := cache.Get(buf.Sample.Data, enc, buf.Channels)
+		r, err := cache.Get(buf.Sample.Data, enc, buf.Channels, buf.Sample.Trim())
 		if err != nil {
 			t.Skipf("encoding %s failed (encoder missing?): %v", buf.Name, err)
 		}
@@ -321,7 +321,7 @@ func TestBufreadWasmInBrowser(t *testing.T) {
 			encoded := map[int]compiler.EncodedBuffer{}
 			audio := map[int]sointu.BufferAudio{}
 			for _, buf := range song.Buffers {
-				r, err := cache.Get(buf.Sample.Data, *buf.Sample.Encoding, buf.Channels)
+				r, err := cache.Get(buf.Sample.Data, *buf.Sample.Encoding, buf.Channels, buf.Sample.Trim())
 				if err != nil {
 					t.Skipf("encoding failed (encoder missing?): %v", err)
 				}

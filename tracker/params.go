@@ -551,8 +551,14 @@ func (p *Parameter) Hint() ParameterHint {
 		return hint
 	}
 	if slot, ok := p.m.Automation().SlotOf(p); ok {
-		// a lane offsets it: the slot, and what the host gives it now
-		hint.Label = fmt.Sprintf("A%d %+.1f: %s", slot+1, p.m.Automation().Live(slot), hint.Label)
+		// a lane offsets it: the slot, the amount when it is not all of the
+		// lane, and the offset that the host gives it now
+		amount, _ := p.m.Automation().AmountOf(p)
+		times := ""
+		if amount != 1 {
+			times = fmt.Sprintf("×%.2f", amount)
+		}
+		hint.Label = fmt.Sprintf("A%d%s %+.1f: %s", slot+1, times, float64(p.m.Automation().Live(slot))*amount, hint.Label)
 	}
 	if name, ok := p.Bound(); ok {
 		// the module units set it; the value is the default of the module

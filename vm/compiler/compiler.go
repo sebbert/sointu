@@ -404,6 +404,13 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 			return nil, nil, fmt.Errorf(`the %v unit is only supported when compiling for wasm (targeted architecture was %v)`, unit, com.Arch)
 		}
 	}
+	if com.Arch != "wasm" {
+		for _, instr := range song.Patch {
+			if len(instr.Automation) > 0 {
+				return nil, nil, fmt.Errorf(`automation is only supported when compiling for wasm (targeted architecture was %v)`, com.Arch)
+			}
+		}
+	}
 	if features.SupportsParamValue("oscillator", "bandlimit", 1) && com.Arch != "wasm" {
 		return nil, nil, fmt.Errorf(`bandlimited oscillators are only supported when compiling for wasm (targeted architecture was %v)`, com.Arch)
 	}

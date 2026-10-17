@@ -231,7 +231,7 @@ func TestParam(t *testing.T) {
 		{ID: 1, Type: "loadval", Parameters: sointu.ParamMap{"stereo": 0, "value": 64}},
 		{ID: 2, Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
 	}
-	song.Automation = sointu.Automation{{Slot: 7, Unit: 1, Param: "value"}}
+	song.Automation = sointu.Automation{{Slot: 7, Targets: []sointu.LaneTarget{{Unit: 1, Param: "value", Amount: 1}}}}
 	expanded, _ := song.Expand()
 	for _, rate := range []int{44100, 48000} {
 		broker := tracker.NewBroker()

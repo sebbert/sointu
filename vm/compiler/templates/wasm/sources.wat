@@ -642,24 +642,23 @@
 )
 {{end}}
 
-{{- if .HasOp "automation"}}
+{{- if or (.HasOp "automation") .AutomationLanes}}
 {{- $auto := index .Labels "su_automation"}}
 {{- $vs := .AutomationValueBytes}}
 ;;-------------------------------------------------------------------------------
-;;   AUTOMATION opcode: push the value of a lane at the time of the song
+;;   $su_lane returns the value of a lane at the time of the song
 ;;-------------------------------------------------------------------------------
-;;   The operand is the offset of the first record of the lane in
-;;   su_automation, 2 bytes. A record is the time after the record before
-;;   it, 16 bits in units of 16 samples, and the value reached then; a time
-;;   of 0 ends the lane. The value before the first record precedes it.
-;;   WRK[0] is the offset of the current record from the first, WRK[1] the
-;;   sample at which the record before it was reached. Matches automation
-;;   in vm/automation.go.
+;;   $lane is the offset of the first record of the lane in su_automation. A
+;;   record is the time after the record before it, 16 bits in units of 16
+;;   samples, and the value reached then; a time of 0 ends the lane. The
+;;   value before the first record precedes it. $state has the state of the
+;;   reader: the offset of the current record from the first, and the sample
+;;   at which the record before it was reached. Matches laneValue in
+;;   vm/automation.go.
 ;;-------------------------------------------------------------------------------
-(func $su_op_automation (param $stereo i32) (local $lane i32) (local $p i32) (local $t i32) (local $dt i32) (local $v0 i32) (local $v f32)
-    (local.set $lane (i32.add (call $scanOperand) (i32.shl (call $scanOperand) (i32.const 8))))
-    (local.set $p (i32.add (local.get $lane) (i32.load (global.get $WRK))))
-    (local.set $t (i32.sub (global.get $globaltick) (i32.load offset=4 (global.get $WRK))))
+(func $su_lane (param $lane i32) (param $state i32) (result f32) (local $p i32) (local $t i32) (local $dt i32) (local $v0 i32) (local $v f32)
+    (local.set $p (i32.add (local.get $lane) (i32.load (local.get $state))))
+    (local.set $t (i32.sub (global.get $globaltick) (i32.load offset=4 (local.get $state))))
     loop $records
         ;; the record is reached, unless it is the end (a time of 0)
         (if (i32.gt_u (local.get $t) (i32.sub (local.tee $dt (i32.shl (i32.load16_u offset={{$auto}} (local.get $p)) (i32.const 4))) (i32.const 1))) (then
@@ -668,8 +667,8 @@
             (br $records)
         ))
     end
-    (i32.store (global.get $WRK) (i32.sub (local.get $p) (local.get $lane)))
-    (i32.store offset=4 (global.get $WRK) (i32.sub (global.get $globaltick) (local.get $t)))
+    (i32.store (local.get $state) (i32.sub (local.get $p) (local.get $lane)))
+    (i32.store offset=4 (local.get $state) (i32.sub (global.get $globaltick) (local.get $t)))
     (local.set $v (f32.convert_i32_s (local.tee $v0 ({{if .AutomationFine}}i32.load16_s{{else}}i32.load8_s{{end}} offset={{sub $auto $vs}} (local.get $p)))))
     (if (local.get $dt) (then
         (local.set $v (f32.add (local.get $v) (f32.mul
@@ -677,9 +676,78 @@
             (f32.div (f32.convert_i32_u (local.get $t)) (f32.convert_i32_u (local.get $dt)))
         )))
     ))
-    (call $push (f32.mul (local.get $v) (f32.const {{if .AutomationFine}}0.00006103515625{{else}}0.0078125{{end}})))
+    (f32.mul (local.get $v) (f32.const {{if .AutomationFine}}0.00006103515625{{else}}0.0078125{{end}}))
 )
-{{end}}
+{{- end}}
+
+{{- if .HasOp "automation"}}
+;;-------------------------------------------------------------------------------
+;;   AUTOMATION opcode: push the value of a lane at the time of the song
+;;-------------------------------------------------------------------------------
+;;   The operand is the offset of the first record of the lane in
+;;   su_automation, 2 bytes. WRK[0] and WRK[1] are the state of $su_lane.
+;;-------------------------------------------------------------------------------
+(func $su_op_automation (param $stereo i32)
+    (call $push (call $su_lane (i32.add (call $scanOperand) (i32.shl (call $scanOperand) (i32.const 8))) (global.get $WRK)))
+)
+{{- end}}
+
+{{- if .AutomationLanes}}
+{{- $targets := index .Labels "su_automation_targets"}}
+{{- $ab := 2}}{{- if .WideVoices}}{{- $ab = 3}}{{- end}}
+;;-------------------------------------------------------------------------------
+;;   $su_automate adds the value of each lane, times the amount of each of
+;;   its targets, to the ports of the targets in their voices, as sends before
+;;   the units would: once a sample, before the units run. For each lane,
+;;   su_automation_targets has the offset of its first record (2 bytes) and
+;;   the number of its targets (1 byte), and for each target its address as a
+;;   global send has it, without the flag ({{$ab}} bytes), the number of its
+;;   voices and its amount as that of a send (a byte each); its state is 8
+;;   bytes of su_automation_state. Matches applyAutomation in
+;;   vm/automation.go.
+{{- if .NumStages}}
+;;   A stage adds only to the voices that it runs: from $voice, $voicesRemain
+;;   of them.
+{{- end}}
+;;-------------------------------------------------------------------------------
+(func $su_automate (local $p i32) (local $state i32) (local $n i32) (local $v f32) (local $f f32) (local $a i32) (local $k i32)
+    (local.set $state (i32.const {{index .Labels "su_automation_state"}}))
+    loop $lanes
+        (local.set $v (call $su_lane (i32.load16_u offset={{$targets}} (local.get $p)) (local.get $state)))
+        (local.set $n (i32.load8_u offset={{add $targets 2}} (local.get $p)))
+        (local.set $p (i32.add (local.get $p) (i32.const 3)))
+        loop $targets
+            (local.set $a (i32.add (i32.mul
+{{- if .WideVoices}}
+                (i32.and (i32.load offset={{$targets}} (local.get $p)) (i32.const 0xFFFFFF))
+{{- else}}
+                (i32.load16_u offset={{$targets}} (local.get $p))
+{{- end}}
+                (i32.const 4)) (i32.const {{sub (index .Labels "su_voices") 64}})))
+            (local.set $k (i32.load8_u offset={{add $targets $ab}} (local.get $p)))
+            (local.set $f (f32.mul (local.get $v) (f32.sub (f32.mul (f32.convert_i32_u (i32.load8_u offset={{add $targets $ab 1}} (local.get $p))) (f32.const 0.015625)) (f32.const 1))))
+            loop $voices
+{{- if .NumStages}}
+                (if (i32.and
+                    (i32.ge_u (local.get $a) (global.get $voice))
+                    (i32.lt_u (local.get $a) (i32.add (global.get $voice) (i32.mul (global.get $voicesRemain) (i32.const 4096))))
+                ) (then
+{{- end}}
+                (f32.store offset=32 (local.get $a) (f32.add (f32.load offset=32 (local.get $a)) (local.get $f)))
+{{- if .NumStages}}
+                ))
+{{- end}}
+                (local.set $a (i32.add (local.get $a) (i32.const 4096)))
+                (br_if $voices (local.tee $k (i32.sub (local.get $k) (i32.const 1))))
+            end
+            (local.set $p (i32.add (local.get $p) (i32.const {{add $ab 2}})))
+            (br_if $targets (local.tee $n (i32.sub (local.get $n) (i32.const 1))))
+        end
+        (local.set $state (i32.add (local.get $state) (i32.const 8)))
+        (br_if $lanes (i32.lt_u (local.get $p) (i32.const {{len .AutomationTargets}})))
+    end
+)
+{{- end}}
 
 {{- if .HasOp "bufread"}}
 ;;-------------------------------------------------------------------------------
