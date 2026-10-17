@@ -55,6 +55,10 @@ type (
 		spectrum     *Plot
 		browser      *SampleBrowser
 		browserBtn   *Clickable
+		// listSplit sizes the buffer list against the rest of the tab, and
+		// browserSplit the properties against the sample browser; both are
+		// dragged by the bar between them
+		listSplit, browserSplit *SplitState
 		// dropReplace is the tag of the properties for files dropped onto
 		// the window: see dropFiles
 		dropReplace bool
@@ -92,6 +96,8 @@ func NewInstrumentBuffers(m *tracker.Model) *InstrumentBuffers {
 		spectrum:     NewPlot(plotRange{-3.8, 0}, plotRange{bufferSpectrumDbMax, bufferSpectrumDbMin}, bufferSpectrumDbMin),
 		browser:      NewSampleBrowser(m),
 		browserBtn:   new(Clickable),
+		listSplit:    &SplitState{Ratio: -.6},
+		browserSplit: &SplitState{Ratio: .4},
 	}
 }
 
@@ -183,7 +189,6 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 		)
 	}
 	list := func(gtx C) D {
-		gtx.Constraints = layout.Exact(image.Pt(min(gtx.Dp(220), gtx.Constraints.Max.X), gtx.Constraints.Max.Y))
 		fdl := FilledDragList(th, ib.list)
 		dims := fdl.Layout(gtx, elem, nil)
 		fdl.LayoutScrollBar(gtx)
@@ -344,15 +349,19 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 		layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(toolbar),
 			layout.Flexed(1, func(gtx C) D {
-				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-					layout.Rigid(listSurface),
-					layout.Flexed(1, func(gtx C) D {
-						defer clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Push(gtx.Ops).Pop()
-						event.Op(gtx.Ops, &ib.dropReplace)
-						return props(gtx)
-					}),
-					layout.Rigid(func(gtx C) D { return ib.layoutBrowser(gtx, tr) }),
-				)
+				propsArea := func(gtx C) D {
+					defer clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Push(gtx.Ops).Pop()
+					event.Op(gtx.Ops, &ib.dropReplace)
+					props(gtx)
+					return D{Size: gtx.Constraints.Max}
+				}
+				rest := propsArea
+				if tr.ShowBrowser().Value() {
+					rest = func(gtx C) D {
+						return ib.browserSplit.Layout(gtx, &bufferBrowserSplit, propsArea, ib.browser.Layout)
+					}
+				}
+				return ib.listSplit.Layout(gtx, &bufferListSplit, listSurface, rest)
 			}),
 		)
 		return D{Size: m}
@@ -360,15 +369,13 @@ func (ib *InstrumentBuffers) layout(gtx C) D {
 	return Surface{Height: 3, Focus: tr.PatchPanel.TreeFocused(gtx)}.Layout(gtx, f)
 }
 
-// layoutBrowser lays out the sample browser at the right of the tab, if it
-// is shown: 260 dp wide, or a third of the tab if that is less.
-func (ib *InstrumentBuffers) layoutBrowser(gtx C, tr *Tracker) D {
-	if !tr.ShowBrowser().Value() {
-		return D{}
-	}
-	gtx.Constraints = layout.Exact(image.Pt(min(gtx.Dp(260), gtx.Constraints.Max.X/3), gtx.Constraints.Max.Y))
-	return ib.browser.Layout(gtx)
-}
+// bufferListSplit and bufferBrowserSplit are the bars of the Buffers tab:
+// between the buffer list and the rest, and between the properties and the
+// sample browser. A side dragged below half its least size hides.
+var (
+	bufferListSplit    = SplitStyle{Bar: 4, MinSize1: 120, MinSize2: 360}
+	bufferBrowserSplit = SplitStyle{Bar: 4, MinSize1: 200, MinSize2: 160}
+)
 
 // releasedPlayheadFade is how many frames the playheads of released notes take
 // to fade out.
