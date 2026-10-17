@@ -27,9 +27,10 @@ type bufferSlices struct {
 	selFrom   int
 	pointerID pointer.ID
 
-	equalBtn, detectBtn, clearBtn                   *Clickable
+	equalBtn, detectBtn, clearBtn, perBeatBtn       *Clickable
 	cropBtn, deleteBtn, trimBtn, fadeInBtn, fadeOut *Clickable
 	count, sensitivity, threshold, fadeLen, curve   *NumericUpDownState
+	perBeat                                         *NumericUpDownState
 }
 
 // sliceGrabPx is how near, in pixels, a press is to a marker to grab it.
@@ -37,10 +38,10 @@ const sliceGrabPx = 5
 
 func newBufferSlices() *bufferSlices {
 	return &bufferSlices{drag: -1,
-		equalBtn: new(Clickable), detectBtn: new(Clickable), clearBtn: new(Clickable),
+		equalBtn: new(Clickable), detectBtn: new(Clickable), clearBtn: new(Clickable), perBeatBtn: new(Clickable),
 		cropBtn: new(Clickable), deleteBtn: new(Clickable), trimBtn: new(Clickable), fadeInBtn: new(Clickable), fadeOut: new(Clickable),
 		count: NewNumericUpDownState(), sensitivity: NewNumericUpDownState(), threshold: NewNumericUpDownState(),
-		fadeLen: NewNumericUpDownState(), curve: NewNumericUpDownState(),
+		fadeLen: NewNumericUpDownState(), curve: NewNumericUpDownState(), perBeat: NewNumericUpDownState(),
 	}
 }
 
@@ -178,7 +179,17 @@ func (bs *bufferSlices) Layout(gtx C) D {
 		row("Slices",
 			layout.Rigid(label(plural(n, "slice"))),
 			gap,
-			layout.Rigid(upDown(b.SliceCount(), bs.count, "How many slices of equal length\nSlice equally makes")),
+			layout.Rigid(func(gtx C) D {
+				if b.SlicePerBeat().Value() {
+					return upDown(b.SlicesPerBeat(), bs.perBeat, "Slices per beat that Slice equally makes")(gtx)
+				}
+				return upDown(b.SliceCount(), bs.count, "How many slices of equal length\nSlice equally makes")(gtx)
+			}),
+			layout.Rigid(func(gtx C) D {
+				tb := ToggleBtn(b.SlicePerBeat(), th, bs.perBeatBtn, "per beat",
+					"Slice equally makes the slices per beat:\nthe beats are those of an ACID loop, or at the BPM\nin the name of the file or its folder, or of the song.\nA loaded file that replaces a sample sliced equally\nis sliced equally too, by count or per beat")
+				return tb.Layout(gtx)
+			}),
 			layout.Rigid(btn(b.SliceEqually(), bs.equalBtn, "Slice equally", "Put markers that cut the buffer\ninto slices of equal length")),
 			gap,
 			layout.Rigid(upDown(b.SliceSensitivity(), bs.sensitivity, "The sensitivity of Detect transients,\n0 to 100: more finds more")),

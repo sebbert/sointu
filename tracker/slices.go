@@ -3,7 +3,10 @@ package tracker
 import (
 	"fmt"
 	"math"
+	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 
 	"github.com/vsariola/sointu"
 	"github.com/vsariola/sointu/ffmpeg"
@@ -15,8 +18,13 @@ import (
 // Buffers tab, and the range selected on the waveform. They are not part of
 // the song.
 type sliceTools struct {
-	init        bool
-	count       int    // the slices that Slice equally makes
+	init     bool
+	count    int  // the slices that Slice equally makes
+	perBeat  bool // Slice equally makes perBeatN slices per beat instead of count
+	perBeatN int  // the slices per beat of Slice equally
+	// tempo is what an imported file told of its tempo, by buffer ID: the
+	// beats of an ACID loop, or a BPM in its name or its folder's
+	tempo       map[int]loopTempo
 	sensitivity int    // of Detect transients, 0 to 100
 	selection   [2]int // the selected frames of the waveform, from the oldest valid frame; none if not start < end
 	selectionOf int    // the ID of the buffer of the selection
@@ -36,7 +44,7 @@ const (
 func (m *BufferModel) tools() *sliceTools {
 	t := &m.buffers.sliceTools
 	if !t.init {
-		*t = sliceTools{init: true, count: 8, sensitivity: 50, threshold: -60, fadeLength: 10}
+		*t = sliceTools{init: true, count: 8, perBeatN: 2, sensitivity: 50, threshold: -60, fadeLength: 10}
 	}
 	return t
 }
@@ -153,12 +161,121 @@ func (v *sliceEqually) Enabled() bool {
 }
 func (v *sliceEqually) Do() {
 	m := (*BufferModel)(v)
-	n, frames := m.tools().count, m.sliceLength()
-	markers := make([]int, 0, n-1)
+	frames := m.sliceLength()
+	n := m.tools().count
+	if m.tools().perBeat {
+		n = m.perBeatSlices(m.selected().ID, frames)
+	}
+	m.SetSlices(equalSlices(n, frames))
+}
+
+// equalSlices returns the markers that cut frames into n slices of equal
+// length.
+func equalSlices(n, frames int) []int {
+	n = min(n, maxSliceMarkers+1)
+	markers := make([]int, 0, max(n-1, 0))
 	for i := 1; i < n; i++ {
 		markers = append(markers, int(int64(frames)*int64(i)/int64(n)))
 	}
-	m.SetSlices(markers)
+	return markers
+}
+
+// equalCount returns the number of slices of equal length that markers cut
+// frames into, or 0 if they are not of equal length (within rounding).
+func equalCount(markers []int, frames int) int {
+	n := len(markers) + 1
+	if len(markers) == 0 || frames <= 0 {
+		return 0
+	}
+	for i, m := range markers {
+		if d := m - int(int64(frames)*int64(i+1)/int64(n)); d < -2 || d > 2 {
+			return 0
+		}
+	}
+	return n
+}
+
+// SlicePerBeat returns whether Slice equally makes SlicesPerBeat slices per
+// beat of the loop, rather than SliceCount slices.
+func (m *BufferModel) SlicePerBeat() Bool { return MakeBool((*slicePerBeat)(m)) }
+
+type slicePerBeat BufferModel
+
+func (v *slicePerBeat) Value() bool       { return (*BufferModel)(v).tools().perBeat }
+func (v *slicePerBeat) SetValue(val bool) { (*BufferModel)(v).tools().perBeat = val }
+
+// SlicesPerBeat returns the slices per beat that Slice equally makes when
+// SlicePerBeat is on.
+func (m *BufferModel) SlicesPerBeat() Int { return MakeInt((*slicesPerBeat)(m)) }
+
+type slicesPerBeat BufferModel
+
+func (v *slicesPerBeat) Value() int { return (*BufferModel)(v).tools().perBeatN }
+func (v *slicesPerBeat) SetValue(value int) bool {
+	(*BufferModel)(v).tools().perBeatN = value
+	return true
+}
+func (v *slicesPerBeat) Range() RangeInclusive { return RangeInclusive{1, 16} }
+
+// loopTempo is what a file tells of the tempo of the loop in it.
+type loopTempo struct {
+	beats int     // of an ACID loop, 0 if unknown
+	bpm   float64 // from its name or its folder's, 0 if unknown
+}
+
+// bpmInName matches a tempo written in a file or folder name, e.g. "140 BPM"
+// or "174bpm".
+var bpmInName = regexp.MustCompile(`(?i)(?:^|[^0-9.])(\d{2,3}(?:\.\d+)?)\s*[-_ ]?bpm`)
+
+// tempoOfPath returns the BPM written in the name of a file, or else of its
+// folder, or 0.
+func tempoOfPath(path string) float64 {
+	for _, name := range []string{filepath.Base(path), filepath.Base(filepath.Dir(path))} {
+		if m := bpmInName.FindStringSubmatch(name); m != nil {
+			if v, err := strconv.ParseFloat(m[1], 64); err == nil && v >= 40 && v <= 300 {
+				return v
+			}
+		}
+	}
+	return 0
+}
+
+// LoopBeats returns the length in beats of the buffer with the ID, of
+// frames: of an ACID loop as the file says, or else at the BPM in its name
+// or its folder's, or else at the BPM of the song; and where that came from.
+func (m *BufferModel) LoopBeats(id, frames int) (beats int, from string) {
+	t := m.tools().tempo[id]
+	if t.beats > 0 {
+		return t.beats, "ACID"
+	}
+	bpm, from := t.bpm, "name"
+	if bpm <= 0 {
+		bpm, from = float64(m.d.Song.BPM), "song"
+	}
+	if bpm <= 0 {
+		return 1, from
+	}
+	return max(int(math.Round(float64(frames)/44100*bpm/60)), 1), fmt.Sprintf("%s %g BPM", from, bpm)
+}
+
+func (m *BufferModel) perBeatSlices(id, frames int) int {
+	beats, _ := m.LoopBeats(id, frames)
+	return max(beats*m.tools().perBeatN, 1)
+}
+
+// sliceKeep is how a buffer whose sample is replaced was sliced, for the
+// new sample to be sliced the same way: count slices of equal length, or
+// none.
+type sliceKeep struct{ count int }
+
+// keepSlicing returns how the buffer with the ID, whose sample is about to
+// be replaced, is sliced.
+func (m *BufferModel) keepSlicing(id int) sliceKeep {
+	buf, ok := m.d.Song.Buffers.Find(id)
+	if !ok || id == 0 {
+		return sliceKeep{}
+	}
+	return sliceKeep{equalCount(buf.Slices, m.buffers.audio[id].Frames())}
 }
 
 // SliceSensitivity returns the sensitivity of DetectTransients, 0 to 100.
@@ -289,6 +406,8 @@ func abs32(v float32) float32 { return float32(math.Abs(float64(v))) }
 type importMeta struct {
 	markers []int
 	beats   int
+	bpm     float64 // written in the name of the file or its folder
+	frames  int     // at 44100 Hz, when asked for by importSample
 }
 
 // FileSlices returns the slice markers that an imported audio file carries:
@@ -302,32 +421,64 @@ func FileSlices(data []byte) []int {
 // ffmpeg.Import does, and returns what it says about its slices. A REX file
 // is rendered with the REX Shared Library, its slices where they are in the
 // loop, and stored as FLAC.
-func importSample(f *ffmpeg.FFmpeg, name string, data []byte) (stored []byte, channels int, meta importMeta, err error) {
-	if rex.IsRex(name) {
+//
+// path is the file's, for a BPM in its name; with frames, the stored sample
+// is decoded to count its frames.
+func importSample(f *ffmpeg.FFmpeg, path string, data []byte, frames bool) (stored []byte, channels int, meta importMeta, err error) {
+	if rex.IsRex(path) {
 		loop, err := rex.Decode(data)
 		if err != nil {
 			return nil, 0, meta, err
 		}
 		audio, markers := loop.Render()
 		stored, err = f.Store(audio)
-		return stored, audio.Channels, importMeta{markers: markers}, err
+		return stored, audio.Channels, importMeta{markers: markers, frames: audio.Frames()}, err
 	}
 	stored, channels, err = f.Import(data)
+	if err != nil {
+		return nil, 0, meta, err
+	}
 	info, _ := samplemarkers.Read(data)
-	return stored, channels, importMeta{markers: info.Slices(), beats: info.Beats}, err
+	meta = importMeta{markers: info.Slices(), beats: info.Beats, bpm: tempoOfPath(path)}
+	if frames && len(meta.markers) == 0 {
+		ch := min(max(channels, 1), 2)
+		if audio, err := f.Decode(stored, ch); err == nil {
+			meta.frames = audio.Frames()
+		}
+	}
+	return stored, channels, meta, nil
 }
 
 // setImportedSlices gives the selected buffer, a sample just imported, the
 // slice markers of its file, if it has any. An ACID loop without markers
 // gets none, but Slice equally is set to its beats, so that one click
 // slices it per beat. Call it within the change of the import.
-func (m *BufferModel) setImportedSlices(meta importMeta) {
+//
+// A sample that replaced one sliced equally (keep) is sliced equally too,
+// by SliceCount slices or SlicesPerBeat per beat, as set, if it has no
+// markers of its own.
+func (m *BufferModel) setImportedSlices(meta importMeta, keep sliceKeep) {
 	buf := m.selected()
 	if buf == nil {
 		return
 	}
+	t := m.tools()
+	if t.tempo == nil {
+		t.tempo = map[int]loopTempo{}
+	}
+	t.tempo[buf.ID] = loopTempo{beats: meta.beats, bpm: meta.bpm}
 	if len(meta.markers) > 0 {
 		buf.Slices = sointu.CleanSlices(meta.markers, 0)
+		return
+	}
+	if keep.count > 0 && meta.frames > 0 {
+		n := keep.count
+		if t.perBeat {
+			n = m.perBeatSlices(buf.ID, meta.frames)
+			beats, from := m.LoopBeats(buf.ID, meta.frames)
+			(*Model)(m).Alerts().Add(fmt.Sprintf("%d beats (%s): %d slices", beats, from, n), Info)
+		}
+		buf.Slices = equalSlices(n, meta.frames)
 		return
 	}
 	if r := (*sliceCount)(m).Range(); meta.beats >= r.Min && meta.beats <= r.Max {

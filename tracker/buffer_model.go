@@ -110,15 +110,16 @@ func (m *BufferModel) Item(i int) (name, info string) {
 // if replace is true: the one selected now, wherever the selection is when
 // the file has been converted, in the background.
 func (m *BufferModel) Import(r io.ReadCloser, replace bool) {
-	fileName := "sample"
+	fileName, path := "sample", "sample"
 	if f, ok := r.(*os.File); ok {
-		fileName = filepath.Base(f.Name())
+		fileName, path = filepath.Base(f.Name()), f.Name()
 		m.browser.lastFolder = filepath.Dir(f.Name())
 	}
 	target := 0
 	if buf := m.selected(); replace && buf != nil {
 		target = buf.ID
 	}
+	keep := m.keepSlicing(target)
 	data, err := io.ReadAll(r)
 	r.Close()
 	if err != nil {
@@ -132,7 +133,7 @@ func (m *BufferModel) Import(r io.ReadCloser, replace bool) {
 		var channels int
 		var meta importMeta
 		if err == nil {
-			stored, channels, meta, err = importSample(f, fileName, data)
+			stored, channels, meta, err = importSample(f, path, data, keep.count > 0)
 		}
 		TrySend(m.broker.ToModel, MsgToModel{Data: func() {
 			if err != nil {
@@ -141,13 +142,14 @@ func (m *BufferModel) Import(r io.ReadCloser, replace bool) {
 			}
 			defer m.change("ImportBuffer")() // one step with the markers
 			m.addImported(fileName, stored, min(max(channels, 1), 2), target)
-			m.setImportedSlices(meta)
+			m.setImportedSlices(meta, keep)
 		}})
 	}()
 }
 
 // addImported adds an imported sample as a new buffer, or puts it in the
-// buffer with the ID replace, if there is one, in place of what it has.
+// buffer with the ID replace, if there is one, in place of what it has,
+// named after the file.
 func (m *BufferModel) addImported(fileName string, data []byte, channels int, replace int) {
 	defer m.change("ImportBuffer")()
 	if len(m.d.Song.EncodingPresets) == 0 {
@@ -163,6 +165,7 @@ func (m *BufferModel) addImported(fileName string, data []byte, channels int, re
 			m.setDefaultEncoding(sample)
 		}
 		buf.Sample = sample
+		buf.Name = strings.TrimSuffix(fileName, filepath.Ext(fileName))
 		buf.Channels = channels
 		buf.Frames = 0 // no longer recorded into
 		// the markers were of the sample replaced

@@ -681,6 +681,7 @@ func (m *BufferModel) ImportFiles(paths []string, replace bool) {
 	if buf := m.selected(); replace && buf != nil {
 		target = buf.ID
 	}
+	keep := m.keepSlicing(target)
 	m.browser.lastFolder = filepath.Dir(files[len(files)-1])
 	if len(files) == 1 {
 		(*Model)(m).Alerts().Add(fmt.Sprintf("Importing %s...", filepath.Base(files[0])), Info)
@@ -697,7 +698,7 @@ func (m *BufferModel) ImportFiles(paths []string, replace bool) {
 			err := findErr
 			if err == nil {
 				if data, err = os.ReadFile(path); err == nil {
-					stored, channels, meta, err = importSample(f, name, data)
+					stored, channels, meta, err = importSample(f, path, data, i == 0 && keep.count > 0)
 				}
 			}
 			id := 0
@@ -711,7 +712,11 @@ func (m *BufferModel) ImportFiles(paths []string, replace bool) {
 				}
 				defer m.change("ImportBuffer")() // one step with the markers
 				m.addImported(name, stored, min(max(channels, 1), 2), id)
-				m.setImportedSlices(meta)
+				k := sliceKeep{}
+				if i == 0 {
+					k = keep
+				}
+				m.setImportedSlices(meta, k)
 			}})
 			if findErr != nil {
 				return // without ffmpeg, the others fail the same

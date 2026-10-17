@@ -275,7 +275,7 @@ func TestImportRexWithoutLibrary(t *testing.T) {
 	if rex.Available() {
 		t.Skip("this build has the REX Shared Library")
 	}
-	if _, _, _, err := importSample(nil, "break.rx2", []byte("CAT ")); err != rex.ErrUnavailable {
+	if _, _, _, err := importSample(nil, "break.rx2", []byte("CAT "), false); err != rex.ErrUnavailable {
 		t.Errorf("got %v", err)
 	}
 }
@@ -285,12 +285,89 @@ func TestImportRexWithoutLibrary(t *testing.T) {
 func TestImportAcidBeats(t *testing.T) {
 	m, _ := newRemoteTestModel(t)
 	setBuffers(m, sointu.Buffers{{ID: 1, Channels: 1, Sample: &sointu.AudioSample{}}})
-	m.Buffer().setImportedSlices(importMeta{beats: 8})
+	m.Buffer().setImportedSlices(importMeta{beats: 8}, sliceKeep{})
 	if got := m.Buffer().Slices(); got != nil || m.Buffer().SliceCount().Value() != 8 {
 		t.Errorf("markers %v, count %d", got, m.Buffer().SliceCount().Value())
 	}
-	m.Buffer().setImportedSlices(importMeta{markers: []int{100}, beats: 4})
+	m.Buffer().setImportedSlices(importMeta{markers: []int{100}, beats: 4}, sliceKeep{})
 	if got := m.Buffer().Slices(); !slices.Equal(got, []int{100}) || m.Buffer().SliceCount().Value() != 8 {
 		t.Errorf("markers win over beats: %v, count %d", got, m.Buffer().SliceCount().Value())
+	}
+}
+
+// importInto loads a file into the selected buffer, as Enter in the browser
+// does, and waits until the buffer has its audio.
+func importInto(t *testing.T, m *Model, broker *Broker, path string, replace bool) {
+	t.Helper()
+	before := len(m.undoStack)
+	m.Buffer().ImportFiles([]string{path}, replace)
+	deadline := time.After(10 * time.Second)
+	for len(m.undoStack) == before {
+		select {
+		case msg := <-broker.ToModel:
+			m.ProcessMsg(msg)
+		case <-deadline:
+			t.Fatal("timed out")
+		}
+	}
+	processBufferResults(t, m, broker, m.d.Song.Buffers[m.d.BufferIndex].ID)
+}
+
+// A file loaded in place of a sample sliced equally is sliced equally too:
+// by the same count, or per beat at the BPM in its name; and the buffer is
+// named after it. A sample sliced otherwise leaves the new one unsliced.
+func TestReplaceKeepsEqualSlices(t *testing.T) {
+	m, broker := newBufferTestModel(t)
+	dir := t.TempDir()
+	write := func(name string, frames int) string {
+		p := filepath.Join(dir, name)
+		os.WriteFile(p, testWav(make([]int16, frames)), 0o644)
+		return p
+	}
+	a := write("a.wav", 44100)
+	b := write("loop 120 BPM.wav", 88200)    // 4 beats
+	c := write("loop2 120 BPM.wav", 2*88200) // 8 beats
+	b2 := m.Buffer()
+	importInto(t, m, broker, a, false)
+	b2.SliceCount().SetValue(4)
+	b2.SliceEqually().Do()
+	importInto(t, m, broker, b, true)
+	if got := b2.Slices(); !slices.Equal(got, []int{22050, 44100, 66150}) {
+		t.Errorf("by count: %v", got)
+	}
+	if name := m.d.Song.Buffers[m.d.BufferIndex].Name; name != "loop 120 BPM" {
+		t.Errorf("the buffer is named %q", name)
+	}
+	b2.SlicePerBeat().SetValue(true)
+	b2.SlicesPerBeat().SetValue(2)
+	importInto(t, m, broker, c, true)
+	if got := len(b2.Slices()) + 1; got != 16 {
+		t.Errorf("per beat: %d slices, want 16", got)
+	}
+	b2.SliceEqually().Do() // the same from the button
+	if got := len(b2.Slices()) + 1; got != 16 {
+		t.Errorf("Slice equally per beat: %d slices, want 16", got)
+	}
+	b2.SetSlices([]int{1000})
+	importInto(t, m, broker, a, true)
+	if got := b2.Slices(); len(got) != 0 {
+		t.Errorf("after markers by hand: %v", got)
+	}
+	if len(m.d.Song.Buffers) != 1 {
+		t.Errorf("%d buffers", len(m.d.Song.Buffers))
+	}
+}
+
+func TestTempoOfPath(t *testing.T) {
+	for path, want := range map[string]float64{
+		"/x/VEC3 Loops 140 BPM/VEC3 Loop 140 BPM 001.wav": 140,
+		"/x/Loops 174 BPM/break.wav":                      174,
+		"/x/y/break_170bpm.wav":                           170,
+		"/x/y/kick 01.wav":                                0,
+		"/x/y/loop 128.5 bpm.wav":                         128.5,
+	} {
+		if got := tempoOfPath(path); got != want {
+			t.Errorf("%s: %v, want %v", path, got, want)
+		}
 	}
 }
