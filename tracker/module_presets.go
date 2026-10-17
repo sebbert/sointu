@@ -63,9 +63,15 @@ func (m *Model) modulePresetDir() (string, bool) {
 // directory, in the order of their names, and after them those that the
 // tracker comes with.
 func (m *Model) loadModulePresets() {
-	m.modulePresets = m.modulePresets[:0]
-	m.userModulePresets = 0
-	if dir, ok := m.modulePresetDir(); ok {
+	dir, ok := m.modulePresetDir()
+	m.modulePresets, m.userModulePresets = readModulePresets(dir, ok)
+}
+
+// readModulePresets reads the module presets of the user from dir, if ok,
+// and those that the tracker comes with, and returns them with the number
+// of those of the user, which come first.
+func readModulePresets(dir string, ok bool) (presets []modulePreset, user int) {
+	if ok {
 		entries, _ := os.ReadDir(dir)
 		for _, e := range entries {
 			if e.IsDir() || filepath.Ext(e.Name()) != ".yml" {
@@ -77,11 +83,11 @@ func (m *Model) loadModulePresets() {
 			}
 			if p, ok := parseModulePreset(e.Name(), data); ok {
 				p.file = filepath.Join(dir, e.Name())
-				m.modulePresets = append(m.modulePresets, p)
+				presets = append(presets, p)
 			}
 		}
-		sort.Slice(m.modulePresets, func(i, j int) bool { return m.modulePresets[i].name < m.modulePresets[j].name })
-		m.userModulePresets = len(m.modulePresets)
+		sort.Slice(presets, func(i, j int) bool { return presets[i].name < presets[j].name })
+		user = len(presets)
 	}
 	entries, _ := builtinModulePresets.ReadDir("modules") // in the order of the file names
 	for _, e := range entries {
@@ -90,11 +96,12 @@ func (m *Model) loadModulePresets() {
 			continue
 		}
 		p, ok := parseModulePreset(e.Name(), data)
-		if !ok || slices.ContainsFunc(m.modulePresets[:m.userModulePresets], func(u modulePreset) bool { return u.name == p.name }) {
+		if !ok || slices.ContainsFunc(presets[:user], func(u modulePreset) bool { return u.name == p.name }) {
 			continue
 		}
-		m.modulePresets = append(m.modulePresets, p)
+		presets = append(presets, p)
 	}
+	return presets, user
 }
 
 // SavePreset returns an Action to save the selected module as a module

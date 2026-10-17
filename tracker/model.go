@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"slices"
@@ -176,6 +177,11 @@ type (
 		browser        browserState
 
 		presetData presetData
+		// encodingPresetPath is the user's file of encoding presets that
+		// the preset watcher reads; empty for the one in the configuration
+		// directory. Tests set it.
+		encodingPresetPath string
+		presetWatchCancel  context.CancelFunc
 	}
 
 	// Cursor identifies a row and a track in a song score.
@@ -285,6 +291,7 @@ func NewModel(broker *Broker, synthers []sointu.Synther, midiContext MIDIContext
 	m.scopeData = scopeData{lengthInBeats: 4}
 	m.Scope().updateBufferLength()
 	m.updateDeriveData(SongChange)
+	m.watchPresets() // before the presets are read
 	m.presetData.load()
 	m.loadModulePresets()
 	m.Preset().updateCache()
@@ -302,6 +309,7 @@ func NewModel(broker *Broker, synthers []sointu.Synther, midiContext MIDIContext
 func (m *Model) Close() {
 	m.Browser().cancelDecode()
 	m.Browser().stopWatching()
+	m.stopWatchingPresets()
 	TrySend(m.broker.CloseDetector, struct{}{})
 	TrySend(m.broker.CloseSpecAn, struct{}{})
 	TrySend(m.broker.CloseMIDIHandler, struct{}{})

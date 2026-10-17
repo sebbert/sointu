@@ -194,11 +194,11 @@ func (m *saveUserPreset) Enabled() bool {
 	return m.d.InstrIndex >= 0 && m.d.InstrIndex < len(m.d.Song.Patch)
 }
 func (m *saveUserPreset) Do() {
-	configDir, err := os.UserConfigDir()
-	if err != nil {
+	root, ok := m.presetData.userPresetsDir()
+	if !ok {
 		return
 	}
-	userPresetsDir := filepath.Join(configDir, "sointu", "presets", m.presetData.cache.dir)
+	userPresetsDir := filepath.Join(root, m.presetData.cache.dir)
 	instr := m.d.Song.Patch[m.d.InstrIndex]
 	name := instrumentNameToFilename(instr.Name)
 	fileName := filepath.Join(userPresetsDir, name+".yml")
@@ -218,11 +218,11 @@ type overwriteUserPreset PresetModel
 
 func (m *overwriteUserPreset) Enabled() bool { return true }
 func (m *overwriteUserPreset) Do() {
-	configDir, err := os.UserConfigDir()
-	if err != nil {
+	root, ok := m.presetData.userPresetsDir()
+	if !ok {
 		return
 	}
-	userPresetsDir := filepath.Join(configDir, "sointu", "presets", m.presetData.cache.dir)
+	userPresetsDir := filepath.Join(root, m.presetData.cache.dir)
 	instr := m.d.Song.Patch[m.d.InstrIndex]
 	name := instrumentNameToFilename(instr.Name)
 	fileName := filepath.Join(userPresetsDir, name+".yml")
@@ -236,8 +236,7 @@ func (m *overwriteUserPreset) Do() {
 	}
 	os.WriteFile(fileName, data, 0644)
 	m.dialog = NoDialog
-	(*PresetModel)(m).presetData.load()
-	(*PresetModel)(m).updateCache()
+	(*PresetModel)(m).reload()
 }
 
 // TryDeleteUserPreset returns an Action to display a dialog to confirm deletion
@@ -261,12 +260,11 @@ type deleteUserPreset PresetModel
 
 func (m *deleteUserPreset) Enabled() bool { return (*Model)(m).Preset().Delete().Enabled() }
 func (m *deleteUserPreset) Do() {
-	configDir, err := os.UserConfigDir()
-	if err != nil {
+	userPresetsDir, ok := m.presetData.userPresetsDir()
+	if !ok {
 		return
 	}
 	p := m.presetData.cache.results[m.presetData.presetIndex]
-	userPresetsDir := filepath.Join(configDir, "sointu", "presets")
 	if p.dir != "" {
 		userPresetsDir = filepath.Join(userPresetsDir, p.dir)
 	}
@@ -274,8 +272,7 @@ func (m *deleteUserPreset) Do() {
 	fileName := filepath.Join(userPresetsDir, name+".yml")
 	os.Remove(fileName)
 	m.dialog = NoDialog
-	(*PresetModel)(m).presetData.load()
-	(*PresetModel)(m).updateCache()
+	(*PresetModel)(m).reload()
 }
 
 type (
@@ -283,6 +280,9 @@ type (
 		presets     []preset
 		dirs        []string
 		presetIndex int
+		// userRoot is the folder with the presets folder of the user's
+		// presets; empty for <config dir>/sointu. Tests set it.
+		userRoot string
 
 		cache presetCache
 	}
@@ -374,14 +374,57 @@ func (m *PresetModel) updateCache() {
 //go:embed presets/*
 var builtInPresetsFS embed.FS
 
+// userPresetsDir returns the folder of the user's instrument presets,
+// <config dir>/sointu/presets.
+func (m *presetData) userPresetsDir() (string, bool) {
+	root := m.userRoot
+	if root == "" {
+		configDir, err := os.UserConfigDir()
+		if err != nil {
+			return "", false
+		}
+		root = filepath.Join(configDir, "sointu")
+	}
+	return filepath.Join(root, "presets"), true
+}
+
+// reload reads the presets again, at once, keeping the selected preset.
+func (m *PresetModel) reload() {
+	p := presetData{userRoot: m.presetData.userRoot}
+	p.load()
+	m.replacePresets(p)
+}
+
+// replacePresets puts presets read again in place of the presets, keeping
+// the search, the filters and the selected preset: the selection follows
+// the preset to its new place in the results, or, if it is gone, stays at
+// the same index.
+func (m *PresetModel) replacePresets(p presetData) {
+	pd := &m.presetData
+	var name, dir string
+	var user, had bool
+	if i := pd.presetIndex; i >= 0 && i < len(pd.cache.results) {
+		r := pd.cache.results[i]
+		name, dir, user, had = r.instr.Name, r.dir, r.user, true
+	}
+	pd.presets, pd.dirs = p.presets, p.dirs
+	m.updateCache()
+	if had {
+		if j := slices.IndexFunc(pd.cache.results, func(r preset) bool {
+			return r.instr.Name == name && r.dir == dir && r.user == user
+		}); j >= 0 {
+			pd.presetIndex = j
+		}
+	}
+}
+
 func (m *presetData) load() {
 	m.dirs = m.dirs[:0]
 	m.presets = m.presets[:0]
 	seenDir := make(map[string]bool)
 	m.loadPresetsFromFs(builtInPresetsFS, false, seenDir)
-	if configDir, err := os.UserConfigDir(); err == nil {
-		userPresets := filepath.Join(configDir, "sointu")
-		m.loadPresetsFromFs(os.DirFS(userPresets), true, seenDir)
+	if dir, ok := m.userPresetsDir(); ok {
+		m.loadPresetsFromFs(os.DirFS(filepath.Dir(dir)), true, seenDir)
 	}
 	sort.Sort(m)
 	m.dirs = make([]string, 0, len(seenDir))
