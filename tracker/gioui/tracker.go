@@ -306,6 +306,12 @@ func TrackerFromContext(gtx C) *Tracker {
 
 func (t *Tracker) newWindow() *app.Window {
 	w := new(app.Window)
+	// the shortcuts bound to keys are the tracker's, also where the menu
+	// of the host would take them, e.g. Cmd+Z in a plugin
+	w.SetCommandKeys(func(e key.Event) bool {
+		_, ok := keyBindingMap[e]
+		return ok
+	})
 	w.Option(app.Size(t.preferences.WindowSize()))
 	if t.preferences.Window.Maximized {
 		w.Option(app.Maximized.Option())

@@ -28,6 +28,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+	"sync/atomic"
 )
 
 // Option configures a window.
@@ -43,6 +44,8 @@ type Option func(unit.Metric, *Config)
 type Window struct {
 	initialOpts    []Option
 	initialActions []system.Action
+	// commandKeys is set by SetCommandKeys
+	commandKeys atomic.Pointer[func(key.Event) bool]
 
 	ctx context
 	gpu gpu.GPU
@@ -1009,3 +1012,17 @@ func (t flushEvent) ImplementsEvent() {}
 // theFlushEvent avoids allocating garbage when sending
 // flushEvents.
 var theFlushEvent flushEvent
+
+// SetCommandKeys sets which command key combinations the window takes while
+// it has the keyboard, before the menu of the application, on macOS: those
+// that claim reports true for, given as presses. In a plugin, the menu is
+// the host's, e.g. its Undo on Cmd+Z. A claimed key goes to the window
+// whether it handles it or not. Without claim (nil, the default), the menu
+// takes all. claim is called on the main thread of the application.
+func (w *Window) SetCommandKeys(claim func(key.Event) bool) {
+	if claim == nil {
+		w.commandKeys.Store(nil)
+		return
+	}
+	w.commandKeys.Store(&claim)
+}
