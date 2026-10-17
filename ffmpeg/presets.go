@@ -28,15 +28,31 @@ const DefaultPreset = "Opus 24k"
 // built-in one replaces it. A missing user file is not an error; a malformed
 // one is, but the built-in presets are still returned.
 func Presets() (sointu.EncodingPresets, error) {
+	file, _ := UserPresetsPath()
+	return PresetsFrom(file)
+}
+
+// UserPresetsPath returns the path of the user's encoding presets file,
+// <config dir>/sointu/encoding-presets.yml.
+func UserPresetsPath() (string, bool) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", false
+	}
+	return filepath.Join(dir, "sointu", UserPresetsFile), true
+}
+
+// PresetsFrom is Presets with the user's presets read from file; an empty
+// file name reads none.
+func PresetsFrom(file string) (sointu.EncodingPresets, error) {
 	var ret sointu.EncodingPresets
 	if err := yaml.Unmarshal(builtinPresets, &ret); err != nil {
 		panic(fmt.Sprintf("invalid built-in encoding presets: %v", err)) // a bug
 	}
-	dir, err := os.UserConfigDir()
-	if err != nil {
+	if file == "" {
 		return ret, nil
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "sointu", UserPresetsFile))
+	data, err := os.ReadFile(file)
 	if errors.Is(err, fs.ErrNotExist) {
 		return ret, nil
 	}

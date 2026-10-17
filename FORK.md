@@ -1994,6 +1994,26 @@ no host was run with the plugins.
   with module presets of its own (`tracker/modules/*.yml`, embedded), listed
   after those of the user; they cannot be deleted, and a preset of the user
   with the same name is used instead.
+- **Presets changed on disk:** the tracker and the plugins pick up the
+  presets of the user that are added, changed or deleted while they run,
+  within a second: instrument presets (`sointu/presets` of the configuration
+  directory, all of its folders), module presets (`sointu/modules`) and
+  encoding presets (`sointu/encoding-presets.yml`). A goroutine stats the
+  files every second and, when the names, sizes or times of change of one
+  kind differ, reads that kind again; the model puts them in place
+  (`tracker/preset_watch.go`). No file system events: polling works the
+  same in every host. The search, the filters and the selected preset of
+  the preset list stay; a selected preset that is gone leaves the selection
+  at its index.
+  The presets that the tracker comes with (`tracker/presets`,
+  `tracker/modules`) are read from the source tree that the binary was
+  built from, the path that the compiler recorded, and watched the same
+  way: a preset added there shows up without a build. The tree's presets
+  are those of the branch checked out there, which need not be the one
+  built. Where a folder is missing (a binary built elsewhere, a worktree
+  deleted, a build with `-trimpath`), it is read from the binary, where
+  they are embedded as before. `SOINTU_PRESET_SOURCE` sets another folder
+  with `presets` and `modules` in it, or `off` for the embedded ones.
 - **Reverb:** the standard reverb is the [reverb unit](#reverb-unit) (Go
   synth and wasm player only): stereo in, the wet signal out. Its chain is
   low cut, high cut, predelay, a diffuser of four steps (the early
