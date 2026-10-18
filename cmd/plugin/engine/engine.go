@@ -31,6 +31,9 @@ import "C"
 
 import (
 	"runtime/cgo"
+	"runtime/debug"
+	"sync/atomic"
+	"time"
 	"unsafe"
 
 	"github.com/vsariola/sointu/cmd/plugin"
@@ -58,6 +61,24 @@ func (c *processContext) SampleRate() (samplerate float64, ok bool) {
 }
 
 func get(h C.uintptr_t) *instance { return cgo.Handle(h).Value().(*instance) }
+
+// instances counts the instances open in this library
+var instances atomic.Int32
+
+// freeAfterClose is how long after its last instance closed the library
+// gives its memory back
+const freeAfterClose = 3 * time.Second
+
+// freeIfUnused gives the memory of closed instances back to the system once
+// no instance is open: an engine that the dev loader replaced stays loaded,
+// and idle, its garbage collector would not run again for minutes.
+func freeIfUnused() {
+	time.AfterFunc(freeAfterClose, func() {
+		if instances.Load() == 0 {
+			debug.FreeOSMemory()
+		}
+	})
+}
 
 //export sointuEngineABI
 func sointuEngineABI() C.int32_t { return C.SOINTU_ENGINE_ABI }
@@ -94,6 +115,7 @@ func sointuNew(p C.uintptr_t, kind *C.char, cb *C.sointu_callbacks) C.uintptr_t 
 	if i.cb.request_reload != nil {
 		i.EnableReload(func() { C.call_request_reload(i.cb, p) })
 	}
+	instances.Add(1)
 	return C.uintptr_t(cgo.NewHandle(i))
 }
 
@@ -104,6 +126,9 @@ func sointuClose(h C.uintptr_t) {
 	cgo.Handle(h).Delete()
 	// the instance tells the C layer nothing more from Close on
 	C.free(unsafe.Pointer(i.cb))
+	if instances.Add(-1) == 0 {
+		freeIfUnused()
+	}
 }
 
 // sointuManageWindow tells that the host shows and hides the window from now
@@ -196,3 +221,6 @@ func sointuSetState(h C.uintptr_t, data unsafe.Pointer, size C.size_t) {
 func sointuReloadAvailable(h C.uintptr_t, build *C.char) {
 	get(h).ReloadAvailable(C.GoString(build))
 }
+
+//export sointuAlert
+func sointuAlert(h C.uintptr_t, message *C.char) { get(h).Alert(C.GoString(message)) }

@@ -76,5 +76,8 @@ void sointuSetState(uintptr_t h, void *data, size_t size);
 // sointuReloadAvailable tells the instance that another engine is installed,
 // named build; only the dev loader calls it
 void sointuReloadAvailable(uintptr_t h, char *build);
+// sointuAlert shows a message among the notifications of the tracker, as a
+// warning; the dev loader tells its errors with it
+void sointuAlert(uintptr_t h, char *message);
 
 #endif

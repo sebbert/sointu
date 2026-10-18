@@ -208,6 +208,12 @@ func (t *Tracker) Main() {
 					}
 					t.windowDestroyed()
 					acks <- struct{}{}
+					// the explorer of a window is freed by a finalizer, which
+					// cannot run while the tracker holds it: the window it
+					// holds reaches the tracker. Kept, it would keep the
+					// tracker, its model and its window in memory after the
+					// plugin is closed.
+					t.Explorer = nil
 					break F // this window is done, we need to create a new one
 				case app.ConfigEvent:
 					if e.Config.Focused && !focused {

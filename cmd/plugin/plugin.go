@@ -166,6 +166,12 @@ func (i *Instance) EnableReload(request func()) {
 	tracker.TrySend(i.broker.ToModel, tracker.MsgToModel{Data: func() { i.tracker.SetReloader(req) }})
 }
 
+// Alert shows a message among the notifications of the tracker, as a
+// warning. It can be called from any thread.
+func (i *Instance) Alert(message string) {
+	tracker.TrySend(i.broker.ToModel, tracker.MsgToModel{Data: func() { i.model.Alerts().Add(message, tracker.Warning) }})
+}
+
 // ReloadAvailable tells that a build other than the running one is
 // installed, named build. It can be called from any thread.
 func (i *Instance) ReloadAvailable(build string) {
