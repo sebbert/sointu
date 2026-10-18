@@ -60,6 +60,9 @@ type (
 		// one of the voice of the last note, or -1: see ParamModel.Live
 		Live     []int
 		LiveLast int
+		// LiveVoices draws each of Live in a color of its voice, not in
+		// that of the style
+		LiveVoices bool
 	}
 
 	PortStyle struct {
@@ -110,9 +113,10 @@ type (
 		Hint   string
 		Scroll bool
 		Origin image.Point // see ParamWidget.Origin
-		// Live and LiveLast: see ParamWidget.Live
-		Live     []int
-		LiveLast int
+		// Live, LiveLast and LiveVoices: see ParamWidget.Live
+		Live       []int
+		LiveLast   int
+		LiveVoices bool
 	}
 
 	SwitchStyle struct {
@@ -180,7 +184,7 @@ func (p ParamWidget) Layout(gtx C) D {
 		case tracker.IntegerParameter:
 			k := Knob(p.Parameter, p.Theme, p.State, p.Parameter.Hint().Label, p.Focus, p.Disabled)
 			k.Origin = p.Origin
-			k.Live, k.LiveLast = p.Live, p.LiveLast
+			k.Live, k.LiveLast, k.LiveVoices = p.Live, p.LiveLast, p.LiveVoices
 			return k.Layout(gtx)
 		case tracker.BoolParameter:
 			s := Switch(p.Parameter, p.Theme, p.State, p.Parameter.Hint().Label, p.Focus, p.Disabled)
@@ -470,15 +474,21 @@ func (k *KnobWidget) Layout(gtx C) D {
 		k.strokeIndicator(gtx, amount)
 		if k.LiveLast >= 0 && k.LiveLast < len(k.Live) {
 			// the other voices under the last one
-			c := k.Style.Live.Color
-			c.A = uint8(int(c.A) * 2 / 5)
+			color := func(i int) color.NRGBA {
+				if k.LiveVoices {
+					return voiceColor(i, k.Style.Live.Color.A)
+				}
+				return k.Style.Live.Color
+			}
 			w := max(float32(gtx.Dp(k.Style.Live.Width)-gtx.Dp(1)), 1)
 			for i, v := range k.Live {
 				if i != k.LiveLast {
-					k.strokeLive(gtx, amount, k.Value.Position(v), c, w)
+					c := color(i)
+					c.A = uint8(int(c.A) * 2 / 5)
+					k.strokeLive(gtx, k.Value.Position(v), c, w)
 				}
 			}
-			k.strokeLive(gtx, amount, k.Value.Position(k.Live[k.LiveLast]), k.Style.Live.Color, max(float32(gtx.Dp(k.Style.Live.Width)), 1))
+			k.strokeLive(gtx, k.Value.Position(k.Live[k.LiveLast]), color(k.LiveLast), max(float32(gtx.Dp(k.Style.Live.Width)), 1))
 		}
 		return D{Size: image.Pt(d, d)}
 	}
@@ -555,25 +565,45 @@ func (k *KnobWidget) strokeIndicator(gtx C, amount float32) {
 	paint.FillShape(gtx.Ops, k.Style.Indicator.Color, s.Op(gtx.Ops))
 }
 
-// strokeLive draws a value that the synth plays at live, from that of the
-// knob at amount: a thin arc inside the ring between them, which turns into
-// a tick across the ring at live, in one stroke.
-func (k *KnobWidget) strokeLive(gtx C, amount, live float32, c color.NRGBA, width float32) {
-	amount, live = min(max(amount, 0), 1), min(max(live, 0), 1)
+// voiceColor returns the color of voice i (from 0) on the knobs: hues a
+// golden angle apart, from amber, so that voices next to each other differ.
+func voiceColor(i int, alpha uint8) color.NRGBA {
+	h := math.Mod(40.0/360+float64(i)*0.381966, 1) * 6
+	s, v := 0.7, 1.0
+	f := h - math.Floor(h)
+	p, q, t := v*(1-s), v*(1-s*f), v*(1-s*(1-f))
+	var r, g, b float64
+	switch int(h) {
+	case 0:
+		r, g, b = v, t, p
+	case 1:
+		r, g, b = q, v, p
+	case 2:
+		r, g, b = p, v, t
+	case 3:
+		r, g, b = p, q, v
+	case 4:
+		r, g, b = t, p, v
+	default:
+		r, g, b = v, p, q
+	}
+	return color.NRGBA{R: uint8(r*255 + 0.5), G: uint8(g*255 + 0.5), B: uint8(b*255 + 0.5), A: alpha}
+}
+
+// strokeLive draws a value that the synth plays at live: a tick across the
+// ring. It is a straight line of clip, not of x/stroke, which costs much
+// more with a tick for each voice of each knob, every frame.
+func (k *KnobWidget) strokeLive(gtx C, live float32, c color.NRGBA, width float32) {
+	live = min(max(live, 0), 1)
 	rad := float32(gtx.Dp(k.Style.Diameter)) / 2
-	r := rad - float32(gtx.Dp(k.Style.StrokeWidth)) - width/2 // on the inner edge of the ring
-	center := f32.Point{X: rad, Y: rad}
-	at := func(pos, r float32) f32.Point {
-		angle := (float64(pos)*8 + 1) / 10 * 2 * math.Pi
-		return f32.Pt(rad-r*float32(math.Sin(angle)), rad+r*float32(math.Cos(angle)))
-	}
-	segments := []stroke.Segment{stroke.MoveTo(at(amount, r))}
-	if math.Abs(float64(live-amount)) > 1e-4 { // an arc of no length turns nowhere
-		segments = append(segments, stroke.ArcTo(center, (live-amount)*8*math.Pi/5))
-	}
-	segments = append(segments, stroke.LineTo(at(live, rad)))
-	s := stroke.Stroke{Path: stroke.Path{Segments: segments}, Width: width, Cap: stroke.FlatCap, Join: stroke.MiterJoin}
-	paint.FillShape(gtx.Ops, c, s.Op(gtx.Ops))
+	inner := rad - float32(gtx.Dp(k.Style.StrokeWidth))
+	angle := (float64(live)*8 + 1) / 10 * 2 * math.Pi
+	sin, cos := float32(math.Sin(angle)), float32(math.Cos(angle))
+	var path clip.Path
+	path.Begin(gtx.Ops)
+	path.MoveTo(f32.Pt(rad-inner*sin, rad+inner*cos))
+	path.LineTo(f32.Pt(rad-rad*sin, rad+rad*cos))
+	paint.FillShape(gtx.Ops, c, clip.Stroke{Path: path.End(), Width: width}.Op())
 }
 
 // SwitchWidget

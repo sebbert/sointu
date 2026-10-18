@@ -1297,14 +1297,17 @@ has fractions, so it is 16 bits unless the points are rounded.
   from its lane, make its lane unipolar or bipolar, and reset the value,
   which a right click on the knob under the cursor did before.
 - The knob of a parameter that a lane or a send targets also shows the
-  value that the synth plays in each voice of the instrument, in amber: a
-  thin arc inside the ring from the value of the knob, turning into a tick
-  across the ring at the value. The voice of the last note is drawn on top,
-  the others semi-transparent and 1 dp thinner. It is the value as the unit
+  value that the synth plays in each voice of the instrument: a tick
+  across the ring for each voice, in a color of each (hues a golden angle
+  apart, from amber). The voice of the last note is drawn on top, the others
+  semi-transparent and 1 dp thinner. Edit > Show every voice on knobs
+  (`rack: voiceknobs` in preferences.yml, on by default) turned off shows
+  the voice of the last note alone, in amber. It is the value as the unit
   last ran in that voice (with the sends of other instruments and the
   automation added), from a tap of all voices that keeps the ports of each
   (`sointu.PortTapper.TappedVoicePorts`, `ParamModel.Live`); the cycle of
-  an oscillator uses the same tap, at the last voice.
+  an oscillator uses the same tap, at the last voice. The ticks are plain
+  clip strokes: arcs drawn with x/stroke for each voice made the editor slow.
 - Polarity: a lane is bipolar (default) or unipolar (`unipolar: true` in
   the song, the context menu of a knob, `automate` with `unipolar`). The
   host's range of a slot stays the same in every format (-128 to 128, or 0

@@ -5,6 +5,7 @@ window:
   alwaysontop: false
 rack:
   bufferpreviews: true
+  voiceknobs: true
 mcp:
   enabled: false
 browser:

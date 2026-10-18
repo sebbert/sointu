@@ -45,6 +45,10 @@ type (
 		// BufferPreviews shows what the buffers of units hold after their
 		// parameters
 		BufferPreviews bool
+		// VoiceKnobs shows on the knob of a modulated parameter the value
+		// that the synth plays in each voice, in a color of each; without
+		// it, that of the voice of the last note alone
+		VoiceKnobs bool
 	}
 
 	WindowPreferences struct {
@@ -165,6 +169,20 @@ func (t *alwaysOnTop) Value() bool { return t.preferences.Window.AlwaysOnTop }
 func (t *alwaysOnTop) SetValue(val bool) {
 	t.preferences.Window.AlwaysOnTop = val
 	if err := WriteCustomConfig("preferences.yml", val, "window", "alwaysontop"); err != nil {
+		(*Tracker)(t).Alerts().Add(fmt.Sprintf("Could not save preferences: %v", err), tracker.Error)
+	}
+}
+
+// VoiceKnobs toggles Preferences.Rack.VoiceKnobs and saves it in the custom
+// preferences.
+func (t *Tracker) VoiceKnobs() tracker.Bool { return tracker.MakeBool((*voiceKnobs)(t)) }
+
+type voiceKnobs Tracker
+
+func (t *voiceKnobs) Value() bool { return t.preferences.Rack.VoiceKnobs }
+func (t *voiceKnobs) SetValue(val bool) {
+	t.preferences.Rack.VoiceKnobs = val
+	if err := WriteCustomConfig("preferences.yml", val, "rack", "voiceknobs"); err != nil {
 		(*Tracker)(t).Alerts().Add(fmt.Sprintf("Could not save preferences: %v", err), tracker.Error)
 	}
 }
