@@ -480,7 +480,8 @@ func (pe *InstrumentEditor) layoutRack(gtx C) D {
 
 		param := t.Model.Params().Item(point)
 		paramStyle := Param(param, t.Theme, pe.Parameters[y][x], pe.paramTable.Table.Cursor() == point, t.Unit().Item(y).Disabled)
-		paramStyle.Live, paramStyle.HasLive = t.Model.Params().Live(point)
+		pe.Parameters[y][x].live, paramStyle.LiveLast = t.Model.Params().Live(point, pe.Parameters[y][x].live[:0])
+		paramStyle.Live = pe.Parameters[y][x].live
 		// where the cell is in the rack: the row titles may get wider or
 		// narrower as the parameter changes
 		colP, rowP := pe.paramTable.ColTitleList.List.Position, pe.paramTable.RowTitleList.List.Position

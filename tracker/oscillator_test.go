@@ -62,13 +62,13 @@ func TestOscillatorCycleLive(t *testing.T) {
 		t.Fatal("without what the synth plays, the cycle is not that of the parameters")
 	}
 	w := m.taps[tapKey{Unit: 4, Ports: true}]
-	if want := (sointu.TapPoint{Instrument: 0, Unit: row, Voice: 1}); w == nil || w.point != want {
-		t.Fatalf("the cycle watches %+v, not the ports before the oscillator in the last voice", w)
+	if want := (sointu.TapPoint{Instrument: 0, Unit: row}); w == nil || w.point != want {
+		t.Fatalf("the cycle watches %+v, not the ports before the oscillator in each voice", w)
 	}
 	send := func(ports [8]float32) {
 		buf := m.broker.GetAudioBuffer()
 		*buf = append((*buf)[:0], [2]float32{})
-		m.tapped(TapAudio{Point: w.point, Buffer: buf, Ports: ports, HasPorts: true})
+		m.tapped(TapAudio{Point: w.point, Buffer: buf, VoicePorts: [][8]float32{ports}})
 	}
 	with := func(name string, value int) []float32 {
 		u := unit.Copy()

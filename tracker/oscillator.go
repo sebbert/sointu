@@ -61,10 +61,11 @@ func (m *UnitModel) OscillatorCycle(row int) []float32 {
 // within their ranges. Asking for them keeps the synth recording them, for
 // a second (see taps.go); false until it has.
 func (m *Model) liveParams(row int, u *sointu.Unit) (sointu.ParamMap, bool) {
-	ports, ok := m.livePorts(row)
-	if !ok {
+	voices, last := m.livePorts(row)
+	if last < 0 {
 		return nil, false
 	}
+	ports := &voices[last]
 	ret := maps.Clone(u.Parameters)
 	for i, name := range sointu.Ports[u.Type] {
 		if i < len(ports) && ports[i] != 0 {
@@ -75,18 +76,23 @@ func (m *Model) liveParams(row int, u *sointu.Unit) (sointu.ParamMap, bool) {
 }
 
 // livePorts returns what the sends and the automation added to the ports of
-// the unit on a row, as the synth last ran it in the voice of the last note
-// of its instrument. Asking for them keeps the synth recording them, for a
-// second (see taps.go); false until it has.
-func (m *Model) livePorts(row int) (*[8]float32, bool) {
+// the unit on a row in each voice of its instrument, as the synth last ran
+// it there, and which of them is the voice of the last note of the
+// instrument. Asking for them keeps the synth recording them, for a second
+// (see taps.go); last is -1 until it has.
+func (m *Model) livePorts(row int) (voices [][8]float32, last int) {
 	key, ok := m.analysisKey(row)
 	span, ok2 := m.playedSpan(row)
 	if !ok || !ok2 || span.Count != 1 {
-		return nil, false
+		return nil, -1
 	}
-	point := sointu.TapPoint{Instrument: span.Instrument, Unit: span.First, Voice: m.lastVoice(span.Instrument)}
+	point := sointu.TapPoint{Instrument: span.Instrument, Unit: span.First}
 	w := m.watchTap(tapKey{Unit: key.unit, Call: key.call, Ports: true}, point)
-	return w.ports, w.ports != nil
+	last = m.lastVoice(span.Instrument) - 1
+	if last >= len(w.voicePorts) {
+		return nil, -1
+	}
+	return w.voicePorts, last
 }
 
 // liveParam returns the parameter of u plus what a port of port adds to it,

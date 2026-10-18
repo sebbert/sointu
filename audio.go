@@ -177,6 +177,11 @@ type (
 		// run since the taps were set. A tap of all voices (Voice 0) has
 		// none.
 		TappedPorts(i int) (ports [8]float32, ok bool)
+		// TappedVoicePorts appends to dst the ports of the unit at tap i
+		// in each voice of the instrument, as each voice last ran it, for a
+		// tap of all voices (Voice 0): nothing for other taps, or if the
+		// unit has not run since the taps were set.
+		TappedVoicePorts(i int, dst [][8]float32) [][8]float32
 	}
 
 	// UnitSpectrumReporter is implemented by Synths that can report the

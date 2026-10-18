@@ -13,6 +13,10 @@ type tap struct {
 	frames                     sointu.AudioBuffer
 	ports                      [8]float32 // of the unit, as the voice last ran it: see sointu.PortTapper
 	hasPorts                   bool
+	// voicePorts are the ports of the unit in each voice, as it last ran
+	// it, of a tap of all voices: see sointu.PortTapper
+	voicePorts    [][8]float32
+	hasVoicePorts bool
 }
 
 // maxTapFrames is how many frames a tap keeps if nobody takes them.
@@ -44,6 +48,7 @@ func (s *GoSynth) resolveTaps() {
 	for i := range s.taps {
 		t := &s.taps[i]
 		t.firstVoice, t.endVoice, t.slot = 0, 0, 0
+		t.voicePorts, t.hasVoicePorts = t.voicePorts[:0], false
 		p := t.point
 		if p.Instrument < 0 || p.Instrument >= len(s.layout) {
 			continue
@@ -60,6 +65,8 @@ func (s *GoSynth) resolveTaps() {
 		t.firstVoice, t.endVoice = first, first+instr.voices
 		if p.Voice > 0 {
 			t.firstVoice, t.endVoice = first+p.Voice-1, first+p.Voice
+		} else {
+			t.voicePorts = append(t.voicePorts, make([][8]float32, instr.voices)...)
 		}
 	}
 }
@@ -75,6 +82,8 @@ func (s *GoSynth) tapUnit(voice, slot int, stack []float32, ports *[8]float32) {
 			t.sum[1] += stack[l-2]
 			if t.point.Voice > 0 {
 				t.ports, t.hasPorts = *ports, true
+			} else if k := voice - t.firstVoice; k < len(t.voicePorts) {
+				t.voicePorts[k], t.hasVoicePorts = *ports, true
 			}
 		}
 	}
@@ -109,6 +118,14 @@ func (s *GoSynth) TappedPorts(i int) ([8]float32, bool) {
 		return [8]float32{}, false
 	}
 	return s.taps[i].ports, s.taps[i].hasPorts
+}
+
+// TappedVoicePorts implements sointu.PortTapper.
+func (s *GoSynth) TappedVoicePorts(i int, dst [][8]float32) [][8]float32 {
+	if i < 0 || i >= len(s.taps) || !s.taps[i].hasVoicePorts {
+		return dst
+	}
+	return append(dst, s.taps[i].voicePorts...)
 }
 
 // multithreadTap is a tap of a MultithreadSynth: the synth that has the
@@ -163,6 +180,17 @@ func (s *MultithreadSynth) TappedPorts(i int) ([8]float32, bool) {
 		return t.TappedPorts(s.taps[i].tap)
 	}
 	return [8]float32{}, false
+}
+
+// TappedVoicePorts implements sointu.PortTapper.
+func (s *MultithreadSynth) TappedVoicePorts(i int, dst [][8]float32) [][8]float32 {
+	if i < 0 || i >= len(s.taps) || s.taps[i].synth < 0 || s.taps[i].synth >= len(s.synths) {
+		return dst
+	}
+	if t, ok := s.synths[s.taps[i].synth].(sointu.PortTapper); ok {
+		return t.TappedVoicePorts(s.taps[i].tap, dst)
+	}
+	return dst
 }
 
 // threadInstruments returns, for each instrument of a patch, the first

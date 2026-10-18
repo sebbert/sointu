@@ -1,6 +1,7 @@
 package vm_test
 
 import (
+	"math"
 	"reflect"
 	"testing"
 
@@ -269,6 +270,38 @@ func TestTapPorts(t *testing.T) {
 		}
 		if _, ok := tapper.TappedPorts(2); ok {
 			t.Errorf("%T: a tap that is not there has ports", synther)
+		}
+	}
+}
+
+// TestTapVoicePorts checks that a tap of all voices keeps the ports of the
+// unit in each voice, as each voice last ran it: here what an envelope sent
+// to the color, which only the triggered voice has.
+func TestTapVoicePorts(t *testing.T) {
+	units := []sointu.Unit{
+		{ID: 1, Type: "envelope", Parameters: sointu.ParamMap{"stereo": 0, "attack": 0, "decay": 0, "sustain": 128, "release": 0, "gain": 128}},
+		{ID: 2, Type: "send", Parameters: sointu.ParamMap{"stereo": 0, "amount": 96, "voice": 0, "target": 3, "port": 3, "sendpop": 1}}, // +0.5 to color
+		{ID: 3, Type: "oscillator", Parameters: sointu.ParamMap{"stereo": 0, "transpose": 64, "detune": 64, "phase": 0, "color": 32, "shape": 64, "gain": 128, "type": sointu.Trisaw}},
+		{ID: 4, Type: "out", Parameters: sointu.ParamMap{"stereo": 0, "gain": 128}},
+	}
+	for _, synther := range []sointu.Synther{vm.GoSynther{}, vm.MakeMultithreadSynther(vm.GoSynther{})} {
+		synth, err := synther.Synth(sointu.Patch{{NumVoices: 3, Units: units}}, 120)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tapper := synth.(sointu.PortTapper)
+		synth.(sointu.Tapper).SetTaps([]sointu.TapPoint{{Unit: 2}, {Unit: 2, Voice: 2}})
+		if got := tapper.TappedVoicePorts(0, nil); len(got) != 0 {
+			t.Errorf("%T: a tap has the ports of voices before the synth ran", synther)
+		}
+		synth.Trigger(1, 60)
+		tapRender(t, synth, 100)
+		got := tapper.TappedVoicePorts(0, nil)
+		if len(got) != 3 || got[0][3] != 0 || math.Abs(float64(got[1][3]-0.5)) > 0.01 || got[2][3] != 0 {
+			t.Errorf("%T: the ports of the voices are %v, not 0.5 at the color of the second alone", synther, got)
+		}
+		if got := tapper.TappedVoicePorts(1, nil); len(got) != 0 {
+			t.Errorf("%T: a tap of one voice has the ports of each", synther)
 		}
 	}
 }

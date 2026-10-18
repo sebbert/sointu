@@ -165,29 +165,33 @@ func (pt *ParamModel) Item(p Point) Parameter {
 	return c.rows[p.Y].params[p.X]
 }
 
-// Live returns the value of the parameter at p as the synth last ran its
-// unit, in the voice of the last note of the instrument: with what the sends
-// and the automation added to it (see livePorts). It is only there for a
-// parameter that a send or a lane targets, once the synth has run it.
-func (pt *ParamModel) Live(p Point) (value int, ok bool) {
+// Live appends to dst the value of the parameter at p in each voice of the
+// instrument, as the synth last ran its unit there: with what the sends and
+// the automation added to it (see livePorts), and returns them and which of
+// them is of the voice of the last note. They are only there for a
+// parameter that a send or a lane targets, once the synth has run it: last
+// is -1 without them.
+func (pt *ParamModel) Live(p Point, dst []int) (values []int, last int) {
 	m := (*Model)(pt)
 	q := pt.Item(p)
-	if q.up == nil || q.port <= 0 || q.Type() != IntegerParameter || !pt.modulated(p, &q) {
-		return 0, false
+	if q.up == nil || q.port <= 0 || q.port > 8 || q.Type() != IntegerParameter || !pt.modulated(p, &q) {
+		return dst, -1
 	}
 	u, ok := m.previewUnit(p.Y)
 	if !ok {
-		return 0, false
+		return dst, -1
 	}
-	ports, ok := m.livePorts(p.Y)
-	if !ok || q.port > len(ports) {
-		return 0, false
+	if names := sointu.Ports[u.Type]; q.port > len(names) || names[q.port-1] != q.up.Name {
+		return dst, -1
 	}
-	names := sointu.Ports[u.Type]
-	if q.port > len(names) || names[q.port-1] != q.up.Name {
-		return 0, false
+	voices, last := m.livePorts(p.Y)
+	if last < 0 {
+		return dst, -1
 	}
-	return liveParam(u, q.up.Name, ports[q.port-1]), true
+	for _, ports := range voices {
+		dst = append(dst, liveParam(u, q.up.Name, ports[q.port-1]))
+	}
+	return dst, last
 }
 
 // modulated tells whether the parameter q at p is the target of a lane or

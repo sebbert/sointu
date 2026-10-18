@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -123,22 +124,25 @@ func TestEQEditorInTracker(t *testing.T) {
 	// unfolded, the editor is under the row, with the spectra of the signal
 	// before and after the eq behind the curves: the editor has asked the
 	// player to tap the signal there, and gets what the synth recorded
+	lastTaps := func() (taps tracker.TapsMsg) {
+		for {
+			select {
+			case msg := <-broker.ToPlayer:
+				if m, ok := msg.(tracker.TapsMsg); ok {
+					taps = m
+				}
+			default:
+				return taps
+			}
+		}
+	}
+	before := lastTaps() // those of the cycle of the oscillator
 	model.Unit().Unfold().SetValue(true)
 	frame("")
 	var taps tracker.TapsMsg
-	for more := true; more; {
-		select {
-		case msg := <-broker.ToPlayer:
-			if m, ok := msg.(tracker.TapsMsg); ok {
-				taps = taps[:0]
-				for _, p := range m { // not that of the cycle of the oscillator, of one voice
-					if p.Voice == 0 {
-						taps = append(taps, p)
-					}
-				}
-			}
-		default:
-			more = false
+	for _, p := range lastTaps() {
+		if !slices.Contains(before, p) {
+			taps = append(taps, p)
 		}
 	}
 	if len(taps) != 2 || taps[0].Unit >= taps[1].Unit {
