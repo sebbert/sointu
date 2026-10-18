@@ -1300,7 +1300,7 @@ has fractions, so it is 16 bits unless the points are rounded.
   value that the synth plays in each voice of the instrument: a tick
   across the ring for each voice, in a color of each (hues a golden angle
   apart, from amber). The voice of the last note is drawn on top, the others
-  semi-transparent and 1 dp thinner. Edit > Show every voice on knobs
+  1 dp thinner. Edit > Show every voice on knobs
   (`rack: voiceknobs` in preferences.yml, on by default) turned off shows
   the voice of the last note alone, in amber. It is the value as the unit
   last ran in that voice (with the sends of other instruments and the

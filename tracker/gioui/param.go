@@ -483,9 +483,7 @@ func (k *KnobWidget) Layout(gtx C) D {
 			w := max(float32(gtx.Dp(k.Style.Live.Width)-gtx.Dp(1)), 1)
 			for i, v := range k.Live {
 				if i != k.LiveLast {
-					c := color(i)
-					c.A = uint8(int(c.A) * 2 / 5)
-					k.strokeLive(gtx, k.Value.Position(v), c, w)
+					k.strokeLive(gtx, k.Value.Position(v), color(i), w)
 				}
 			}
 			k.strokeLive(gtx, k.Value.Position(k.Live[k.LiveLast]), color(k.LiveLast), max(float32(gtx.Dp(k.Style.Live.Width)), 1))
