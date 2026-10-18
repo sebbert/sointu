@@ -11,3 +11,5 @@ mcp:
 browser:
   shown: true
   autopreview: true
+reload:
+  auto: false

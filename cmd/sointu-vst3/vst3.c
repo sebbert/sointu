@@ -2,7 +2,9 @@
 
 // VST3 factory, plugin and view, written against the C API of the VST3 SDK
 // (third_party/vst3/vst3_c_api.h), with no other part of the SDK.
-// Everything host-independent is forwarded to the Go side in main.go.
+// Everything host-independent is forwarded to the Go side, through engine.h
+// (cmd/plugin/engine): linked in, or in the dev loader an engine library
+// that it loads.
 //
 // The plugin is one object that is both the component (the audio processor)
 // and its edit controller: getControllerClassId says there is no controller
@@ -26,7 +28,7 @@
 #endif
 
 #include "vst3_c_api.h"
-#include "_cgo_export.h"
+#include "engine.h"
 #include "view.h"
 
 #if defined(_WIN32)
@@ -276,13 +278,20 @@ static void tell(sointu_vst3_t *p, unsigned what) {
 
 // sointu_mark_dirty tells the host that the song changed and the project has
 // unsaved changes. Called from any thread.
-void sointu_mark_dirty(uintptr_t plugin) { tell((sointu_vst3_t *)plugin, PENDING_DIRTY); }
+static void sointu_mark_dirty(uintptr_t plugin) { tell((sointu_vst3_t *)plugin, PENDING_DIRTY); }
 
 // sointu_params_changed tells the host that the names of the parameters
 // changed, or with values their values. Called from any thread.
-void sointu_params_changed(uintptr_t plugin, bool values) {
+static void sointu_params_changed(uintptr_t plugin, bool values) {
 	tell((sointu_vst3_t *)plugin, values ? PENDING_VALUES : PENDING_TITLES);
 }
+
+// VST3 has no call to tell the host that the user closed the window: the
+// view stays, with a button to show it again
+static sointu_callbacks callbacks = {
+	.mark_dirty = sointu_mark_dirty,
+	.params_changed = sointu_params_changed,
+};
 
 // IPluginBase, shared by the component and the controller: the host may
 // initialize both, which are one
@@ -290,7 +299,7 @@ void sointu_params_changed(uintptr_t plugin, bool values) {
 static tresult plugin_initialize(sointu_vst3_t *p, Steinberg_FUnknown *context) {
 	if (p->inits++ > 0)
 		return OK;
-	uintptr_t h = sointuNew((uintptr_t)p);
+	uintptr_t h = sointuNew((uintptr_t)p, "sointu-vst3", &callbacks);
 	pthread_mutex_lock(&p->lock);
 	p->handle = h;
 	pthread_mutex_unlock(&p->lock);
@@ -310,21 +319,22 @@ static tresult plugin_terminate(sointu_vst3_t *p) {
 static tresult write_state(sointu_vst3_t *p, Steinberg_IBStream *stream) {
 	if (p->handle == 0 || stream == NULL)
 		return FALSE_;
-	struct sointuState_return st = sointuState(p->handle);
-	if (st.r0 == NULL)
+	size_t size = 0;
+	void *data = sointuState(p->handle, &size);
+	if (data == NULL)
 		return FALSE_;
 	tresult res = OK;
-	for (size_t written = 0; written < st.r1;) {
-		size_t left = st.r1 - written;
+	for (size_t written = 0; written < size;) {
+		size_t left = size - written;
 		int32 chunk = left > (1 << 30) ? (1 << 30) : (int32)left;
 		int32 n = 0;
-		if (stream->lpVtbl->write(stream, (char *)st.r0 + written, chunk, &n) != OK || n <= 0) {
+		if (stream->lpVtbl->write(stream, (char *)data + written, chunk, &n) != OK || n <= 0) {
 			res = FALSE_;
 			break;
 		}
 		written += n;
 	}
-	free(st.r0);
+	free(data);
 	return res;
 }
 
@@ -494,7 +504,7 @@ static void handle_params(sointu_vst3_t *p, Steinberg_Vst_IParameterChanges *cha
 			if (q->lpVtbl->getPoint(q, j, &offset, &v) != OK)
 				continue;
 			if (id < (Steinberg_Vst_ParamID)num_params()) {
-				sointuParam(p->handle, offset, id, plain(v));
+				sointuParam(p->handle, offset, id, plain(v), false);
 			} else if (is_cc(id)) {
 				uint32 c = id - CC_BASE;
 				int32 port = c / CC_PER_PORT, channel = (c % CC_PER_PORT) / 128, cc = c % 128;

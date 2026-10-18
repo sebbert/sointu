@@ -140,6 +140,50 @@ changes to the sound are fine, as long as both stay in sync.
   failed, also the REX build) and a test host (`testdata/host.c`, run by
   `go test -tags plugin ./cmd/sointu-vst3`). **Not verified:** in Bitwig or
   Live, the view in any host, Linux and Windows (not even built).
+- The C layers of the VST3, CLAP and AU plugins call the Go side through one
+  C interface, `cmd/plugin/engine/engine.h`, which package
+  `cmd/plugin/engine` implements for all three; what the Go side tells the
+  host goes back through function pointers (`sointu_callbacks`).
+- **Dev loader** (macOS, for developing Sointu): reloading the plugin while
+  the host runs, without a restart or a rescan. `make install-dev-loader`
+  installs, under the names and IDs of the VST3, CLAP and AU plugins, their
+  C layer with `cmd/plugin/loader/loader.c` instead of the Go side; restart
+  the host once. `make install-engine` builds the Go side alone
+  (`cmd/sointu-engine`) into
+  `~/Library/Application Support/sointu/engine/sointu-engine-<version>-<time>.dylib`
+  and names it in the file `current` there (the newest five are kept). The
+  loader watches `current`; the tracker then says that a build is
+  installed, and Edit → Reload plugin moves every instance of the loader to
+  it: the new instance gets the song, the parameter values, the sample rate,
+  the window (open or not) and the title, and the old one is closed once no
+  call is in it. Edit → Reload on new build does that at once
+  (`reload.auto` in `preferences.yml`), and the MCP tool `reload_plugin`
+  asks for it. A change of the C code, or of `engine.h`
+  (`SOINTU_ENGINE_ABI`), the number of parameters or of MIDI ports, needs
+  `make install-dev-loader` and a restart; the loader refuses such an
+  engine and says so in the tracker. Release builds are unchanged: the menu
+  items and the tool do nothing there.
+  - A Go library cannot be unloaded: each replaced engine stays loaded,
+    idle. Several Go runtimes run in one process (tested with five), but a
+    runtime that another one loaded after it loses async preemption (Go
+    forwards SIGURG to no handler before its own), so all instances move
+    together and the old runtime is left with nothing to run. It gives its
+    memory back 3 seconds after its last instance closed
+    (`debug.FreeOSMemory`).
+  - Measured in a test host, with the window open: each reload leaves about
+    10 MB of Go heap, 15 idle threads, and about 70 MB of footprint in all,
+    mostly not Go's (assumed: AppKit and Metal of the closed window). A
+    restart of the host now and then clears it.
+  - Lost on a reload: sounding notes and tails, the place of the window, the
+    undo history, CLAP modulation until the host sends it again.
+  - Fixed on the way, for all plugins: a closed instance stayed in memory
+    whole (about 18 MB of Go heap), held by the explorer of its window, whose
+    finalizer could not run while the tracker held it.
+  - Tested: `go test -tags plugin ./cmd/sointu-vst3` (`TestReload`) builds
+    two engines and the VST3 plugin with the loader, and reloads while an
+    audio thread plays; the song, a parameter and the sound carry over.
+    **Not verified** in Live or Bitwig, nor the AU and CLAP loaders in a
+    host.
 - Vendored: Gio (`third_party/gio`, macOS plugin window and event loop fixes,
   `TopMost` on Windows and turning it off, `pointer.Event.Notch` for the
   notches of a mouse wheel on macOS, `app.FileDropEvent` for files dropped

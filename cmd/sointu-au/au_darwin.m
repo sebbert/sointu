@@ -1,7 +1,9 @@
 //go:build plugin && darwin
 
 // Audio Unit (version 2) factory, plugin interface and view. Everything
-// host-independent is forwarded to the Go side in main.go.
+// host-independent is forwarded to the Go side, through engine.h
+// (cmd/plugin/engine): linked in, or in the dev loader an engine library
+// that it loads.
 //
 // The unit is a music device ('aumu') with no input and one stereo output,
 // of 32-bit float, non-interleaved. Its parameters are the automation slots;
@@ -17,7 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "_cgo_export.h"
+#include "engine.h"
 
 #define SOINTU_TYPE kAudioUnitType_MusicDevice
 #define SOINTU_SUBTYPE 'Sntu'
@@ -101,7 +103,7 @@ static UInt32 num_params(void) {
 // sointu_mark_dirty tells the host that the song changed. Audio Units have
 // no call for that; a change of the present preset is what hosts listen
 // for. Called from any thread; the host is told on the main thread.
-void sointu_mark_dirty(uintptr_t plugin) {
+static void sointu_mark_dirty(uintptr_t plugin) {
 	sointu_au_t *p = (sointu_au_t *)plugin;
 	dispatch_async(dispatch_get_main_queue(), ^{
 		pthread_mutex_lock(&open_lock);
@@ -115,7 +117,7 @@ void sointu_mark_dirty(uintptr_t plugin) {
 // sointu_params_changed tells the host that the names of the parameters
 // changed, or with values their values, which a loaded state set. Called from
 // any thread; the host is told on the main thread.
-void sointu_params_changed(uintptr_t plugin, bool values) {
+static void sointu_params_changed(uintptr_t plugin, bool values) {
 	sointu_au_t *p = (sointu_au_t *)plugin;
 	if (values)
 		for (UInt32 i = 0; i < num_params(); i++)
@@ -336,12 +338,13 @@ static CFPropertyListRef class_info(sointu_au_t *p) {
 	CFDataRef empty = CFDataCreate(NULL, NULL, 0);
 	CFDictionarySetValue(dict, CFSTR(kAUPresetDataKey), empty);
 	CFRelease(empty);
-	struct sointuState_return st = sointuState(p->handle);
-	if (st.r0 != NULL) {
-		CFDataRef data = CFDataCreate(NULL, st.r0, st.r1);
+	size_t size = 0;
+	void *state = sointuState(p->handle, &size);
+	if (state != NULL) {
+		CFDataRef data = CFDataCreate(NULL, state, size);
 		CFDictionarySetValue(dict, STATE_KEY, data);
 		CFRelease(data);
-		free(st.r0);
+		free(state);
 	}
 	return dict;
 }
@@ -730,7 +733,7 @@ static OSStatus au_render(void *self, AudioUnitRenderActionFlags *ioFlags, const
 
 static OSStatus au_midi_event(void *self, UInt32 status, UInt32 data1, UInt32 data2, UInt32 offset) {
 	sointu_au_t *p = self;
-	sointuMIDI(p->handle, offset, status, data1, data2);
+	sointuMIDI(p->handle, offset, 0, status, data1, data2);
 	return noErr;
 }
 
@@ -748,7 +751,7 @@ static OSStatus au_start_note(void *self, MusicDeviceInstrumentID instrument, Mu
 		return kAudio_ParamError;
 	UInt8 key = midi_value(params->mPitch), velocity = midi_value(params->mVelocity);
 	// MIDI note on with velocity 0 means note off
-	sointuMIDI(p->handle, offset, 0x90 | (group & 0xF), key, velocity == 0 ? 1 : velocity);
+	sointuMIDI(p->handle, offset, 0, 0x90 | (group & 0xF), key, velocity == 0 ? 1 : velocity);
 	if (outNote != NULL)
 		*outNote = key;
 	return noErr;
@@ -756,16 +759,22 @@ static OSStatus au_start_note(void *self, MusicDeviceInstrumentID instrument, Mu
 
 static OSStatus au_stop_note(void *self, MusicDeviceGroupID group, NoteInstanceID note, UInt32 offset) {
 	sointu_au_t *p = self;
-	sointuMIDI(p->handle, offset, 0x80 | (group & 0xF), note & 0x7F, 0);
+	sointuMIDI(p->handle, offset, 0, 0x80 | (group & 0xF), note & 0x7F, 0);
 	return noErr;
 }
 
 // component
 
+// the user closes the window on their own; the host has no call for it
+static sointu_callbacks callbacks = {
+	.mark_dirty = sointu_mark_dirty,
+	.params_changed = sointu_params_changed,
+};
+
 static OSStatus au_open(void *self, AudioComponentInstance instance) {
 	sointu_au_t *p = self;
 	p->instance = instance;
-	p->handle = sointuNew((uintptr_t)p);
+	p->handle = sointuNew((uintptr_t)p, "sointu-au", &callbacks);
 	pthread_mutex_lock(&open_lock);
 	p->next = open_units;
 	open_units = p;

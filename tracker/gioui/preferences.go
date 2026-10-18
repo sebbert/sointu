@@ -20,6 +20,14 @@ type (
 		MCP    MCPPreferences
 		// Browser is the sample browser of the Buffers tab
 		Browser BrowserPreferences
+		Reload  ReloadPreferences
+	}
+
+	// ReloadPreferences are those of a plugin that the dev loader loaded:
+	// see reload.go.
+	ReloadPreferences struct {
+		// Auto reloads the plugin as soon as a newer build is installed
+		Auto bool `yaml:",omitempty"`
 	}
 
 	BrowserPreferences struct {

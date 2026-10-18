@@ -18,6 +18,14 @@
 #   make uninstall-clap
 #   make clean
 #
+# The dev loader, for developing Sointu (macOS only): plugins whose Go side
+# can be rebuilt and reloaded while the host runs. See FORK.md.
+#
+#   make install-dev-loader   install the loader as the VST3, CLAP and AU
+#                             plugins; restart the host once after it
+#   make install-engine       build the Go side and install it; the plugins
+#                             then offer to reload (Edit > Reload plugin)
+#
 # The VST2 plugin is a .vst bundle on macOS, a .so on Linux and a .dll on
 # Windows. The VST3 plugin is a .vst3 bundle everywhere, with the library in
 # Contents/MacOS, Contents/<arch>-linux or Contents/x86_64-win. The CLAP plugin is a .clap bundle on macOS and a .clap shared
@@ -216,6 +224,70 @@ define uninstall-plugin
 endef
 
 $(foreach p,$(PLUGINS),$(eval $(call plugin-rules,$(p))))
+
+# The dev loader: the C layer of a plugin with cmd/plugin/loader instead of
+# the Go side, which it loads from ENGINE_DIR: the engine, built alone
+# (cmd/sointu-engine). make install-engine installs each build under a name
+# of its own and writes the name to the file current, which the loader
+# watches; the newest five builds are kept. The bundles of the loader keep
+# the names and IDs of the plugins, so that projects open with either, and
+# are only installed again when their C code changes.
+ifeq ($(PLATFORM),macos)
+ENGINE_DIR     ?= $(HOME)/Library/Application Support/sointu/engine
+LOADER_OUT     := $(OUT)/dev-loader
+LOADER_CFLAGS  := -O2 -Wall -Wno-unused-function -Icmd/plugin/engine -DSOINTU_LOADER_VERSION='"$(VERSION)-loader"'
+vst3_LOADER    := cmd/sointu-vst3/vst3.c cmd/sointu-vst3/view_darwin.m -Ithird_party/vst3 -framework Cocoa -framework CoreFoundation
+clap_LOADER    := cmd/sointu-clap/clap.c -Ithird_party/clap/include
+au_LOADER      := cmd/sointu-au/au_darwin.m -framework AudioToolbox -framework CoreFoundation -framework Cocoa
+LOADER_PLUGINS := vst3 clap au
+
+.PHONY: dev-loader install-dev-loader engine install-engine \
+	$(foreach p,$(LOADER_PLUGINS),dev-loader-$(p) install-dev-loader-$(p))
+
+dev-loader: $(foreach p,$(LOADER_PLUGINS),dev-loader-$(p))
+install-dev-loader: $(foreach p,$(LOADER_PLUGINS),install-dev-loader-$(p))
+
+define loader-rules
+dev-loader-$(1): $(LOADER_OUT)/$($(1)_FILE)
+
+$(LOADER_OUT)/$($(1)_FILE): FORCE
+	rm -rf $$@
+	mkdir -p $$@/Contents/MacOS
+	clang -dynamiclib $(LOADER_CFLAGS) -o $$@/Contents/MacOS/$($(1)_PKG) cmd/plugin/loader/loader.c $($(1)_LOADER)
+	sed 's/@VERSION@/$(VERSION)/g' cmd/$($(1)_PKG)/Info.plist > $$@/Contents/Info.plist
+	printf 'BNDL????' > $$@/Contents/PkgInfo
+	codesign --force --sign - $$@
+
+install-dev-loader-$(1): dev-loader-$(1)
+	mkdir -p "$$(or $($(1)_DIR),$($(1)_USER_DIR))"
+	rm -rf "$$(or $($(1)_DIR),$($(1)_USER_DIR))/$($(1)_FILE)"
+	cp -R $(LOADER_OUT)/$($(1)_FILE) "$$(or $($(1)_DIR),$($(1)_USER_DIR))/$($(1)_FILE)"
+endef
+
+$(foreach p,$(LOADER_PLUGINS),$(eval $(call loader-rules,$(p))))
+
+engine: $(OUT)/sointu-engine.dylib
+
+$(OUT)/sointu-engine.dylib: FORCE $(REX_DEP)
+	mkdir -p $(OUT)
+	CGO_ENABLED=1 $(REX_ENV) $(GO) build -buildmode=c-shared -tags=$(PLUGIN_TAGS) \
+		-ldflags "$(LDFLAGS)" -o $@ ./cmd/sointu-engine/
+	rm -f $(OUT)/sointu-engine.h
+	codesign --force --sign - $@
+
+install-engine: engine
+	mkdir -p "$(ENGINE_DIR)"
+ifneq ($(REXSDK),)
+	test -d "$(ENGINE_DIR)/REX Shared Library.bundle" || cp -R "$(REX_BUNDLE)" "$(ENGINE_DIR)/"
+	test -f "$(ENGINE_DIR)/REX License Agreement.txt" || cp "$(REX_LICENSE)" "$(ENGINE_DIR)/REX License Agreement.txt"
+endif
+	name=sointu-engine-$(VERSION)-$$(date +%Y%m%d-%H%M%S).dylib && \
+	cp $(OUT)/sointu-engine.dylib "$(ENGINE_DIR)/$$name" && \
+	printf '%s\n' "$$name" > "$(ENGINE_DIR)/current.tmp" && \
+	mv "$(ENGINE_DIR)/current.tmp" "$(ENGINE_DIR)/current" && \
+	echo "installed $$name"
+	cd "$(ENGINE_DIR)" && ls -t sointu-engine-*.dylib | tail -n +6 | while read f; do rm -f "$$f"; done
+endif
 
 clean:
 	rm -rf $(OUT)

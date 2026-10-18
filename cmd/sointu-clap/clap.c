@@ -1,7 +1,8 @@
 //go:build plugin
 
 // CLAP entry point, factory and plugin callbacks. Everything host-independent
-// is forwarded to the Go side in main.go.
+// is forwarded to the Go side, through engine.h (cmd/plugin/engine): linked
+// in, or in the dev loader an engine library that it loads.
 
 #include <stdatomic.h>
 #include <stdio.h>
@@ -9,7 +10,7 @@
 #include <string.h>
 
 #include <clap/clap.h>
-#include "_cgo_export.h"
+#include "engine.h"
 
 typedef struct {
 	clap_plugin_t plugin;
@@ -78,11 +79,11 @@ static const clap_plugin_audio_ports_t audio_ports = {
 // input n are Sointu MIDI channels (n-1)*16+1 to (n-1)*16+16.
 
 static uint32_t note_ports_count(const clap_plugin_t *plugin, bool is_input) {
-	return is_input ? sointuMIDIPorts() : 0;
+	return is_input ? (uint32_t)sointuMIDIPorts() : 0;
 }
 
 static bool note_ports_get(const clap_plugin_t *plugin, uint32_t index, bool is_input, clap_note_port_info_t *info) {
-	if (!is_input || index >= sointuMIDIPorts())
+	if (!is_input || index >= (uint32_t)sointuMIDIPorts())
 		return false;
 	info->id = index;
 	info->supported_dialects = CLAP_NOTE_DIALECT_CLAP | CLAP_NOTE_DIALECT_MIDI;
@@ -99,19 +100,20 @@ static const clap_plugin_note_ports_t note_ports = {
 // state: the same recovery data the VST2 version stores in its chunk
 
 static bool state_save(const clap_plugin_t *plugin, const clap_ostream_t *stream) {
-	struct sointuState_return st = sointuState(self(plugin)->handle);
-	if (st.r0 == NULL)
+	size_t size = 0;
+	void *data = sointuState(self(plugin)->handle, &size);
+	if (data == NULL)
 		return false;
 	bool ok = true;
-	for (uint64_t written = 0; written < st.r1;) {
-		int64_t n = stream->write(stream, (const char *)st.r0 + written, st.r1 - written);
+	for (uint64_t written = 0; written < size;) {
+		int64_t n = stream->write(stream, (const char *)data + written, size - written);
 		if (n <= 0) {
 			ok = false;
 			break;
 		}
 		written += n;
 	}
-	free(st.r0);
+	free(data);
 	return ok;
 }
 
@@ -170,11 +172,11 @@ static const clap_plugin_latency_t latency = {
 static void handle_event(sointu_plugin_t *p, const clap_event_header_t *hdr);
 
 static uint32_t params_count(const clap_plugin_t *plugin) {
-	return sointuParams();
+	return (uint32_t)sointuParams();
 }
 
 static bool params_get_info(const clap_plugin_t *plugin, uint32_t index, clap_param_info_t *info) {
-	if (index >= sointuParams())
+	if (index >= (uint32_t)sointuParams())
 		return false;
 	memset(info, 0, sizeof(*info));
 	info->id = index;
@@ -190,14 +192,14 @@ static bool params_get_info(const clap_plugin_t *plugin, uint32_t index, clap_pa
 }
 
 static bool params_get_value(const clap_plugin_t *plugin, clap_id id, double *value) {
-	if (id >= sointuParams())
+	if (id >= (uint32_t)sointuParams())
 		return false;
 	*value = sointuParamValue(self(plugin)->handle, id);
 	return true;
 }
 
 static bool params_value_to_text(const clap_plugin_t *plugin, clap_id id, double value, char *out, uint32_t capacity) {
-	if (id >= sointuParams() || capacity == 0)
+	if (id >= (uint32_t)sointuParams() || capacity == 0)
 		return false;
 	if (self(plugin)->handle == 0) {
 		snprintf(out, capacity, "%+.2f", value);
@@ -212,7 +214,7 @@ static bool params_value_to_text(const clap_plugin_t *plugin, clap_id id, double
 static bool params_text_to_value(const clap_plugin_t *plugin, clap_id id, const char *text, double *value) {
 	char *end;
 	double v = strtod(text, &end);
-	if (id >= sointuParams() || end == text)
+	if (id >= (uint32_t)sointuParams() || end == text)
 		return false;
 	*value = self(plugin)->handle == 0 ? v : sointuParamFromSteps(self(plugin)->handle, id, v);
 	return true;
@@ -240,7 +242,7 @@ static const clap_plugin_params_t params = {
 // sointu_params_changed tells the host that the names of the parameters
 // changed, or with values their values. Called from any thread; the host is
 // told on the main thread.
-void sointu_params_changed(uintptr_t plugin, bool values) {
+static void sointu_params_changed(uintptr_t plugin, bool values) {
 	sointu_plugin_t *p = (sointu_plugin_t *)plugin;
 	atomic_fetch_or(&p->rescan, values ? CLAP_PARAM_RESCAN_VALUES : CLAP_PARAM_RESCAN_INFO);
 	p->host->request_callback(p->host);
@@ -279,7 +281,7 @@ static bool gui_create(const clap_plugin_t *plugin, const char *api, bool is_flo
 		return false;
 	if (!p->gui_created) {
 		p->gui_created = true;
-		sointuManageWindow(p->handle, (uintptr_t)p);
+		sointuManageWindow(p->handle);
 	}
 	return true;
 }
@@ -351,19 +353,28 @@ static const clap_plugin_gui_t gui = {
 
 // plugin
 
+static void sointu_mark_dirty(uintptr_t plugin);
+static void sointu_window_closed(uintptr_t plugin);
+
+static sointu_callbacks callbacks = {
+	.mark_dirty = sointu_mark_dirty,
+	.params_changed = sointu_params_changed,
+	.window_closed = sointu_window_closed,
+};
+
 static bool plugin_init(const clap_plugin_t *plugin) {
 	sointu_plugin_t *p = self(plugin);
 	p->host_state = p->host->get_extension(p->host, CLAP_EXT_STATE);
 	p->host_latency = p->host->get_extension(p->host, CLAP_EXT_LATENCY);
 	p->host_params = p->host->get_extension(p->host, CLAP_EXT_PARAMS);
 	p->host_gui = p->host->get_extension(p->host, CLAP_EXT_GUI);
-	p->handle = sointuNew((uintptr_t)p);
+	p->handle = sointuNew((uintptr_t)p, "sointu-clap", &callbacks);
 	return true;
 }
 
 // sointu_mark_dirty tells the host that the song changed and the project has
 // unsaved changes. Called from any thread; the host is told on the main thread.
-void sointu_mark_dirty(uintptr_t plugin) {
+static void sointu_mark_dirty(uintptr_t plugin) {
 	sointu_plugin_t *p = (sointu_plugin_t *)plugin;
 	atomic_store(&p->dirty, true);
 	p->host->request_callback(p->host);
@@ -372,7 +383,7 @@ void sointu_mark_dirty(uintptr_t plugin) {
 // sointu_window_closed tells the host that the user closed the window, which
 // the host can show again. Called from the tracker's goroutine; the host is
 // told on the main thread.
-void sointu_window_closed(uintptr_t plugin) {
+static void sointu_window_closed(uintptr_t plugin) {
 	sointu_plugin_t *p = (sointu_plugin_t *)plugin;
 	atomic_store(&p->gui_closed, true);
 	p->host->request_callback(p->host);

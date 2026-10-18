@@ -498,7 +498,7 @@ func (t *MenuBar) Layout(gtx C) D {
 	})
 	editBtn := MenuBtn(&t.MenuStates[1], &t.Clickables[1], "Edit")
 	editFC := layout.Rigid(func(gtx C) D {
-		return editBtn.Layout(gtx,
+		items := []MenuChild{
 			ActionMenuChild(tr.History().Undo(), "Undo", keyActionMap["Undo"], icons.ContentUndo),
 			ActionMenuChild(tr.History().Redo(), "Redo", keyActionMap["Redo"], icons.ContentRedo),
 			DividerMenuChild(),
@@ -509,7 +509,15 @@ func (t *MenuBar) Layout(gtx C) D {
 			DividerMenuChild(),
 			BoolMenuChild(tr.AlwaysOnTop(), "Keep window on top", "", icons.NavigationCheck),
 			BoolMenuChild(tr.EnableMCP(), "Enable MCP", "", icons.NavigationCheck),
-		)
+		}
+		if tr.CanReload() { // a plugin of the dev loader: see reload.go
+			items = append(items,
+				DividerMenuChild(),
+				ActionMenuChild(tr.ReloadPlugin(), "Reload plugin", "", icons.NavigationRefresh),
+				BoolMenuChild(tr.AutoReload(), "Reload on new build", "", icons.NavigationCheck),
+			)
+		}
+		return editBtn.Layout(gtx, items...)
 	})
 	midiBtn := MenuBtn(&t.MenuStates[2], &t.Clickables[2], "MIDI")
 	midiFC := layout.Rigid(func(gtx C) D {

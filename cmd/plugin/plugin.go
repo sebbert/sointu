@@ -141,6 +141,43 @@ func (i *Instance) HideWindow() { i.tracker.HideWindow() }
 // tracker: what the host suggests, e.g. the name of the track.
 func (i *Instance) SetWindowTitle(title string) { i.tracker.SetWindowTitle(title) }
 
+// WindowShown tells if the window is open. It can be called from any thread.
+func (i *Instance) WindowShown() bool {
+	ret := make(chan bool, 1)
+	if !tracker.TrySend(i.broker.ToModel, tracker.MsgToModel{Data: func() { ret <- i.tracker.WindowShown() }}) {
+		return false
+	}
+	shown, _ := tracker.TimeoutReceive(ret, 5*time.Second)
+	return shown
+}
+
+// EnableReload tells that the instance can be moved to a newer build of the
+// plugin while the host runs, which request asks for: it was loaded by the
+// dev loader (cmd/plugin/loader). The tracker then offers to reload, and so
+// does the MCP server. request can be called from any goroutine; the
+// instance is closed and replaced some time after.
+func (i *Instance) EnableReload(request func()) {
+	req := func() {
+		if !i.closed.Load() {
+			request()
+		}
+	}
+	i.mcp.SetReload(req)
+	tracker.TrySend(i.broker.ToModel, tracker.MsgToModel{Data: func() { i.tracker.SetReloader(req) }})
+}
+
+// Alert shows a message among the notifications of the tracker, as a
+// warning. It can be called from any thread.
+func (i *Instance) Alert(message string) {
+	tracker.TrySend(i.broker.ToModel, tracker.MsgToModel{Data: func() { i.model.Alerts().Add(message, tracker.Warning) }})
+}
+
+// ReloadAvailable tells that a build other than the running one is
+// installed, named build. It can be called from any thread.
+func (i *Instance) ReloadAvailable(build string) {
+	tracker.TrySend(i.broker.ToModel, tracker.MsgToModel{Data: func() { i.tracker.ReloadAvailable(build) }})
+}
+
 func newInstance(name string, markDirty func(), paramsChanged func(values bool), hidden bool) *Instance {
 	recoveryFile := ""
 	if configDir, err := os.UserConfigDir(); err == nil {

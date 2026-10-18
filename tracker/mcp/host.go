@@ -17,6 +17,8 @@ package mcp
 
 import (
 	"bufio"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -46,6 +48,8 @@ type (
 		listener net.Listener
 		socket   string
 		infoFile string
+		// reload moves the plugin to a newer build: see SetReload
+		reload func()
 	}
 
 	// request is what the command sends over the socket, as a line of JSON,
@@ -82,6 +86,15 @@ const modelTimeout = 10 * time.Second
 
 var hostCount atomic.Int32
 
+// runtimeTag tells the Hosts of this Go runtime from those of another in the
+// same process: the dev loader of the plugins loads a new build of the
+// plugin beside the old one, whose counter also starts from 1.
+var runtimeTag = func() string {
+	b := make([]byte, 2)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}()
+
 // NewHost returns a Host for the model, not listening yet. kind names the
 // program, e.g. "sointu-track".
 func NewHost(model *tracker.Model, kind string) *Host {
@@ -89,7 +102,7 @@ func NewHost(model *tracker.Model, kind string) *Host {
 		model:  model,
 		broker: model.Broker(),
 		kind:   kind,
-		id:     fmt.Sprintf("%s-%d-%d", kind, os.Getpid(), hostCount.Add(1)),
+		id:     fmt.Sprintf("%s-%d-%s%d", kind, os.Getpid(), runtimeTag, hostCount.Add(1)),
 		start:  time.Now(),
 	}
 }
@@ -167,6 +180,15 @@ func (h *Host) SetEnabled(on bool) error {
 	h.listener, h.socket, h.infoFile = listener, socket, infoFile
 	go h.serve(listener)
 	return nil
+}
+
+// SetReload tells that reload moves the plugin to a newer build, for the
+// tool reload_plugin: a plugin that the dev loader loaded
+// (cmd/plugin/loader). reload is called from the goroutine of a tool call.
+func (h *Host) SetReload(reload func()) {
+	h.mu.Lock()
+	h.reload = reload
+	h.mu.Unlock()
 }
 
 // Close stops listening.
