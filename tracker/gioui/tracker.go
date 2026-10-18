@@ -71,6 +71,9 @@ type (
 		// SetRemoteControl
 		remoteControl RemoteControl
 
+		// reload moves a plugin to a newer build: see reload.go
+		reload reloadControl
+
 		*tracker.Model
 
 		surfaceHeight int

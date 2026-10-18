@@ -306,7 +306,20 @@ func Tools() []Tool {
 				}
 				return r.PlayNote(a.Instrument, note, a.Velocity, time.Duration(ms)*time.Millisecond)
 			}),
+		{Name: "reload_plugin", Description: "Moves a plugin instance to the newest build of the plugin that is installed, while the plugin host runs, with its song: for developing Sointu itself. Only for a plugin that the dev loader loaded (make install-dev-loader), after make install-engine. The instance gets a new ID; call list_instances again after a moment.",
+			Args: reflect.TypeFor[noArgs](), call: reloadPlugin},
 	}
+}
+
+func reloadPlugin(h *Host, _ json.RawMessage) (string, error) {
+	h.mu.Lock()
+	reload := h.reload
+	h.mu.Unlock()
+	if reload == nil {
+		return "", fmt.Errorf("this instance cannot reload: only a plugin that the dev loader loaded can (make install-dev-loader)")
+	}
+	reload()
+	return "Reloading: the instance moves to the newest build installed, with its song, and gets a new ID. Call list_instances again in a moment.", nil
 }
 
 // Instructions is what an MCP client is told when it connects.

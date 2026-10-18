@@ -93,6 +93,10 @@ func (t *Tracker) HostManagesWindow(closed func()) {
 	t.sendWindowCmd(windowCmd{kind: windowManage, closed: closed})
 }
 
+// WindowShown tells if the window is open. Call it on the tracker's
+// goroutine.
+func (t *Tracker) WindowShown() bool { return !t.window.hidden && !t.window.hiding }
+
 // windowCommand does what a host asked for, as far as it does not need the
 // window, and returns what is left to do with the window: windowShow to
 // open or raise it, windowHide to close it.
