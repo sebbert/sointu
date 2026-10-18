@@ -269,6 +269,7 @@ knob:
   pos: { color: *primarycolor, bg: { r: 51, g: 36, b: 54, a: 255 } }
   neg: { color: *secondarycolor, bg: { r: 32, g: 55, b: 58, a: 255 } }
   indicator: { color: *white, width: 2, innerdiam: 24, outerdiam: 36 }
+  live: { color: { r: 255, g: 190, b: 60, a: 255 }, width: 2 }
 disabledknob:
   diameter: 36
   value: { textsize: 12, color: { r: 147, g: 143, b: 153, a: 255 }}
@@ -277,6 +278,7 @@ disabledknob:
   pos: { color: { r: 147, g: 143, b: 153, a: 255 }, bg: { r: 54, g: 52, b: 59, a: 255 } }
   neg: { color: { r: 147, g: 143, b: 153, a: 255 }, bg: { r: 54, g: 52, b: 59, a: 255 } }
   indicator: { color: { r: 147, g: 143, b: 153, a: 255 }, width: 2, innerdiam: 24, outerdiam: 36 }
+  live: { color: { r: 190, g: 160, b: 110, a: 255 }, width: 2 }
 signalrail:
   color: *secondarycolor
   signalwidth: 10

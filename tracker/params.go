@@ -165,6 +165,45 @@ func (pt *ParamModel) Item(p Point) Parameter {
 	return c.rows[p.Y].params[p.X]
 }
 
+// Live returns the value of the parameter at p as the synth last ran its
+// unit, in the voice of the last note of the instrument: with what the sends
+// and the automation added to it (see livePorts). It is only there for a
+// parameter that a send or a lane targets, once the synth has run it.
+func (pt *ParamModel) Live(p Point) (value int, ok bool) {
+	m := (*Model)(pt)
+	q := pt.Item(p)
+	if q.up == nil || q.port <= 0 || q.Type() != IntegerParameter || !pt.modulated(p, &q) {
+		return 0, false
+	}
+	u, ok := m.previewUnit(p.Y)
+	if !ok {
+		return 0, false
+	}
+	ports, ok := m.livePorts(p.Y)
+	if !ok || q.port > len(ports) {
+		return 0, false
+	}
+	names := sointu.Ports[u.Type]
+	if q.port > len(names) || names[q.port-1] != q.up.Name {
+		return 0, false
+	}
+	return liveParam(u, q.up.Name, ports[q.port-1]), true
+}
+
+// modulated tells whether the parameter q at p is the target of a lane or
+// of a send.
+func (pt *ParamModel) modulated(p Point, q *Parameter) bool {
+	if _, ok := (*Model)(pt).Automation().SlotOf(q); ok {
+		return true
+	}
+	for w := range pt.Wires {
+		if w.ToSet && w.To == p {
+			return true
+		}
+	}
+	return false
+}
+
 // selected returns the parameter at p if its unit is one of the units being
 // edited: a selection from a module unit to the unit after it leaves the
 // inner units of the module unit alone.

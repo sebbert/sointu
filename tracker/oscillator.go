@@ -61,6 +61,24 @@ func (m *UnitModel) OscillatorCycle(row int) []float32 {
 // within their ranges. Asking for them keeps the synth recording them, for
 // a second (see taps.go); false until it has.
 func (m *Model) liveParams(row int, u *sointu.Unit) (sointu.ParamMap, bool) {
+	ports, ok := m.livePorts(row)
+	if !ok {
+		return nil, false
+	}
+	ret := maps.Clone(u.Parameters)
+	for i, name := range sointu.Ports[u.Type] {
+		if i < len(ports) && ports[i] != 0 {
+			ret[name] = liveParam(u, name, ports[i])
+		}
+	}
+	return ret, true
+}
+
+// livePorts returns what the sends and the automation added to the ports of
+// the unit on a row, as the synth last ran it in the voice of the last note
+// of its instrument. Asking for them keeps the synth recording them, for a
+// second (see taps.go); false until it has.
+func (m *Model) livePorts(row int) (*[8]float32, bool) {
 	key, ok := m.analysisKey(row)
 	span, ok2 := m.playedSpan(row)
 	if !ok || !ok2 || span.Count != 1 {
@@ -68,26 +86,22 @@ func (m *Model) liveParams(row int, u *sointu.Unit) (sointu.ParamMap, bool) {
 	}
 	point := sointu.TapPoint{Instrument: span.Instrument, Unit: span.First, Voice: m.lastVoice(span.Instrument)}
 	w := m.watchTap(tapKey{Unit: key.unit, Call: key.call, Ports: true}, point)
-	if w.ports == nil {
-		return nil, false
+	return w.ports, w.ports != nil
+}
+
+// liveParam returns the parameter of u plus what a port of port adds to it,
+// rounded to steps and within its range.
+func liveParam(u *sointu.Unit, name string, port float32) int {
+	v := float64(u.Parameters[name]) + math.Round(float64(port)*128)
+	if math.IsNaN(v) {
+		return u.Parameters[name]
 	}
-	ret := maps.Clone(u.Parameters)
-	for i, name := range sointu.Ports[u.Type] {
-		if i >= len(w.ports) || w.ports[i] == 0 {
-			continue
+	for _, p := range sointu.UnitTypes[u.Type].Params {
+		if p.Name == name {
+			v = min(max(v, float64(p.MinValue)), float64(p.MaxValue))
 		}
-		v := float64(ret[name]) + math.Round(float64(w.ports[i])*128)
-		if math.IsNaN(v) {
-			continue
-		}
-		for _, p := range sointu.UnitTypes[u.Type].Params {
-			if p.Name == name {
-				v = min(max(v, float64(p.MinValue)), float64(p.MaxValue))
-			}
-		}
-		ret[name] = int(v)
 	}
-	return ret, true
+	return int(v)
 }
 
 // InlineCells returns how many parameter cells wide what the rack shows

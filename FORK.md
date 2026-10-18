@@ -1296,6 +1296,12 @@ has fractions, so it is 16 bits unless the points are rounded.
   in a new slot, add to (or move to) the lane of each other slot, remove
   from its lane, make its lane unipolar or bipolar, and reset the value,
   which a right click on the knob under the cursor did before.
+- The knob of a parameter that a lane or a send targets also shows the
+  value that the synth plays, in amber: a tick across the ring, and a thin
+  arc inside it from the value of the knob. It is the value as the unit last
+  ran in the voice of the last note of the instrument (with the sends of
+  other instruments and the automation added), from the port taps that the
+  oscillator cycle uses (`ParamModel.Live`).
 - Polarity: a lane is bipolar (default) or unipolar (`unipolar: true` in
   the song, the context menu of a knob, `automate` with `unipolar`). The
   host's range of a slot stays the same in every format (-128 to 128, or 0

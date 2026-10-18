@@ -53,6 +53,10 @@ type (
 		// stays in place when a change of the parameter moves the widget:
 		// dragging the knob then still follows the pointer
 		Origin image.Point
+		// Live is the value of the parameter as the synth last ran it, with
+		// what sends and automation add, if HasLive: see ParamModel.Live
+		Live    int
+		HasLive bool
 	}
 
 	PortStyle struct {
@@ -85,6 +89,12 @@ type (
 			InnerDiam unit.Dp
 			OuterDiam unit.Dp
 		}
+		// Live is how the knob shows the value that the synth plays, with
+		// what sends and automation add: a tick and an arc from the value
+		Live struct {
+			Color color.NRGBA
+			Width unit.Dp
+		}
 		Value LabelStyle
 		Title LabelStyle
 	}
@@ -97,6 +107,9 @@ type (
 		Hint   string
 		Scroll bool
 		Origin image.Point // see ParamWidget.Origin
+		// Live, if HasLive: see ParamWidget.Live
+		Live    int
+		HasLive bool
 	}
 
 	SwitchStyle struct {
@@ -163,6 +176,7 @@ func (p ParamWidget) Layout(gtx C) D {
 		case tracker.IntegerParameter:
 			k := Knob(p.Parameter, p.Theme, p.State, p.Parameter.Hint().Label, p.Focus, p.Disabled)
 			k.Origin = p.Origin
+			k.Live, k.HasLive = p.Live, p.HasLive
 			return k.Layout(gtx)
 		case tracker.BoolParameter:
 			s := Switch(p.Parameter, p.Theme, p.State, p.Parameter.Hint().Label, p.Focus, p.Disabled)
@@ -449,6 +463,9 @@ func (k *KnobWidget) Layout(gtx C) D {
 			k.strokeKnobArc(gtx, k.Style.Neg.Color, sw, d, neg, middle)
 		}
 		k.strokeIndicator(gtx, amount)
+		if k.HasLive {
+			k.strokeLive(gtx, amount, k.Value.Position(k.Live))
+		}
 		return D{Size: image.Pt(d, d)}
 	}
 	label := Label(k.Theme, &k.Style.Value, k.Value.Label())
@@ -522,6 +539,32 @@ func (k *KnobWidget) strokeIndicator(gtx C, amount float32) {
 		Cap:   stroke.FlatCap,
 	}
 	paint.FillShape(gtx.Ops, k.Style.Indicator.Color, s.Op(gtx.Ops))
+}
+
+// strokeLive draws the value that the synth plays at live, from that of
+// the knob at amount: a thin arc inside the ring between them, and a tick
+// across the ring at live.
+func (k *KnobWidget) strokeLive(gtx C, amount, live float32) {
+	live = min(max(live, 0), 1)
+	d := gtx.Dp(k.Style.Diameter)
+	sw := gtx.Dp(k.Style.StrokeWidth)
+	lw := max(gtx.Dp(k.Style.Live.Width), 1)
+	if lo, hi := min(amount, live), max(amount, live); hi > lo {
+		// on the inner edge of the ring: an arc of a smaller knob
+		inset := sw
+		defer op.Offset(image.Pt(inset, inset)).Push(gtx.Ops).Pop()
+		k.strokeKnobArc(gtx, k.Style.Live.Color, lw, d-2*inset, lo, hi)
+	}
+	rad := float32(d) / 2
+	angle := (float64(live)*8 + 1) / 10 * 2 * math.Pi
+	sin, cos := float32(math.Sin(angle)), float32(math.Cos(angle))
+	inner, outer := rad-float32(sw)-float32(lw)*2, rad
+	segments := [...]stroke.Segment{
+		stroke.MoveTo(f32.Pt(rad-inner*sin, rad+inner*cos)),
+		stroke.LineTo(f32.Pt(rad-outer*sin, rad+outer*cos)),
+	}
+	s := stroke.Stroke{Path: stroke.Path{Segments: segments[:]}, Width: float32(lw), Cap: stroke.FlatCap}
+	paint.FillShape(gtx.Ops, k.Style.Live.Color, s.Op(gtx.Ops))
 }
 
 // SwitchWidget
