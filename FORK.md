@@ -3551,12 +3551,12 @@ the code the song needs. Without the new flags, the output of
 `sointu-compile` is unchanged.
 
 ```
-sointu-compile -arch wasm -js [-stages N] [-cuts a,b] [-samples] [-r] [-outputclock] -o out/song song.yml
+sointu-compile -arch wasm -js [-stages N] [-cuts a,b] [-samples | -sampleimport SUFFIX] [-r] [-outputclock] -o out/song song.yml
 wat2wasm -o out/song.wasm out/song.wat
 ```
 
-writes `song.wat`, `song.js`, `song.d.ts` and, with `-samples`, `song.0.ogg`
-and so on. `examples/code/web` is a vite and rootsqz project that
+writes `song.wat`, `song.js`, `song.d.ts` and, with `-samples` or
+`-sampleimport`, `song.0.ogg` and so on. `examples/code/web` is a vite and rootsqz project that
 uses them; its README has the usage.
 
 ```js
@@ -3587,6 +3587,15 @@ the measured speed that the rest of the song is expected to render at (0.8).
   lengths, for hosts that do not use the module.
 - `Compiler.SeparateSamples` (`-samples`): the encoded samples are returned
   as files instead of `sointu.buffer` sections.
+- `Compiler.SampleImport` (`-sampleimport SUFFIX`): as `-samples`, and the
+  module imports the files itself, `import sample0 from
+  "./song.0.ogg<SUFFIX>"`, so `load` takes the `.wasm` alone. The suffix is
+  the bundler's: with rootsqz `?rootsqz-bin&pre-compressed`; what the import
+  gives must be the bytes of the file (a `Uint8Array` or an `ArrayBuffer`).
+  `Compiler.SampleName` is the name of the files in the imports, the name of
+  the output (`sointu-compile` sets it). Tested in Chrome
+  (`TestRuntimeInBrowser`, whose server answers such an import with a module
+  of the bytes, as a bundler does) and in a page packed by rootsqz 0.13.0.
 
 ### The module
 
@@ -3836,7 +3845,7 @@ about 250 B larger; that profile is made for larger inputs.
 
 ### Samples and the packer
 
-rootsqz stores `--pre-compressed-files` (`?rootsqz-bin&compressed` with the
+rootsqz stores `--pre-compressed-file`s (`?rootsqz-bin&pre-compressed` with the
 plugin) as they are, after the compressed data. Measured with Opus files of 9
 to 62 KB and the packer from GitHub: compressing them with the rest never
 makes them larger, it gains 0.2 to 1 % (the Ogg pages), so samples inside

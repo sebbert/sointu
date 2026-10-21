@@ -54,6 +54,7 @@ func main() {
 	stageCuts := flag.String("cuts", "", "With -js: the first voices of the stages after the first, comma separated, instead of the balanced stages of -stages.")
 	outputClock := flag.Bool("outputclock", false, "With -js: time() of the module is the clock of the output, from AudioContext.getOutputTimestamp() carried on with performance.now(): behind the time of the audio context by the output latency, and moving between audio blocks. By default it is the time of the audio context.")
 	separateSamples := flag.Bool("samples", false, "For wasm: write the encoded samples of the buffers as separate files (.0.<format>, .1.<format>, ...) instead of custom sections of the wasm, e.g. to pack them as already compressed files.")
+	sampleImport := flag.String("sampleimport", "", "For wasm with -js: write the samples as separate files, as -samples does, and make the JavaScript module import them itself, with this suffix after the file name, e.g. '?rootsqz-bin&pre-compressed'. The bundler must give the bytes of the file for such an import (a Uint8Array or an ArrayBuffer). load() then takes no sample files.")
 	ffmpegPath := flag.String("ffmpeg", "", "Path of ffmpeg, for encoding the samples of songs that play buffers. By default, $"+ffmpeg.EnvVar+", PATH and common installation directories are searched.")
 	allowUnknown := flag.Bool("allow-unknown-units", false, "Compile songs with units of a type that this version does not have, e.g. songs of a newer version, without those units, with a warning for each. By default such songs are an error.")
 	flag.Usage = printUsage
@@ -93,6 +94,11 @@ func main() {
 		comp.Stages = *stages
 		comp.OutputClock = *outputClock
 		comp.SeparateSamples = *separateSamples
+		comp.SampleImport = *sampleImport
+		if *sampleImport != "" && !*js {
+			fmt.Fprintln(os.Stderr, "error: -sampleimport needs -js")
+			os.Exit(1)
+		}
 		if *stageCuts != "" {
 			for _, c := range strings.Split(*stageCuts, ",") {
 				v, err := strconv.Atoi(strings.TrimSpace(c))
@@ -105,13 +111,10 @@ func main() {
 		}
 		comp.Log = func(s string) { fmt.Fprintln(os.Stderr, s) }
 	}
-	output := func(filename string, extension string, contents []byte) error {
-		if *stdout {
-			fmt.Print(string(contents))
-			return nil
-		}
-		_, name := filepath.Split(filename)
-		var dir string
+	// outputName returns the directory and the name, without extension, of
+	// the files written for an input file.
+	outputName := func(filename string) (dir, name string, err error) {
+		_, name = filepath.Split(filename)
 		if *outPath != "" {
 			// check if it's an already existing directory and the user just forgot trailing slash
 			if info, err := os.Stat(*outPath); err == nil && info.IsDir() {
@@ -127,14 +130,23 @@ func main() {
 			}
 		}
 		if dir == "" {
-			var err error
 			dir, err = os.Getwd()
 			if err != nil {
-				return fmt.Errorf("could not get working directory, specify the output directory explicitly: %v", err)
+				return "", "", fmt.Errorf("could not get working directory, specify the output directory explicitly: %v", err)
 			}
 		}
-		name = strings.TrimSuffix(name, filepath.Ext(name)) + extension
-		f := filepath.Join(dir, name)
+		return dir, strings.TrimSuffix(name, filepath.Ext(name)), nil
+	}
+	output := func(filename string, extension string, contents []byte) error {
+		if *stdout {
+			fmt.Print(string(contents))
+			return nil
+		}
+		dir, name, err := outputName(filename)
+		if err != nil {
+			return err
+		}
+		f := filepath.Join(dir, name+extension)
 		original, err := ioutil.ReadFile(f)
 		if err == nil {
 			if bytes.Compare(original, contents) == 0 {
@@ -183,6 +195,9 @@ func main() {
 				return fmt.Errorf("encoding buffers failed: %v", err)
 			}
 			var warnings []string
+			if _, comp.SampleName, err = outputName(filename); err != nil {
+				return err
+			}
 			comp.AllowUnknownUnits = *allowUnknown
 			compiledPlayer, warnings, err = comp.Song(&song)
 			if err != nil {

@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"encoding/json"
 	"bytes"
 	"embed"
 	"encoding/binary"
@@ -55,6 +56,16 @@ type Compiler struct {
 	// on, numbered in the order the player asks for them, and the host
 	// passes them to the JavaScript module.
 	SeparateSamples bool
+	// SampleImport makes the JavaScript module import the sample files
+	// itself (Song sets SeparateSamples), with ES imports of "./<SampleName>.<i>.<format>" and this
+	// suffix, e.g. "?rootsqz-bin&pre-compressed": what the bundler gives for
+	// such an import has to be the bytes of the file (a Uint8Array or an
+	// ArrayBuffer). load then takes no sample files. It implies
+	// SeparateSamples; only with JS.
+	SampleImport string
+	// SampleName is the name, without extension, of the sample files that
+	// the module imports with SampleImport: that of the output.
+	SampleName string
 	// Stages makes the progressive wasm player able to render the song in
 	// a pipeline of up to this many stages, each a range of voices run by
 	// its own instance (see wasm_stages.go); StageCuts sets the first
@@ -358,6 +369,12 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 	if com.OutputClock && !com.JS {
 		return nil, nil, errors.New("the clock of the output is that of the JavaScript module: it needs JS (-js)")
 	}
+	if com.SampleImport != "" {
+		if !com.JS {
+			return nil, nil, errors.New("the samples are imported by the JavaScript module: SampleImport needs JS (-js)")
+		}
+		com.SeparateSamples = true
+	}
 	if (com.Progressive || com.SeparateSamples) && com.Arch != "wasm" {
 		return nil, nil, fmt.Errorf(`the progressive player, its JavaScript module and separate samples are only for wasm (targeted architecture was %v)`, com.Arch)
 	}
@@ -511,9 +528,18 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 				com.Layout.StageCells = append(com.Layout.StageCells, len(s.InCells))
 				com.Layout.StageVoices = append(com.Layout.StageVoices, [2]int{s.First, s.End})
 			}
+			var sampleImports []string // quoted, for the module
 			if com.SeparateSamples && err == nil {
 				for i, b := range buffers.Buffers {
-					retmap[fmt.Sprintf(".%d.%s", i, b.format)] = string(b.encoded)
+					ext := fmt.Sprintf(".%d.%s", i, b.format)
+					retmap[ext] = string(b.encoded)
+					if com.SampleImport != "" {
+						var q strings.Builder
+						enc := json.NewEncoder(&q)
+						enc.SetEscapeHTML(false) // the & of a query stays as it is
+						enc.Encode("./" + com.SampleName + ext + com.SampleImport)
+						sampleImports = append(sampleImports, strings.TrimSpace(q.String()))
+					}
 				}
 			}
 			if com.JS && err == nil {
@@ -532,7 +558,9 @@ func (com *Compiler) Song(song *sointu.Song) (retmap map[string]string, warnings
 					Samples                                   int // buffers with samples
 					SeparateSamples, MathImports, Output16Bit bool
 					RowSync, OutputClock                      bool
-				}{com.Layout, song, com.Layout.OutputBytes / frameBytes, frameBytes, len(buffers.Buffers), com.SeparateSamples, com.MathImports, com.Output16Bit, com.RowSync, com.OutputClock}
+					SampleImports                             []string // the files the module imports, quoted
+					SampleImport                              string   // the suffix of the imports
+				}{com.Layout, song, com.Layout.OutputBytes / frameBytes, frameBytes, len(buffers.Buffers), com.SeparateSamples && com.SampleImport == "", com.MathImports, com.Output16Bit, com.RowSync, com.OutputClock, sampleImports, com.SampleImport}
 				for _, name := range []string{"player.js", "player.d.ts"} {
 					result := bytes.NewBufferString("")
 					if err := com.Template.ExecuteTemplate(result, name, &jsData); err != nil {

@@ -8,7 +8,10 @@
 //
 // dir has song.js and song.wasm (compiled with -js), oneshot.wasm (compiled
 // without) and, for songs compiled with -samples, the sample files song.0.*,
-// song.1.* and so on. Scenarios:
+// song.1.* and so on. A module compiled with -sampleimport imports them
+// itself, with a query after the name: the server answers such a request as a
+// bundler would, with a module whose default export is the bytes of the file.
+// Scenarios:
 //   play      render in workers and play
 //   noworker  no Worker in the page: the module renders on the main thread
 //   stall     the fourth piece of audio arrives 3 s late: the song has to
@@ -83,9 +86,11 @@ if (firefox ? !firefoxPath : !chrome) {
 const sampleFiles = readdirSync(dir)
   .filter((f) => /^song\.\d+\./.test(f))
   .sort((a, b) => parseInt(a.split(".")[1]) - parseInt(b.split(".")[1]));
+// with -sampleimport, the module imports the samples and load takes none
+const imported = /^import sample\d+ from /m.test(readFileSync(join(dir, "song.js"), "utf8"));
 
 const page = `<!DOCTYPE html><script type="module">
-const scenario = ${JSON.stringify(scenario)}, runway = ${runway}, margin = ${margin}, sampleFiles = ${JSON.stringify(sampleFiles)}, clockMode = ${JSON.stringify(clockMode)};
+const scenario = ${JSON.stringify(scenario)}, runway = ${runway}, margin = ${margin}, sampleFiles = ${JSON.stringify(sampleFiles)}, imported = ${imported}, clockMode = ${JSON.stringify(clockMode)};
 const bytes = async (name) => new Uint8Array(await (await fetch("/" + name)).arrayBuffer());
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 try {
@@ -135,7 +140,7 @@ try {
   const wasm = await bytes("song.wasm");
   const samples = await Promise.all(sampleFiles.map(bytes));
   const t0 = performance.now();
-  const song = sampleFiles.length ? lib.load(wasm, samples, runway, margin) : lib.load(wasm, runway, margin);
+  const song = sampleFiles.length && !imported ? lib.load(wasm, samples, runway, margin) : lib.load(wasm, runway, margin);
   const summary = { ok: true, scenario, duration: lib.duration, rowsPerSecond: lib.rowsPerSecond, wasmBytes: wasm.length };
   // progress, by polling
   let longest = 0, last = performance.now();
@@ -331,6 +336,9 @@ const server = createServer((req, res) => {
   const name = url.pathname.slice(1);
   if (req.method === "GET" && url.pathname === "/") {
     res.writeHead(200, { "Content-Type": "text/html" }).end(page);
+  } else if (req.method === "GET" && url.search && sampleFiles.includes(name)) {
+    // an import of a sample by the module (-sampleimport), as a bundler gives it
+    res.writeHead(200, { "Content-Type": "text/javascript" }).end(`export default new Uint8Array([${[...readFileSync(join(dir, name))]}]);`);
   } else if (req.method === "GET" && /^[\w.]+$/.test(name) && existsSync(join(dir, name))) {
     res.writeHead(200, { "Content-Type": types[name.split(".").pop()] ?? "application/octet-stream" }).end(readFileSync(join(dir, name)));
   } else if (req.method === "POST") {

@@ -52,6 +52,7 @@ func TestRuntimeModule(t *testing.T) {
 		{"samples", sampled, func(c *compiler.Compiler) {}, []string{`customSections(module, "sointu.buffer")`, "decodeAudioData", "s: { b:"}, []string{"sampleFiles"}, nil},
 		{"separate samples", sampled, func(c *compiler.Compiler) { c.SeparateSamples = true }, []string{"sampleFiles.map", "decodeAudioData", "load = (wasm, sampleFiles, runway"}, []string{"customSections"}, []string{".0.flac", ".1.bin"}},
 		{"separate samples in stages", sampled, func(c *compiler.Compiler) { c.SeparateSamples, c.Stages = true, 2 }, []string{"sampleFiles.map", "MessageChannel", "channel.port1, samples]"}, nil, []string{".0.flac", ".1.bin"}},
+		{"imported samples", sampled, func(c *compiler.Compiler) { c.SampleImport, c.SampleName = "?rootsqz-bin&pre-compressed", "song" }, []string{`import sample0 from "./song.0.flac?rootsqz-bin&pre-compressed";`, `import sample1 from "./song.1.bin?rootsqz-bin&pre-compressed";`, "[sample0, sample1].map", "load = (wasm, runway", "-sampleimport '?rootsqz-bin&pre-compressed';"}, []string{"customSections", "sampleFiles", "-samples"}, []string{".0.flac", ".1.bin"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			com, err := compiler.New("", "wasm", false, false)
@@ -209,6 +210,7 @@ func TestRuntimeInBrowser(t *testing.T) {
 		{"samples on the main thread", sampled, "noworker", func(c *compiler.Compiler) {}},
 		{"separate samples", sampled, "play", func(c *compiler.Compiler) { c.SeparateSamples = true }},
 		{"separate samples in stages", sampled, "play", func(c *compiler.Compiler) { c.SeparateSamples, c.Stages = true, 2 }},
+		{"imported samples in stages", sampled, "play", func(c *compiler.Compiler) { c.SampleImport, c.SampleName, c.Stages = "?bytes", "song", 2 }},
 		{"sync values", synced, "play", func(c *compiler.Compiler) {}},
 		{"sync values and the row", synced, "play", func(c *compiler.Compiler) { c.RowSync = true }},
 		{"sync values in stages", synced, "play", func(c *compiler.Compiler) { c.RowSync, c.Stages = true, 3 }},
@@ -239,7 +241,7 @@ func TestRuntimeInBrowser(t *testing.T) {
 				tc.configure(com)
 				com.JS = js
 				if !js {
-					com.Stages, com.OutputClock = 0, false
+					com.Stages, com.OutputClock, com.SampleImport = 0, false, ""
 				}
 				files, _, err := com.Song(&tc.song)
 				if err != nil {

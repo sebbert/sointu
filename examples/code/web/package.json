@@ -9,7 +9,7 @@
     "serve": "node serve.mjs"
   },
   "devDependencies": {
-    "@r00tkids/rollup-plugin-rootsqz": "^0.4.1",
+    "@r00tkids/rollup-plugin-rootsqz": "^0.13.0",
     "vite": "^7.3.1"
   }
 }

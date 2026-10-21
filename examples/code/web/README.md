@@ -116,6 +116,17 @@ store them as they are instead of compressing the encoded audio again:
 
 ```js
 import wasm from "./song.wasm?rootsqz-bin";
-import sample0 from "./song.0.ogg?rootsqz-bin&compressed";
+import sample0 from "./song.0.ogg?rootsqz-bin&pre-compressed";
 const song = load(wasm, [sample0]);
 ```
+
+With `-sampleimport <suffix>`, the module imports the sample files itself,
+with the suffix after each name, and `load` takes the `.wasm` alone:
+
+```
+node song.mjs song.yml -stages 4 -sampleimport '?rootsqz-bin&pre-compressed'
+```
+
+writes `import sample0 from "./song.0.ogg?rootsqz-bin&pre-compressed";` into
+`song.js`. Any bundler works whose import with that suffix gives the bytes of
+the file (a `Uint8Array` or an `ArrayBuffer`).
